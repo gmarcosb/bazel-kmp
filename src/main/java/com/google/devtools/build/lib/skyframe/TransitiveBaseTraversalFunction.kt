@@ -11,242 +11,227 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Multimap;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.packages.AdvertisedProviderSet;
-import com.google.devtools.build.lib.packages.Aspect;
-import com.google.devtools.build.lib.packages.AspectDefinition;
-import com.google.devtools.build.lib.packages.Attribute;
-import com.google.devtools.build.lib.packages.DependencyFilter;
-import com.google.devtools.build.lib.packages.LabelVisitationUtils;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.NoSuchTargetException;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.skyframe.TargetLoadingUtil.TargetAndErrorIfAny;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.SkyframeLookupResult;
-import java.util.Collection;
-import java.util.List;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
- * This class can be extended to define {@link SkyFunction}s that traverse a target and its
+ * This class can be extended to define [SkyFunction]s that traverse a target and its
  * transitive dependencies and return values based on that traversal.
- *
- * <p>The {@code ProcessedTargetsT} type parameter represents the result of processing a target and
+ * 
+ * 
+ * The `ProcessedTargetsT` type parameter represents the result of processing a target and
  * its transitive dependencies.
- *
- * <p>{@code TransitiveBaseTraversalFunction} asks for one to be constructed via {@link
- * #processTarget}, and then asks for it to be updated based on the current target's attributes'
- * dependencies via {@link #processDeps}, and then asks for it to be updated based on the current
- * target' aspects' dependencies via {@link #processDeps}. Finally, it calls {@link
- * #computeSkyValue} with the {#code ProcessedTargets} to get the {@link SkyValue} to return.
+ * 
+ * 
+ * `TransitiveBaseTraversalFunction` asks for one to be constructed via [ ][.processTarget], and then asks for it to be updated based on the current target's attributes'
+ * dependencies via [.processDeps], and then asks for it to be updated based on the current
+ * target' aspects' dependencies via [.processDeps]. Finally, it calls [ ][.computeSkyValue] with the {#code ProcessedTargets} to get the [SkyValue] to return.
  */
-public abstract class TransitiveBaseTraversalFunction<ProcessedTargetsT> implements SkyFunction {
-  /**
-   * Returns a {@link SkyKey} corresponding to the traversal of a target specified by {@code label}
-   * and its transitive dependencies.
-   *
-   * <p>Extenders of this class should implement this function to return a key with their
-   * specialized {@link SkyFunction}'s name.
-   *
-   * <p>{@link TransitiveBaseTraversalFunction} calls this for each dependency of a target, and
-   * then gets their values from the environment.
-   *
-   * <p>The key's {@link SkyFunction} may throw at most {@link NoSuchPackageException} and
-   * {@link NoSuchTargetException}. Other exception types are not handled by {@link
-   * TransitiveBaseTraversalFunction}.
-   */
-  abstract SkyKey getKey(Label label);
+abstract class TransitiveBaseTraversalFunction<ProcessedTargetsT> : SkyFunction {
+    /**
+     * Returns a [SkyKey] corresponding to the traversal of a target specified by `label`
+     * and its transitive dependencies.
+     * 
+     * 
+     * Extenders of this class should implement this function to return a key with their
+     * specialized [SkyFunction]'s name.
+     * 
+     * 
+     * [TransitiveBaseTraversalFunction] calls this for each dependency of a target, and
+     * then gets their values from the environment.
+     * 
+     * 
+     * The key's [SkyFunction] may throw at most [NoSuchPackageException] and
+     * [NoSuchTargetException]. Other exception types are not handled by [ ].
+     */
+    abstract fun getKey(label: Label?): SkyKey?
 
-  abstract ProcessedTargetsT processTarget(TargetAndErrorIfAny targetAndErrorIfAny);
+    abstract fun processTarget(targetAndErrorIfAny: TargetAndErrorIfAny?): ProcessedTargetsT?
 
-  abstract void processDeps(
-      ProcessedTargetsT processedTargets,
-      EventHandler eventHandler,
-      TargetAndErrorIfAny targetAndErrorIfAny,
-      SkyframeLookupResult depEntries,
-      Iterable<? extends SkyKey> depKeys);
+    abstract fun processDeps(
+        processedTargets: ProcessedTargetsT?,
+        eventHandler: EventHandler?,
+        targetAndErrorIfAny: TargetAndErrorIfAny?,
+        depEntries: SkyframeLookupResult?,
+        depKeys: Iterable<out SkyKey?>?
+    )
 
-  /**
-   * Returns a {@link SkyValue} based on the target and any errors it has, and the values
-   * accumulated across it and a traversal of its transitive dependencies.
-   */
-  abstract SkyValue computeSkyValue(
-      TargetAndErrorIfAny targetAndErrorIfAny, ProcessedTargetsT processedTargets);
+    /**
+     * Returns a [SkyValue] based on the target and any errors it has, and the values
+     * accumulated across it and a traversal of its transitive dependencies.
+     */
+    abstract fun computeSkyValue(
+        targetAndErrorIfAny: TargetAndErrorIfAny?, processedTargets: ProcessedTargetsT?
+    ): SkyValue?
 
-  abstract Label argumentFromKey(SkyKey key);
+    abstract fun argumentFromKey(key: SkyKey?): Label
 
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey key, Environment env)
-      throws TransitiveBaseTraversalFunctionException, InterruptedException {
-    Label label = argumentFromKey(key);
-    TargetAndErrorIfAny targetAndErrorIfAny;
-    try {
-      targetAndErrorIfAny = loadTarget(env, label);
-    } catch (NoSuchTargetException e) {
-      throw new TransitiveBaseTraversalFunctionException(e);
-    } catch (NoSuchPackageException e) {
-      throw new TransitiveBaseTraversalFunctionException(e);
-    }
-    if (targetAndErrorIfAny == null) {
-      return null;
-    }
-
-    // Process deps from attributes. It is essential that the last getValue(s) call we made to
-    // skyframe for building this node was for the corresponding PackageValue.
-    Collection<SkyKey> labelDepKeys = getLabelDepKeys(env, targetAndErrorIfAny);
-
-    SkyframeLookupResult depMap = env.getValuesAndExceptions(labelDepKeys);
-    if (env.valuesMissing()) {
-      return null;
-    }
-    // Process deps from aspects. It is essential that the second-to-last getValue(s) call we
-    // made to skyframe for building this node was for the corresponding PackageValue.
-    Iterable<SkyKey> labelAspectKeys =
-        getStrictLabelAspectDepKeys(env, depMap, targetAndErrorIfAny);
-    if (env.valuesMissing()) {
-      return null;
-    }
-    SkyframeLookupResult labelAspectEntries = env.getValuesAndExceptions(labelAspectKeys);
-    if (env.valuesMissing()) {
-      return null;
-    }
-
-    ProcessedTargetsT processedTargets = processTarget(targetAndErrorIfAny);
-    processDeps(processedTargets, env.getListener(), targetAndErrorIfAny, depMap, labelDepKeys);
-    processDeps(
-        processedTargets,
-        env.getListener(),
-        targetAndErrorIfAny,
-        labelAspectEntries,
-        labelAspectKeys);
-
-    return computeSkyValue(targetAndErrorIfAny, processedTargets);
-  }
-
-  Collection<SkyKey> getLabelDepKeys(
-      SkyFunction.Environment env, TargetAndErrorIfAny targetAndErrorIfAny)
-      throws InterruptedException {
-    ImmutableSet.Builder<SkyKey> depsBuilder = ImmutableSet.builder();
-    LabelVisitationUtils.visitTarget(
-        targetAndErrorIfAny.getTarget(),
-        DependencyFilter.NO_NODEP_ATTRIBUTES_EXCEPT_VISIBILITY,
-        (fromTarget, attribute, toLabel) -> depsBuilder.add(getKey(toLabel)));
-    return depsBuilder.build();
-  }
-
-  Iterable<SkyKey> getStrictLabelAspectDepKeys(
-      SkyFunction.Environment env,
-      SkyframeLookupResult depMap,
-      TargetAndErrorIfAny targetAndErrorIfAny)
-      throws InterruptedException {
-    return getStrictLabelAspectKeys(targetAndErrorIfAny.getTarget(), depMap, env);
-  }
-
-  @Override
-  public String extractTag(SkyKey skyKey) {
-    return Label.print(argumentFromKey(skyKey));
-  }
-
-  /**
-   * Return an Iterable of SkyKeys corresponding to the Aspect-related dependencies of target.
-   *
-   * <p>This method may return a precise set of aspect keys, but may need to request additional
-   * dependencies from the env to do so.
-   */
-  private Iterable<SkyKey> getStrictLabelAspectKeys(
-      Target target, SkyframeLookupResult depMap, Environment env) throws InterruptedException {
-    if (!(target instanceof Rule rule)) {
-      // Aspects can be declared only for Rules.
-      return ImmutableList.of();
-    }
-
-    if (!rule.hasAspects()) {
-      return ImmutableList.of();
-    }
-
-    List<SkyKey> depKeys = Lists.newArrayList();
-    Multimap<Attribute, Label> transitions =
-        rule.getTransitions(DependencyFilter.NO_NODEP_ATTRIBUTES);
-    for (Attribute attribute : transitions.keySet()) {
-      for (Aspect aspect : attribute.getAspects(rule)) {
-        if (hasDepThatSatisfies(aspect, transitions.get(attribute), depMap, env)) {
-          AspectDefinition.forEachLabelDepFromAllAttributesOfAspect(
-              aspect,
-              DependencyFilter.ALL_DEPS,
-              (aspectAttribute, aspectLabel) -> depKeys.add(getKey(aspectLabel)));
+    @Throws(TransitiveBaseTraversalFunctionException::class, java.lang.InterruptedException::class)
+    override fun compute(key: SkyKey?, env: SkyFunction.Environment): SkyValue? {
+        val label: Label = argumentFromKey(key)
+        val targetAndErrorIfAny: TargetAndErrorIfAny?
+        try {
+            targetAndErrorIfAny = loadTarget(env, label)
+        } catch (e: NoSuchTargetException) {
+            throw TransitiveBaseTraversalFunctionException(e)
+        } catch (e: NoSuchPackageException) {
+            throw TransitiveBaseTraversalFunctionException(e)
         }
-      }
+        if (targetAndErrorIfAny == null) {
+            return null
+        }
+
+        // Process deps from attributes. It is essential that the last getValue(s) call we made to
+        // skyframe for building this node was for the corresponding PackageValue.
+        val labelDepKeys: MutableCollection<SkyKey?>? = getLabelDepKeys(env, targetAndErrorIfAny)
+
+        val depMap: SkyframeLookupResult = env.getValuesAndExceptions(labelDepKeys)
+        if (env.valuesMissing()) {
+            return null
+        }
+        // Process deps from aspects. It is essential that the second-to-last getValue(s) call we
+        // made to skyframe for building this node was for the corresponding PackageValue.
+        val labelAspectKeys: Iterable<SkyKey?> =
+            getStrictLabelAspectDepKeys(env, depMap, targetAndErrorIfAny)
+        if (env.valuesMissing()) {
+            return null
+        }
+        val labelAspectEntries: SkyframeLookupResult = env.getValuesAndExceptions(labelAspectKeys)
+        if (env.valuesMissing()) {
+            return null
+        }
+
+        val processedTargets = processTarget(targetAndErrorIfAny)
+        processDeps(processedTargets, env.getListener(), targetAndErrorIfAny, depMap, labelDepKeys)
+        processDeps(
+            processedTargets,
+            env.getListener(),
+            targetAndErrorIfAny,
+            labelAspectEntries,
+            labelAspectKeys
+        )
+
+        return computeSkyValue(targetAndErrorIfAny, processedTargets)
     }
-    return depKeys;
-  }
 
-  @Nullable
-  protected abstract AdvertisedProviderSet getAdvertisedProviderSet(
-      Label toLabel, SkyValue toVal, Environment env) throws InterruptedException;
-
-  private boolean hasDepThatSatisfies(
-      Aspect aspect, Iterable<Label> depLabels, SkyframeLookupResult fullDepMap, Environment env)
-      throws InterruptedException {
-    for (Label depLabel : depLabels) {
-      SkyValue toVal;
-      try {
-        toVal =
-            fullDepMap.getOrThrow(
-                getKey(depLabel), NoSuchPackageException.class, NoSuchTargetException.class);
-      } catch (NoSuchPackageException | NoSuchTargetException e) {
-        continue;
-      }
-      AdvertisedProviderSet advertisedProviderSet = getAdvertisedProviderSet(depLabel, toVal, env);
-      if (advertisedProviderSet != null
-          && AspectDefinition.satisfies(aspect, advertisedProviderSet)) {
-        return true;
-      }
+    @Throws(java.lang.InterruptedException::class)
+    open fun getLabelDepKeys(
+        env: SkyFunction.Environment?, targetAndErrorIfAny: TargetAndErrorIfAny
+    ): MutableCollection<SkyKey?>? {
+        val depsBuilder: com.google.common.collect.ImmutableSet.Builder<SkyKey?> =
+            com.google.common.collect.ImmutableSet.builder<SkyKey?>()
+        LabelVisitationUtils.visitTarget(
+            targetAndErrorIfAny.getTarget(),
+            DependencyFilter.NO_NODEP_ATTRIBUTES_EXCEPT_VISIBILITY,
+            { fromTarget, attribute, toLabel -> depsBuilder.add(getKey(toLabel)) })
+        return depsBuilder.build()
     }
-    return false;
-  }
 
-  @Nullable
-  TargetAndErrorIfAny loadTarget(Environment env, Label label)
-      throws NoSuchTargetException, NoSuchPackageException, InterruptedException {
-    Object o = TargetLoadingUtil.loadTarget(env, label);
-    return o instanceof TargetAndErrorIfAny ? (TargetAndErrorIfAny) o : null;
-  }
+    @Throws(java.lang.InterruptedException::class)
+    open fun getStrictLabelAspectDepKeys(
+        env: SkyFunction.Environment?,
+        depMap: SkyframeLookupResult,
+        targetAndErrorIfAny: TargetAndErrorIfAny
+    ): Iterable<SkyKey?> {
+        return getStrictLabelAspectKeys(targetAndErrorIfAny.getTarget(), depMap, env)
+    }
 
-  /**
-   * Used to declare all the exception types that can be wrapped in the exception thrown by {@link
-   * TransitiveTraversalFunction#compute}.
-   */
-  public static class TransitiveBaseTraversalFunctionException extends SkyFunctionException {
+    override fun extractTag(skyKey: SkyKey?): String {
+        return Label.print(argumentFromKey(skyKey))
+    }
+
     /**
-     * Used to propagate an error from a direct target dependency to the target that depended on
-     * it.
+     * Return an Iterable of SkyKeys corresponding to the Aspect-related dependencies of target.
+     * 
+     * 
+     * This method may return a precise set of aspect keys, but may need to request additional
+     * dependencies from the env to do so.
      */
-    public TransitiveBaseTraversalFunctionException(NoSuchPackageException e) {
-      super(e, Transience.PERSISTENT);
+    @Throws(java.lang.InterruptedException::class)
+    private fun getStrictLabelAspectKeys(
+        target: Target?, depMap: SkyframeLookupResult, env: SkyFunction.Environment?
+    ): Iterable<SkyKey?> {
+        if (target !is Rule) {
+            // Aspects can be declared only for Rules.
+            return com.google.common.collect.ImmutableList.of<SkyKey?>()
+        }
+
+        if (!target.hasAspects()) {
+            return com.google.common.collect.ImmutableList.of<SkyKey?>()
+        }
+
+        val depKeys: MutableList<SkyKey?> = com.google.common.collect.Lists.newArrayList<SkyKey?>()
+        val transitions: com.google.common.collect.Multimap<Attribute, Label?> =
+            target.getTransitions(DependencyFilter.NO_NODEP_ATTRIBUTES)
+        for (attribute in transitions.keySet()) {
+            for (aspect in attribute.getAspects(target)) {
+                if (hasDepThatSatisfies(aspect, transitions.get(attribute), depMap, env)) {
+                    AspectDefinition.forEachLabelDepFromAllAttributesOfAspect(
+                        aspect,
+                        DependencyFilter.ALL_DEPS,
+                        { aspectAttribute, aspectLabel -> depKeys.add(getKey(aspectLabel)) })
+                }
+            }
+        }
+        return depKeys
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    protected abstract fun getAdvertisedProviderSet(
+        toLabel: Label?, toVal: SkyValue?, env: SkyFunction.Environment?
+    ): AdvertisedProviderSet?
+
+    @Throws(java.lang.InterruptedException::class)
+    private fun hasDepThatSatisfies(
+        aspect: Aspect?, depLabels: Iterable<Label?>, fullDepMap: SkyframeLookupResult, env: SkyFunction.Environment?
+    ): Boolean {
+        for (depLabel in depLabels) {
+            val toVal: SkyValue?
+            try {
+                toVal =
+                    fullDepMap.getOrThrow<E1?, E2?>(
+                        getKey(depLabel), NoSuchPackageException::class.java, NoSuchTargetException::class.java
+                    )
+            } catch (e: NoSuchPackageException) {
+                continue
+            } catch (e: NoSuchTargetException) {
+                continue
+            }
+            val advertisedProviderSet: AdvertisedProviderSet? = getAdvertisedProviderSet(depLabel, toVal, env)
+            if (advertisedProviderSet != null
+                && AspectDefinition.satisfies(aspect, advertisedProviderSet)
+            ) {
+                return true
+            }
+        }
+        return false
+    }
+
+    @Throws(NoSuchTargetException::class, NoSuchPackageException::class, java.lang.InterruptedException::class)
+    open fun loadTarget(env: SkyFunction.Environment?, label: Label): TargetAndErrorIfAny? {
+        val o: Any? = TargetLoadingUtil.loadTarget(env, label)
+        return if (o is TargetAndErrorIfAny) o as TargetAndErrorIfAny else null
     }
 
     /**
-     * In nokeep_going mode, used to propagate an error from a direct target dependency to the
-     * target that depended on it.
-     *
-     * <p>In keep_going mode, used the same way, but only for targets that could not be loaded at
-     * all (we proceed with transitive loading on targets that contain errors).</p>
+     * Used to declare all the exception types that can be wrapped in the exception thrown by [ ][TransitiveTraversalFunction.compute].
      */
-    public TransitiveBaseTraversalFunctionException(NoSuchTargetException e) {
-      super(e, Transience.PERSISTENT);
+    class TransitiveBaseTraversalFunctionException : SkyFunctionException {
+        /**
+         * Used to propagate an error from a direct target dependency to the target that depended on
+         * it.
+         */
+        constructor(e: NoSuchPackageException?) : super(e, Transience.PERSISTENT)
+
+        /**
+         * In nokeep_going mode, used to propagate an error from a direct target dependency to the
+         * target that depended on it.
+         * 
+         * 
+         * In keep_going mode, used the same way, but only for targets that could not be loaded at
+         * all (we proceed with transitive loading on targets that contain errors).
+         */
+        constructor(e: NoSuchTargetException?) : super(e, Transience.PERSISTENT)
     }
-  }
 }

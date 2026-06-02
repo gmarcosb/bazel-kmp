@@ -11,21 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import java.io.IOException;
-import java.util.Collection;
+import java.io.IOException
 
-/** Handle to a service that consumes metadata about uploaded analysis values. */
-public interface RemoteAnalysisMetadataWriter {
-  /** Adds the cached targets into the metadata table */
-  boolean addTopLevelTargets(
-      String invocationId,
-      long evaluatingVersion,
-      String configurationHash,
-      boolean useFakeStampData,
-      String blazeVersion,
-      Collection<String> targets,
-      Collection<String> configFlags)
-      throws IOException;
+/** Handle to a service that consumes metadata about uploaded analysis values.  */
+interface RemoteAnalysisMetadataWriter {
+    /** Adds the cached targets into the metadata table  */
+    @Throws(IOException::class)
+    fun addTopLevelTargets(
+        invocationId: String?,
+        evaluatingVersion: Long,
+        configurationHash: String?,
+        useFakeStampData: Boolean,
+        blazeVersion: String?,
+        targets: MutableCollection<String?>?,
+        configFlags: MutableCollection<String?>?
+    ): Boolean
 }

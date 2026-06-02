@@ -53,8 +53,8 @@ public class CgroupsInfoTest {
 
     CgroupsInfo cgroup = CgroupsInfo.getRootCgroup(new File(pathString));
 
-    assertThat(cgroup.getType()).isEqualTo(CgroupsInfo.Type.ROOT);
-    assertThat(cgroup.getVersion()).isEqualTo(CgroupsInfo.Version.V1);
+    assertThat(cgroup.type).isEqualTo(CgroupsInfo.Type.ROOT);
+    assertThat(cgroup.version).isEqualTo(CgroupsInfo.Version.V1);
     assertThat(cgroup.getCgroupDir().getPath()).isEqualTo("/dev/cgroup/memory");
   }
 
@@ -69,8 +69,8 @@ public class CgroupsInfoTest {
 
     CgroupsInfo cgroup = CgroupsInfo.getRootCgroup(new File(pathString));
 
-    assertThat(cgroup.getType()).isEqualTo(CgroupsInfo.Type.ROOT);
-    assertThat(cgroup.getVersion()).isEqualTo(CgroupsInfo.Version.V2);
+    assertThat(cgroup.type).isEqualTo(CgroupsInfo.Type.ROOT);
+    assertThat(cgroup.version).isEqualTo(CgroupsInfo.Version.V2);
     assertThat(cgroup.getCgroupDir().getPath()).isEqualTo("/sys/fs/cgroup");
   }
 
@@ -87,8 +87,8 @@ public class CgroupsInfoTest {
 
     CgroupsInfo cgroup = CgroupsInfo.getRootCgroup(new File(pathString));
 
-    assertThat(cgroup.getType()).isEqualTo(CgroupsInfo.Type.ROOT);
-    assertThat(cgroup.getVersion()).isEqualTo(CgroupsInfo.Version.V1);
+    assertThat(cgroup.type).isEqualTo(CgroupsInfo.Type.ROOT);
+    assertThat(cgroup.version).isEqualTo(CgroupsInfo.Version.V1);
     assertThat(cgroup.getCgroupDir().getPath()).isEqualTo("/dev/cgroup/memory");
   }
 
@@ -105,8 +105,8 @@ public class CgroupsInfoTest {
 
     CgroupsInfo cgroup = CgroupsInfo.getRootCgroup(new File(pathString));
 
-    assertThat(cgroup.getType()).isEqualTo(CgroupsInfo.Type.ROOT);
-    assertThat(cgroup.getVersion()).isEqualTo(CgroupsInfo.Version.V2);
+    assertThat(cgroup.type).isEqualTo(CgroupsInfo.Type.ROOT);
+    assertThat(cgroup.version).isEqualTo(CgroupsInfo.Version.V2);
     assertThat(cgroup.getCgroupDir().getPath()).isEqualTo("/sys/fs/cgroup");
   }
 
@@ -134,8 +134,8 @@ public class CgroupsInfoTest {
 
     assertThat(cgroup.getCgroupDir().exists()).isTrue();
     assertThat(cgroup.getCgroupDir().getPath()).isEqualTo(blazeSpawnsPath);
-    assertThat(cgroup.getType()).isEqualTo(CgroupsInfo.Type.BLAZE_SPAWNS);
-    assertThat(cgroup.getVersion()).isEqualTo(CgroupsInfo.Version.V1);
+    assertThat(cgroup.type).isEqualTo(CgroupsInfo.Type.BLAZE_SPAWNS);
+    assertThat(cgroup.version).isEqualTo(CgroupsInfo.Version.V1);
   }
 
   @Test
@@ -159,11 +159,11 @@ public class CgroupsInfoTest {
 
     CgroupsInfo cgroup = rootCgroup.createBlazeSpawnsCgroup(procSelfCgroupPath);
 
-    assertThat(cgroup.getVersion()).isEqualTo(CgroupsInfo.Version.V2);
+    assertThat(cgroup.version).isEqualTo(CgroupsInfo.Version.V2);
     assertThat(cgroup.getCgroupDir().exists()).isTrue();
     assertThat(cgroup.getCgroupDir().getPath()).isEqualTo(blazeSpawnsPath);
-    assertThat(cgroup.getType()).isEqualTo(CgroupsInfo.Type.BLAZE_SPAWNS);
-    assertThat(cgroup.getVersion()).isEqualTo(CgroupsInfo.Version.V2);
+    assertThat(cgroup.type).isEqualTo(CgroupsInfo.Type.BLAZE_SPAWNS);
+    assertThat(cgroup.version).isEqualTo(CgroupsInfo.Version.V2);
     // This is not what an actual cgroups v2 file would contain, but it's what we expect to write to
     // it to enable subtree control.
     assertThat(Files.readLines(new File(blazeSpawnsPath + "/cgroup.subtree_control"), UTF_8))
@@ -181,8 +181,8 @@ public class CgroupsInfoTest {
 
     assertThat(cgroup.exists()).isTrue();
     assertThat(cgroup.getCgroupDir().getPath()).isEqualTo(blazeSpawnsPath + "/spawn_1");
-    assertThat(cgroup.getType()).isEqualTo(CgroupsInfo.Type.SPAWN);
-    assertThat(cgroup.getVersion()).isEqualTo(CgroupsInfo.Version.V1);
+    assertThat(cgroup.type).isEqualTo(CgroupsInfo.Type.SPAWN);
+    assertThat(cgroup.version).isEqualTo(CgroupsInfo.Version.V1);
     assertThat(Files.readLines(new File(blazeSpawnsPath + "/spawn_1/memory.limit_in_bytes"), UTF_8))
         .containsExactly("104857600");
   }
@@ -198,8 +198,8 @@ public class CgroupsInfoTest {
 
     assertThat(cgroup.exists()).isTrue();
     assertThat(cgroup.getCgroupDir().getPath()).isEqualTo(blazeSpawnsPath + "/spawn_1");
-    assertThat(cgroup.getType()).isEqualTo(CgroupsInfo.Type.SPAWN);
-    assertThat(cgroup.getVersion()).isEqualTo(CgroupsInfo.Version.V1);
+    assertThat(cgroup.type).isEqualTo(CgroupsInfo.Type.SPAWN);
+    assertThat(cgroup.version).isEqualTo(CgroupsInfo.Version.V1);
     // In reality, cgroups should still create this file automatically, but since we don't have
     // that in our tests, the memory limits file should not have been created since it isn't written
     // to.
@@ -217,8 +217,8 @@ public class CgroupsInfoTest {
 
     assertThat(cgroup.exists()).isTrue();
     assertThat(cgroup.getCgroupDir().getPath()).isEqualTo(blazeSpawnsPath + "/spawn_1.scope");
-    assertThat(cgroup.getType()).isEqualTo(CgroupsInfo.Type.SPAWN);
-    assertThat(cgroup.getVersion()).isEqualTo(CgroupsInfo.Version.V2);
+    assertThat(cgroup.type).isEqualTo(CgroupsInfo.Type.SPAWN);
+    assertThat(cgroup.version).isEqualTo(CgroupsInfo.Version.V2);
     assertThat(
             Files.readLines(new File(blazeSpawnsPath + "/spawn_1.scope/memory.oom.group"), UTF_8))
         .containsExactly("1");
@@ -239,8 +239,8 @@ public class CgroupsInfoTest {
 
     assertThat(cgroup.exists()).isTrue();
     assertThat(cgroup.getCgroupDir().getPath()).isEqualTo(blazeSpawnsPath + "/spawn_1.scope");
-    assertThat(cgroup.getType()).isEqualTo(CgroupsInfo.Type.SPAWN);
-    assertThat(cgroup.getVersion()).isEqualTo(CgroupsInfo.Version.V2);
+    assertThat(cgroup.type).isEqualTo(CgroupsInfo.Type.SPAWN);
+    assertThat(cgroup.version).isEqualTo(CgroupsInfo.Version.V2);
     // In reality, cgroups should still create this file automatically, but since we don't have
     // that in our tests, the memory limits files should not have been created since they aren't
     // written to.
@@ -313,7 +313,7 @@ public class CgroupsInfoTest {
     CgroupsInfo cgroup = CgroupsInfo.getRootCgroup(new File(pathString));
 
     assertThat(cgroup.getClass()).isEqualTo(InvalidCgroupsInfo.class);
-    assertThat(cgroup.getType()).isEqualTo(CgroupsInfo.Type.ROOT);
+    assertThat(cgroup.type).isEqualTo(CgroupsInfo.Type.ROOT);
   }
 
   @Test
@@ -330,13 +330,13 @@ public class CgroupsInfoTest {
 
     assertThat(createdBlazeSpawnsCgroup.getClass()).isEqualTo(InvalidCgroupsInfo.class);
     // Should still have the same version as the parent cgroup that attempted to create it.
-    assertThat(createdBlazeSpawnsCgroup.getVersion()).isEqualTo(CgroupsInfo.Version.V1);
-    assertThat(createdBlazeSpawnsCgroup.getType()).isEqualTo(CgroupsInfo.Type.BLAZE_SPAWNS);
+    assertThat(createdBlazeSpawnsCgroup.version).isEqualTo(CgroupsInfo.Version.V1);
+    assertThat(createdBlazeSpawnsCgroup.type).isEqualTo(CgroupsInfo.Type.BLAZE_SPAWNS);
 
     assertThat(createdSpawnCgroup.getClass()).isEqualTo(InvalidCgroupsInfo.class);
     // Should still have the same version as the parent cgroup that attempted to create it.
-    assertThat(createdSpawnCgroup.getVersion()).isEqualTo(CgroupsInfo.Version.V2);
-    assertThat(createdSpawnCgroup.getType()).isEqualTo(CgroupsInfo.Type.SPAWN);
+    assertThat(createdSpawnCgroup.version).isEqualTo(CgroupsInfo.Version.V2);
+    assertThat(createdSpawnCgroup.type).isEqualTo(CgroupsInfo.Type.SPAWN);
   }
 
   private String createFakeAbsoluteFile(String fileName, String... contents) throws IOException {

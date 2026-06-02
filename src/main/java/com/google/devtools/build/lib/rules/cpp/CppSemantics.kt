@@ -11,55 +11,58 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.cpp
 
-package com.google.devtools.build.lib.rules.cpp;
+import com.google.devtools.build.lib.analysis.RuleContext
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.RuleContext;
-import com.google.devtools.build.lib.analysis.starlark.StarlarkRuleContext;
-import com.google.devtools.build.lib.packages.AspectDescriptor;
-import com.google.devtools.build.lib.packages.Info;
-import com.google.devtools.build.lib.packages.RuleClass.ConfiguredTargetFactory.RuleErrorException;
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Sequence;
-import net.starlark.java.eval.StarlarkValue;
-
-/** Pluggable C++ compilation semantics. */
-public interface CppSemantics extends StarlarkValue {
-
-  // Transformed by Copybara on export
-  String RULES_CC_PREFIX = "@rules_cc+//";
-
-  /** No-op in Bazel */
-  @StarlarkMethod(
-      name = "validate_layering_check_features",
-      documented = false,
-      parameters = {
-        @Param(name = "ctx", named = true),
-        @Param(name = "cc_toolchain", named = true),
-        @Param(name = "unsupported_features", named = true),
-      })
-  default void validateLayeringCheckFeaturesForStarlark(
-      StarlarkRuleContext ruleContext, Info ccToolchainInfo, Sequence<?> unsupportedFeatures)
-      throws EvalException {
-    try {
-      validateLayeringCheckFeatures(
-          ruleContext.getRuleContext(),
-          ruleContext.getAspectDescriptor(),
-          CcToolchainProvider.wrap(ccToolchainInfo),
-          ImmutableSet.copyOf(
-              Sequence.cast(unsupportedFeatures, String.class, "unsupported_features")));
-    } catch (RuleErrorException e) {
-      throw new EvalException(e);
+/** Pluggable C++ compilation semantics.  */
+interface CppSemantics : net.starlark.java.eval.StarlarkValue {
+    /** No-op in Bazel  */
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "validate_layering_check_features",
+        documented = false,
+        parameters = [net.starlark.java.annot.Param(
+            name = "ctx",
+            named = true
+        ), net.starlark.java.annot.Param(
+            name = "cc_toolchain",
+            named = true
+        ), net.starlark.java.annot.Param(name = "unsupported_features", named = true)]
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun validateLayeringCheckFeaturesForStarlark(
+        ruleContext: StarlarkRuleContext,
+        ccToolchainInfo: Info,
+        unsupportedFeatures: net.starlark.java.eval.Sequence<*>?
+    ) {
+        try {
+            validateLayeringCheckFeatures(
+                ruleContext.getRuleContext(),
+                ruleContext.getAspectDescriptor(),
+                CcToolchainProvider.Companion.wrap(ccToolchainInfo),
+                com.google.common.collect.ImmutableSet.copyOf<String?>(
+                    net.starlark.java.eval.Sequence.cast<String?>(
+                        unsupportedFeatures,
+                        String::class.java,
+                        "unsupported_features"
+                    )
+                )
+            )
+        } catch (e: RuleErrorException) {
+            throw net.starlark.java.eval.EvalException(e)
+        }
     }
-  }
 
-  void validateLayeringCheckFeatures(
-      RuleContext ruleContext,
-      AspectDescriptor aspectDescriptor,
-      CcToolchainProvider ccToolchain,
-      ImmutableSet<String> unsupportedFeatures)
-      throws EvalException;
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun validateLayeringCheckFeatures(
+        ruleContext: RuleContext?,
+        aspectDescriptor: AspectDescriptor?,
+        ccToolchain: CcToolchainProvider?,
+        unsupportedFeatures: com.google.common.collect.ImmutableSet<String?>?
+    )
+
+    companion object {
+        // Transformed by Copybara on export
+        const val RULES_CC_PREFIX: String = "@rules_cc+//"
+    }
 }

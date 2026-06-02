@@ -11,25 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.core
 
-package com.google.devtools.build.lib.starlarkbuildapi.core;
+import com.google.devtools.build.docgen.annot.DocCategory
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.eval.StarlarkValue
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.eval.StarlarkValue;
-
-/** Interface for a build target. */
+/** Interface for a build target.  */
 @StarlarkBuiltin(
     name = "Target",
     category = DocCategory.BUILTIN,
-    doc =
-        "The BUILD target for a dependency. Appears in the fields of <code><a"
+    doc = ("The BUILD target for a dependency. Appears in the fields of <code><a"
             + " href='../builtins/ctx.html#attr'>ctx.attr</a></code> corresponding to <a"
             + " href='https://bazel.build/extending/rules#dependency_attributes'>dependency"
             + " attributes</a> (<code><a href='../toplevel/attr.html#label'>label</a></code> or"
             + " <code><a href='../toplevel/attr.html#label_list'>label_list</a></code>). Has the"
-            + " following fields:\n"
-            //
+            + " following fields:\n" //
             + "<ul>\n" //
             + "<li><h3 id='modules.Target.label'>label</h3>\n" //
             + "<code><a href='../builtins/Label.html'>Label</a> Target.label</code><br/>\n" //
@@ -42,4 +39,5 @@ import net.starlark.java.eval.StarlarkValue;
             + " the <code>in</code> operator (<code>SomeInfo in target</code>).<br/>\n" //
             + "<br/>\n" //
             + "</ul>")
-public interface TransitiveInfoCollectionApi extends StarlarkValue {}
+)
+interface TransitiveInfoCollectionApi : StarlarkValue

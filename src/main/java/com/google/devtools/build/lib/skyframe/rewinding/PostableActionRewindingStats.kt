@@ -11,26 +11,35 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.rewinding
 
-package com.google.devtools.build.lib.skyframe.rewinding;
+import com.google.devtools.build.lib.skyframe.proto.ActionRewind.ActionRewindEvent
 
-import static com.google.common.base.Preconditions.checkNotNull;
+/** Event that encapsulates data about action rewinding during a build.  */
+class PostableActionRewindingStats(
+    lostInputsCount: Int,
+    lostOutputsCount: Int,
+    rewoundActionCount: Int,
+    sameActionLostInputsCount: Int,
+    sameTopLevelKeyLostOutputsCount: Int,
+    actionRewindEvents: com.google.common.collect.ImmutableList<ActionRewindEvent?>?
+) : Postable {
+    val lostInputsCount: Int
+    val lostOutputsCount: Int
+    val rewoundActionCount: Int
+    val sameActionLostInputsCount: Int
+    val sameTopLevelKeyLostOutputsCount: Int
+    val actionRewindEvents: com.google.common.collect.ImmutableList<ActionRewindEvent?>?
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.skyframe.proto.ActionRewind.ActionRewindEvent;
-
-/** Event that encapsulates data about action rewinding during a build. */
-public record PostableActionRewindingStats(
-    int lostInputsCount,
-    int lostOutputsCount,
-    int rewoundActionCount,
-    int sameActionLostInputsCount,
-    int sameTopLevelKeyLostOutputsCount,
-    ImmutableList<ActionRewindEvent> actionRewindEvents)
-    implements ExtendedEventHandler.Postable {
-
-  public PostableActionRewindingStats {
-    checkNotNull(actionRewindEvents);
-  }
+    init {
+        this.actionRewindEvents = actionRewindEvents
+        this.sameTopLevelKeyLostOutputsCount = sameTopLevelKeyLostOutputsCount
+        this.sameActionLostInputsCount = sameActionLostInputsCount
+        this.rewoundActionCount = rewoundActionCount
+        this.lostOutputsCount = lostOutputsCount
+        this.lostInputsCount = lostInputsCount
+        com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableList<ActionRewindEvent?>?>(
+            actionRewindEvents
+        )
+    }
 }

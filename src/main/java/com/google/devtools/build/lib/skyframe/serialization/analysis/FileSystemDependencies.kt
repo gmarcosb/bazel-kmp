@@ -11,31 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
 /**
- * Union type for {@link FileDependencies}, {@link ListingDependencies} and {@link
- * NestedDependencies}.
- *
- * <p>At a structural level {@link FileDependencies} and {@link ListingDependencies} are very
- * similar. {@link ListingDependencies} could be modeled plainly as {@link FileDependencies}. The
- * crucial difference is that {@link FileDependencies#containsMatch(ImmutableSet<String>)} takes a
- * set of files and {@link ListingDependencies#matchesAnyDirectories(ImmutableSet<String>)} takes a
+ * Union type for [FileDependencies], [ListingDependencies] and [ ].
+ * 
+ * 
+ * At a structural level [FileDependencies] and [ListingDependencies] are very
+ * similar. [ListingDependencies] could be modeled plainly as [FileDependencies]. The
+ * crucial difference is that [&lt;][FileDependencies.containsMatch] takes a
+ * set of files and [&lt;][ListingDependencies.matchesAnyDirectories] takes a
  * set of directory names so the two types are deliberately separated.
  */
-sealed interface FileSystemDependencies
-    permits FileSystemDependencies.FileOpDependency, NestedDependencies {
-  /** Dependencies, excluding nested dependencies. */
-  sealed interface FileOpDependency extends FileSystemDependencies
-      permits FileDependencies, ListingDependencies {}
+internal interface FileSystemDependencies {
+    /** Dependencies, excluding nested dependencies.  */
+    interface FileOpDependency : FileSystemDependencies
 
-  /**
-   * True if data was missing for this dependency.
-   *
-   * <p>Dependencies are fetched from a remote cache without durability guarantees. It's possible
-   * for the corresponding data to be missing. Any missing data induces missing data on anything
-   * that references it. From an invalidation perspective, if {@link isMissingData} is true, the
-   * dependency should never allow a cache hit and always signal matching everything.
-   */
-  boolean isMissingData();
+
+    /**
+     * True if data was missing for this dependency.
+     * 
+     * 
+     * Dependencies are fetched from a remote cache without durability guarantees. It's possible
+     * for the corresponding data to be missing. Any missing data induces missing data on anything
+     * that references it. From an invalidation perspective, if [isMissingData] is true, the
+     * dependency should never allow a cache hit and always signal matching everything.
+     */
+    val isMissingData: Boolean
 }

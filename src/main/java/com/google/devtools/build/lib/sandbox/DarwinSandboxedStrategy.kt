@@ -11,21 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.sandbox
 
-package com.google.devtools.build.lib.sandbox;
+import com.google.devtools.build.lib.exec.AbstractSpawnStrategy
 
-import com.google.devtools.build.lib.exec.AbstractSpawnStrategy;
-import com.google.devtools.build.lib.exec.ExecutionOptions;
-import com.google.devtools.build.lib.exec.SpawnRunner;
-
-/** Strategy that uses sandboxing to execute a process, for Darwin */
-final class DarwinSandboxedStrategy extends AbstractSpawnStrategy {
-  DarwinSandboxedStrategy(SpawnRunner spawnRunner, ExecutionOptions executionOptions) {
-    super(spawnRunner, executionOptions);
-  }
-
-  @Override
-  public String toString() {
-    return "darwin-sandbox";
-  }
+/** Strategy that uses sandboxing to execute a process, for Darwin  */
+internal class DarwinSandboxedStrategy(spawnRunner: SpawnRunner?, executionOptions: ExecutionOptions?) :
+    AbstractSpawnStrategy(spawnRunner, executionOptions) {
+    override fun toString(): String {
+        return "darwin-sandbox"
+    }
 }

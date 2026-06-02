@@ -72,11 +72,11 @@ public class CompileBuildVariablesTest extends BuildViewTestCase {
 
     assertThat(
             variables.getStringVariable(
-                CompileBuildVariables.SOURCE_FILE.getVariableName(), PathMapper.NOOP))
+                    CompileBuildVariables.SOURCE_FILE.variableName, PathMapper.NOOP))
         .contains("x/bin.cc");
     assertThat(
             variables.getStringVariable(
-                CompileBuildVariables.OUTPUT_FILE.getVariableName(), PathMapper.NOOP))
+                    CompileBuildVariables.OUTPUT_FILE.variableName, PathMapper.NOOP))
         .contains("_objs/bin/bin");
   }
 
@@ -94,7 +94,7 @@ public class CompileBuildVariablesTest extends BuildViewTestCase {
 
     ImmutableList<String> userCopts =
         CcToolchainVariables.toStringList(
-            variables, CompileBuildVariables.USER_COMPILE_FLAGS.getVariableName(), PathMapper.NOOP);
+            variables, CompileBuildVariables.USER_COMPILE_FLAGS.variableName, PathMapper.NOOP);
     assertThat(userCopts)
         .containsAtLeastElementsIn(ImmutableList.<String>of("-foo", "-bar"))
         .inOrder();
@@ -114,7 +114,7 @@ public class CompileBuildVariablesTest extends BuildViewTestCase {
 
     ImmutableList<String> copts =
         CcToolchainVariables.toStringList(
-            variables, CompileBuildVariables.USER_COMPILE_FLAGS.getVariableName(), PathMapper.NOOP);
+            variables, CompileBuildVariables.USER_COMPILE_FLAGS.variableName, PathMapper.NOOP);
     assertThat(copts).contains("-foo");
   }
 
@@ -134,7 +134,7 @@ public class CompileBuildVariablesTest extends BuildViewTestCase {
 
     ImmutableList<String> copts =
         CcToolchainVariables.toStringList(
-            variables, CompileBuildVariables.USER_COMPILE_FLAGS.getVariableName(), PathMapper.NOOP);
+            variables, CompileBuildVariables.USER_COMPILE_FLAGS.variableName, PathMapper.NOOP);
     assertThat(copts)
         .containsExactlyElementsIn(ImmutableList.<String>of("-foo", "-bar", "-baz", "-per-file"))
         .inOrder();
@@ -156,7 +156,7 @@ public class CompileBuildVariablesTest extends BuildViewTestCase {
 
     ImmutableList<String> copts =
         CcToolchainVariables.toStringList(
-            variables, CompileBuildVariables.USER_COMPILE_FLAGS.getVariableName(), PathMapper.NOOP);
+            variables, CompileBuildVariables.USER_COMPILE_FLAGS.variableName, PathMapper.NOOP);
     assertThat(copts)
         .containsExactlyElementsIn(ImmutableList.<String>of("-foo", "-bar", "-baz", "-per-file"))
         .inOrder();
@@ -178,7 +178,7 @@ public class CompileBuildVariablesTest extends BuildViewTestCase {
 
     ImmutableList<String> copts =
         CcToolchainVariables.toStringList(
-            variables, CompileBuildVariables.USER_COMPILE_FLAGS.getVariableName(), PathMapper.NOOP);
+            variables, CompileBuildVariables.USER_COMPILE_FLAGS.variableName, PathMapper.NOOP);
     assertThat(copts).containsExactly("-foo").inOrder();
   }
 
@@ -200,7 +200,7 @@ public class CompileBuildVariablesTest extends BuildViewTestCase {
 
     ImmutableList<String> copts =
         CcToolchainVariables.toStringList(
-            variables, CompileBuildVariables.USER_COMPILE_FLAGS.getVariableName(), PathMapper.NOOP);
+            variables, CompileBuildVariables.USER_COMPILE_FLAGS.variableName, PathMapper.NOOP);
     assertThat(copts).contains("-foo");
     assertThat(copts).doesNotContain("-bar");
     assertThat(copts).doesNotContain("-baz");
@@ -291,7 +291,7 @@ public class CompileBuildVariablesTest extends BuildViewTestCase {
 
     assertThat(
             variables.getStringVariable(
-                CompileBuildVariables.PER_OBJECT_DEBUG_INFO_FILE.getVariableName(),
+                    CompileBuildVariables.PER_OBJECT_DEBUG_INFO_FILE.variableName,
                 PathMapper.NOOP))
         .isNotNull();
   }
@@ -315,7 +315,7 @@ public class CompileBuildVariablesTest extends BuildViewTestCase {
 
     assertThat(
             variables.getStringVariable(
-                CompileBuildVariables.IS_USING_FISSION.getVariableName(), PathMapper.NOOP))
+                    CompileBuildVariables.IS_USING_FISSION.variableName, PathMapper.NOOP))
         .isNotNull();
   }
 
@@ -359,13 +359,13 @@ public class CompileBuildVariablesTest extends BuildViewTestCase {
             bitcodeAction
                 .getCompileCommandLine()
                 .getVariables()
-                .isAvailable(CompileBuildVariables.IS_USING_FISSION.getVariableName()))
+                .isAvailable(CompileBuildVariables.IS_USING_FISSION.variableName))
         .isTrue();
     assertThat(
             bitcodeAction
                 .getCompileCommandLine()
                 .getVariables()
-                .isAvailable(CompileBuildVariables.PER_OBJECT_DEBUG_INFO_FILE.getVariableName()))
+                .isAvailable(CompileBuildVariables.PER_OBJECT_DEBUG_INFO_FILE.variableName))
         .isFalse();
 
     // We do pass per_object_debug_info_file to backend compiles
@@ -392,7 +392,7 @@ public class CompileBuildVariablesTest extends BuildViewTestCase {
 
     assertThat(
             variables.getStringVariable(
-                CompileBuildVariables.PER_OBJECT_DEBUG_INFO_FILE.getVariableName(),
+                    CompileBuildVariables.PER_OBJECT_DEBUG_INFO_FILE.variableName,
                 PathMapper.NOOP))
         .isNotNull();
   }
@@ -495,7 +495,7 @@ public class CompileBuildVariablesTest extends BuildViewTestCase {
     assertThat(
             CcToolchainVariables.toStringList(
                     variables,
-                    CompileBuildVariables.EXTERNAL_INCLUDE_PATHS.getVariableName(),
+                            CompileBuildVariables.EXTERNAL_INCLUDE_PATHS.variableName,
                     PathMapper.NOOP)
                 .stream()
                 .map(x -> removeOutDirectory(x))

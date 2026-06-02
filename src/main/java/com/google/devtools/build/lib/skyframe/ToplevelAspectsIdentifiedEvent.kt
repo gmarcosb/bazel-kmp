@@ -11,14 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
-
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
 /**
- * An event reporting the number of top-level aspects discovered in the {@link
- * BuildTopLevelAspectsDetailsFunction}.
+ * An event reporting the number of top-level aspects discovered in the [ ].
  */
-public record ToplevelAspectsIdentifiedEvent(
-    ConfiguredTargetKey baseConfiguredTargetKey, int numTopLevelAspects) implements Postable {}
+class ToplevelAspectsIdentifiedEvent(baseConfiguredTargetKey: ConfiguredTargetKey?, numTopLevelAspects: Int) :
+    Postable {
+    val baseConfiguredTargetKey: ConfiguredTargetKey?
+    val numTopLevelAspects: Int
+
+    init {
+        this.baseConfiguredTargetKey = baseConfiguredTargetKey
+        this.numTopLevelAspects = numTopLevelAspects
+    }
+}

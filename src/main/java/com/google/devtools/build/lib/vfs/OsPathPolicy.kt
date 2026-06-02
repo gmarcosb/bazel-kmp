@@ -11,119 +11,125 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import com.google.devtools.build.lib.util.OS;
+import com.google.devtools.build.lib.vfs.UnixOsPathPolicy
+import com.google.devtools.build.lib.vfs.WindowsOsPathPolicy
 
 /**
  * An interface class representing the differences in path style between different OSs.
- *
- * <p>Eg. case sensitivity, '/' mounts vs. 'C:/', etc.
+ * 
+ * 
+ * Eg. case sensitivity, '/' mounts vs. 'C:/', etc.
  */
-public interface OsPathPolicy {
-  int NORMALIZED = 0; // Path is normalized
-  int NEEDS_NORMALIZE = 1; // Path requires normalization
+interface OsPathPolicy {
+    /** Returns required normalization level, passed to [.normalize].  */
+    fun needsToNormalize(path: String?): Int
 
-  /** Returns required normalization level, passed to {@link #normalize}. */
-  int needsToNormalize(String path);
-
-  /**
-   * Returns the required normalization level if an already normalized string is concatenated with
-   * another normalized path fragment.
-   *
-   * <p>This method may be faster than {@link #needsToNormalize(String)}.
-   */
-  int needsToNormalizeSuffix(String normalizedSuffix);
-
-  /**
-   * Normalizes the passed string according to the passed normalization level.
-   *
-   * @param normalizationLevel The normalizationLevel from {@link #needsToNormalize}
-   */
-  String normalize(String path, int normalizationLevel);
-
-  /**
-   * Returns the length of the mount, eg. 1 for unix '/', 3 for Windows 'C:/'.
-   *
-   * <p>If the path is relative, 0 is returned
-   */
-  int getDriveStrLength(String path);
-
-  /** Returns whether the unnormalized character c is a separator. */
-  boolean isSeparator(char c);
-
-  /**
-   * Returns an additional character besides '/' for which {@link #isSeparator} is true. 0 means
-   * there is no such additional character.
-   */
-  char additionalSeparator();
-
-  /**
-   * Modifies the given string to be suitable for execution on the OS represented by this policy.
-   */
-  String postProcessPathStringForExecution(String callablePathString);
-
-  static OsPathPolicy of(OS os) {
-    return os == OS.WINDOWS ? WindowsOsPathPolicy.INSTANCE : UnixOsPathPolicy.INSTANCE;
-  }
-
-  /** The policy for the OS of the machine running the Bazel server's JVM. */
-  OsPathPolicy HOST_POLICY = getFilePathOs(OS.getCurrent());
-
-  static OsPathPolicy getFilePathOs() {
-    return HOST_POLICY;
-  }
-
-  static OsPathPolicy getFilePathOs(OS os) {
-    if (os != OS.WINDOWS) {
-      // We *should* use a case-insensitive policy for OS.DARWIN, but we currently don't handle
-      // this.
-      return UnixOsPathPolicy.INSTANCE;
-    }
-    return os == OS.getCurrent()
-        ? WindowsOsPathPolicy.INSTANCE
-        : WindowsOsPathPolicy.CROSS_PLATFORM_INSTANCE;
-  }
-
-  /** Utilities for implementations of {@link OsPathPolicy}. */
-  class Utils {
     /**
-     * Normalizes any '.' and '..' in-place in the segment array by shifting other segments to the
-     * front. Returns the remaining number of items.
+     * Returns the required normalization level if an already normalized string is concatenated with
+     * another normalized path fragment.
+     * 
+     * 
+     * This method may be faster than [.needsToNormalize].
      */
-    static int removeRelativePaths(String[] segments, int starti, boolean isAbsolute) {
-      int segmentCount = 0;
-      int shift = starti;
-      int n = segments.length;
-      for (int i = starti; i < n; ++i) {
-        String segment = segments[i];
-        switch (segment) {
-          case ".":
-            ++shift;
-            break;
-          case "..":
-            if (segmentCount > 0 && !segments[segmentCount - 1].equals("..")) {
-              // Remove the last segment, if there is one and it is not "..". This
-              // means that the resulting path can still contain ".."
-              // segments at the beginning.
-              segmentCount--;
-              shift += 2;
-              break;
-            } else if (isAbsolute) {
-              // If this is absolute, then just pop it the ".." off and remain at root
-              ++shift;
-              break;
+    fun needsToNormalizeSuffix(normalizedSuffix: String?): Int
+
+    /**
+     * Normalizes the passed string according to the passed normalization level.
+     * 
+     * @param normalizationLevel The normalizationLevel from [.needsToNormalize]
+     */
+    fun normalize(path: String?, normalizationLevel: Int): String?
+
+    /**
+     * Returns the length of the mount, eg. 1 for unix '/', 3 for Windows 'C:/'.
+     * 
+     * 
+     * If the path is relative, 0 is returned
+     */
+    fun getDriveStrLength(path: String?): Int
+
+    /** Returns whether the unnormalized character c is a separator.  */
+    fun isSeparator(c: Char): Boolean
+
+    /**
+     * Returns an additional character besides '/' for which [.isSeparator] is true. 0 means
+     * there is no such additional character.
+     */
+    fun additionalSeparator(): Char
+
+    /**
+     * Modifies the given string to be suitable for execution on the OS represented by this policy.
+     */
+    fun postProcessPathStringForExecution(callablePathString: String?): String?
+
+    /** Utilities for implementations of [OsPathPolicy].  */
+    object Utils {
+        /**
+         * Normalizes any '.' and '..' in-place in the segment array by shifting other segments to the
+         * front. Returns the remaining number of items.
+         */
+        fun removeRelativePaths(segments: Array<String>, starti: Int, isAbsolute: Boolean): Int {
+            var segmentCount = 0
+            var shift = starti
+            val n = segments.size
+            for (i in starti..<n) {
+                val segment = segments[i]
+                when (segment) {
+                    "." -> ++shift
+                    ".." -> {
+                        if (segmentCount > 0 && segments[segmentCount - 1] != "..") {
+                            // Remove the last segment, if there is one and it is not "..". This
+                            // means that the resulting path can still contain ".."
+                            // segments at the beginning.
+                            segmentCount--
+                            shift += 2
+                            break
+                        } else if (isAbsolute) {
+                            // If this is absolute, then just pop it the ".." off and remain at root
+                            ++shift
+                            break
+                        }
+                        ++segmentCount
+                        if (shift > 0) {
+                            segments[i - shift] = segments[i]
+                        }
+                    }
+
+                    else -> {
+                        ++segmentCount
+                        if (shift > 0) {
+                            segments[i - shift] = segments[i]
+                        }
+                    }
+                }
             }
-          // Fall through
-          default:
-            ++segmentCount;
-            if (shift > 0) {
-              segments[i - shift] = segments[i];
-            }
-            break;
+            return segmentCount
         }
-      }
-      return segmentCount;
     }
-  }
+
+    companion object {
+        fun of(os: com.google.devtools.build.lib.util.OS?): OsPathPolicy {
+            return if (os == com.google.devtools.build.lib.util.OS.WINDOWS) WindowsOsPathPolicy.Companion.INSTANCE else UnixOsPathPolicy.Companion.INSTANCE
+        }
+
+        fun getFilePathOs(os: com.google.devtools.build.lib.util.OS?): OsPathPolicy {
+            if (os != com.google.devtools.build.lib.util.OS.WINDOWS) {
+                // We *should* use a case-insensitive policy for OS.DARWIN, but we currently don't handle
+                // this.
+                return UnixOsPathPolicy.Companion.INSTANCE
+            }
+            return if (os == com.google.devtools.build.lib.util.OS.Companion.getCurrent())
+                WindowsOsPathPolicy.Companion.INSTANCE
+            else
+                WindowsOsPathPolicy.Companion.CROSS_PLATFORM_INSTANCE
+        }
+
+        const val NORMALIZED: Int = 0 // Path is normalized
+        const val NEEDS_NORMALIZE: Int = 1 // Path requires normalization
+
+        /** The policy for the OS of the machine running the Bazel server's JVM.  */
+        val filePathOs: OsPathPolicy = getFilePathOs(com.google.devtools.build.lib.util.OS.Companion.getCurrent())
+    }
 }

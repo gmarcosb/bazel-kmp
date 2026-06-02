@@ -11,32 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
-
-import com.google.devtools.build.lib.skybridge.SkybridgeInterface;
+package com.google.devtools.build.lib.util
 
 /**
- * An exception thrown by {@link BlazeService#globalInit} to signal an abrupt exit.
- *
- * <p>This exception carries the serialized {@code FailureDetail} protobuf message as a {@code
- * byte[]} to avoid exposing protobuf types in the interface jar.
+ * An exception thrown by [BlazeService.globalInit] to signal an abrupt exit.
+ * 
+ * 
+ * This exception carries the serialized `FailureDetail` protobuf message as a `byte[]` to avoid exposing protobuf types in the interface jar.
  */
-@SkybridgeInterface
-public class SerializedAbruptExitException extends Exception {
-  private final byte[] serializedFailureDetail;
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface
+class SerializedAbruptExitException : java.lang.Exception {
+    @kotlin.jvm.JvmField
+    val serializedFailureDetail: ByteArray?
 
-  public SerializedAbruptExitException(String message, byte[] serializedFailureDetail) {
-    super(message);
-    this.serializedFailureDetail = serializedFailureDetail;
-  }
+    constructor(message: String?, serializedFailureDetail: ByteArray?) : super(message) {
+        this.serializedFailureDetail = serializedFailureDetail
+    }
 
-  public SerializedAbruptExitException(
-      String message, byte[] serializedFailureDetail, Throwable cause) {
-    super(message, cause);
-    this.serializedFailureDetail = serializedFailureDetail;
-  }
-
-  public byte[] getSerializedFailureDetail() {
-    return serializedFailureDetail;
-  }
+    constructor(message: String?, serializedFailureDetail: ByteArray?, cause: Throwable?) : super(message, cause) {
+        this.serializedFailureDetail = serializedFailureDetail
+    }
 }

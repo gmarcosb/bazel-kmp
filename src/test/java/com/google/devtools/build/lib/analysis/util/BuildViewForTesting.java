@@ -160,10 +160,10 @@ public class BuildViewForTesting {
     InMemoryGraph graph = skyframeExecutor.getEvaluator().getInMemoryGraph();
     var proxyNodeKeys = ImmutableSet.<ConfiguredTargetKey>builder();
     ImmutableMap<ActionLookupKey, Version> newMap =
-        graph.getAllNodeEntries().stream()
+        graph.allNodeEntries.stream()
             .filter(
                 entry -> {
-                  SkyKey key = entry.getKey();
+                  SkyKey key = entry.key;
                   if (!(key instanceof ActionLookupKey)) {
                     return false;
                   }
@@ -183,7 +183,7 @@ public class BuildViewForTesting {
                     return true;
                   }
 
-                  var value = (ConfiguredTargetValue) entry.getValue();
+                  var value = (ConfiguredTargetValue) entry.value;
                   if (value == null) {
                     // The node has an error. No filtering is applied in this case.
                     return true;
@@ -198,7 +198,7 @@ public class BuildViewForTesting {
                   }
                   return true;
                 })
-            .collect(toImmutableMap(e -> (ActionLookupKey) e.getKey(), NodeEntry::getVersion));
+            .collect(toImmutableMap(e -> (ActionLookupKey) e.key, NodeEntry::getVersion));
     previousProxyNodeKeys = proxyNodeKeys.build();
     MapDifference<ActionLookupKey, Version> difference =
         Maps.difference(newMap, currentActionLookupKeys);

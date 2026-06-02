@@ -11,225 +11,210 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.skyframe.AbstractSkyKey;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import javax.annotation.Nonnull;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * A value that represents the result of looking for the existence of a package that owns a
- * specific directory path. Compare with {@link PackageLookupValue}, which deals with existence of
+ * specific directory path. Compare with [PackageLookupValue], which deals with existence of
  * a specific package.
  */
-public abstract class ContainingPackageLookupValue implements SkyValue {
+abstract class ContainingPackageLookupValue : SkyValue {
+    /** Returns whether there is a containing package.  */
+    abstract fun hasContainingPackage(): Boolean
 
-  @SerializationConstant public static final NoContainingPackage NONE = new NoContainingPackage();
+    /** If there is a containing package, returns its name.  */
+    @kotlin.jvm.JvmField
+    abstract val containingPackageName: PackageIdentifier
 
-  /** Returns whether there is a containing package. */
-  public abstract boolean hasContainingPackage();
+    /** If there is a containing package, returns its package root  */
+    @kotlin.jvm.JvmField
+    abstract val containingPackageRoot: Root?
 
-  /** If there is a containing package, returns its name. */
-  public abstract PackageIdentifier getContainingPackageName();
+    open val reasonForNoContainingPackage: String?
+        /**
+         * If there is not a containing package, returns a reason why (this is usually the reason the
+         * outer-most directory isn't a package).
+         */
+        get() {
+            throw java.lang.IllegalStateException()
+        }
 
-  /** If there is a containing package, returns its package root */
-  public abstract Root getContainingPackageRoot();
+    /** [com.google.devtools.build.skyframe.SkyKey] for `ContainingPackageLookupValue`.  */
+    @AutoCodec
+    class Key private constructor(arg: PackageIdentifier?) : AbstractSkyKey<PackageIdentifier?>(arg) {
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.CONTAINING_PACKAGE_LOOKUP
+        }
 
-  /**
-   * If there is not a containing package, returns a reason why (this is usually the reason the
-   * outer-most directory isn't a package).
-   */
-  public String getReasonForNoContainingPackage() {
-    throw new IllegalStateException();
-  }
+        val skyKeyInterner: SkyKeyInterner<Key?>
+            get() = com.google.devtools.build.lib.skyframe.ContainingPackageLookupValue.Key.Companion.interner
 
-  public static Key key(PackageIdentifier id) {
-    Preconditions.checkArgument(!id.getPackageFragment().isAbsolute(), id);
-    return Key.create(id);
-  }
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
 
-  static String getErrorMessageForLabelCrossingPackageBoundary(
-      Root pkgRoot,
-      Label label,
-      ContainingPackageLookupValue containingPkgLookupValue) {
-    PackageIdentifier containingPkg = containingPkgLookupValue.getContainingPackageName();
-    boolean crossesPackageBoundaryBelow =
-        containingPkg.getSourceRoot().startsWith(label.getPackageIdentifier().getSourceRoot());
-    PathFragment labelNameFragment = PathFragment.create(label.name);
-    String message;
-    if (crossesPackageBoundaryBelow) {
-      message =
-          String.format("Label '%s' is invalid because '%s' is a subpackage", label, containingPkg);
-    } else {
-      message =
-          String.format(
-              "Label '%s' is invalid because '%s' is not a package", label, label.getPackageName());
+            private fun create(arg: PackageIdentifier?): Key {
+                return com.google.devtools.build.lib.skyframe.ContainingPackageLookupValue.Key.Companion.interner.intern(
+                    com.google.devtools.build.lib.skyframe.ContainingPackageLookupValue.Key(arg)
+                )
+            }
+
+            @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+            @AutoCodec.Interner
+            fun intern(key: Key?): Key {
+                return com.google.devtools.build.lib.skyframe.ContainingPackageLookupValue.Key.Companion.interner.intern(
+                    key
+                )
+            }
+        }
     }
 
-    Root containingRoot = containingPkgLookupValue.getContainingPackageRoot();
-    if (pkgRoot.equals(containingRoot)) {
-      PathFragment containingPkgFragment = containingPkg.getPackageFragment();
-      PathFragment labelNameInContainingPackage =
-          crossesPackageBoundaryBelow
-              ? labelNameFragment.subFragment(
-                  containingPkgFragment.segmentCount()
-                      - label.getPackageFragment().segmentCount(),
-                  labelNameFragment.segmentCount())
-              : label.toPathFragment().relativeTo(containingPkgFragment);
-      message += "; perhaps you meant to put the colon here: '";
-      if (containingPkg.getRepository().isMain()) {
-        message += "//";
-      }
-      message += containingPkg + ":" + labelNameInContainingPackage + "'?";
-    } else {
-      message +=
-          "; have you deleted "
-              + containingPkg
-              + "/BUILD? "
-              + "If so, use the --deleted_packages="
-              + containingPkg
-              + " option";
-    }
-    return message;
-  }
+    /** Value indicating there is no containing package.  */
+    class NoContainingPackage : ContainingPackageLookupValue {
+        private val reason: String?
 
-  /** {@link com.google.devtools.build.skyframe.SkyKey} for {@code ContainingPackageLookupValue}. */
-  @AutoCodec
-  public static class Key extends AbstractSkyKey<PackageIdentifier> {
-    private static final SkyKeyInterner<Key> interner = SkyKey.newInterner();
+        private constructor() {
+            this.reason = null
+        }
 
-    private Key(PackageIdentifier arg) {
-      super(arg);
+        private constructor(@javax.annotation.Nonnull reason: String) {
+            this.reason = reason
+        }
+
+        override fun hasContainingPackage(): Boolean {
+            return false
+        }
+
+        override fun getContainingPackageName(): PackageIdentifier? {
+            throw java.lang.IllegalStateException()
+        }
+
+        override fun getContainingPackageRoot(): Root? {
+            throw java.lang.IllegalStateException()
+        }
+
+        override fun toString(): String {
+            return getClass().getName()
+        }
+
+        override fun getReasonForNoContainingPackage(): String? {
+            return reason
+        }
     }
 
-    private static Key create(PackageIdentifier arg) {
-      return interner.intern(new Key(arg));
+    /** A successful lookup value.  */
+    @com.google.common.annotations.VisibleForTesting
+    class ContainingPackage private constructor(containingPackage: PackageIdentifier, containingPackageRoot: Root) :
+        ContainingPackageLookupValue() {
+        private val containingPackage: PackageIdentifier
+        private val containingPackageRoot: Root
+
+        init {
+            this.containingPackage = containingPackage
+            this.containingPackageRoot = containingPackageRoot
+        }
+
+        override fun hasContainingPackage(): Boolean {
+            return true
+        }
+
+        override fun getContainingPackageName(): PackageIdentifier {
+            return containingPackage
+        }
+
+        override fun getContainingPackageRoot(): Root {
+            return containingPackageRoot
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            if (this === obj) {
+                return true
+            }
+            if (obj !is ContainingPackage) {
+                return false
+            }
+            return containingPackage.equals(obj.containingPackage)
+                    && containingPackageRoot == obj.containingPackageRoot
+        }
+
+        override fun hashCode(): Int {
+            return containingPackage.hashCode()
+        }
+
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(this)
+                .add("containingPackage", containingPackage)
+                .add("containingPackageRoot", containingPackageRoot)
+                .toString()
+        }
     }
 
-    @VisibleForSerialization
-    @AutoCodec.Interner
-    static Key intern(Key key) {
-      return interner.intern(key);
+    companion object {
+        @kotlin.jvm.JvmField
+        @SerializationConstant
+        val NONE: NoContainingPackage = NoContainingPackage()
+
+        fun key(id: PackageIdentifier): Key {
+            com.google.common.base.Preconditions.checkArgument(!id.getPackageFragment().isAbsolute(), id)
+            return com.google.devtools.build.lib.skyframe.ContainingPackageLookupValue.Key.Companion.create(id)
+        }
+
+        fun getErrorMessageForLabelCrossingPackageBoundary(
+            pkgRoot: Root,
+            label: Label,
+            containingPkgLookupValue: ContainingPackageLookupValue
+        ): String {
+            val containingPkg: PackageIdentifier = containingPkgLookupValue.containingPackageName
+            val crossesPackageBoundaryBelow: Boolean =
+                containingPkg.getSourceRoot().startsWith(label.getPackageIdentifier().getSourceRoot())
+            val labelNameFragment: PathFragment = PathFragment.create(label.name)
+            var message: String
+            if (crossesPackageBoundaryBelow) {
+                message =
+                    java.lang.String.format("Label '%s' is invalid because '%s' is a subpackage", label, containingPkg)
+            } else {
+                message =
+                    java.lang.String.format(
+                        "Label '%s' is invalid because '%s' is not a package", label, label.getPackageName()
+                    )
+            }
+
+            val containingRoot: Root? = containingPkgLookupValue.containingPackageRoot
+            if (pkgRoot == containingRoot) {
+                val containingPkgFragment: PathFragment = containingPkg.getPackageFragment()
+                val labelNameInContainingPackage: PathFragment? =
+                    if (crossesPackageBoundaryBelow)
+                        labelNameFragment.subFragment(
+                            containingPkgFragment.segmentCount()
+                                    - label.getPackageFragment().segmentCount(),
+                            labelNameFragment.segmentCount()
+                        )
+                    else
+                        label.toPathFragment().relativeTo(containingPkgFragment)
+                message += "; perhaps you meant to put the colon here: '"
+                if (containingPkg.getRepository().isMain()) {
+                    message += "//"
+                }
+                message += containingPkg.toString() + ":" + labelNameInContainingPackage + "'?"
+            } else {
+                message +=
+                    ("; have you deleted "
+                            + containingPkg
+                            + "/BUILD? "
+                            + "If so, use the --deleted_packages="
+                            + containingPkg
+                            + " option")
+            }
+            return message
+        }
+
+        fun withContainingPackage(pkgId: PackageIdentifier, root: Root): ContainingPackage {
+            return ContainingPackage(pkgId, root)
+        }
+
+        fun noContainingPackage(reason: String): ContainingPackageLookupValue {
+            return NoContainingPackage(reason)
+        }
     }
-
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.CONTAINING_PACKAGE_LOOKUP;
-    }
-
-    @Override
-    public SkyKeyInterner<Key> getSkyKeyInterner() {
-      return interner;
-    }
-  }
-
-  public static ContainingPackage withContainingPackage(PackageIdentifier pkgId, Root root) {
-    return new ContainingPackage(pkgId, root);
-  }
-
-  static ContainingPackageLookupValue noContainingPackage(String reason) {
-    return new NoContainingPackage(reason);
-  }
-
-  /** Value indicating there is no containing package. */
-  public static class NoContainingPackage extends ContainingPackageLookupValue {
-    private final String reason;
-
-    private NoContainingPackage() {
-      this.reason = null;
-    }
-
-    private NoContainingPackage(@Nonnull String reason) {
-      this.reason = reason;
-    }
-
-    @Override
-    public boolean hasContainingPackage() {
-      return false;
-    }
-
-    @Override
-    public PackageIdentifier getContainingPackageName() {
-      throw new IllegalStateException();
-    }
-
-    @Override
-    public Root getContainingPackageRoot() {
-      throw new IllegalStateException();
-    }
-
-    @Override
-    public String toString() {
-      return getClass().getName();
-    }
-
-    @Override
-    public String getReasonForNoContainingPackage() {
-      return reason;
-    }
-  }
-
-  /** A successful lookup value. */
-  @VisibleForTesting
-  public static class ContainingPackage extends ContainingPackageLookupValue {
-    private final PackageIdentifier containingPackage;
-    private final Root containingPackageRoot;
-
-    private ContainingPackage(PackageIdentifier containingPackage, Root containingPackageRoot) {
-      this.containingPackage = containingPackage;
-      this.containingPackageRoot = containingPackageRoot;
-    }
-
-    @Override
-    public boolean hasContainingPackage() {
-      return true;
-    }
-
-    @Override
-    public PackageIdentifier getContainingPackageName() {
-      return containingPackage;
-    }
-
-    @Override
-    public Root getContainingPackageRoot() {
-      return containingPackageRoot;
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      if (this == obj) {
-        return true;
-      }
-      if (!(obj instanceof ContainingPackage other)) {
-        return false;
-      }
-      return containingPackage.equals(other.containingPackage)
-          && containingPackageRoot.equals(other.containingPackageRoot);
-    }
-
-    @Override
-    public int hashCode() {
-      return containingPackage.hashCode();
-    }
-
-    @Override
-    public String toString() {
-      return MoreObjects.toStringHelper(this)
-          .add("containingPackage", containingPackage)
-          .add("containingPackageRoot", containingPackageRoot)
-          .toString();
-    }
-  }
 }

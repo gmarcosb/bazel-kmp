@@ -11,127 +11,136 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.unsafe;
-
-import com.google.common.base.Ascii;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.VarHandle;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
-import java.util.Arrays;
+package com.google.devtools.build.lib.unsafe
 
 /**
  * Provides direct access to the string implementation used by JDK9.
- *
- * <p>As of JDK9, a string is two fields: <code>byte coder</code>, and <code>byte[] value</code>.
- * The <code>coder</code> field has value 0 if the encoding is LATIN-1, and 2 if the encoding is
+ * 
+ * 
+ * As of JDK9, a string is two fields: `byte coder`, and `byte[] value`.
+ * The `coder` field has value 0 if the encoding is LATIN-1, and 2 if the encoding is
  * UTF-16 (the classic JDK8 encoding).
- *
- * <p>The <code>value</code> field contains the actual bytes.
+ * 
+ * 
+ * The `value` field contains the actual bytes.
  */
-public final class StringUnsafe {
-  // Fields corresponding to the coder
-  public static final byte LATIN1 = 0;
-  public static final byte UTF16 = 1;
+object StringUnsafe {
+    // Fields corresponding to the coder
+    const val LATIN1: Byte = 0
+    const val UTF16: Byte = 1
 
-  private static final MethodHandle CONSTRUCTOR;
-  private static final MethodHandle HAS_NEGATIVES;
-  private static final VarHandle VALUE_HANDLE;
-  private static final VarHandle CODE_HANDLE;
+    private val CONSTRUCTOR: java.lang.invoke.MethodHandle
+    private val HAS_NEGATIVES: java.lang.invoke.MethodHandle
+    private val VALUE_HANDLE: java.lang.invoke.VarHandle
+    private val CODE_HANDLE: java.lang.invoke.VarHandle
 
-  static {
-    try {
-      Class<?> stringCoding = Class.forName("java.lang.StringCoding");
-      Method hasNegatives =
-          stringCoding.getDeclaredMethod("hasNegatives", byte[].class, int.class, int.class);
-      hasNegatives.setAccessible(true);
-      HAS_NEGATIVES = MethodHandles.lookup().unreflect(hasNegatives);
+    init {
+        try {
+            val stringCoding: java.lang.Class<*> = java.lang.Class.forName("java.lang.StringCoding")
+            val hasNegatives: java.lang.reflect.Method =
+                stringCoding.getDeclaredMethod(
+                    "hasNegatives",
+                    ByteArray::class.java,
+                    Int::class.javaPrimitiveType,
+                    Int::class.javaPrimitiveType
+                )
+            hasNegatives.setAccessible(true)
+            HAS_NEGATIVES = java.lang.invoke.MethodHandles.lookup().unreflect(hasNegatives)
 
-      Constructor<String> constructor =
-          String.class.getDeclaredConstructor(byte[].class, byte.class);
-      constructor.setAccessible(true);
-      CONSTRUCTOR = MethodHandles.lookup().unreflectConstructor(constructor);
+            val constructor: java.lang.reflect.Constructor<String?> =
+                String::class.java.getDeclaredConstructor(ByteArray::class.java, Byte::class.javaPrimitiveType)
+            constructor.setAccessible(true)
+            CONSTRUCTOR = java.lang.invoke.MethodHandles.lookup().unreflectConstructor(constructor)
 
-      var stringLookup = MethodHandles.privateLookupIn(String.class, MethodHandles.lookup());
-      VALUE_HANDLE = stringLookup.unreflectVarHandle(String.class.getDeclaredField("value"));
-      CODE_HANDLE = stringLookup.unreflectVarHandle(String.class.getDeclaredField("coder"));
-    } catch (ReflectiveOperationException e) {
-      throw new IllegalStateException(e);
+            val stringLookup: java.lang.invoke.MethodHandles.Lookup = java.lang.invoke.MethodHandles.privateLookupIn(
+                String::class.java, java.lang.invoke.MethodHandles.lookup()
+            )
+            VALUE_HANDLE = stringLookup.unreflectVarHandle(String::class.java.getDeclaredField("value"))
+            CODE_HANDLE = stringLookup.unreflectVarHandle(String::class.java.getDeclaredField("coder"))
+        } catch (e: java.lang.ReflectiveOperationException) {
+            throw java.lang.IllegalStateException(e)
+        }
     }
-  }
 
-  /** Returns the coder used for this string. See {@link #LATIN1} and {@link #UTF16}. */
-  public static byte getCoder(String obj) {
-    return (byte) CODE_HANDLE.get(obj);
-  }
-
-  /**
-   * Returns the internal byte array, encoded according to {@link #getCoder}.
-   *
-   * <p>Use of this is unsafe. The representation may change from one JDK version to the next.
-   * Ensure you do not mutate this byte array in any way.
-   */
-  public static byte[] getByteArray(String obj) {
-    return (byte[]) VALUE_HANDLE.get(obj);
-  }
-
-  /**
-   * Return the internal byte array of a String using Bazel's internal encoding (see {@link
-   * com.google.devtools.build.lib.util.StringEncoding}).
-   *
-   * <p>Callers must not mutate the returned byte array.
-   */
-  public static byte[] getInternalStringBytes(String obj) {
-    // This is both a performance optimization and a correctness check: internal strings must
-    // always be coded in Latin-1, otherwise they have been constructed out of a non-ASCII string
-    // that hasn't been converted to internal encoding.
-    if (getCoder(obj) != LATIN1) {
-      // Truncation is ASCII only and thus doesn't change the encoding.
-      String truncatedString = Ascii.truncate(obj, 1000, "...");
-      throw new IllegalArgumentException(
-          String.format(
-              "Expected internal string with Latin-1 coder, got: %s (%s)",
-              truncatedString, Arrays.toString(getByteArray(truncatedString))));
+    /** Returns the coder used for this string. See [.LATIN1] and [.UTF16].  */
+    @kotlin.jvm.JvmStatic
+    fun getCoder(obj: String?): Byte {
+        return CODE_HANDLE.get(obj) as Byte
     }
-    return getByteArray(obj);
-  }
 
-  /** Returns whether the string is ASCII-only. */
-  public static boolean isAscii(String obj) {
-    // This implementation uses java.lang.StringCoding#hasNegatives, which is implemented as a JVM
-    // intrinsic. On a machine with 512-bit SIMD registers, this is 5x as fast as a naive loop
-    // over getByteArray(obj), which in turn is 5x as fast as obj.chars().anyMatch(c -> c > 0x7F) in
-    // a JMH benchmark.
-
-    if (getCoder(obj) != LATIN1) {
-      // Latin-1 is a superset of ASCII, so we must have non-ASCII characters.
-      return false;
+    /**
+     * Returns the internal byte array, encoded according to [.getCoder].
+     * 
+     * 
+     * Use of this is unsafe. The representation may change from one JDK version to the next.
+     * Ensure you do not mutate this byte array in any way.
+     */
+    @kotlin.jvm.JvmStatic
+    fun getByteArray(obj: String?): ByteArray {
+        return VALUE_HANDLE.get(obj) as ByteArray
     }
-    byte[] bytes = getByteArray(obj);
-    try {
-      return !(boolean) HAS_NEGATIVES.invokeExact(bytes, 0, bytes.length);
-    } catch (Throwable t) {
-      // hasNegatives doesn't throw.
-      throw new IllegalStateException(t);
-    }
-  }
 
-  /**
-   * Constructs a new string from a byte array and coder.
-   *
-   * <p>The new string shares the byte array instance, which must not be modified after calling this
-   * method.
-   */
-  public static String newInstance(byte[] bytes, byte coder) {
-    try {
-      return (String) CONSTRUCTOR.invokeExact(bytes, coder);
-    } catch (Throwable e) {
-      // The constructor never throws, so this is not expected.
-      throw new IllegalStateException(
-          "Could not instantiate string: " + Arrays.toString(bytes) + ", " + coder, e);
+    /**
+     * Return the internal byte array of a String using Bazel's internal encoding (see [ ]).
+     * 
+     * 
+     * Callers must not mutate the returned byte array.
+     */
+    @kotlin.jvm.JvmStatic
+    fun getInternalStringBytes(obj: String): ByteArray {
+        // This is both a performance optimization and a correctness check: internal strings must
+        // always be coded in Latin-1, otherwise they have been constructed out of a non-ASCII string
+        // that hasn't been converted to internal encoding.
+        if (getCoder(obj) != LATIN1) {
+            // Truncation is ASCII only and thus doesn't change the encoding.
+            val truncatedString: String = com.google.common.base.Ascii.truncate(obj, 1000, "...")
+            throw java.lang.IllegalArgumentException(
+                java.lang.String.format(
+                    "Expected internal string with Latin-1 coder, got: %s (%s)",
+                    truncatedString, java.util.Arrays.toString(getByteArray(truncatedString))
+                )
+            )
+        }
+        return getByteArray(obj)
     }
-  }
 
-  private StringUnsafe() {}
+    /** Returns whether the string is ASCII-only.  */
+    @kotlin.jvm.JvmStatic
+    fun isAscii(obj: String?): Boolean {
+        // This implementation uses java.lang.StringCoding#hasNegatives, which is implemented as a JVM
+        // intrinsic. On a machine with 512-bit SIMD registers, this is 5x as fast as a naive loop
+        // over getByteArray(obj), which in turn is 5x as fast as obj.chars().anyMatch(c -> c > 0x7F) in
+        // a JMH benchmark.
+
+        if (getCoder(obj) != LATIN1) {
+            // Latin-1 is a superset of ASCII, so we must have non-ASCII characters.
+            return false
+        }
+        val bytes = getByteArray(obj)
+        try {
+            return !HAS_NEGATIVES.invokeExact(bytes, 0, bytes.size) as Boolean
+        } catch (t: Throwable) {
+            // hasNegatives doesn't throw.
+            throw java.lang.IllegalStateException(t)
+        }
+    }
+
+    /**
+     * Constructs a new string from a byte array and coder.
+     * 
+     * 
+     * The new string shares the byte array instance, which must not be modified after calling this
+     * method.
+     */
+    @kotlin.jvm.JvmStatic
+    fun newInstance(bytes: ByteArray, coder: Byte): String? {
+        try {
+            return CONSTRUCTOR.invokeExact(bytes, coder) as String?
+        } catch (e: Throwable) {
+            // The constructor never throws, so this is not expected.
+            throw java.lang.IllegalStateException(
+                "Could not instantiate string: " + java.util.Arrays.toString(bytes) + ", " + coder, e
+            )
+        }
+    }
 }

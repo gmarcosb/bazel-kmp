@@ -11,275 +11,262 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.windows;
+package com.google.devtools.build.lib.windows
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.ProfilerTask;
-import com.google.devtools.build.lib.util.StringEncoding;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileStatus;
-import com.google.devtools.build.lib.vfs.JavaIoFileSystem;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.SymlinkTargetType;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
-import java.nio.file.Path;
-import java.nio.file.attribute.DosFileAttributes;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
 
-/** File system implementation for Windows. */
+/** File system implementation for Windows.  */
 @ThreadSafe
-public class WindowsFileSystem extends JavaIoFileSystem {
-
-  public static final LinkOption[] NO_OPTIONS = new LinkOption[0];
-  public static final LinkOption[] NO_FOLLOW = new LinkOption[] {LinkOption.NOFOLLOW_LINKS};
-
-  private final boolean createSymbolicLinks;
-
-  public WindowsFileSystem(DigestHashFunction hashFunction, boolean createSymbolicLinks) {
-    super(hashFunction);
-    this.createSymbolicLinks = createSymbolicLinks;
-  }
-
-  @Override
-  public String getFileSystemType(PathFragment path) {
-    // TODO(laszlocsomor): implement this properly, i.e. actually query this information from
-    // somewhere (java.nio.Filesystem? System.getProperty? implement JNI method and use WinAPI?).
-    return "ntfs";
-  }
-
-  @Override
-  public boolean delete(PathFragment path) throws IOException {
-    long startTime = Profiler.instance().nanoTimeMaybe();
-    try {
-      return WindowsFileOperations.deletePath(
-          StringEncoding.internalToPlatform(path.getPathString()));
-    } catch (java.nio.file.DirectoryNotEmptyException e) {
-      throw new IOException(path.getPathString() + ERR_DIRECTORY_NOT_EMPTY, e);
-    } catch (java.nio.file.AccessDeniedException e) {
-      throw new IOException(path.getPathString() + ERR_PERMISSION_DENIED, e);
-    } finally {
-      Profiler.instance().logSimpleTask(startTime, ProfilerTask.VFS_DELETE, path.getPathString());
-    }
-  }
-
-  @Override
-  public void createSymbolicLink(
-      PathFragment linkPath, PathFragment targetFragment, SymlinkTargetType type)
-      throws IOException {
-    PathFragment targetPath =
-        targetFragment.isAbsolute()
-            ? targetFragment
-            : linkPath.getParentDirectory().getRelative(targetFragment);
-
-    FileStatus stat = statIfFound(targetPath, /* followSymlinks= */ true);
-    boolean existingFile = stat != null && stat.isFile();
-    boolean existingDirectory = stat != null && stat.isDirectory();
-
-    try {
-      Path link = getNioPath(linkPath);
-      Path target = getNioPath(targetPath);
-
-      if (!createSymbolicLinks && existingFile) {
-        // If symlinks aren't enabled and the target is an existing file, fall back to a copy.
-        Files.copy(target, link);
-      } else if (createSymbolicLinks
-          && (existingFile || (!existingDirectory && type != SymlinkTargetType.DIRECTORY))) {
-        // If symlinks are enabled and the target is not an existing or future directory, create a
-        // symlink.
-        WindowsFileOperations.createSymlink(link.toString(), target.toString());
-      } else {
-        // Otherwise, create a junction.
-        WindowsFileOperations.createJunction(link.toString(), target.toString());
-      }
-    } catch (IOException e) {
-      throw translateNioToIoException(linkPath, e);
-    }
-  }
-
-  @Override
-  public PathFragment readSymbolicLink(PathFragment path) throws IOException {
-    java.nio.file.Path nioPath = getNioPath(path);
-    return PathFragment.create(
-        StringEncoding.platformToInternal(
-            WindowsFileOperations.readSymlinkOrJunction(nioPath.toString())));
-  }
-
-  @Override
-  public boolean supportsSymbolicLinksNatively(PathFragment path) {
-    return createSymbolicLinks;
-  }
-
-  @Override
-  public boolean mayBeCaseOrNormalizationInsensitive() {
-    return true;
-  }
-
-  @Override
-  protected boolean fileIsSymbolicLink(Path file) {
-    try {
-      if (isSymlinkOrJunction(file)) {
-        return true;
-      }
-    } catch (IOException e) {
-      // Did not work, try in another way
-    }
-    return super.fileIsSymbolicLink(file);
-  }
-
-  public static LinkOption[] symlinkOpts(boolean followSymlinks) {
-    return followSymlinks ? NO_OPTIONS : NO_FOLLOW;
-  }
-
-  @Override
-  public FileStatus stat(PathFragment path, boolean followSymlinks) throws IOException {
-    Path nioPath = getNioPath(path);
-    final DosFileAttributes attributes;
-    try {
-      attributes = getAttribs(nioPath, followSymlinks);
-    } catch (IOException e) {
-      throw new FileNotFoundException(path + ERR_NO_SUCH_FILE_OR_DIR);
+class WindowsFileSystem(hashFunction: DigestHashFunction?, private val createSymbolicLinks: Boolean) :
+    JavaIoFileSystem(hashFunction) {
+    override fun getFileSystemType(path: PathFragment?): String {
+        // TODO(laszlocsomor): implement this properly, i.e. actually query this information from
+        // somewhere (java.nio.Filesystem? System.getProperty? implement JNI method and use WinAPI?).
+        return "ntfs"
     }
 
-    FileStatus status =
-        new FileStatus() {
-          @Nullable volatile Boolean isSymbolicLink; // null if not yet known
-          volatile long lastChangeTime = -1;
-
-          @Override
-          public boolean isFile() {
-            return !isSymbolicLink() && (attributes.isRegularFile() || isSpecialFile());
-          }
-
-          @Override
-          public boolean isSpecialFile() {
-            // attributes.isOther() returns false for symlinks but returns true for junctions.
-            // Bazel treats junctions like symlinks. So let's return false here for junctions.
-            // This fixes https://github.com/bazelbuild/bazel/issues/9176
-            return !isSymbolicLink() && attributes.isOther();
-          }
-
-          @Override
-          public boolean isDirectory() {
-            return !isSymbolicLink() && attributes.isDirectory();
-          }
-
-          @Override
-          public boolean isSymbolicLink() {
-            if (isSymbolicLink == null) {
-              isSymbolicLink = !followSymlinks && fileIsSymbolicLink(nioPath);
-            }
-            return isSymbolicLink;
-          }
-
-          @Override
-          public long getSize() {
-            return attributes.size();
-          }
-
-          @Override
-          public long getLastModifiedTime() {
-            return attributes.lastModifiedTime().toMillis();
-          }
-
-          @Override
-          public long getLastChangeTime() throws IOException {
-            if (lastChangeTime == -1) {
-              lastChangeTime =
-                  WindowsFileOperations.getLastChangeTime(
-                      getNioPath(path).toString(), followSymlinks);
-            }
-            return lastChangeTime;
-          }
-
-          @Override
-          public long getNodeId() {
-            // TODO(bazel-team): Consider making use of attributes.fileKey().
-            return -1;
-          }
-
-          @Override
-          public int getPermissions() {
-            // Files on Windows are implicitly readable and executable.
-            return 0555 | (attributes.isReadOnly() ? 0 : 0200);
-          }
-        };
-
-    return status;
-  }
-
-  @Override
-  public boolean isSymbolicLink(PathFragment path) {
-    return fileIsSymbolicLink(getNioPath(path));
-  }
-
-  @Override
-  public boolean isDirectory(PathFragment path, boolean followSymlinks) {
-    if (!followSymlinks) {
-      try {
-        if (isSymlinkOrJunction(getNioPath(path))) {
-          return false;
+    @Throws(IOException::class)
+    override fun delete(path: PathFragment): Boolean {
+        val startTime: Long = Profiler.instance().nanoTimeMaybe()
+        try {
+            return WindowsFileOperations.deletePath(
+                StringEncoding.internalToPlatform(path.getPathString())
+            )
+        } catch (e: DirectoryNotEmptyException) {
+            throw IOException(
+                path.getPathString() + com.google.devtools.build.lib.vfs.FileSystem.Companion.ERR_DIRECTORY_NOT_EMPTY,
+                e
+            )
+        } catch (e: AccessDeniedException) {
+            throw IOException(
+                path.getPathString() + com.google.devtools.build.lib.vfs.FileSystem.Companion.ERR_PERMISSION_DENIED,
+                e
+            )
+        } finally {
+            Profiler.instance().logSimpleTask(startTime, ProfilerTask.VFS_DELETE, path.getPathString())
         }
-      } catch (IOException e) {
-        return false;
-      }
     }
-    return super.isDirectory(path, followSymlinks);
-  }
 
-  @Override
-  public void setReadable(PathFragment path, boolean readable) {
-    // Windows does not have a notion of readable files.
-    // https://github.com/openjdk/jdk/blob/e52a2aeeacaeb26c801b6e31f8e67e61b1ea2de3/src/java.base/windows/native/libjava/WinNTFileSystem_md.c#L473-L476
-  }
+    @Throws(IOException::class)
+    override fun createSymbolicLink(
+        linkPath: PathFragment, targetFragment: PathFragment, type: SymlinkTargetType?
+    ) {
+        val targetPath: PathFragment =
+            if (targetFragment.isAbsolute())
+                targetFragment
+            else
+                linkPath.getParentDirectory().getRelative(targetFragment)
 
-  @Override
-  public void setExecutable(PathFragment path, boolean executable) {
-    // Windows does not have a notion of executable files.
-    // https://github.com/openjdk/jdk/blob/e52a2aeeacaeb26c801b6e31f8e67e61b1ea2de3/src/java.base/windows/native/libjava/WinNTFileSystem_md.c#L473-L476
-  }
+        val stat: FileStatus? = statIfFound(targetPath,  /* followSymlinks= */true)
+        val existingFile = stat != null && stat.isFile()
+        val existingDirectory = stat != null && stat.isDirectory()
 
-  @Override
-  public void setWritable(PathFragment path, boolean writable) throws IOException {
-    // Windows does not have a notion of read-only directories.
-    // See https://learn.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants.
-    // JavaIoFileSystem#setWritable(dir, true) would throw, so reimplement it here as a no-op.
-    if (isDirectory(path, /* followSymlinks= */ true)) {
-      return;
+        try {
+            val link: java.nio.file.Path? = getNioPath(linkPath)
+            val target: java.nio.file.Path? = getNioPath(targetPath)
+
+            if (!createSymbolicLinks && existingFile) {
+                // If symlinks aren't enabled and the target is an existing file, fall back to a copy.
+                java.nio.file.Files.copy(target, link)
+            } else if (createSymbolicLinks
+                && (existingFile || (!existingDirectory && type != SymlinkTargetType.DIRECTORY))
+            ) {
+                // If symlinks are enabled and the target is not an existing or future directory, create a
+                // symlink.
+                WindowsFileOperations.createSymlink(link.toString(), target.toString())
+            } else {
+                // Otherwise, create a junction.
+                WindowsFileOperations.createJunction(link.toString(), target.toString())
+            }
+        } catch (e: IOException) {
+            throw com.google.devtools.build.lib.vfs.FileSystem.Companion.translateNioToIoException(linkPath, e)
+        }
     }
-    super.setWritable(path, writable);
-  }
 
-  /**
-   * Returns true if the path refers to a directory junction, directory symlink, or regular symlink.
-   *
-   * <p>Directory junctions are symbolic links created with "mklink /J" where the target is a
-   * directory or another directory junction. Directory junctions can be created without any user
-   * privileges.
-   *
-   * <p>Directory symlinks are symbolic links created with "mklink /D" where the target is a
-   * directory or another directory symlink. Note that directory symlinks can only be created by
-   * Administrators.
-   *
-   * <p>Normal symlinks are symbolic links created with "mklink". Normal symlinks should not point
-   * at directories, because even though "mklink" can create the link, it will not be a functional
-   * one (the linked directory's contents cannot be listed). Only Administrators may create regular
-   * symlinks.
-   *
-   * <p>This method returns true for all three types as long as their target is a directory (even if
-   * they are dangling), though only directory junctions and directory symlinks are useful.
-   */
-  @VisibleForTesting
-  static boolean isSymlinkOrJunction(Path file) throws IOException {
-    return WindowsFileOperations.isSymlinkOrJunction(file.toString());
-  }
+    @Throws(IOException::class)
+    override fun readSymbolicLink(path: PathFragment): PathFragment? {
+        val nioPath: java.nio.file.Path? = getNioPath(path)
+        return PathFragment.Companion.create(
+            StringEncoding.platformToInternal(
+                WindowsFileOperations.readSymlinkOrJunction(nioPath.toString())
+            )
+        )
+    }
 
-  private static DosFileAttributes getAttribs(Path file, boolean followSymlinks)
-      throws IOException {
-    return Files.readAttributes(file, DosFileAttributes.class, symlinkOpts(followSymlinks));
-  }
+    override fun supportsSymbolicLinksNatively(path: PathFragment?): Boolean {
+        return createSymbolicLinks
+    }
+
+    override fun mayBeCaseOrNormalizationInsensitive(): Boolean {
+        return true
+    }
+
+    override fun fileIsSymbolicLink(file: java.nio.file.Path): Boolean {
+        try {
+            if (com.google.devtools.build.lib.windows.WindowsFileSystem.Companion.isSymlinkOrJunction(file)) {
+                return true
+            }
+        } catch (e: IOException) {
+            // Did not work, try in another way
+        }
+        return super.fileIsSymbolicLink(file)
+    }
+
+    @Throws(IOException::class)
+    override fun stat(path: PathFragment, followSymlinks: Boolean): FileStatus {
+        val nioPath: java.nio.file.Path? = getNioPath(path)
+        val attributes: DosFileAttributes
+        try {
+            attributes =
+                com.google.devtools.build.lib.windows.WindowsFileSystem.Companion.getAttribs(nioPath, followSymlinks)
+        } catch (e: IOException) {
+            throw FileNotFoundException(path.toString() + com.google.devtools.build.lib.vfs.FileSystem.Companion.ERR_NO_SUCH_FILE_OR_DIR)
+        }
+
+        val status: FileStatus =
+            object : FileStatus {
+                @kotlin.concurrent.Volatile
+                var isSymbolicLink: Boolean? = null // null if not yet known
+
+                @kotlin.concurrent.Volatile
+                var lastChangeTime: Long = -1
+
+                val isFile: Boolean
+                    get() = !isSymbolicLink() && (attributes.isRegularFile() || this.isSpecialFile)
+
+                val isSpecialFile: Boolean
+                    get() =// attributes.isOther() returns false for symlinks but returns true for junctions.
+                    // Bazel treats junctions like symlinks. So let's return false here for junctions.
+                        // This fixes https://github.com/bazelbuild/bazel/issues/9176
+                        !isSymbolicLink() && attributes.isOther()
+
+                val isDirectory: Boolean
+                    get() = !isSymbolicLink() && attributes.isDirectory()
+
+                override fun isSymbolicLink(): Boolean {
+                    if (isSymbolicLink == null) {
+                        isSymbolicLink = !followSymlinks && fileIsSymbolicLink(nioPath)
+                    }
+                    return isSymbolicLink!!
+                }
+
+                val size: Long
+                    get() = attributes.size()
+
+                val lastModifiedTime: Long
+                    get() = attributes.lastModifiedTime().toMillis()
+
+                @Throws(IOException::class)
+                override fun getLastChangeTime(): Long {
+                    if (lastChangeTime == -1L) {
+                        lastChangeTime =
+                            WindowsFileOperations.getLastChangeTime(
+                                getNioPath(path).toString(), followSymlinks
+                            )
+                    }
+                    return lastChangeTime
+                }
+
+                val nodeId: Long
+                    get() =// TODO(bazel-team): Consider making use of attributes.fileKey().
+                        -1
+
+                val permissions: Int
+                    get() =// Files on Windows are implicitly readable and executable.
+                        365 or (if (attributes.isReadOnly()) 0 else 128)
+            }
+
+        return status
+    }
+
+    override fun isSymbolicLink(path: PathFragment): Boolean {
+        return fileIsSymbolicLink(getNioPath(path))
+    }
+
+    override fun isDirectory(path: PathFragment, followSymlinks: Boolean): Boolean {
+        if (!followSymlinks) {
+            try {
+                if (com.google.devtools.build.lib.windows.WindowsFileSystem.Companion.isSymlinkOrJunction(
+                        getNioPath(
+                            path
+                        )
+                    )
+                ) {
+                    return false
+                }
+            } catch (e: IOException) {
+                return false
+            }
+        }
+        return super.isDirectory(path, followSymlinks)
+    }
+
+    override fun setReadable(path: PathFragment?, readable: Boolean) {
+        // Windows does not have a notion of readable files.
+        // https://github.com/openjdk/jdk/blob/e52a2aeeacaeb26c801b6e31f8e67e61b1ea2de3/src/java.base/windows/native/libjava/WinNTFileSystem_md.c#L473-L476
+    }
+
+    override fun setExecutable(path: PathFragment?, executable: Boolean) {
+        // Windows does not have a notion of executable files.
+        // https://github.com/openjdk/jdk/blob/e52a2aeeacaeb26c801b6e31f8e67e61b1ea2de3/src/java.base/windows/native/libjava/WinNTFileSystem_md.c#L473-L476
+    }
+
+    @Throws(IOException::class)
+    override fun setWritable(path: PathFragment, writable: Boolean) {
+        // Windows does not have a notion of read-only directories.
+        // See https://learn.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants.
+        // JavaIoFileSystem#setWritable(dir, true) would throw, so reimplement it here as a no-op.
+        if (isDirectory(path,  /* followSymlinks= */true)) {
+            return
+        }
+        super.setWritable(path, writable)
+    }
+
+    companion object {
+        val NO_OPTIONS: Array<LinkOption?> = arrayOfNulls<LinkOption>(0)
+        val NO_FOLLOW: Array<LinkOption?> = arrayOf<LinkOption>(LinkOption.NOFOLLOW_LINKS)
+
+        @kotlin.jvm.JvmStatic
+        fun symlinkOpts(followSymlinks: Boolean): Array<LinkOption?> {
+            return if (followSymlinks) com.google.devtools.build.lib.windows.WindowsFileSystem.Companion.NO_OPTIONS else com.google.devtools.build.lib.windows.WindowsFileSystem.Companion.NO_FOLLOW
+        }
+
+        /**
+         * Returns true if the path refers to a directory junction, directory symlink, or regular symlink.
+         * 
+         * 
+         * Directory junctions are symbolic links created with "mklink /J" where the target is a
+         * directory or another directory junction. Directory junctions can be created without any user
+         * privileges.
+         * 
+         * 
+         * Directory symlinks are symbolic links created with "mklink /D" where the target is a
+         * directory or another directory symlink. Note that directory symlinks can only be created by
+         * Administrators.
+         * 
+         * 
+         * Normal symlinks are symbolic links created with "mklink". Normal symlinks should not point
+         * at directories, because even though "mklink" can create the link, it will not be a functional
+         * one (the linked directory's contents cannot be listed). Only Administrators may create regular
+         * symlinks.
+         * 
+         * 
+         * This method returns true for all three types as long as their target is a directory (even if
+         * they are dangling), though only directory junctions and directory symlinks are useful.
+         */
+        @com.google.common.annotations.VisibleForTesting
+        @Throws(IOException::class)
+        fun isSymlinkOrJunction(file: java.nio.file.Path): Boolean {
+            return WindowsFileOperations.isSymlinkOrJunction(file.toString())
+        }
+
+        @Throws(IOException::class)
+        private fun getAttribs(file: java.nio.file.Path, followSymlinks: Boolean): DosFileAttributes {
+            return java.nio.file.Files.readAttributes<DosFileAttributes>(
+                file,
+                DosFileAttributes::class.java,
+                *com.google.devtools.build.lib.windows.WindowsFileSystem.Companion.symlinkOpts(followSymlinks)
+            )
+        }
+    }
 }

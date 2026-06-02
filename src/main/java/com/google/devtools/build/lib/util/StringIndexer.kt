@@ -11,38 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
-
-import javax.annotation.Nullable;
+package com.google.devtools.build.lib.util
 
 /**
- * Provides bidirectional {@link String} ⇔ unique {@link Integer} mapping.
- *
- * <p>{@link Integer} is used in place of primitive {@code int} as it is assumed that indices will
- * be stored in maps. Passing {@link Integer} across API boundaries makes it less likely to store
+ * Provides bidirectional [String] ⇔ unique [Integer] mapping.
+ * 
+ * 
+ * [Integer] is used in place of primitive `int` as it is assumed that indices will
+ * be stored in maps. Passing [Integer] across API boundaries makes it less likely to store
  * duplicate instances and create garbage due to autoboxing.
  */
-public interface StringIndexer {
+interface StringIndexer {
+    /** Removes all mappings.  */
+    fun clear()
 
-  /** Removes all mappings. */
-  void clear();
+    /** Returns the number of strings in the index.  */
+    fun size(): Int
 
-  /** Returns the number of strings in the index. */
-  int size();
+    /** Creates new mapping for the given string if necessary and returns string index.  */
+    fun getOrCreateIndex(s: String?): Int?
 
-  /** Creates new mapping for the given string if necessary and returns string index. */
-  Integer getOrCreateIndex(String s);
+    /**
+     * Returns the unique index for the given string if one was created via [.getOrCreateIndex],
+     * or else `null`.
+     */
+    fun getIndex(s: String?): Int?
 
-  /**
-   * Returns the unique index for the given string if one was created via {@link #getOrCreateIndex},
-   * or else {@code null}.
-   */
-  @Nullable
-  Integer getIndex(String s);
-
-  /**
-   * Returns the string associated with the given index or {@code null} if it is not in the index.
-   */
-  @Nullable
-  String getStringForIndex(Integer i);
+    /**
+     * Returns the string associated with the given index or `null` if it is not in the index.
+     */
+    fun getStringForIndex(i: Int?): String?
 }

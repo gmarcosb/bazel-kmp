@@ -11,84 +11,65 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueService;
-import com.google.devtools.build.lib.skyframe.serialization.FrontierNodeVersion;
-import com.google.devtools.build.lib.skyframe.serialization.KeyValueWriter;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecs;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCachingOptions.RemoteAnalysisCacheMode;
-import com.google.devtools.build.skyframe.InMemoryGraph;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.util.Optional;
-import java.util.Set;
-import java.util.function.Predicate;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
 /**
  * An interface providing the functionalities used for analysis caching serialization and
  * deserialization.
  */
-public interface RemoteAnalysisCachingDependenciesProvider {
-  RemoteAnalysisCacheMode mode();
+interface RemoteAnalysisCachingDependenciesProvider {
+    fun mode(): RemoteAnalysisCacheMode?
 
-  void queryMetadataAndMaybeBailout() throws InterruptedException;
-
-  /**
-   * Returns the set of SkyKeys to be invalidated.
-   *
-   * <p>May call the remote analysis cache to get the set of keys to invalidate.
-   */
-  Set<SkyKey> lookupKeysToInvalidate(
-      Supplier<ImmutableSet<SkyKey>> keysToLookupSupplier,
-      RemoteAnalysisCachingServerState remoteAnalysisCachingState)
-      throws InterruptedException;
-
-  default boolean bailedOut() {
-    return false;
-  }
-
-  void computeSelectionAndMinimizeMemory(InMemoryGraph graph);
-
-  boolean shouldMinimizeMemory();
-
-  /** Various bits of data and functionality serialization needs. */
-  interface SerializationDependenciesProvider {
-    RemoteAnalysisCacheMode mode();
+    @Throws(java.lang.InterruptedException::class)
+    fun queryMetadataAndMaybeBailout()
 
     /**
-     * Returns the string distinguisher to invalidate SkyValues, in addition to the corresponding
-     * SkyKey.
+     * Returns the set of SkyKeys to be invalidated.
+     * 
+     * 
+     * May call the remote analysis cache to get the set of keys to invalidate.
      */
-    FrontierNodeVersion getSkyValueVersion() throws InterruptedException;
+    @Throws(java.lang.InterruptedException::class)
+    fun lookupKeysToInvalidate(
+        keysToLookupSupplier: java.util.function.Supplier<com.google.common.collect.ImmutableSet<SkyKey?>?>?,
+        remoteAnalysisCachingState: RemoteAnalysisCachingServerState?
+    ): MutableSet<SkyKey?>?
 
-    /**
-     * Returns the {@link ObjectCodecs} supplier for remote analysis caching.
-     *
-     * <p>Calling this can be an expensive process as the codec registry will be initialized.
-     */
-    ObjectCodecs getObjectCodecs() throws InterruptedException;
+    fun bailedOut(): Boolean {
+        return false
+    }
 
-    /** Returns the {@link FingerprintValueService} implementation. */
-    FingerprintValueService getFingerprintValueService() throws InterruptedException;
+    fun computeSelectionAndMinimizeMemory(graph: InMemoryGraph?)
 
-    String getSerializedFrontierProfile();
+    fun shouldMinimizeMemory(): Boolean
 
-    Optional<Predicate<PackageIdentifier>> getActiveDirectoriesMatcher();
+    /** Various bits of data and functionality serialization needs.  */
+    interface SerializationDependenciesProvider {
+        fun mode(): RemoteAnalysisCacheMode?
 
-    /** Returns the destination for file invalidation data when uploading. */
-    @Nullable
-    KeyValueWriter getFileInvalidationWriter() throws InterruptedException;
+        @get:Throws(java.lang.InterruptedException::class)
+        val skyValueVersion: FrontierNodeVersion?
 
-    @Nullable
-    RemoteAnalysisMetadataWriter getMetadataWriter() throws InterruptedException;
+        @get:Throws(java.lang.InterruptedException::class)
+        val objectCodecs: ObjectCodecs?
 
-    boolean shouldMinimizeMemory();
+        @get:Throws(java.lang.InterruptedException::class)
+        val fingerprintValueService: FingerprintValueService?
 
-    boolean getSkycacheAnalysisOnly();
-  }
+        val serializedFrontierProfile: String?
 
+        val activeDirectoriesMatcher: java.util.Optional<java.util.function.Predicate<PackageIdentifier?>?>?
+
+        @get:Throws(java.lang.InterruptedException::class)
+        val fileInvalidationWriter: KeyValueWriter?
+
+        @get:Throws(java.lang.InterruptedException::class)
+        val metadataWriter: RemoteAnalysisMetadataWriter?
+
+        fun shouldMinimizeMemory(): Boolean
+
+        val skycacheAnalysisOnly: Boolean
+    }
 }

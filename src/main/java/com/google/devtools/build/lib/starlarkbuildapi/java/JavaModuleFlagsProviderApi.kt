@@ -11,21 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.java
 
-package com.google.devtools.build.lib.starlarkbuildapi.java;
+import com.google.devtools.build.lib.collect.nestedset.Depset
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
+import net.starlark.java.eval.StarlarkValue
 
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkValue;
-
-/** Provider for the runtime classpath contributions of a Java binary. */
+/** Provider for the runtime classpath contributions of a Java binary.  */
 @StarlarkBuiltin(name = "JavaModuleFlagsProvider", doc = "", documented = false)
-public interface JavaModuleFlagsProviderApi extends StarlarkValue {
+interface JavaModuleFlagsProviderApi : StarlarkValue {
+    @kotlin.jvm.JvmField
+    @get:StarlarkMethod(
+        name = "add_exports",
+        structField = true,
+        doc = "Add-Exports configuration."
+    )
+    val addExports: Depset?
 
-  @StarlarkMethod(name = "add_exports", structField = true, doc = "Add-Exports configuration.")
-  Depset /*String*/ getAddExports();
-
-  @StarlarkMethod(name = "add_opens", structField = true, doc = "Add-Opens configuration.")
-  Depset /*String*/ getAddOpens();
+    @kotlin.jvm.JvmField
+    @get:StarlarkMethod(
+        name = "add_opens",
+        structField = true,
+        doc = "Add-Opens configuration."
+    )
+    val addOpens: Depset?
 }

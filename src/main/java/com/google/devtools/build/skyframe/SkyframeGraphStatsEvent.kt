@@ -11,37 +11,44 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
+package com.google.devtools.build.skyframe
 
 /**
  * Postable transporting data about the size/shape of the Skyframe graph. Note that the graph may
  * depend on the sequence of Bazel invocations prior to this one, not just the current one.
  */
-public final class SkyframeGraphStatsEvent implements ExtendedEventHandler.Postable {
-  /** Data about the Skyframe evaluations that happened during this command. */
-  public record EvaluationStats(
-      ImmutableMap<SkyFunctionName, Integer> dirtied,
-      ImmutableMap<SkyFunctionName, Integer> changed,
-      ImmutableMap<SkyFunctionName, Integer> built,
-      ImmutableMap<SkyFunctionName, Integer> cleaned,
-      ImmutableMap<SkyFunctionName, Integer> evaluated) {}
+class SkyframeGraphStatsEvent internal constructor(
+    private val graphSize: Int,
+    private val evaluationStats: EvaluationStats?
+) : Postable {
+    /** Data about the Skyframe evaluations that happened during this command.  */
+    class EvaluationStats(
+        dirtied: com.google.common.collect.ImmutableMap<SkyFunctionName?, Int?>?,
+        changed: com.google.common.collect.ImmutableMap<SkyFunctionName?, Int?>?,
+        built: com.google.common.collect.ImmutableMap<SkyFunctionName?, Int?>?,
+        cleaned: com.google.common.collect.ImmutableMap<SkyFunctionName?, Int?>?,
+        evaluated: com.google.common.collect.ImmutableMap<SkyFunctionName?, Int?>?
+    ) {
+        val dirtied: com.google.common.collect.ImmutableMap<SkyFunctionName?, Int?>?
+        val changed: com.google.common.collect.ImmutableMap<SkyFunctionName?, Int?>?
+        val built: com.google.common.collect.ImmutableMap<SkyFunctionName?, Int?>?
+        val cleaned: com.google.common.collect.ImmutableMap<SkyFunctionName?, Int?>?
+        val evaluated: com.google.common.collect.ImmutableMap<SkyFunctionName?, Int?>?
 
-  private final int graphSize;
-  private final EvaluationStats evaluationStats;
+        init {
+            this.dirtied = dirtied
+            this.changed = changed
+            this.built = built
+            this.cleaned = cleaned
+            this.evaluated = evaluated
+        }
+    }
 
-  SkyframeGraphStatsEvent(int graphSize, EvaluationStats evaluationStats) {
-    this.graphSize = graphSize;
-    this.evaluationStats = evaluationStats;
-  }
+    fun getGraphSize(): Int {
+        return graphSize
+    }
 
-  public int getGraphSize() {
-    return graphSize;
-  }
-
-  public EvaluationStats getEvaluationStats() {
-    return evaluationStats;
-  }
+    fun getEvaluationStats(): EvaluationStats? {
+        return evaluationStats
+    }
 }

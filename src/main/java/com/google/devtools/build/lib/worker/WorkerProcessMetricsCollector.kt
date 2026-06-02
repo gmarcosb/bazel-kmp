@@ -11,277 +11,269 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.worker
 
-package com.google.devtools.build.lib.worker;
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.WorkerMetrics
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.collect.ImmutableSet.toImmutableSet;
+/** Collects and populates system metrics about persistent workers.  */
+class WorkerProcessMetricsCollector {
+    private val psInfoCollector: PsInfoCollector
+    private val cgroupsInfoCollector: CgroupsInfoCollector
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.WorkerMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.WorkerMetrics.WorkerStatus;
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.devtools.build.lib.metrics.CgroupsInfoCollector;
-import com.google.devtools.build.lib.metrics.PsInfoCollector;
-import com.google.devtools.build.lib.metrics.ResourceSnapshot;
-import com.google.devtools.build.lib.sandbox.Cgroup;
-import com.google.devtools.build.lib.util.OS;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import javax.annotation.Nullable;
+    private var clock: com.google.devtools.build.lib.clock.Clock? = null
 
-/** Collects and populates system metrics about persistent workers. */
-public class WorkerProcessMetricsCollector {
+    /**
+     * Mapping of worker process ids to their process metrics. This contains all workers that have
+     * been alive at any point during the build.
+     */
+    private val pidToWorkerProcessMetrics: MutableMap<Long?, WorkerProcessMetrics> =
+        ConcurrentHashMap<Long?, WorkerProcessMetrics>()
 
-  /** The metrics collector (a static singleton instance). Inactive by default. */
-  private static final WorkerProcessMetricsCollector instance = new WorkerProcessMetricsCollector();
+    private val pidToCgroups: MutableMap<Long?, Cgroup?> = ConcurrentHashMap<Long?, Cgroup?>()
 
-  private final PsInfoCollector psInfoCollector;
-  private final CgroupsInfoCollector cgroupsInfoCollector;
+    private var useCgroupsOnLinux = false
 
-  private Clock clock;
-
-  /**
-   * Mapping of worker process ids to their process metrics. This contains all workers that have
-   * been alive at any point during the build.
-   */
-  private final Map<Long, WorkerProcessMetrics> pidToWorkerProcessMetrics =
-      new ConcurrentHashMap<>();
-
-  private final Map<Long, Cgroup> pidToCgroups = new ConcurrentHashMap<>();
-
-  private boolean useCgroupsOnLinux = false;
-
-  private WorkerProcessMetricsCollector() {
-    psInfoCollector = PsInfoCollector.instance();
-    cgroupsInfoCollector = CgroupsInfoCollector.instance();
-  }
-
-  @VisibleForTesting
-  WorkerProcessMetricsCollector(
-      PsInfoCollector psInfoCollector, CgroupsInfoCollector cgroupsInfoCollector) {
-    this.psInfoCollector = psInfoCollector;
-    this.cgroupsInfoCollector = cgroupsInfoCollector;
-  }
-
-  public static WorkerProcessMetricsCollector instance() {
-    return instance;
-  }
-
-  public void setClock(Clock clock) {
-    this.clock = clock;
-  }
-
-  public void setUseCgroupsOnLinux(boolean useCgroupsOnLinux) {
-    this.useCgroupsOnLinux = useCgroupsOnLinux;
-  }
-
-  ResourceSnapshot collectResourceUsage() {
-    // Only collect for process we know are alive.
-    ImmutableSet<Long> alivePids =
-        pidToWorkerProcessMetrics.entrySet().stream()
-            .filter(e -> !e.getValue().getStatus().isKilled())
-            .map(e -> e.getKey())
-            .collect(toImmutableSet());
-    return collectResourceUsage(OS.getCurrent(), alivePids);
-  }
-
-  /**
-   * Collects memory usage of all ancestors of processes by pid. If a pid does not allow collecting
-   * memory usage, it is silently ignored.
-   */
-  @VisibleForTesting
-  public ResourceSnapshot collectResourceUsage(OS os, ImmutableSet<Long> alivePids) {
-    // TODO(b/181317827): Support Windows.
-    if (alivePids.isEmpty()) {
-      return ResourceSnapshot.createEmpty(clock.now());
+    private constructor() {
+        psInfoCollector = PsInfoCollector.instance()
+        cgroupsInfoCollector = CgroupsInfoCollector.instance()
     }
-    if (os.equals(OS.DARWIN)) {
-      return psInfoCollector.collectResourceUsage(alivePids, clock);
+
+    @com.google.common.annotations.VisibleForTesting
+    internal constructor(psInfoCollector: PsInfoCollector, cgroupsInfoCollector: CgroupsInfoCollector) {
+        this.psInfoCollector = psInfoCollector
+        this.cgroupsInfoCollector = cgroupsInfoCollector
     }
-    if (os.equals(OS.LINUX)) {
-      if (useCgroupsOnLinux) {
-        // Remove the killed pids so that we only collect from the cgroups that are alive.
-        for (long pid : ImmutableSet.copyOf(pidToCgroups.keySet())) {
-          if (!alivePids.contains(pid)) {
-            pidToCgroups.remove(pid);
-          }
+
+    fun setClock(clock: com.google.devtools.build.lib.clock.Clock) {
+        this.clock = clock
+    }
+
+    fun setUseCgroupsOnLinux(useCgroupsOnLinux: Boolean) {
+        this.useCgroupsOnLinux = useCgroupsOnLinux
+    }
+
+    fun collectResourceUsage(): ResourceSnapshot {
+        // Only collect for process we know are alive.
+        val alivePids: com.google.common.collect.ImmutableSet<Long?> =
+            pidToWorkerProcessMetrics.entrySet().stream()
+                .filter(java.util.function.Predicate { e: MutableMap.MutableEntry<Long?, WorkerProcessMetrics?>? ->
+                    !e.getValue().getStatus().isKilled()
+                })
+                .map<Long?>(java.util.function.Function { e: MutableMap.MutableEntry<Long?, WorkerProcessMetrics?>? -> e.getKey() })
+                .collect(com.google.common.collect.ImmutableSet.toImmutableSet<Long?>())
+        return collectResourceUsage(com.google.devtools.build.lib.util.OS.getCurrent(), alivePids)
+    }
+
+    /**
+     * Collects memory usage of all ancestors of processes by pid. If a pid does not allow collecting
+     * memory usage, it is silently ignored.
+     */
+    @com.google.common.annotations.VisibleForTesting
+    fun collectResourceUsage(
+        os: com.google.devtools.build.lib.util.OS,
+        alivePids: com.google.common.collect.ImmutableSet<Long?>
+    ): ResourceSnapshot {
+        // TODO(b/181317827): Support Windows.
+        if (alivePids.isEmpty()) {
+            return ResourceSnapshot.createEmpty(clock.now())
         }
-        return cgroupsInfoCollector.collectResourceUsage(pidToCgroups, clock);
-      }
-      // Default to using ps if cgroups is not enabled.
-      return psInfoCollector.collectResourceUsage(alivePids, clock);
-    }
-    return ResourceSnapshot.createEmpty(clock.now());
-  }
-
-  public ImmutableList<WorkerProcessMetrics> getLiveWorkerProcessMetrics() {
-    return collectMetrics().stream()
-        .filter(m -> !m.getStatus().isKilled())
-        .collect(toImmutableList());
-  }
-
-  public ImmutableList<WorkerProcessMetrics> collectMetrics() {
-    ResourceSnapshot resourceSnapshot = collectResourceUsage();
-
-    ImmutableMap<Long, Integer> pidToMemoryInKb = resourceSnapshot.pidToMemoryInKb();
-
-    Instant collectionTime = resourceSnapshot.collectionTime();
-
-    ImmutableList.Builder<WorkerProcessMetrics> workerMetrics = new ImmutableList.Builder<>();
-    for (Map.Entry<Long, WorkerProcessMetrics> entry : pidToWorkerProcessMetrics.entrySet()) {
-      WorkerProcessMetrics workerMetric = entry.getValue();
-
-      if (workerMetric.getStatus().isKilled()) {
-        // If it was previously killed by Bazel, we don't do anything.
-        workerMetrics.add(workerMetric);
-        continue;
-      }
-
-      Long pid = workerMetric.getProcessId();
-      int memoryInKb = pidToMemoryInKb.getOrDefault(pid, 0);
-
-      if (memoryInKb == 0) {
-        // If it is not measurable, not killed by Bazel but has executed actions, then we assume
-        // that something has happened to the worker process that is not accounted for by Bazel
-        // and set this to KILLED_UNKNOWN. If a separate thread comes along to update the status
-        // with a more specific reason why it is killed, then we allow such an update.
-        if (workerMetric.getActionsExecuted() > 0) {
-          workerMetric.getStatus().maybeUpdateStatus(WorkerProcessStatus.Status.KILLED_UNKNOWN);
+        if (os == com.google.devtools.build.lib.util.OS.DARWIN) {
+            return psInfoCollector.collectResourceUsage(alivePids, clock)
         }
-        // We want to add the worker metric even if it is not measurable.
-        workerMetrics.add(workerMetric);
-        continue;
-      }
-
-      // If it is measurable, we want to update the collected metrics.
-      workerMetric.addCollectedMetrics(
-          /* memoryInKb= */ memoryInKb, /* collectionTime= */ collectionTime);
-      workerMetrics.add(workerMetric);
+        if (os == com.google.devtools.build.lib.util.OS.LINUX) {
+            if (useCgroupsOnLinux) {
+                // Remove the killed pids so that we only collect from the cgroups that are alive.
+                for (pid in com.google.common.collect.ImmutableSet.copyOf<Long?>(pidToCgroups.keySet())) {
+                    if (!alivePids.contains(pid)) {
+                        pidToCgroups.remove(pid)
+                    }
+                }
+                return cgroupsInfoCollector.collectResourceUsage(pidToCgroups, clock)
+            }
+            // Default to using ps if cgroups is not enabled.
+            return psInfoCollector.collectResourceUsage(alivePids, clock)
+        }
+        return ResourceSnapshot.createEmpty(clock.now())
     }
 
-    return workerMetrics.build();
-  }
+    val liveWorkerProcessMetrics: com.google.common.collect.ImmutableList<WorkerProcessMetrics?>
+        get() = collectMetrics().stream()
+            .filter(java.util.function.Predicate { m: WorkerProcessMetrics? -> !m.getStatus().isKilled() })
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<WorkerProcessMetrics?>())
 
-  public void onWorkerFinishExecution(long processId) {
-    WorkerProcessMetrics wpm = pidToWorkerProcessMetrics.get(processId);
-    if (wpm == null) {
-      return;
+    fun collectMetrics(): com.google.common.collect.ImmutableList<WorkerProcessMetrics?> {
+        val resourceSnapshot: ResourceSnapshot = collectResourceUsage()
+
+        val pidToMemoryInKb: com.google.common.collect.ImmutableMap<Long?, Int?> = resourceSnapshot.pidToMemoryInKb()
+
+        val collectionTime: Instant? = resourceSnapshot.collectionTime()
+
+        val workerMetrics: com.google.common.collect.ImmutableList.Builder<WorkerProcessMetrics?> =
+            com.google.common.collect.ImmutableList.Builder<WorkerProcessMetrics?>()
+        for (entry in pidToWorkerProcessMetrics.entrySet()) {
+            val workerMetric: WorkerProcessMetrics = entry.getValue()
+
+            if (workerMetric.getStatus().isKilled()) {
+                // If it was previously killed by Bazel, we don't do anything.
+                workerMetrics.add(workerMetric)
+                continue
+            }
+
+            val pid: Long = workerMetric.getProcessId()
+            val memoryInKb: Int = pidToMemoryInKb.getOrDefault(pid, 0)
+
+            if (memoryInKb == 0) {
+                // If it is not measurable, not killed by Bazel but has executed actions, then we assume
+                // that something has happened to the worker process that is not accounted for by Bazel
+                // and set this to KILLED_UNKNOWN. If a separate thread comes along to update the status
+                // with a more specific reason why it is killed, then we allow such an update.
+                if (workerMetric.getActionsExecuted() > 0) {
+                    workerMetric.getStatus()
+                        .maybeUpdateStatus(com.google.devtools.build.lib.worker.WorkerProcessStatus.Status.KILLED_UNKNOWN)
+                }
+                // We want to add the worker metric even if it is not measurable.
+                workerMetrics.add(workerMetric)
+                continue
+            }
+
+            // If it is measurable, we want to update the collected metrics.
+            workerMetric.addCollectedMetrics( /* memoryInKb= */
+                memoryInKb,  /* collectionTime= */collectionTime
+            )
+            workerMetrics.add(workerMetric)
+        }
+
+        return workerMetrics.build()
     }
-    wpm.incrementActionsExecuted();
-  }
 
-  public static final int MAX_PUBLISHED_WORKER_METRICS = 50;
-
-  /** Returns a prioritized and limited list of WorkerMetrics to be published to the BEP. */
-  public static ImmutableList<WorkerMetrics> limitWorkerMetricsToPublish(
-      ImmutableList<WorkerMetrics> metrics, int limit) {
-    return metrics.stream()
-        .sorted(new WorkerMetricsPublishComparator())
-        .limit(limit)
-        .sorted(Comparator.comparingInt(m -> m.getWorkerIdsList().get(0)))
-        .collect(toImmutableList());
-  }
-
-  /**
-   * Because we log all worker processes that have been alive at any point during the build, the
-   * size of this list might grow out of hand if there is some issue with the build (e.g.
-   * kill-create cycles). As such, we enforce rules to prioritize WorkerMetrics before limiting: (1)
-   * Prioritize WorkerStatuses ALIVE, then KILLED_DUE_TO_MEMORY_PRESSURE, then all remaining worker
-   * statuses. (2) Then prioritize by decreasing memory usage and (3) limit to a fixed number.
-   */
-  @VisibleForTesting
-  public static class WorkerMetricsPublishComparator implements Comparator<WorkerMetrics> {
-
-    private int getWorkerStatusPriority(WorkerMetrics.WorkerStatus status) {
-      // Lower value is prioritized.
-      if (status == WorkerStatus.ALIVE) {
-        return 0;
-      } else if (status == WorkerStatus.KILLED_DUE_TO_MEMORY_PRESSURE) {
-        return 1;
-      }
-      return 2;
+    fun onWorkerFinishExecution(processId: Long) {
+        val wpm: WorkerProcessMetrics? = pidToWorkerProcessMetrics.get(processId)
+        if (wpm == null) {
+            return
+        }
+        wpm.incrementActionsExecuted()
     }
 
-    @Override
-    public int compare(WorkerMetrics m1, WorkerMetrics m2) {
-      int s1 = getWorkerStatusPriority(m1.getWorkerStatus());
-      int s2 = getWorkerStatusPriority(m2.getWorkerStatus());
-      if (s1 != s2) {
-        return Integer.compare(s1, s2);
-      }
-      return Integer.compare(
-          m2.getWorkerStats(0).getWorkerMemoryInKb(), m1.getWorkerStats(0).getWorkerMemoryInKb());
+    /**
+     * Because we log all worker processes that have been alive at any point during the build, the
+     * size of this list might grow out of hand if there is some issue with the build (e.g.
+     * kill-create cycles). As such, we enforce rules to prioritize WorkerMetrics before limiting: (1)
+     * Prioritize WorkerStatuses ALIVE, then KILLED_DUE_TO_MEMORY_PRESSURE, then all remaining worker
+     * statuses. (2) Then prioritize by decreasing memory usage and (3) limit to a fixed number.
+     */
+    @com.google.common.annotations.VisibleForTesting
+    class WorkerMetricsPublishComparator : java.util.Comparator<WorkerMetrics?> {
+        private fun getWorkerStatusPriority(status: WorkerMetrics.WorkerStatus?): Int {
+            // Lower value is prioritized.
+            if (status === WorkerStatus.ALIVE) {
+                return 0
+            } else if (status === WorkerStatus.KILLED_DUE_TO_MEMORY_PRESSURE) {
+                return 1
+            }
+            return 2
+        }
+
+        override fun compare(m1: WorkerMetrics, m2: WorkerMetrics): Int {
+            val s1 = getWorkerStatusPriority(m1.getWorkerStatus())
+            val s2 = getWorkerStatusPriority(m2.getWorkerStatus())
+            if (s1 != s2) {
+                return java.lang.Integer.compare(s1, s2)
+            }
+            return java.lang.Integer.compare(
+                m2.getWorkerStats(0).getWorkerMemoryInKb(), m1.getWorkerStats(0).getWorkerMemoryInKb()
+            )
+        }
     }
-  }
 
-  public ImmutableList<WorkerMetrics> getLiveWorkerMetrics() {
-    return getLiveWorkerProcessMetrics().stream()
-        .map(WorkerProcessMetrics::toProto)
-        .collect(toImmutableList());
-  }
+    val liveWorkerMetrics: com.google.common.collect.ImmutableList<WorkerMetrics?>
+        get() = this.liveWorkerProcessMetrics.stream()
+            .map<WorkerMetrics?>(java.util.function.Function { obj: WorkerProcessMetrics? -> obj.toProto() })
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<WorkerMetrics?>())
 
-  public void clear() {
-    pidToWorkerProcessMetrics.clear();
-  }
-
-  @VisibleForTesting
-  Map<Long, WorkerProcessMetrics> getPidToWorkerProcessMetrics() {
-    return pidToWorkerProcessMetrics;
-  }
-
-  /**
-   * Initializes workerIdToWorkerProperties for workers. If worker metrics already exists for this
-   * worker, only updates the last call time and maybe adds the multiplex worker id.
-   */
-  public synchronized void registerWorker(
-      int workerId,
-      long processId,
-      WorkerProcessStatus status,
-      String mnemonic,
-      boolean isMultiplex,
-      boolean isSandboxed,
-      int workerKeyHash,
-      @Nullable Cgroup cgroup) {
-    WorkerProcessMetrics workerMetric =
-        pidToWorkerProcessMetrics.computeIfAbsent(
-            processId,
-            (pid) ->
-                new WorkerProcessMetrics(
-                    workerId,
-                    processId,
-                    status,
-                    mnemonic,
-                    isMultiplex,
-                    isSandboxed,
-                    workerKeyHash));
-    if (cgroup != null) {
-      pidToCgroups.putIfAbsent(processId, cgroup);
+    fun clear() {
+        pidToWorkerProcessMetrics.clear()
     }
-    workerMetric.setLastCallTime(Instant.ofEpochMilli(clock.currentTimeMillis()));
-    workerMetric.maybeAddWorkerId(workerId, status);
-  }
 
-  /** Removes all WorkerProcessMetrics that were marked as killed. */
-  public void clearKilledWorkerProcessMetrics() {
-    List<Long> pidsToRemove = new ArrayList<>();
-    for (Map.Entry<Long, WorkerProcessMetrics> entry : pidToWorkerProcessMetrics.entrySet()) {
-      if (entry.getValue().getStatus().isKilled()) {
-        pidsToRemove.add(entry.getKey());
-      }
+    @com.google.common.annotations.VisibleForTesting
+    fun getPidToWorkerProcessMetrics(): MutableMap<Long?, WorkerProcessMetrics> {
+        return pidToWorkerProcessMetrics
     }
-    pidToWorkerProcessMetrics.keySet().removeAll(pidsToRemove);
-  }
 
-  /** To reset states in each WorkerProcessMetric before each command where applicable. */
-  public void beforeCommand() {
-    pidToWorkerProcessMetrics.values().forEach(m -> m.onBeforeCommand());
-  }
+    /**
+     * Initializes workerIdToWorkerProperties for workers. If worker metrics already exists for this
+     * worker, only updates the last call time and maybe adds the multiplex worker id.
+     */
+    @kotlin.jvm.Synchronized
+    fun registerWorker(
+        workerId: Int,
+        processId: Long,
+        status: WorkerProcessStatus?,
+        mnemonic: String?,
+        isMultiplex: Boolean,
+        isSandboxed: Boolean,
+        workerKeyHash: Int,
+        cgroup: Cgroup?
+    ) {
+        val workerMetric: WorkerProcessMetrics =
+            pidToWorkerProcessMetrics.computeIfAbsent(
+                processId,
+                java.util.function.Function { pid: Long? ->
+                    WorkerProcessMetrics(
+                        workerId,
+                        processId,
+                        status,
+                        mnemonic,
+                        isMultiplex,
+                        isSandboxed,
+                        workerKeyHash
+                    )
+                })
+        if (cgroup != null) {
+            pidToCgroups.putIfAbsent(processId, cgroup)
+        }
+        workerMetric.setLastCallTime(Instant.ofEpochMilli(clock.currentTimeMillis()))
+        workerMetric.maybeAddWorkerId(workerId, status)
+    }
+
+    /** Removes all WorkerProcessMetrics that were marked as killed.  */
+    fun clearKilledWorkerProcessMetrics() {
+        val pidsToRemove: MutableList<Long?> = java.util.ArrayList<Long?>()
+        for (entry in pidToWorkerProcessMetrics.entrySet()) {
+            if (entry.getValue().getStatus().isKilled()) {
+                pidsToRemove.add(entry.getKey())
+            }
+        }
+        pidToWorkerProcessMetrics.keySet().removeAll(pidsToRemove)
+    }
+
+    /** To reset states in each WorkerProcessMetric before each command where applicable.  */
+    fun beforeCommand() {
+        pidToWorkerProcessMetrics.values()
+            .forEach(java.util.function.Consumer { m: WorkerProcessMetrics? -> m.onBeforeCommand() })
+    }
+
+    companion object {
+        /** The metrics collector (a static singleton instance). Inactive by default.  */
+        private val instance = WorkerProcessMetricsCollector()
+
+        @kotlin.jvm.JvmStatic
+        fun instance(): WorkerProcessMetricsCollector {
+            return instance
+        }
+
+        const val MAX_PUBLISHED_WORKER_METRICS: Int = 50
+
+        /** Returns a prioritized and limited list of WorkerMetrics to be published to the BEP.  */
+        fun limitWorkerMetricsToPublish(
+            metrics: com.google.common.collect.ImmutableList<WorkerMetrics?>, limit: Int
+        ): com.google.common.collect.ImmutableList<WorkerMetrics?> {
+            return metrics.stream()
+                .sorted(WorkerMetricsPublishComparator())
+                .limit(limit.toLong())
+                .sorted(java.util.Comparator.comparingInt<WorkerMetrics?>(ToIntFunction { m: WorkerMetrics? ->
+                    m.getWorkerIdsList().get(0)
+                }))
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<WorkerMetrics?>())
+        }
+    }
 }

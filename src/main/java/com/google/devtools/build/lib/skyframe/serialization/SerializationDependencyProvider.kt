@@ -11,19 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
 /**
- * Common interface for {@link SerializationContext} and {@link DeserializationContext}, which both
+ * Common interface for [SerializationContext] and [DeserializationContext], which both
  * provide access to dependencies required for serialization.
  */
-public interface SerializationDependencyProvider {
-
-  /**
-   * Returns the dependency associated with the given type.
-   *
-   * @throws NullPointerException if there is no dependency registered for the given type
-   */
-  <T> T getDependency(Class<T> type);
+interface SerializationDependencyProvider {
+    /**
+     * Returns the dependency associated with the given type.
+     * 
+     * @throws NullPointerException if there is no dependency registered for the given type
+     */
+    fun <T> getDependency(type: java.lang.Class<T?>?): T?
 }

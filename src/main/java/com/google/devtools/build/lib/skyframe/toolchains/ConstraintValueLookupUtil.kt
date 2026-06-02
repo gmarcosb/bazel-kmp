@@ -11,115 +11,91 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.toolchains
 
-package com.google.devtools.build.lib.skyframe.toolchains;
+import com.google.devtools.build.lib.actions.ActionConflictException
 
-import com.google.devtools.build.lib.actions.ActionConflictException;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.ConfiguredTargetValue;
-import com.google.devtools.build.lib.analysis.platform.ConstraintValueInfo;
-import com.google.devtools.build.lib.analysis.platform.PlatformProviderUtils;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.NoSuchThingException;
-import com.google.devtools.build.lib.server.FailureDetails.Toolchain.Code;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.skyframe.ConfiguredValueCreationException;
-import com.google.devtools.build.skyframe.SkyFunction.Environment;
-import com.google.devtools.build.skyframe.SkyframeLookupResult;
-import java.util.ArrayList;
-import java.util.List;
-import javax.annotation.Nullable;
-
-/** Helper class that looks up {@link ConstraintValueInfo} data. */
-public class ConstraintValueLookupUtil {
-
-  @Nullable
-  public static List<ConstraintValueInfo> getConstraintValueInfo(
-      Iterable<ConfiguredTargetKey> constraintValueKeys, Environment env)
-      throws InterruptedException, InvalidConstraintValueException {
-
-    SkyframeLookupResult values = env.getValuesAndExceptions(constraintValueKeys);
-    boolean valuesMissing = env.valuesMissing();
-    List<ConstraintValueInfo> constraintValues = valuesMissing ? null : new ArrayList<>();
-    for (ConfiguredTargetKey key : constraintValueKeys) {
-      ConstraintValueInfo constraintValueInfo = findConstraintValueInfo(key, values);
-      if (!valuesMissing && constraintValueInfo != null) {
-        constraintValues.add(constraintValueInfo);
-      }
-    }
-    if (valuesMissing) {
-      return null;
-    }
-    return constraintValues;
-  }
-
-  /**
-   * Returns the {@link ConstraintValueInfo} provider from the {@link ConfiguredTarget} in the
-   * {@link SkyframeLookupResult}, or {@code null} if the {@link ConfiguredTarget} is not present.
-   * If the {@link ConfiguredTarget} does not have a {@link ConstraintValueInfo} provider, a {@link
-   * InvalidConstraintValueException} is thrown.
-   */
-  @Nullable
-  private static ConstraintValueInfo findConstraintValueInfo(
-      ConfiguredTargetKey key, SkyframeLookupResult values) throws InvalidConstraintValueException {
-    try {
-      ConfiguredTargetValue ctv =
-          (ConfiguredTargetValue)
-              values.getOrThrow(
-                  key,
-                  ConfiguredValueCreationException.class,
-                  NoSuchThingException.class,
-                  ActionConflictException.class);
-      if (ctv == null) {
-        return null;
-      }
-
-      ConfiguredTarget configuredTarget = ctv.getConfiguredTarget();
-      ConstraintValueInfo constraintValueInfo =
-          PlatformProviderUtils.constraintValue(configuredTarget);
-      if (constraintValueInfo == null) {
-        throw new InvalidConstraintValueException(configuredTarget.getLabel());
-      }
-
-      return constraintValueInfo;
-    } catch (ConfiguredValueCreationException e) {
-      throw new InvalidConstraintValueException(key.getLabel(), e);
-    } catch (NoSuchThingException e) {
-      throw new InvalidConstraintValueException(key.getLabel(), e);
-    } catch (ActionConflictException e) {
-      throw new InvalidConstraintValueException(key.getLabel(), e);
-    }
-  }
-
-  /** Exception used when a constraint value label is not a valid constraint value. */
-  public static final class InvalidConstraintValueException extends ToolchainException {
-    InvalidConstraintValueException(Label label) {
-      super(formatError(label));
+/** Helper class that looks up [ConstraintValueInfo] data.  */
+object ConstraintValueLookupUtil {
+    @Throws(java.lang.InterruptedException::class, InvalidConstraintValueException::class)
+    fun getConstraintValueInfo(
+        constraintValueKeys: Iterable<ConfiguredTargetKey>, env: SkyFunction.Environment
+    ): MutableList<ConstraintValueInfo?>? {
+        val values: SkyframeLookupResult = env.getValuesAndExceptions(constraintValueKeys)
+        val valuesMissing: Boolean = env.valuesMissing()
+        val constraintValues: MutableList<ConstraintValueInfo?>? =
+            if (valuesMissing) null else java.util.ArrayList<ConstraintValueInfo?>()
+        for (key in constraintValueKeys) {
+            val constraintValueInfo: ConstraintValueInfo? = findConstraintValueInfo(key, values)
+            if (!valuesMissing && constraintValueInfo != null) {
+                constraintValues!!.add(constraintValueInfo)
+            }
+        }
+        if (valuesMissing) {
+            return null
+        }
+        return constraintValues
     }
 
-    InvalidConstraintValueException(Label label, ConfiguredValueCreationException e) {
-      super(formatError(label), e);
+    /**
+     * Returns the [ConstraintValueInfo] provider from the [ConfiguredTarget] in the
+     * [SkyframeLookupResult], or `null` if the [ConfiguredTarget] is not present.
+     * If the [ConfiguredTarget] does not have a [ConstraintValueInfo] provider, a [ ] is thrown.
+     */
+    @Throws(InvalidConstraintValueException::class)
+    private fun findConstraintValueInfo(
+        key: ConfiguredTargetKey, values: SkyframeLookupResult
+    ): ConstraintValueInfo? {
+        try {
+            val ctv: ConfiguredTargetValue? =
+                values.getOrThrow<E1?, E2?, E3?>(
+                    key,
+                    ConfiguredValueCreationException::class.java,
+                    NoSuchThingException::class.java,
+                    ActionConflictException::class.java
+                ) as ConfiguredTargetValue?
+            if (ctv == null) {
+                return null
+            }
+
+            val configuredTarget: ConfiguredTarget = ctv.getConfiguredTarget()
+            val constraintValueInfo: ConstraintValueInfo =
+                PlatformProviderUtils.constraintValue(configuredTarget)
+            if (constraintValueInfo == null) {
+                throw InvalidConstraintValueException(configuredTarget.getLabel())
+            }
+
+            return constraintValueInfo
+        } catch (e: ConfiguredValueCreationException) {
+            throw InvalidConstraintValueException(key.getLabel(), e)
+        } catch (e: NoSuchThingException) {
+            throw InvalidConstraintValueException(key.getLabel(), e)
+        } catch (e: ActionConflictException) {
+            throw InvalidConstraintValueException(key.getLabel(), e)
+        }
     }
 
-    public InvalidConstraintValueException(Label label, NoSuchThingException e) {
-      // Just propagate the inner exception, because it's directly actionable.
-      super(e);
-    }
+    /** Exception used when a constraint value label is not a valid constraint value.  */
+    class InvalidConstraintValueException : ToolchainException {
+        internal constructor(label: Label?) : super(formatError(label))
 
-    public InvalidConstraintValueException(Label label, ActionConflictException e) {
-      super(formatError(label), e);
-    }
+        internal constructor(label: Label?, e: ConfiguredValueCreationException?) : super(formatError(label), e)
 
-    @Override
-    protected Code getDetailedCode() {
-      return Code.INVALID_CONSTRAINT_VALUE;
-    }
+        constructor(label: Label?, e: NoSuchThingException?) : super(e)
 
-    private static String formatError(Label label) {
-      return String.format(
-          "Target %s was referenced as a constraint_value, "
-              + "but does not provide ConstraintValueInfo",
-          label);
+        constructor(label: Label?, e: ActionConflictException?) : super(formatError(label), e)
+
+        val detailedCode: Code
+            get() = Code.INVALID_CONSTRAINT_VALUE
+
+        companion object {
+            private fun formatError(label: Label?): String? {
+                return java.lang.String.format(
+                    "Target %s was referenced as a constraint_value, "
+                            + "but does not provide ConstraintValueInfo",
+                    label
+                )
+            }
+        }
     }
-  }
 }

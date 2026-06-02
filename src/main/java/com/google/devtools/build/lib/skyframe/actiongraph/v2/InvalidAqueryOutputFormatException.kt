@@ -11,12 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.actiongraph.v2;
+package com.google.devtools.build.lib.skyframe.actiongraph.v2
 
-/** Thrown when the output format for aquery is invalid. */
-public class InvalidAqueryOutputFormatException extends Exception {
-
-  public InvalidAqueryOutputFormatException(String message) {
-    super(message);
-  }
-}
+/** Thrown when the output format for aquery is invalid.  */
+class InvalidAqueryOutputFormatException(message: String?) : Exception(message)

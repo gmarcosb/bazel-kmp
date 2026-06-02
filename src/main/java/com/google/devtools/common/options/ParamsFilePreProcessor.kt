@@ -11,76 +11,92 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options;
+package com.google.devtools.common.options
 
-import com.google.common.collect.Lists;
-import com.google.devtools.common.options.OptionsParser.ArgAndFallbackData;
-import java.io.IOException;
-import java.nio.file.FileSystem;
-import java.nio.file.Path;
-import java.util.List;
+import java.io.IOException
 
 /**
- * Defines an {@link ArgsPreProcessor} that will determine if the arguments list contains a "params"
+ * Defines an [ArgsPreProcessor] that will determine if the arguments list contains a "params"
  * file that contains a list of options to be parsed.
- *
- * <p>Params files are used when the argument list of {@link Option} exceed the shells commandline
+ * 
+ * 
+ * Params files are used when the argument list of [Option] exceed the shells commandline
  * length. A params file argument is defined as a path starting with @. It will also be the only
  * entry in an argument list.
  */
-public abstract class ParamsFilePreProcessor implements ArgsPreProcessor {
+abstract class ParamsFilePreProcessor internal constructor(fs: java.nio.file.FileSystem) :
+    com.google.devtools.common.options.ArgsPreProcessor {
+    private val fs: java.nio.file.FileSystem
 
-  static final String ERROR_MESSAGE_FORMAT = "Error reading params file: %s %s";
-
-  static final String TOO_MANY_ARGS_ERROR_MESSAGE_FORMAT =
-      "A params file must be the only argument: %s";
-
-  static final String UNFINISHED_QUOTE_MESSAGE_FORMAT = "Unfinished quote %s at %s";
-
-  private final FileSystem fs;
-
-  ParamsFilePreProcessor(FileSystem fs) {
-    this.fs = fs;
-  }
-
-  /**
-   * Parses the param file path and replaces the arguments list with the contents if one exists.
-   *
-   * @param args A list of arguments that may contain @&lt;path&gt; to a params file.
-   * @return A list of arguments suitable for parsing.
-   * @throws OptionsParsingException if the path does not exist.
-   */
-  @Override
-  public List<ArgAndFallbackData> preProcess(List<ArgAndFallbackData> args)
-      throws OptionsParsingException {
-    if (!args.isEmpty() && args.get(0).arg.startsWith("@")) {
-      if (args.size() > 1) {
-        throw new OptionsParsingException(
-            String.format(
-                TOO_MANY_ARGS_ERROR_MESSAGE_FORMAT,
-                Lists.transform(args, argAndFallbackData -> argAndFallbackData.arg)),
-            args.get(0).arg);
-      }
-      Path path = fs.getPath(args.get(0).arg.substring(1));
-      try {
-        return ArgAndFallbackData.wrapWithFallbackData(parse(path), args.get(0).fallbackData);
-      } catch (RuntimeException | IOException e) {
-        throw new OptionsParsingException(
-            String.format(ERROR_MESSAGE_FORMAT, path, e.getMessage()), args.get(0).arg, e);
-      }
+    init {
+        this.fs = fs
     }
-    return args;
-  }
 
-  /**
-   * Parses the paramsFile and returns a list of argument tokens to be further processed by the
-   * {@link OptionsParser}.
-   *
-   * @param paramsFile The path of the params file to parse.
-   * @return a list of argument tokens.
-   * @throws IOException if there is an error reading paramsFile.
-   * @throws OptionsParsingException if there is an error reading paramsFile.
-   */
-  protected abstract List<String> parse(Path paramsFile)
-      throws IOException, OptionsParsingException;
+    /**
+     * Parses the param file path and replaces the arguments list with the contents if one exists.
+     * 
+     * @param args A list of arguments that may contain @&lt;path&gt; to a params file.
+     * @return A list of arguments suitable for parsing.
+     * @throws OptionsParsingException if the path does not exist.
+     */
+    @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+    override fun preProcess(args: MutableList<com.google.devtools.common.options.OptionsParser.ArgAndFallbackData?>): MutableList<com.google.devtools.common.options.OptionsParser.ArgAndFallbackData?> {
+        if (!args.isEmpty() && args.get(0).arg.startsWith("@")) {
+            if (args.size() > 1) {
+                throw com.google.devtools.common.options.OptionsParsingException(
+                    java.lang.String.format(
+                        com.google.devtools.common.options.ParamsFilePreProcessor.Companion.TOO_MANY_ARGS_ERROR_MESSAGE_FORMAT,
+                        com.google.common.collect.Lists.transform<com.google.devtools.common.options.OptionsParser.ArgAndFallbackData?, String?>(
+                            args,
+                            com.google.common.base.Function { argAndFallbackData: com.google.devtools.common.options.OptionsParser.ArgAndFallbackData? -> argAndFallbackData.arg })
+                    ),
+                    args.get(0).arg
+                )
+            }
+            val path: java.nio.file.Path? = fs.getPath(args.get(0).arg.substring(1))
+            try {
+                return com.google.devtools.common.options.OptionsParser.ArgAndFallbackData.Companion.wrapWithFallbackData(
+                    parse(path),
+                    args.get(0).fallbackData
+                )
+            } catch (e: java.lang.RuntimeException) {
+                throw com.google.devtools.common.options.OptionsParsingException(
+                    java.lang.String.format(
+                        com.google.devtools.common.options.ParamsFilePreProcessor.Companion.ERROR_MESSAGE_FORMAT,
+                        path,
+                        e.getMessage()
+                    ), args.get(0).arg, e
+                )
+            } catch (e: IOException) {
+                throw com.google.devtools.common.options.OptionsParsingException(
+                    java.lang.String.format(
+                        com.google.devtools.common.options.ParamsFilePreProcessor.Companion.ERROR_MESSAGE_FORMAT,
+                        path,
+                        e.getMessage()
+                    ), args.get(0).arg, e
+                )
+            }
+        }
+        return args
+    }
+
+    /**
+     * Parses the paramsFile and returns a list of argument tokens to be further processed by the
+     * [OptionsParser].
+     * 
+     * @param paramsFile The path of the params file to parse.
+     * @return a list of argument tokens.
+     * @throws IOException if there is an error reading paramsFile.
+     * @throws OptionsParsingException if there is an error reading paramsFile.
+     */
+    @Throws(IOException::class, com.google.devtools.common.options.OptionsParsingException::class)
+    protected abstract fun parse(paramsFile: java.nio.file.Path?): MutableList<String?>?
+
+    companion object {
+        const val ERROR_MESSAGE_FORMAT: String = "Error reading params file: %s %s"
+
+        const val TOO_MANY_ARGS_ERROR_MESSAGE_FORMAT: String = "A params file must be the only argument: %s"
+
+        const val UNFINISHED_QUOTE_MESSAGE_FORMAT: String = "Unfinished quote %s at %s"
+    }
 }

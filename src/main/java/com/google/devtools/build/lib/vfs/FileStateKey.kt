@@ -11,25 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
+import com.google.devtools.build.lib.vfs.RootedPath
+import com.google.devtools.build.skyframe.SkyFunctionName
+import com.google.devtools.build.skyframe.SkyKey
 
 /**
  * The SkyKey for FileStateValue.
- *
- * <p>This interface exists to allow {@link RootedPath} to implement {@link SkyKey} in such a way
- * that makes it obvious that {@link RootedPath} is the {@link SkyKey} for FileStateValue.
+ * 
+ * 
+ * This interface exists to allow [RootedPath] to implement [SkyKey] in such a way
+ * that makes it obvious that [RootedPath] is the [SkyKey] for FileStateValue.
  */
-public interface FileStateKey extends SkyKey {
-  SkyFunctionName FILE_STATE = SkyFunctionName.createNonHermetic("FILE_STATE");
+interface FileStateKey : SkyKey {
+    override fun functionName(): SkyFunctionName {
+        return FILE_STATE
+    }
 
-  @Override
-  default SkyFunctionName functionName() {
-    return FILE_STATE;
-  }
+    override fun argument(): RootedPath?
 
-  @Override
-  RootedPath argument();
+    companion object {
+        @kotlin.jvm.JvmField
+        val FILE_STATE: SkyFunctionName = SkyFunctionName.Companion.createNonHermetic("FILE_STATE")
+    }
 }

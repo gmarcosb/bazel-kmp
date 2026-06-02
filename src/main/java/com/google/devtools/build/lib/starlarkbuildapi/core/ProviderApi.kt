@@ -11,18 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.starlarkbuildapi.core;
+package com.google.devtools.build.lib.starlarkbuildapi.core
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.eval.StarlarkTypeValue;
+import com.google.devtools.build.docgen.annot.DocCategory
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.eval.StarlarkTypeValue
 
-/** Interface for provider objects (constructors for {@link StructApi} objects). */
+/** Interface for provider objects (constructors for [StructApi] objects).  */
 @StarlarkBuiltin(
     name = "Provider",
     category = DocCategory.BUILTIN,
-    doc =
-        "A constructor for simple value objects, known as provider instances."
+    doc = ("A constructor for simple value objects, known as provider instances."
             + "<br>"
             + "This value has a dual purpose:"
             + "  <ul>"
@@ -41,4 +40,5 @@ import net.starlark.java.eval.StarlarkTypeValue;
             + "  </ul>"
             + "Create a new <code>Provider</code> using the "
             + "<a href=\"../globals/bzl.html#provider\">provider</a> function.")
-public interface ProviderApi extends StarlarkTypeValue {}
+)
+interface ProviderApi : StarlarkTypeValue

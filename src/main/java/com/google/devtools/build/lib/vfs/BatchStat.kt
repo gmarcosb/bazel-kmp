@@ -11,25 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import java.io.IOException;
-import java.util.List;
+import com.google.devtools.build.lib.vfs.FileStatusWithDigest
+import com.google.devtools.build.lib.vfs.PathFragment
+import java.io.IOException
 
 /**
  * An interface for doing a batch of stat() calls.
  */
-public interface BatchStat {
-
-  /**
-   * Calls stat() on a set of paths.
-   *
-   * @param paths The input paths to stat(), relative to the exec root. Symlinks are not followed.
-   * @return A list of {@link FileStatusWithDigest} in the same order as the input. If a path does
-   *     not exist, {@code null} is returned in the corresponding position.
-   * @throws IOException on I/O errors.
-   * @throws InterruptedException on interrupt.
-   */
-  public List<FileStatusWithDigest> batchStat(Iterable<PathFragment> paths)
-      throws IOException, InterruptedException;
+interface BatchStat {
+    /**
+     * Calls stat() on a set of paths.
+     * 
+     * @param paths The input paths to stat(), relative to the exec root. Symlinks are not followed.
+     * @return A list of [FileStatusWithDigest] in the same order as the input. If a path does
+     * not exist, `null` is returned in the corresponding position.
+     * @throws IOException on I/O errors.
+     * @throws InterruptedException on interrupt.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun batchStat(paths: Iterable<PathFragment?>?): MutableList<FileStatusWithDigest?>?
 }

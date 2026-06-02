@@ -118,7 +118,7 @@ public class BzlCompileFunctionTest extends BuildViewTestCase {
         SkyframeExecutorTestUtils.evaluate(
             getSkyframeExecutor(), skyKey, /* keepGoing= */ false, reporter);
     List<String> loads =
-        BzlLoadFunction.getLoadsFromProgram(result.get(skyKey).getProgram()).stream()
+        BzlLoadFunction.getLoadsFromProgram(result.get(skyKey).program).stream()
             .map(Pair::getFirst)
             .collect(toImmutableList());
     assertThat(loads).containsExactly(":bar.bzl");
@@ -131,7 +131,7 @@ public class BzlCompileFunctionTest extends BuildViewTestCase {
         SkyframeExecutorTestUtils.evaluate(
             getSkyframeExecutor(), skyKey, /* keepGoing= */ false, reporter);
     assertThat(result.get(skyKey).lookupSuccessful()).isFalse();
-    assertThat(result.get(skyKey).getError()).contains("cannot load '//pkg:foo.bzl': no such file");
+    assertThat(result.get(skyKey).error).contains("cannot load '//pkg:foo.bzl': no such file");
   }
 
   @Test
@@ -156,7 +156,7 @@ public class BzlCompileFunctionTest extends BuildViewTestCase {
     try (Mutability mu = Mutability.create()) {
       Object val =
           Starlark.execFileProgram(
-              bzlCompileValue.getProgram(),
+                  bzlCompileValue.program,
               Module.withPredeclared(StarlarkSemantics.DEFAULT, ImmutableMap.of()),
               StarlarkThread.createTransient(mu, StarlarkSemantics.DEFAULT));
       assertThat(val.toString()).isEqualTo("[-9223372036854775809, 9223372036854775808]");
@@ -208,7 +208,7 @@ public class BzlCompileFunctionTest extends BuildViewTestCase {
         SkyframeExecutorTestUtils.evaluate(
             getSkyframeExecutor(), skyKey, /* keepGoing= */ false, reporter);
     assertThat(result.get(skyKey).lookupSuccessful()).isFalse();
-    assertThat(result.get(skyKey).getError())
+    assertThat(result.get(skyKey).error)
         .isEqualTo("compilation of '/workspace/pkg/foo.bzl' failed");
     assertContainsEvent(
         "ERROR /workspace/pkg/foo.bzl: not a valid UTF-8 encoded file; this can lead to"

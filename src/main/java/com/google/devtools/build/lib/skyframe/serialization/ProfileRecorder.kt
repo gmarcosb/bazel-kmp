@@ -11,113 +11,122 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.util.concurrent.FutureCallback;
-import com.google.common.util.concurrent.Futures;
-import com.google.devtools.build.lib.skyframe.serialization.ProfileCollector.Counts;
-import com.google.devtools.build.lib.skyframe.serialization.WriteStatuses.WriteStatus;
-import com.google.protobuf.CodedOutputStream;
-import java.util.ArrayList;
-import java.util.HashMap;
+import com.google.devtools.build.lib.skyframe.serialization.ProfileCollector
+import com.google.devtools.build.lib.skyframe.serialization.ProfileCollector.Counts
+import com.google.devtools.build.lib.skyframe.serialization.ProfilerLocationProvider
+import com.google.devtools.build.lib.skyframe.serialization.WriteStatuses.WriteStatus
+import com.google.protobuf.CodedOutputStream
+import java.util.HashMap
 
 /**
- * Records a profile into a given {@link ProfileCollector} for a single serialization thread.
- *
- * <p>The client should call the {@link #pushLocation} when entering serialization of an object then
- * {@link #recordBytesAndPopLocation} when that object's serialization completes. Since
+ * Records a profile into a given [ProfileCollector] for a single serialization thread.
+ * 
+ * 
+ * The client should call the [.pushLocation] when entering serialization of an object then
+ * [.recordBytesAndPopLocation] when that object's serialization completes. Since
  * serialization is a recursive, this typically means the number of pushes will be greater than the
  * number of pops while serialization is ongoing, but must eventually balance.
- *
- * <p>This recorder buffers samples internally until a {@link WriteStatus} completes. If the write
- * was novel, the samples are merged into the global {@link ProfileCollector}.
+ * 
+ * 
+ * This recorder buffers samples internally until a [WriteStatus] completes. If the write
+ * was novel, the samples are merged into the global [ProfileCollector].
  */
-public final class ProfileRecorder implements FutureCallback<Boolean> {
-  private final ProfileCollector profileCollector;
-  private final ArrayList<ProfilerLocationProvider> locationStack = new ArrayList<>();
-  private final HashMap<ImmutableList<ProfilerLocationProvider>, Counts> bufferedSamples =
-      new HashMap<>();
-  private double byteScale = 1.0;
+class ProfileRecorder(profileCollector: ProfileCollector) : com.google.common.util.concurrent.FutureCallback<Boolean?> {
+    private val profileCollector: ProfileCollector
+    private val locationStack: java.util.ArrayList<ProfilerLocationProvider?> =
+        java.util.ArrayList<ProfilerLocationProvider?>()
+    private val bufferedSamples: HashMap<com.google.common.collect.ImmutableList<ProfilerLocationProvider?>?, Counts> =
+        HashMap<com.google.common.collect.ImmutableList<ProfilerLocationProvider?>?, Counts>()
+    private var byteScale = 1.0
 
-  public ProfileRecorder(ProfileCollector profileCollector) {
-    this.profileCollector = profileCollector;
-  }
-
-  public void pushLocation(ProfilerLocationProvider provider) {
-    locationStack.add(provider);
-  }
-
-  /** Records the given {@code byteCount} at the current location. */
-  public void recordBytes(int byteCount) {
-    ImmutableList<ProfilerLocationProvider> stack =
-        profileCollector.getCanonicalStack(locationStack);
-
-    Counts counts = bufferedSamples.computeIfAbsent(stack, Counts::new);
-    counts.count().getAndIncrement();
-    counts.totalBytes().getAndAdd(byteCount);
-  }
-
-  /** Pops the current location from the stack. */
-  public void popLocation() {
-    locationStack.remove(locationStack.size() - 1);
-  }
-
-  public void recordBytesAndPopLocation(int startBytes, CodedOutputStream codedOut) {
-    int bytesWritten = codedOut.getTotalBytesWritten();
-    checkState(bytesWritten >= startBytes);
-
-    recordBytes(bytesWritten - startBytes);
-    popLocation();
-  }
-
-  /**
-   * Sets a multiplier for all recorded byte counts to account for compression.
-   *
-   * <p>This should be called if compression is detected and before {@link #registerWriteStatus}.
-   */
-  public void setByteScale(double byteScale) {
-    this.byteScale = byteScale;
-  }
-
-  /**
-   * Registers a {@link WriteStatus} to trigger the merge of buffered samples.
-   *
-   * <p>If {@code status} completes with {@code true}, the samples are recorded in the collector.
-   */
-  public void registerWriteStatus(WriteStatus status) {
-    Futures.addCallback(status, this, directExecutor());
-  }
-
-  @Override
-  public void onSuccess(Boolean wasNovel) {
-    if (!wasNovel) {
-      return; // Discards the buffered samples.
+    init {
+        this.profileCollector = profileCollector
     }
-    if (byteScale != 1.0) {
-      // Applies the scaling factor uniformly to all samples.
-      for (Counts counts : bufferedSamples.values()) {
-        int scaledBytes = (int) Math.round(counts.totalBytes().get() * byteScale);
-        counts.totalBytes().set(scaledBytes);
-      }
+
+    fun pushLocation(provider: ProfilerLocationProvider?) {
+        locationStack.add(provider)
     }
-    profileCollector.recordSamples(bufferedSamples);
-  }
 
-  @Override
-  public void onFailure(Throwable t) {
-    // Discard buffered samples on failure.
-  }
+    /** Records the given `byteCount` at the current location.  */
+    fun recordBytes(byteCount: Int) {
+        val stack: com.google.common.collect.ImmutableList<ProfilerLocationProvider?>? =
+            profileCollector.getCanonicalStack(locationStack)
 
-  ProfileCollector getProfileCollector() {
-    return profileCollector;
-  }
+        val counts: Counts = bufferedSamples.computeIfAbsent(
+            stack,
+            java.util.function.Function { stack: com.google.common.collect.ImmutableList<ProfilerLocationProvider?>? ->
+                Counts(
+                    stack
+                )
+            })
+        counts.count.getAndIncrement()
+        counts.totalBytes.getAndAdd(byteCount)
+    }
 
-  void checkStackEmpty(Object subjectForContext) {
-    checkState(
-        locationStack.isEmpty(), "subject=%s, locationStack=%s", subjectForContext, locationStack);
-  }
+    /** Pops the current location from the stack.  */
+    fun popLocation() {
+        locationStack.remove(locationStack.size() - 1)
+    }
+
+    fun recordBytesAndPopLocation(startBytes: Int, codedOut: CodedOutputStream) {
+        val bytesWritten: Int = codedOut.getTotalBytesWritten()
+        com.google.common.base.Preconditions.checkState(bytesWritten >= startBytes)
+
+        recordBytes(bytesWritten - startBytes)
+        popLocation()
+    }
+
+    /**
+     * Sets a multiplier for all recorded byte counts to account for compression.
+     * 
+     * 
+     * This should be called if compression is detected and before [.registerWriteStatus].
+     */
+    fun setByteScale(byteScale: Double) {
+        this.byteScale = byteScale
+    }
+
+    /**
+     * Registers a [WriteStatus] to trigger the merge of buffered samples.
+     * 
+     * 
+     * If `status` completes with `true`, the samples are recorded in the collector.
+     */
+    fun registerWriteStatus(status: WriteStatus) {
+        com.google.common.util.concurrent.Futures.addCallback<Boolean?>(
+            status,
+            this,
+            com.google.common.util.concurrent.MoreExecutors.directExecutor()
+        )
+    }
+
+    override fun onSuccess(wasNovel: Boolean) {
+        if (!wasNovel) {
+            return  // Discards the buffered samples.
+        }
+        if (byteScale != 1.0) {
+            // Applies the scaling factor uniformly to all samples.
+            for (counts in bufferedSamples.values()) {
+                val scaledBytes: Int = java.lang.Math.round(counts.totalBytes.get() * byteScale).toInt()
+                counts.totalBytes.set(scaledBytes)
+            }
+        }
+        profileCollector.recordSamples(bufferedSamples)
+    }
+
+    override fun onFailure(t: Throwable) {
+        // Discard buffered samples on failure.
+    }
+
+    fun getProfileCollector(): ProfileCollector {
+        return profileCollector
+    }
+
+    fun checkStackEmpty(subjectForContext: Any?) {
+        com.google.common.base.Preconditions.checkState(
+            locationStack.isEmpty(), "subject=%s, locationStack=%s", subjectForContext, locationStack
+        )
+    }
 }

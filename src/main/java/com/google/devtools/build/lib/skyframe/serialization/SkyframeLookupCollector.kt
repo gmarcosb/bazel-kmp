@@ -11,83 +11,80 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
-
-import com.google.devtools.build.lib.concurrent.QuiescingFuture;
-import com.google.devtools.build.lib.skyframe.serialization.SharedValueDeserializationContext.PeerFailedException;
-import com.google.devtools.build.lib.skyframe.serialization.SharedValueDeserializationContext.SkyframeLookup;
-import java.util.ArrayDeque;
-import javax.annotation.concurrent.GuardedBy;
+import com.google.devtools.build.lib.concurrent.QuiescingFuture
 
 /**
  * Tracks state pertaining to Skyframe lookups from deserialization.
- *
- * <p>The future completes once it can be determined that all Skyframe lookups are known.
- *
- * <p>This is shared across {@link SharedValueDeserializationContext} and transitive inner contexts
- * created by {@link SharedValueDeserializationContext#readValueForFingerprint}.
+ * 
+ * 
+ * The future completes once it can be determined that all Skyframe lookups are known.
+ * 
+ * 
+ * This is shared across [SharedValueDeserializationContext] and transitive inner contexts
+ * created by [SharedValueDeserializationContext.readValueForFingerprint].
  */
-final class SkyframeLookupCollector extends QuiescingFuture<ArrayDeque<SkyframeLookup<?>>> {
-  /** Skyframe lookups required for deserialization. */
-  private final ArrayDeque<SkyframeLookup<?>> skyframeLookups = new ArrayDeque<>();
+internal class SkyframeLookupCollector :
+    QuiescingFuture<ArrayDeque<com.google.devtools.build.lib.skyframe.serialization.SharedValueDeserializationContext.SkyframeLookup<*>?>?>(
+        com.google.common.util.concurrent.MoreExecutors.directExecutor()
+    ) {
+    /** Skyframe lookups required for deserialization.  */
+    private val skyframeLookups: ArrayDeque<com.google.devtools.build.lib.skyframe.serialization.SharedValueDeserializationContext.SkyframeLookup<*>> =
+        ArrayDeque<com.google.devtools.build.lib.skyframe.serialization.SharedValueDeserializationContext.SkyframeLookup<*>>()
 
-  @GuardedBy("this")
-  private PeerFailedException cause;
+    @javax.annotation.concurrent.GuardedBy("this")
+    private var cause: PeerFailedException? = null
 
-  SkyframeLookupCollector() {
-    super(directExecutor());
-  }
+    /**
+     * A notification that balances the pre-increment of [QuiescingFuture].
+     * 
+     * 
+     * The client must call this once. Must not be called before all initial calls to [ ][SharedValueDeserializationContext.readValueForFingerprint] occur.
+     * 
+     * 
+     * [SharedValueDeserializationContext.getSharedValue] calls may recursively trigger more
+     * fetches asynchronously which is fine as long as the parent child notification ordering
+     * described in [QuiescingFuture] is followed.
+     */
+    fun notifyFetchesInitialized() {
+        decrement()
+    }
 
-  /**
-   * A notification that balances the pre-increment of {@link QuiescingFuture}.
-   *
-   * <p>The client must call this once. Must not be called before all initial calls to {@link
-   * SharedValueDeserializationContext#readValueForFingerprint} occur.
-   *
-   * <p>{@link SharedValueDeserializationContext#getSharedValue} calls may recursively trigger more
-   * fetches asynchronously which is fine as long as the parent child notification ordering
-   * described in {@link QuiescingFuture} is followed.
-   */
-  void notifyFetchesInitialized() {
-    decrement();
-  }
+    fun notifyFetchStarting() {
+        increment()
+    }
 
-  void notifyFetchStarting() {
-    increment();
-  }
+    fun notifyFetchDone() {
+        decrement()
+    }
 
-  void notifyFetchDone() {
-    decrement();
-  }
-
-  void notifyFetchException(Throwable t) {
-    synchronized (this) {
-      if (cause == null) {
-        // If this is the first failure, captures it and abandons any previously collected lookups.
-        cause = new PeerFailedException(t);
-        for (SkyframeLookup<?> lookup : skyframeLookups) {
-          lookup.abandon(cause);
+    fun notifyFetchException(t: Throwable?) {
+        synchronized(this) {
+            if (cause == null) {
+                // If this is the first failure, captures it and abandons any previously collected lookups.
+                cause = PeerFailedException(t)
+                for (lookup in skyframeLookups) {
+                    lookup.abandon(cause)
+                }
+                skyframeLookups.clear()
+            }
         }
-        skyframeLookups.clear();
-      }
+        // The future fails fast here. Any lookups that are added after the failure are immediately
+        // abandoned.
+        notifyException(t)
     }
-    // The future fails fast here. Any lookups that are added after the failure are immediately
-    // abandoned.
-    notifyException(t);
-  }
 
-  @Override
-  protected ArrayDeque<SkyframeLookup<?>> getValue() {
-    return skyframeLookups;
-  }
-
-  synchronized void addLookup(SkyframeLookup<?> lookup) {
-    if (cause != null) {
-      lookup.abandon(cause); // Abandons any lookups added after the first error.
-      return;
+    protected override fun getValue(): ArrayDeque<com.google.devtools.build.lib.skyframe.serialization.SharedValueDeserializationContext.SkyframeLookup<*>> {
+        return skyframeLookups
     }
-    skyframeLookups.addLast(lookup);
-  }
+
+    @kotlin.jvm.Synchronized
+    fun addLookup(lookup: com.google.devtools.build.lib.skyframe.serialization.SharedValueDeserializationContext.SkyframeLookup<*>) {
+        if (cause != null) {
+            lookup.abandon(cause) // Abandons any lookups added after the first error.
+            return
+        }
+        skyframeLookups.addLast(lookup)
+    }
 }

@@ -11,145 +11,145 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.util;
+package com.google.devtools.build.lib.remote.util
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import com.google.devtools.build.lib.remote.common.BulkTransferException
 
-import com.google.devtools.build.lib.remote.common.BulkTransferException;
-import io.reactivex.rxjava3.core.Completable;
-import io.reactivex.rxjava3.core.Flowable;
-import io.reactivex.rxjava3.core.Single;
-import java.io.IOException;
-import javax.annotation.Nullable;
-
-/** Utility methods for the Rx. * */
-public class RxUtils {
-  private RxUtils() {}
-
-  /** Result of an I/O operation to remote cache. */
-  public static class TransferResult {
-    private static final TransferResult OK = new TransferResult(null, false);
-
-    private static final TransferResult INTERRUPTED = new TransferResult(null, true);
-
-    public static TransferResult ok() {
-      return OK;
+/** Utility methods for the Rx. *  */
+object RxUtils {
+    /**
+     * Converts the [Completable] to [Single] which will emit [TransferResult] on
+     * complete or IO errors. Other errors will be propagated to downstream.
+     */
+    fun toTransferResult(completable: Completable): Single<TransferResult?>? {
+        return completable
+            .toSingleDefault<TransferResult?>(com.google.devtools.build.lib.remote.util.RxUtils.TransferResult.Companion.ok())
+            .onErrorResumeNext(
+                io.reactivex.rxjava3.functions.Function { error: Throwable? ->
+                    if (error is IOException) {
+                        return@onErrorResumeNext Single.just<TransferResult?>(
+                            com.google.devtools.build.lib.remote.util.RxUtils.TransferResult.Companion.error(
+                                error
+                            )
+                        )
+                    } else if (error is java.lang.InterruptedException) {
+                        return@onErrorResumeNext Single.just<TransferResult?>(com.google.devtools.build.lib.remote.util.RxUtils.TransferResult.Companion.interrupted())
+                    } else {
+                        return@onErrorResumeNext Single.error<TransferResult?>(error)
+                    }
+                })
     }
 
-    public static TransferResult interrupted() {
-      return INTERRUPTED;
+    /**
+     * Returns a [Completable] which will complete when the [Flowable] complete.
+     * 
+     * 
+     * Errors of [TransferResult.getError] are wrapped in [BulkTransferException].
+     * Other errors are propagated to downstream.
+     */
+    fun mergeBulkTransfer(transfers: Flowable<TransferResult?>): Completable? {
+        return transfers
+            .collectInto<BulkTransferExceptionCollector?>(
+                BulkTransferExceptionCollector(),
+                io.reactivex.rxjava3.functions.BiConsumer { obj: BulkTransferExceptionCollector?, result: TransferResult ->
+                    obj!!.onResult(result)
+                })
+            .flatMapCompletable(io.reactivex.rxjava3.functions.Function { obj: BulkTransferExceptionCollector? -> obj!!.toCompletable() })
     }
 
-    public static TransferResult error(IOException error) {
-      return new TransferResult(error, false);
+    /**
+     * Returns a [Completable] which will complete when all the passed in [Completable]s
+     * complete.
+     * 
+     * 
+     * [IOException]s emitted by the passed in [Completable]s are wrapped in [ ]. Other errors are propagated to downstream.
+     */
+    fun mergeBulkTransfer(vararg transfers: Completable?): Completable? {
+        val flowable: Flowable<TransferResult?> =
+            Flowable.fromArray<Completable?>(*transfers)
+                .flatMapSingle<TransferResult?>(io.reactivex.rxjava3.functions.Function { obj: RxUtils?, completable: Completable ->
+                    toTransferResult(completable)
+                })
+        return RxUtils.mergeBulkTransfer(flowable)
     }
 
-    @Nullable private final IOException error;
+    /** Result of an I/O operation to remote cache.  */
+    class TransferResult internal constructor(error: IOException?, interrupted: Boolean) {
+        private val error: IOException?
 
-    private final boolean interrupted;
+        val isInterrupted: Boolean
 
-    TransferResult(@Nullable IOException error, boolean interrupted) {
-      this.error = error;
-      this.interrupted = interrupted;
+        init {
+            this.error = error
+            this.isInterrupted = interrupted
+        }
+
+        val isOk: Boolean
+            /** Returns `true` if the operation succeed.  */
+            get() = error == null && !this.isInterrupted
+
+        /** Returns `true` if the operation failed.  */
+        fun isError(): Boolean {
+            return error != null
+        }
+
+        /** Returns the IO error if the operation failed.  */
+        fun getError(): IOException? {
+            return error
+        }
+
+        companion object {
+            private val OK = TransferResult(null, false)
+
+            private val INTERRUPTED = TransferResult(null, true)
+
+            fun ok(): TransferResult {
+                return com.google.devtools.build.lib.remote.util.RxUtils.TransferResult.Companion.OK
+            }
+
+            fun interrupted(): TransferResult {
+                return com.google.devtools.build.lib.remote.util.RxUtils.TransferResult.Companion.INTERRUPTED
+            }
+
+            fun error(error: IOException?): TransferResult {
+                return TransferResult(error, false)
+            }
+        }
     }
 
-    /** Returns {@code true} if the operation succeed. */
-    public boolean isOk() {
-      return error == null && !interrupted;
+    private class BulkTransferExceptionCollector {
+        private var bulkTransferException: BulkTransferException? = null
+        private var interrupted = false
+
+        fun onResult(result: TransferResult) {
+            if (result.isOk) {
+                return
+            }
+
+            if (result.isInterrupted) {
+                interrupted = true
+                return
+            }
+
+            val error: IOException?
+            IOException > com.google.common.base.Preconditions.checkNotNull<IOException?>(result.getError())
+            if (bulkTransferException == null) {
+                bulkTransferException = BulkTransferException()
+            }
+
+            bulkTransferException.add(error)
+        }
+
+        fun toCompletable(): Completable? {
+            if (interrupted) {
+                return Completable.error(java.lang.InterruptedException())
+            }
+
+            if (bulkTransferException != null) {
+                return Completable.error(bulkTransferException)
+            }
+
+            return Completable.complete()
+        }
     }
-
-    /** Returns {@code true} if the operation failed. */
-    public boolean isError() {
-      return error != null;
-    }
-
-    public boolean isInterrupted() {
-      return interrupted;
-    }
-
-    /** Returns the IO error if the operation failed. */
-    @Nullable
-    public IOException getError() {
-      return error;
-    }
-  }
-
-  /**
-   * Converts the {@link Completable} to {@link Single} which will emit {@link TransferResult} on
-   * complete or IO errors. Other errors will be propagated to downstream.
-   */
-  public static Single<TransferResult> toTransferResult(Completable completable) {
-    return completable
-        .toSingleDefault(TransferResult.ok())
-        .onErrorResumeNext(
-            error -> {
-              if (error instanceof IOException ioException) {
-                return Single.just(TransferResult.error(ioException));
-              } else if (error instanceof InterruptedException) {
-                return Single.just(TransferResult.interrupted());
-              } else {
-                return Single.error(error);
-              }
-            });
-  }
-
-  private static class BulkTransferExceptionCollector {
-    private BulkTransferException bulkTransferException;
-    private boolean interrupted = false;
-
-    void onResult(TransferResult result) {
-      if (result.isOk()) {
-        return;
-      }
-
-      if (result.isInterrupted()) {
-        interrupted = true;
-        return;
-      }
-
-      IOException error = checkNotNull(result.getError());
-      if (bulkTransferException == null) {
-        bulkTransferException = new BulkTransferException();
-      }
-
-      bulkTransferException.add(error);
-    }
-
-    Completable toCompletable() {
-      if (interrupted) {
-        return Completable.error(new InterruptedException());
-      }
-
-      if (bulkTransferException != null) {
-        return Completable.error(bulkTransferException);
-      }
-
-      return Completable.complete();
-    }
-  }
-
-  /**
-   * Returns a {@link Completable} which will complete when the {@link Flowable} complete.
-   *
-   * <p>Errors of {@link TransferResult#getError()} are wrapped in {@link BulkTransferException}.
-   * Other errors are propagated to downstream.
-   */
-  public static Completable mergeBulkTransfer(Flowable<TransferResult> transfers) {
-    return transfers
-        .collectInto(new BulkTransferExceptionCollector(), BulkTransferExceptionCollector::onResult)
-        .flatMapCompletable(BulkTransferExceptionCollector::toCompletable);
-  }
-
-  /**
-   * Returns a {@link Completable} which will complete when all the passed in {@link Completable}s
-   * complete.
-   *
-   * <p>{@link IOException}s emitted by the passed in {@link Completable}s are wrapped in {@link
-   * BulkTransferException}. Other errors are propagated to downstream.
-   */
-  public static Completable mergeBulkTransfer(Completable... transfers) {
-    Flowable<TransferResult> flowable =
-        Flowable.fromArray(transfers).flatMapSingle(RxUtils::toTransferResult);
-    return mergeBulkTransfer(flowable);
-  }
 }

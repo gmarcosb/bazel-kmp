@@ -11,512 +11,491 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-
-import com.google.common.base.Predicates;
-import com.google.common.collect.HashMultimap;
-import com.google.common.collect.HashMultiset;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Multiset;
-import com.google.common.collect.Multisets;
-import com.google.common.collect.Sets;
-import com.google.devtools.build.lib.concurrent.AbstractQueueVisitor;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.profiler.AutoProfiler;
-import com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.skyframe.Differencer.Diff;
-import com.google.devtools.build.skyframe.Differencer.DiffWithDelta.Delta;
-import com.google.devtools.build.skyframe.InvalidatingNodeVisitor.DeletingInvalidationState;
-import com.google.devtools.build.skyframe.InvalidatingNodeVisitor.DirtyingInvalidationState;
-import com.google.devtools.build.skyframe.InvalidatingNodeVisitor.InvalidationState;
-import com.google.devtools.build.skyframe.SkyframeGraphStatsEvent.EvaluationStats;
-import com.google.errorprone.annotations.ForOverride;
-import java.io.PrintStream;
-import java.time.Duration;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashSet;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.BiPredicate;
-import java.util.function.Consumer;
-import java.util.function.Predicate;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.concurrent.AbstractQueueVisitor
 
 /**
- * Partial implementation of {@link MemoizingEvaluator} with support for incremental and
- * non-incremental evaluations on an {@link InMemoryGraph}.
+ * Partial implementation of [MemoizingEvaluator] with support for incremental and
+ * non-incremental evaluations on an [InMemoryGraph].
  */
-public abstract class AbstractInMemoryMemoizingEvaluator implements MemoizingEvaluator {
-  private static final Duration MIN_TIME_TO_LOG_DELETION = Duration.ofMillis(10);
+abstract class AbstractInMemoryMemoizingEvaluator protected constructor(
+    skyFunctions: com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?>?,
+    differencer: Differencer?,
+    progressReceiver: DirtyAndInflightTrackingProgressReceiver?,
+    eventFilter: com.google.devtools.build.skyframe.EventFilter?,
+    emittedEventState: EmittedEventState?,
+    graphInconsistencyReceiver: GraphInconsistencyReceiver?,
+    keepEdges: Boolean,
+    minimalVersion: com.google.devtools.build.skyframe.Version?
+) : MemoizingEvaluator {
+    protected val skyFunctions: com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?>? = null
+    protected val progressReceiver: DirtyAndInflightTrackingProgressReceiver
 
-  protected final ImmutableMap<SkyFunctionName, SkyFunction> skyFunctions;
-  protected final DirtyAndInflightTrackingProgressReceiver progressReceiver;
+    // State related to invalidation and deletion.
+    private var valuesToDelete: MutableSet<SkyKey?> = LinkedHashSet<SkyKey?>()
+    private var valuesToDirty: MutableSet<SkyKey?> = LinkedHashSet<SkyKey?>()
+    private var valuesToInject: MutableMap<SkyKey?, Delta?> = HashMap<SkyKey?, Delta?>()
+    private val deleterState: DeletingInvalidationState = DeletingInvalidationState()
+    private val differencer: Differencer
+    protected val graphInconsistencyReceiver: GraphInconsistencyReceiver?
+    private val eventFilter: com.google.devtools.build.skyframe.EventFilter?
 
-  // State related to invalidation and deletion.
-  private Set<SkyKey> valuesToDelete = new LinkedHashSet<>();
-  private Set<SkyKey> valuesToDirty = new LinkedHashSet<>();
-  private Map<SkyKey, Delta> valuesToInject = new HashMap<>();
-  private final DeletingInvalidationState deleterState = new DeletingInvalidationState();
-  private final Differencer differencer;
-  protected final GraphInconsistencyReceiver graphInconsistencyReceiver;
-  private final EventFilter eventFilter;
+    /**
+     * Whether to store edges in the graph. Can be false to save memory, in which case incremental
+     * builds are not possible, and all evaluations will be at [Version.constant].
+     */
+    protected val keepEdges: Boolean
 
-  /**
-   * Whether to store edges in the graph. Can be false to save memory, in which case incremental
-   * builds are not possible, and all evaluations will be at {@link Version#constant}.
-   */
-  protected final boolean keepEdges;
+    private val minimalVersion: com.google.devtools.build.skyframe.Version?
 
-  private final Version minimalVersion;
+    // Values that the caller explicitly specified are assumed to be changed -- they will be
+    // re-evaluated even if none of their children are changed.
+    private val invalidatorState: com.google.devtools.build.skyframe.InvalidatingNodeVisitor.InvalidationState =
+        DirtyingInvalidationState()
 
-  // Values that the caller explicitly specified are assumed to be changed -- they will be
-  // re-evaluated even if none of their children are changed.
-  private final InvalidationState invalidatorState = new DirtyingInvalidationState();
+    private val emittedEventState: EmittedEventState?
 
-  private final EmittedEventState emittedEventState;
+    // Null until the first incremental evaluation completes. Always null when not keeping edges.
+    private var lastGraphVersion: IntVersion? = null
 
-  // Null until the first incremental evaluation completes. Always null when not keeping edges.
-  @Nullable private IntVersion lastGraphVersion = null;
+    private val evaluating: AtomicBoolean = AtomicBoolean(false)
 
-  private final AtomicBoolean evaluating = new AtomicBoolean(false);
+    private var latestTopLevelEvaluations: MutableSet<SkyKey?> = HashSet<SkyKey?>()
 
-  private Set<SkyKey> latestTopLevelEvaluations = new HashSet<>();
+    private var rememberTopLevelEvaluations = false
 
-  private boolean rememberTopLevelEvaluations;
-
-  protected AbstractInMemoryMemoizingEvaluator(
-      ImmutableMap<SkyFunctionName, SkyFunction> skyFunctions,
-      Differencer differencer,
-      DirtyAndInflightTrackingProgressReceiver progressReceiver,
-      EventFilter eventFilter,
-      EmittedEventState emittedEventState,
-      GraphInconsistencyReceiver graphInconsistencyReceiver,
-      boolean keepEdges,
-      Version minimalVersion) {
-    this.skyFunctions = checkNotNull(skyFunctions);
-    this.differencer = checkNotNull(differencer);
-    this.progressReceiver = checkNotNull(progressReceiver);
-    this.emittedEventState = checkNotNull(emittedEventState);
-    this.eventFilter = checkNotNull(eventFilter);
-    this.graphInconsistencyReceiver = checkNotNull(graphInconsistencyReceiver);
-    this.keepEdges = keepEdges;
-    this.minimalVersion = checkNotNull(minimalVersion);
-  }
-
-  @Override
-  public <T extends SkyValue> EvaluationResult<T> evaluate(
-      Iterable<? extends SkyKey> roots, EvaluationContext evaluationContext)
-      throws InterruptedException {
-    // NOTE: Performance critical code. See bug "Null build performance parity".
-    Version graphVersion = getNextGraphVersion();
-    setAndCheckEvaluateState(true, roots);
-
-    // Only remember roots for Skyfocus if we're tracking incremental states by keeping edges.
-    if (keepEdges && rememberTopLevelEvaluations) {
-      // Remember the top level evaluation of the build invocation for post-build consumption.
-      Iterables.addAll(latestTopLevelEvaluations, roots);
+    init {
+        TODO(
+            """
+            |Cannot convert element
+            |With text:
+            |this.skyFunctions = <ImmutableMap<SkyFunctionName, SkyFunction>>checkNotNull(skyFunctions);
+            """.trimMargin()
+        )
+            .also {
+                this.differencer = it
+            }<Differencer> com . google . common . base . Preconditions . checkNotNull < Differencer ? > (differencer)
+            .also {
+                this.progressReceiver = it
+            }<DirtyAndInflightTrackingProgressReceiver> com . google . common . base . Preconditions . checkNotNull < DirtyAndInflightTrackingProgressReceiver ? > (progressReceiver)
+            .also {
+                this.emittedEventState = it
+            }<EmittedEventState> com . google . common . base . Preconditions . checkNotNull < EmittedEventState ? > (emittedEventState)
+            .also {
+                this.eventFilter = it
+            }<EventFilter> com . google . common . base . Preconditions . checkNotNull < com . google . devtools . build . skyframe . EventFilter ? > (eventFilter)
+            .also {
+                this.graphInconsistencyReceiver = it
+            }<GraphInconsistencyReceiver> com . google . common . base . Preconditions . checkNotNull < GraphInconsistencyReceiver ? > (graphInconsistencyReceiver)
+        this.keepEdges = keepEdges
+            .also {
+                this.minimalVersion = it
+            }<Version> com . google . common . base . Preconditions . checkNotNull < com . google . devtools . build . skyframe . Version ? > (minimalVersion)
     }
 
-    // Mark for removal any nodes from the previous evaluation that were still inflight or were
-    // rewound but did not complete successfully. When the invalidator runs, it will delete the
-    // reverse transitive closure.
-    valuesToDelete.addAll(progressReceiver.getAndClearInflightKeys());
-    valuesToDelete.addAll(progressReceiver.getAndClearUnsuccessfullyRewoundKeys());
-    try {
-      // The RecordingDifferencer implementation is not quite working as it should be at this point.
-      // It clears the internal data structures after getDiff is called and will not return
-      // diffs for historical versions. This makes the following code sensitive to interrupts.
-      // Ideally we would simply not update lastGraphVersion if an interrupt occurs.
-      Diff diff =
-          differencer.getDiff(
-              new DelegatingWalkableGraph(getInMemoryGraph()), lastGraphVersion, graphVersion);
-      if (!diff.isEmpty() || !valuesToInject.isEmpty() || !valuesToDelete.isEmpty()) {
-        valuesToInject.putAll(diff.changedKeysWithNewValues());
-        invalidate(diff.changedKeysWithoutNewValues());
-        pruneInjectedValues(valuesToInject);
-        invalidate(valuesToInject.keySet());
+    @Throws(java.lang.InterruptedException::class)
+    override fun <T : SkyValue?> evaluate(
+        roots: Iterable<out SkyKey?>, evaluationContext: com.google.devtools.build.skyframe.EvaluationContext
+    ): EvaluationResult<T?>? {
+        // NOTE: Performance critical code. See bug "Null build performance parity".
+        val graphVersion: com.google.devtools.build.skyframe.Version? = this.nextGraphVersion
+        setAndCheckEvaluateState(true, roots)
 
-        performInvalidation();
-        injectValues(graphVersion);
-      }
-      ProcessableGraph graph = getGraphForEvaluation(evaluationContext);
-
-      EvaluationResult<T> result;
-      try (SilentCloseable c = Profiler.instance().profile("ParallelEvaluator.eval")) {
-        ParallelEvaluator evaluator =
-            new ParallelEvaluator(
-                graph,
-                graphVersion,
-                minimalVersion,
-                skyFunctions,
-                evaluationContext.getEventHandler(),
-                emittedEventState,
-                eventFilter,
-                ErrorInfoManager.UseChildErrorInfoIfNecessary.INSTANCE,
-                progressReceiver,
-                graphInconsistencyReceiver,
-                evaluationContext
-                    .getExecutor()
-                    .orElseGet(
-                        () ->
-                            AbstractQueueVisitor.create(
-                                "skyframe-evaluator-memoizing",
-                                evaluationContext.getParallelism(),
-                                ParallelEvaluatorErrorClassifier.instance())),
-                evaluationContext.detectCycles()
-                    ? new SimpleCycleDetector(evaluationContext.storeExactCycles())
-                    : new ShortCircuitingCycleDetector(evaluationContext.getParallelism()),
-                evaluationContext.getUnnecessaryTemporaryStateDropperReceiver(),
-                getKeepGoingPredicate(evaluationContext));
-        result = evaluator.eval(roots);
-      }
-      return EvaluationResult.<T>builder()
-          .mergeFrom(result)
-          .setWalkableGraph(new DelegatingWalkableGraph(getInMemoryGraph()))
-          .build();
-    } finally {
-      if (keepEdges) {
-        lastGraphVersion = (IntVersion) graphVersion;
-      }
-      setAndCheckEvaluateState(false, roots);
-    }
-  }
-
-  /**
-   * Returns whether a key should always be evaluated with --keep_going. By default, all keys should
-   * respect the build level --keep_going flag.
-   */
-  @ForOverride
-  protected Predicate<SkyKey> getKeepGoingPredicate(EvaluationContext evaluationContext) {
-    return evaluationContext.getKeepGoing() ? Predicates.alwaysTrue() : Predicates.alwaysFalse();
-  }
-
-  @ForOverride
-  protected ProcessableGraph getGraphForEvaluation(EvaluationContext evaluationContext)
-      throws InterruptedException {
-    return getInMemoryGraph();
-  }
-
-  @Override
-  public final void delete(BiPredicate<SkyKey, SkyValue> deletePredicate) {
-    try (AutoProfiler ignored =
-        GoogleAutoProfilerUtils.logged("deletion marking", MIN_TIME_TO_LOG_DELETION)) {
-      Set<SkyKey> toDelete = Sets.newConcurrentHashSet();
-      getInMemoryGraph()
-          .parallelForEach(
-              e -> {
-                if (e.isDirty() || deletePredicate.test(e.getKey(), e.getValue())) {
-                  toDelete.add(e.getKey());
-                }
-              });
-      valuesToDelete.addAll(toDelete);
-    }
-  }
-
-  private void setAndCheckEvaluateState(boolean newValue, Iterable<? extends SkyKey> roots) {
-    checkState(
-        evaluating.getAndSet(newValue) != newValue, "Re-entrant evaluation for request: %s", roots);
-  }
-
-  @Override
-  public void rememberTopLevelEvaluations(boolean remember) {
-    this.rememberTopLevelEvaluations = remember;
-  }
-
-  @Override
-  public boolean skyfocusSupported() {
-    return true;
-  }
-
-  @Override
-  public final void deleteDirty(long versionAgeLimit) {
-    checkArgument(versionAgeLimit >= 0, versionAgeLimit);
-    Version threshold = IntVersion.of(lastGraphVersion.getVal() - versionAgeLimit);
-    valuesToDelete.addAll(
-        Sets.filter(
-            progressReceiver.getUnenqueuedDirtyKeys(),
-            skyKey -> {
-              NodeEntry entry = checkNotNull(getInMemoryGraph().getIfPresent(skyKey), skyKey);
-              checkState(entry.isDirty(), skyKey);
-              return entry.getVersion().atMost(threshold);
-            }));
-  }
-
-  @Override
-  public final Map<SkyKey, SkyValue> getValues() {
-    return getInMemoryGraph().getValues();
-  }
-
-  @Override
-  public final Map<SkyKey, SkyValue> getDoneValues() {
-    return getInMemoryGraph().getDoneValues();
-  }
-
-  private static boolean isDone(@Nullable NodeEntry entry) {
-    return entry != null && entry.isDone();
-  }
-
-  @Override
-  @Nullable
-  public final SkyValue getExistingValue(SkyKey key) {
-    InMemoryNodeEntry entry = getExistingEntryAtCurrentlyEvaluatingVersion(key);
-    // Use toValue() to guard against the node being rewound after we check that it's done. Calling
-    // getValue() in such a case would throw an exception, while toValue() returns the latest value.
-    return isDone(entry) ? entry.toValue() : null;
-  }
-
-  @Override
-  @Nullable
-  public final ErrorInfo getExistingErrorForTesting(SkyKey key) {
-    InMemoryNodeEntry entry = getExistingEntryAtCurrentlyEvaluatingVersion(key);
-    return isDone(entry) ? entry.getErrorInfo() : null;
-  }
-
-  @Nullable
-  @Override
-  public final InMemoryNodeEntry getExistingEntryAtCurrentlyEvaluatingVersion(SkyKey key) {
-    return getInMemoryGraph().getIfPresent(key);
-  }
-
-  @Override
-  public final void dumpSummary(PrintStream out) {
-    long nodes = 0;
-    long edges = 0;
-    for (InMemoryNodeEntry entry : getInMemoryGraph().getAllNodeEntries()) {
-      nodes++;
-      if (entry.isDone() && entry.keepsEdges()) {
-        edges += Iterables.size(entry.getDirectDeps());
-      }
-    }
-    out.println("Node count: " + nodes);
-    out.println("Edge count: " + edges);
-  }
-
-  @Override
-  public final void dumpCount(PrintStream out) {
-    Multiset<SkyFunctionName> counter = HashMultiset.create();
-    for (InMemoryNodeEntry entry : getInMemoryGraph().getAllNodeEntries()) {
-      counter.add(entry.getKey().functionName());
-    }
-    for (var entry : Multisets.copyHighestCountFirst(counter).entrySet()) {
-      out.println(entry.getElement() + "\t" + entry.getCount()); // \t is spreadsheet-friendly.
-    }
-  }
-
-  private void processGraphForDumpCommand(
-      Predicate<String> filter, PrintStream out, Consumer<InMemoryNodeEntry> consumer)
-      throws InterruptedException {
-    for (InMemoryNodeEntry entry : getInMemoryGraph().getAllNodeEntries()) {
-      // This can be very long running on large graphs so check for user abort requests.
-      if (Thread.interrupted()) {
-        out.println("aborting");
-        throw new InterruptedException();
-      }
-
-      if (!filter.test(entry.getKey().getCanonicalName()) || !entry.isDone()) {
-        continue;
-      }
-
-      consumer.accept(entry);
-    }
-  }
-
-  @Override
-  public final void dumpValues(PrintStream out, Predicate<String> filter)
-      throws InterruptedException {
-    processGraphForDumpCommand(
-        filter,
-        out,
-        entry -> {
-          out.println(entry.getKey().getCanonicalName());
-          entry.getValue().debugPrint(out);
-          out.println();
-        });
-  }
-
-  @Override
-  public final void dumpDeps(PrintStream out, Predicate<String> filter)
-      throws InterruptedException {
-    processGraphForDumpCommand(
-        filter,
-        out,
-        entry -> {
-          String canonicalizedKey = entry.getKey().getCanonicalName();
-          out.println(canonicalizedKey);
-          if (entry.keepsEdges()) {
-            GroupedDeps deps = GroupedDeps.decompress(entry.getCompressedDirectDepsForDoneEntry());
-            for (int i = 0; i < deps.numGroups(); i++) {
-              out.format("  Group %d:\n", i + 1);
-              for (SkyKey dep : deps.getDepGroup(i)) {
-                out.print("    ");
-                out.println(dep.getCanonicalName());
-                out.println(); // newline for readability
-              }
-            }
-          } else {
-            out.println("  (direct deps not stored)");
-          }
-          out.println();
-        });
-  }
-
-  @Override
-  public final void dumpFunctionGraph(PrintStream out, Predicate<String> filter)
-      throws InterruptedException {
-    HashMultimap<SkyFunctionName, SkyFunctionName> seen = HashMultimap.create();
-    out.println("digraph {");
-    processGraphForDumpCommand(
-        filter,
-        out,
-        entry -> {
-          if (entry.keepsEdges()) {
-            SkyFunctionName source = entry.getKey().functionName();
-            for (SkyKey dep : entry.getDirectDeps()) {
-              SkyFunctionName dest = dep.functionName();
-              if (!seen.put(source, dest)) {
-                continue;
-              }
-              out.format("  \"%s\" -> \"%s\"\n", source, dest);
-            }
-          }
-        });
-    out.println("}");
-  }
-
-  @Override
-  public final void dumpRdeps(PrintStream out, Predicate<String> filter)
-      throws InterruptedException {
-    processGraphForDumpCommand(
-        filter,
-        out,
-        entry -> {
-          out.println(entry.getKey().getCanonicalName());
-          if (entry.keepsEdges()) {
-            Collection<SkyKey> rdeps = entry.getReverseDepsForDoneEntry();
-            for (SkyKey rdep : rdeps) {
-              out.print("    ");
-              out.println(rdep.getCanonicalName());
-              out.println();
-            }
-          } else {
-            out.println("  (rdeps not stored)");
-          }
-          out.println();
-        });
-  }
-
-  @Override
-  public final void cleanupInterningPools() {
-    getInMemoryGraph().cleanupInterningPools();
-  }
-
-  private void invalidate(Iterable<SkyKey> diff) {
-    Iterables.addAll(valuesToDirty, diff);
-  }
-
-  /**
-   * Removes entries in {@code valuesToInject} whose values are equal to the present values in the
-   * graph.
-   */
-  private void pruneInjectedValues(Map<SkyKey, Delta> valuesToInject) {
-    for (Iterator<Entry<SkyKey, Delta>> it = valuesToInject.entrySet().iterator(); it.hasNext(); ) {
-      Map.Entry<SkyKey, Delta> entry = it.next();
-      SkyKey key = entry.getKey();
-      SkyValue newValue = entry.getValue().newValue();
-      InMemoryNodeEntry prevEntry = getInMemoryGraph().getIfPresent(key);
-      @Nullable Version newMtsv = entry.getValue().newMaxTransitiveSourceVersion();
-      if (isDone(prevEntry)) {
-        @Nullable Version oldMtsv = prevEntry.getMaxTransitiveSourceVersion();
-        if (keepEdges) {
-          if (!prevEntry.hasAtLeastOneDep()) {
-            if (newValue.equals(prevEntry.getValue())
-                && !valuesToDirty.contains(key)
-                && !valuesToDelete.contains(key)
-                && Objects.equals(newMtsv, oldMtsv)) {
-              it.remove();
-            }
-          } else {
-            // Rare situation of an injected dep that depends on another node. Usually the dep is
-            // the error transience node. When working with external repositories, it can also be
-            // an external workspace file. Don't bother injecting it, just invalidate it.
-            // We'll wastefully evaluate the node freshly during evaluation, but this happens very
-            // rarely.
-            valuesToDirty.add(key);
-            it.remove();
-          }
-        } else {
-          // No incrementality. Just delete the old value from the graph. The new value is about to
-          // be injected.
-          getInMemoryGraph().remove(key);
+        // Only remember roots for Skyfocus if we're tracking incremental states by keeping edges.
+        if (keepEdges && rememberTopLevelEvaluations) {
+            // Remember the top level evaluation of the build invocation for post-build consumption.
+            com.google.common.collect.Iterables.addAll<SkyKey?>(latestTopLevelEvaluations, roots)
         }
-      }
+
+        // Mark for removal any nodes from the previous evaluation that were still inflight or were
+        // rewound but did not complete successfully. When the invalidator runs, it will delete the
+        // reverse transitive closure.
+        valuesToDelete.addAll(progressReceiver.getAndClearInflightKeys())
+        valuesToDelete.addAll(progressReceiver.getAndClearUnsuccessfullyRewoundKeys())
+        try {
+            // The RecordingDifferencer implementation is not quite working as it should be at this point.
+            // It clears the internal data structures after getDiff is called and will not return
+            // diffs for historical versions. This makes the following code sensitive to interrupts.
+            // Ideally we would simply not update lastGraphVersion if an interrupt occurs.
+            val diff: com.google.devtools.build.skyframe.Differencer.Diff =
+                differencer.getDiff(
+                    DelegatingWalkableGraph(getInMemoryGraph()), lastGraphVersion, graphVersion
+                )
+            if (!diff.isEmpty() || !valuesToInject.isEmpty() || !valuesToDelete.isEmpty()) {
+                valuesToInject.putAll(diff.changedKeysWithNewValues())
+                invalidate(diff.changedKeysWithoutNewValues())
+                pruneInjectedValues(valuesToInject)
+                invalidate(valuesToInject.keySet())
+
+                performInvalidation()
+                injectValues(graphVersion)
+            }
+            val graph: ProcessableGraph? = getGraphForEvaluation(evaluationContext)
+
+            val result: EvaluationResult<T?>
+            Profiler.instance().profile("ParallelEvaluator.eval").use { c ->
+                val evaluator: ParallelEvaluator =
+                    ParallelEvaluator(
+                        graph,
+                        graphVersion,
+                        minimalVersion,
+                        skyFunctions,
+                        evaluationContext.getEventHandler(),
+                        emittedEventState,
+                        eventFilter,
+                        UseChildErrorInfoIfNecessary.Companion.INSTANCE,
+                        progressReceiver,
+                        graphInconsistencyReceiver,
+                        evaluationContext
+                            .getExecutor()
+                            .orElseGet(
+                                java.util.function.Supplier {
+                                    AbstractQueueVisitor.create(
+                                        "skyframe-evaluator-memoizing",
+                                        evaluationContext.getParallelism(),
+                                        ParallelEvaluatorErrorClassifier.Companion.instance()
+                                    )
+                                }),
+                        if (evaluationContext.detectCycles())
+                            SimpleCycleDetector(evaluationContext.storeExactCycles())
+                        else
+                            ShortCircuitingCycleDetector(evaluationContext.getParallelism()),
+                        evaluationContext.getUnnecessaryTemporaryStateDropperReceiver(),
+                        getKeepGoingPredicate(evaluationContext)
+                    )
+                result = evaluator.eval<T?>(roots)
+            }
+            return EvaluationResult.Companion.builder<T?>()
+                .mergeFrom(result)
+                .setWalkableGraph(DelegatingWalkableGraph(getInMemoryGraph()))
+                .build()
+        } finally {
+            if (keepEdges) {
+                lastGraphVersion = graphVersion as IntVersion?
+            }
+            setAndCheckEvaluateState(false, roots)
+        }
     }
-  }
 
-  /** Injects values in {@code valuesToInject} into the graph. */
-  private void injectValues(Version version) {
-    if (valuesToInject.isEmpty()) {
-      return;
+    /**
+     * Returns whether a key should always be evaluated with --keep_going. By default, all keys should
+     * respect the build level --keep_going flag.
+     */
+    @com.google.errorprone.annotations.ForOverride
+    protected fun getKeepGoingPredicate(evaluationContext: com.google.devtools.build.skyframe.EvaluationContext): java.util.function.Predicate<SkyKey?> {
+        return if (evaluationContext.getKeepGoing()) com.google.common.base.Predicates.alwaysTrue<SkyKey?>() else com.google.common.base.Predicates.alwaysFalse<SkyKey?>()
     }
-    try {
-      ParallelEvaluator.injectValues(valuesToInject, version, getInMemoryGraph(), progressReceiver);
-    } catch (InterruptedException e) {
-      throw new IllegalStateException("InMemoryGraph doesn't throw interrupts", e);
+
+    @com.google.errorprone.annotations.ForOverride
+    @Throws(java.lang.InterruptedException::class)
+    protected fun getGraphForEvaluation(evaluationContext: com.google.devtools.build.skyframe.EvaluationContext?): ProcessableGraph? {
+        return getInMemoryGraph()
     }
-    // Start with a new map to avoid bloat since clear() does not downsize the map.
-    valuesToInject = new HashMap<>();
-  }
 
-  private void performInvalidation() throws InterruptedException {
-    EagerInvalidator.delete(
-        getInMemoryGraph(), valuesToDelete, progressReceiver, deleterState, keepEdges);
-    // Note that clearing the valuesToDelete would not do an internal resizing. Therefore, if any
-    // build has a large set of dirty values, subsequent operations (even clearing) will be slower.
-    // Instead, just start afresh with a new LinkedHashSet.
-    valuesToDelete = new LinkedHashSet<>();
-
-    EagerInvalidator.invalidate(
-        getInMemoryGraph(), valuesToDirty, progressReceiver, invalidatorState);
-    // Ditto.
-    valuesToDirty = new LinkedHashSet<>();
-  }
-
-  private Version getNextGraphVersion() {
-    if (!keepEdges) {
-      return Version.constant();
-    } else if (lastGraphVersion == null) {
-      return IntVersion.of(0);
-    } else {
-      return lastGraphVersion.next();
+    override fun delete(deletePredicate: java.util.function.BiPredicate<SkyKey?, SkyValue?>) {
+        GoogleAutoProfilerUtils.logged("deletion marking", MIN_TIME_TO_LOG_DELETION).use { ignored ->
+            val toDelete: MutableSet<SkyKey?> = com.google.common.collect.Sets.newConcurrentHashSet<SkyKey?>()
+            getInMemoryGraph()
+                .parallelForEach(
+                    java.util.function.Consumer { e: InMemoryNodeEntry? ->
+                        if (e.isDirty() || deletePredicate.test(e.getKey(), e.getValue())) {
+                            toDelete.add(e.getKey())
+                        }
+                    })
+            valuesToDelete.addAll(toDelete)
+        }
     }
-  }
 
-  public Set<SkyKey> getLatestTopLevelEvaluations() {
-    return latestTopLevelEvaluations;
-  }
+    private fun setAndCheckEvaluateState(newValue: Boolean, roots: Iterable<out SkyKey?>?) {
+        com.google.common.base.Preconditions.checkState(
+            evaluating.getAndSet(newValue) != newValue, "Re-entrant evaluation for request: %s", roots
+        )
+    }
 
-  @Override
-  public void cleanupLatestTopLevelEvaluations() {
-    latestTopLevelEvaluations = new HashSet<>();
-  }
+    override fun rememberTopLevelEvaluations(remember: Boolean) {
+        this.rememberTopLevelEvaluations = remember
+    }
 
-  @Override
-  public void postLoggingStats(ExtendedEventHandler eventHandler) {
-    EvaluationStats evaluationStats = progressReceiver.aggregateAndReset();
-    eventHandler.post(
-        new SkyframeGraphStatsEvent(getInMemoryGraph().valuesSize(), evaluationStats));
-  }
+    override fun skyfocusSupported(): Boolean {
+        return true
+    }
+
+    override fun deleteDirty(versionAgeLimit: Long) {
+        com.google.common.base.Preconditions.checkArgument(versionAgeLimit >= 0, versionAgeLimit)
+        val threshold: com.google.devtools.build.skyframe.Version? =
+            IntVersion.Companion.of(lastGraphVersion.getVal() - versionAgeLimit)
+        valuesToDelete.addAll(
+            com.google.common.collect.Sets.filter<SkyKey?>(
+                progressReceiver.getUnenqueuedDirtyKeys(),
+                com.google.common.base.Predicate { skyKey: SkyKey? ->
+                    val entry: NodeEntry = com.google.common.base.Preconditions.checkNotNull<InMemoryNodeEntry>(
+                        getInMemoryGraph().getIfPresent(skyKey), skyKey
+                    )
+                    com.google.common.base.Preconditions.checkState(entry.isDirty(), skyKey)
+                    entry.getVersion().atMost(threshold)
+                })
+        )
+    }
+
+    val values: MutableMap<SkyKey, SkyValue>?
+        get() = getInMemoryGraph().getValues()
+
+    val doneValues: MutableMap<SkyKey, SkyValue>?
+        get() = getInMemoryGraph().getDoneValues()
+
+    override fun getExistingValue(key: SkyKey?): SkyValue? {
+        val entry: InMemoryNodeEntry? = getExistingEntryAtCurrentlyEvaluatingVersion(key)
+        // Use toValue() to guard against the node being rewound after we check that it's done. Calling
+        // getValue() in such a case would throw an exception, while toValue() returns the latest value.
+        return if (isDone(entry)) entry.toValue() else null
+    }
+
+    override fun getExistingErrorForTesting(key: SkyKey?): com.google.devtools.build.skyframe.ErrorInfo? {
+        val entry: InMemoryNodeEntry? = getExistingEntryAtCurrentlyEvaluatingVersion(key)
+        return if (isDone(entry)) entry.getErrorInfo() else null
+    }
+
+    override fun getExistingEntryAtCurrentlyEvaluatingVersion(key: SkyKey?): InMemoryNodeEntry? {
+        return getInMemoryGraph().getIfPresent(key)
+    }
+
+    override fun dumpSummary(out: PrintStream) {
+        var nodes: Long = 0
+        var edges: Long = 0
+        for (entry in getInMemoryGraph().getAllNodeEntries()) {
+            nodes++
+            if (entry.isDone() && entry.keepsEdges()) {
+                edges += com.google.common.collect.Iterables.size(entry.getDirectDeps()).toLong()
+            }
+        }
+        out.println("Node count: " + nodes)
+        out.println("Edge count: " + edges)
+    }
+
+    override fun dumpCount(out: PrintStream) {
+        val counter: com.google.common.collect.Multiset<SkyFunctionName?> =
+            com.google.common.collect.HashMultiset.create<SkyFunctionName?>()
+        for (entry in getInMemoryGraph().getAllNodeEntries()) {
+            counter.add(entry.getKey().functionName())
+        }
+        for (entry in com.google.common.collect.Multisets.copyHighestCountFirst<SkyFunctionName?>(counter).entrySet()) {
+            out.println(entry.getElement().toString() + "\t" + entry.getCount()) // \t is spreadsheet-friendly.
+        }
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    private fun processGraphForDumpCommand(
+        filter: java.util.function.Predicate<String?>,
+        out: PrintStream,
+        consumer: java.util.function.Consumer<InMemoryNodeEntry?>
+    ) {
+        for (entry in getInMemoryGraph().getAllNodeEntries()) {
+            // This can be very long running on large graphs so check for user abort requests.
+            if (java.lang.Thread.interrupted()) {
+                out.println("aborting")
+                throw java.lang.InterruptedException()
+            }
+
+            if (!filter.test(entry.getKey().getCanonicalName()) || !entry.isDone()) {
+                continue
+            }
+
+            consumer.accept(entry)
+        }
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    override fun dumpValues(out: PrintStream, filter: java.util.function.Predicate<String?>) {
+        processGraphForDumpCommand(
+            filter,
+            out,
+            java.util.function.Consumer { entry: InMemoryNodeEntry? ->
+                out.println(entry.getKey().getCanonicalName())
+                entry.getValue().debugPrint(out)
+                out.println()
+            })
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    override fun dumpDeps(out: PrintStream, filter: java.util.function.Predicate<String?>) {
+        processGraphForDumpCommand(
+            filter,
+            out,
+            java.util.function.Consumer { entry: InMemoryNodeEntry? ->
+                val canonicalizedKey: String? = entry.getKey().getCanonicalName()
+                out.println(canonicalizedKey)
+                if (entry.keepsEdges()) {
+                    val deps: GroupedDeps =
+                        GroupedDeps.Companion.decompress(entry.getCompressedDirectDepsForDoneEntry())
+                    for (i in 0..<deps.numGroups()) {
+                        out.format("  Group %d:\n", i + 1)
+                        for (dep in deps.getDepGroup(i)) {
+                            out.print("    ")
+                            out.println(dep.getCanonicalName())
+                            out.println() // newline for readability
+                        }
+                    }
+                } else {
+                    out.println("  (direct deps not stored)")
+                }
+                out.println()
+            })
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    override fun dumpFunctionGraph(out: PrintStream, filter: java.util.function.Predicate<String?>) {
+        val seen: com.google.common.collect.HashMultimap<SkyFunctionName?, SkyFunctionName?> =
+            com.google.common.collect.HashMultimap.create<SkyFunctionName?, SkyFunctionName?>()
+        out.println("digraph {")
+        processGraphForDumpCommand(
+            filter,
+            out,
+            java.util.function.Consumer { entry: InMemoryNodeEntry? ->
+                if (entry.keepsEdges()) {
+                    val source: SkyFunctionName? = entry.getKey().functionName()
+                    for (dep in entry.getDirectDeps()) {
+                        val dest: SkyFunctionName? = dep.functionName()
+                        if (!seen.put(source, dest)) {
+                            continue
+                        }
+                        out.format("  \"%s\" -> \"%s\"\n", source, dest)
+                    }
+                }
+            })
+        out.println("}")
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    override fun dumpRdeps(out: PrintStream, filter: java.util.function.Predicate<String?>) {
+        processGraphForDumpCommand(
+            filter,
+            out,
+            java.util.function.Consumer { entry: InMemoryNodeEntry? ->
+                out.println(entry.getKey().getCanonicalName())
+                if (entry.keepsEdges()) {
+                    val rdeps: MutableCollection<SkyKey> = entry.getReverseDepsForDoneEntry()
+                    for (rdep in rdeps) {
+                        out.print("    ")
+                        out.println(rdep.getCanonicalName())
+                        out.println()
+                    }
+                } else {
+                    out.println("  (rdeps not stored)")
+                }
+                out.println()
+            })
+    }
+
+    override fun cleanupInterningPools() {
+        getInMemoryGraph().cleanupInterningPools()
+    }
+
+    private fun invalidate(diff: Iterable<SkyKey?>) {
+        com.google.common.collect.Iterables.addAll<SkyKey?>(valuesToDirty, diff)
+    }
+
+    /**
+     * Removes entries in `valuesToInject` whose values are equal to the present values in the
+     * graph.
+     */
+    private fun pruneInjectedValues(valuesToInject: MutableMap<SkyKey?, Delta?>) {
+        val it: MutableIterator<MutableMap.MutableEntry<SkyKey?, Delta?>> = valuesToInject.entrySet().iterator()
+        while (it.hasNext()) {
+            val entry: MutableMap.MutableEntry<SkyKey?, Delta?> = it.next()
+            val key: SkyKey? = entry.getKey()
+            val newValue: SkyValue = entry.getValue().newValue
+            val prevEntry: InMemoryNodeEntry? = getInMemoryGraph().getIfPresent(key)
+            val newMtsv: com.google.devtools.build.skyframe.Version? = entry.getValue().newMaxTransitiveSourceVersion
+            if (isDone(prevEntry)) {
+                val oldMtsv: com.google.devtools.build.skyframe.Version? = prevEntry.getMaxTransitiveSourceVersion()
+                if (keepEdges) {
+                    if (!prevEntry.hasAtLeastOneDep()) {
+                        if (newValue == prevEntry.getValue()
+                            && !valuesToDirty.contains(key) && !valuesToDelete.contains(key) && newMtsv == oldMtsv
+                        ) {
+                            it.remove()
+                        }
+                    } else {
+                        // Rare situation of an injected dep that depends on another node. Usually the dep is
+                        // the error transience node. When working with external repositories, it can also be
+                        // an external workspace file. Don't bother injecting it, just invalidate it.
+                        // We'll wastefully evaluate the node freshly during evaluation, but this happens very
+                        // rarely.
+                        valuesToDirty.add(key)
+                        it.remove()
+                    }
+                } else {
+                    // No incrementality. Just delete the old value from the graph. The new value is about to
+                    // be injected.
+                    getInMemoryGraph().remove(key)
+                }
+            }
+        }
+    }
+
+    /** Injects values in `valuesToInject` into the graph.  */
+    private fun injectValues(version: com.google.devtools.build.skyframe.Version?) {
+        if (valuesToInject.isEmpty()) {
+            return
+        }
+        try {
+            ParallelEvaluator.Companion.injectValues(valuesToInject, version, getInMemoryGraph(), progressReceiver)
+        } catch (e: java.lang.InterruptedException) {
+            throw java.lang.IllegalStateException("InMemoryGraph doesn't throw interrupts", e)
+        }
+        // Start with a new map to avoid bloat since clear() does not downsize the map.
+        valuesToInject = HashMap<SkyKey?, Delta?>()
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    private fun performInvalidation() {
+        EagerInvalidator.delete(
+            getInMemoryGraph(), valuesToDelete, progressReceiver, deleterState, keepEdges
+        )
+        // Note that clearing the valuesToDelete would not do an internal resizing. Therefore, if any
+        // build has a large set of dirty values, subsequent operations (even clearing) will be slower.
+        // Instead, just start afresh with a new LinkedHashSet.
+        valuesToDelete = LinkedHashSet<SkyKey?>()
+
+        EagerInvalidator.invalidate(
+            getInMemoryGraph(), valuesToDirty, progressReceiver, invalidatorState
+        )
+        // Ditto.
+        valuesToDirty = LinkedHashSet<SkyKey?>()
+    }
+
+    private val nextGraphVersion: com.google.devtools.build.skyframe.Version?
+        get() {
+            if (!keepEdges) {
+                return com.google.devtools.build.skyframe.Version.Companion.constant()
+            } else if (lastGraphVersion == null) {
+                return IntVersion.Companion.of(0)
+            } else {
+                return lastGraphVersion.next()
+            }
+        }
+
+    fun getLatestTopLevelEvaluations(): MutableSet<SkyKey?> {
+        return latestTopLevelEvaluations
+    }
+
+    override fun cleanupLatestTopLevelEvaluations() {
+        latestTopLevelEvaluations = HashSet<SkyKey?>()
+    }
+
+    override fun postLoggingStats(eventHandler: ExtendedEventHandler) {
+        val evaluationStats: EvaluationStats = progressReceiver.aggregateAndReset()
+        eventHandler.post(
+            SkyframeGraphStatsEvent(getInMemoryGraph().valuesSize(), evaluationStats)
+        )
+    }
+
+    companion object {
+        private val MIN_TIME_TO_LOG_DELETION: java.time.Duration? = java.time.Duration.ofMillis(10)
+
+        private fun isDone(entry: NodeEntry?): Boolean {
+            return entry != null && entry.isDone()
+        }
+    }
 }

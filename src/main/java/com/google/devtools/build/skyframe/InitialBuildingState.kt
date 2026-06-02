@@ -11,40 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.devtools.build.skyframe.NodeEntry.DirtyType;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.DirtyBuildingState
+import com.google.devtools.build.skyframe.GroupedDeps
+import com.google.devtools.build.skyframe.NodeEntry.DirtyType
+import com.google.devtools.build.skyframe.SkyValue
 
 /**
- * {@link DirtyBuildingState} for a node on its initial build or a {@link
- * NonIncrementalInMemoryNodeEntry} that was {@linkplain DirtyType#REWIND rewound}.
+ * [DirtyBuildingState] for a node on its initial build or a [ ] that was [rewound][DirtyType.REWIND].
  */
-class InitialBuildingState extends DirtyBuildingState {
+internal open class InitialBuildingState : DirtyBuildingState(DirtyType.CHANGE) {
+    val lastBuildDirectDeps: GroupedDeps?
+        get() = null
 
-  InitialBuildingState() {
-    super(DirtyType.CHANGE);
-  }
+    val numOfGroupsInLastBuildDirectDeps: Int
+        get() = 0
 
-  @Nullable
-  @Override
-  public final GroupedDeps getLastBuildDirectDeps() {
-    return null;
-  }
+    val lastBuildValue: SkyValue?
+        get() = null
 
-  @Override
-  protected final int getNumOfGroupsInLastBuildDirectDeps() {
-    return 0;
-  }
-
-  @Nullable
-  @Override
-  public SkyValue getLastBuildValue() {
-    return null;
-  }
-
-  @Override
-  protected final boolean isIncremental() {
-    return false;
-  }
+    protected val isIncremental: Boolean
+        get() = false
 }

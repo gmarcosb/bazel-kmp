@@ -11,89 +11,75 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime.commands.info
 
-package com.google.devtools.build.lib.runtime.commands.info;
+import com.google.common.base.Supplier
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.Iterables
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue
 
-import static java.util.stream.Collectors.joining;
-
-import com.google.common.base.Supplier;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.WorkerMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.WorkerMetrics.WorkerStats;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.InfoItem;
-import com.google.devtools.build.lib.worker.WorkerProcessMetricsCollector;
-import java.util.List;
-
-/** Info item for persistent worker metrics. */
-public final class WorkerMetricsInfoItem extends InfoItem {
-  public WorkerMetricsInfoItem() {
-    super("worker_metrics", "persistent worker metrics", true);
-  }
-
-  @Override
-  public byte[] get(
-      Supplier<BuildConfigurationValue> configurationSupplier, CommandEnvironment env) {
-
-    ImmutableList<WorkerMetrics> proto =
-        WorkerProcessMetricsCollector.instance().getLiveWorkerMetrics();
-    if (proto.isEmpty()) {
-      return print("No persistent workers active.");
-    } else {
-      StringBuilder stringBuilder = new StringBuilder();
-      for (WorkerMetrics workerMetrics : proto) {
-        stringBuilder
-            .append("- ")
-            .append("pid ")
-            .append(workerMetrics.getProcessId())
-            .append(", ")
-            .append(workerMetrics.getMnemonic())
-            .append(" (hash: ")
-            .append(Long.toHexString(workerMetrics.getWorkerKeyHash()))
-            .append(")")
-            .append(", ");
-        List<WorkerStats> workerStats = workerMetrics.getWorkerStatsList();
-        if (!workerStats.isEmpty()) {
-          WorkerStats lastWorkerStats = Iterables.getLast(workerStats);
-          long currentTimeMillis = env.getClock().currentTimeMillis();
-          long diffSeconds =
-              (currentTimeMillis - lastWorkerStats.getLastActionStartTimeInMs()) / 1000;
-          long minutesAgo = diffSeconds / 60;
-          long remainingSeconds = diffSeconds - 60 * minutesAgo;
-          stringBuilder
-              .append(lastWorkerStats.getWorkerMemoryInKb() / 1024)
-              .append("MB, ")
-              .append("last action ");
-          if (minutesAgo > 0) {
-            stringBuilder.append(minutesAgo).append("m ");
-          }
-          stringBuilder.append(remainingSeconds).append("s ago, ");
-        }
-        stringBuilder
-            .append("executed ")
-            .append(workerMetrics.getActionsExecuted())
-            .append(" actions, ");
-        if (workerMetrics.getIsSandbox()) {
-          stringBuilder.append("sandboxed, ");
-        }
-        if (workerMetrics.getIsMultiplex()) {
-          stringBuilder.append("multiplexed, ");
-        }
-        String workerIds =
-            workerMetrics.getWorkerIdsList().stream()
-                .sorted()
-                .map(e -> e.toString())
-                .collect(joining(", "));
-        if (workerMetrics.getWorkerIdsList().size() == 1) {
-          stringBuilder.append("id ").append(workerIds);
+/** Info item for persistent worker metrics.  */
+class WorkerMetricsInfoItem : InfoItem("worker_metrics", "persistent worker metrics", true) {
+    public override fun get(
+        configurationSupplier: Supplier<BuildConfigurationValue?>?, env: CommandEnvironment
+    ): ByteArray {
+        val proto: ImmutableList<WorkerMetrics> =
+            WorkerProcessMetricsCollector.instance().getLiveWorkerMetrics()
+        if (proto.isEmpty()) {
+            return print("No persistent workers active.")
         } else {
-          stringBuilder.append("ids [").append(workerIds).append("]");
+            val stringBuilder = StringBuilder()
+            for (workerMetrics in proto) {
+                stringBuilder
+                    .append("- ")
+                    .append("pid ")
+                    .append(workerMetrics.getProcessId())
+                    .append(", ")
+                    .append(workerMetrics.getMnemonic())
+                    .append(" (hash: ")
+                    .append(java.lang.Long.toHexString(workerMetrics.getWorkerKeyHash()))
+                    .append(")")
+                    .append(", ")
+                val workerStats: MutableList<WorkerStats?> = workerMetrics.getWorkerStatsList()
+                if (!workerStats.isEmpty()) {
+                    val lastWorkerStats: WorkerStats? = Iterables.getLast<WorkerStats?>(workerStats)
+                    val currentTimeMillis: Long = env.getClock().currentTimeMillis()
+                    val diffSeconds: Long =
+                        (currentTimeMillis - lastWorkerStats.getLastActionStartTimeInMs()) / 1000
+                    val minutesAgo = diffSeconds / 60
+                    val remainingSeconds = diffSeconds - 60 * minutesAgo
+                    stringBuilder
+                        .append(lastWorkerStats.getWorkerMemoryInKb() / 1024)
+                        .append("MB, ")
+                        .append("last action ")
+                    if (minutesAgo > 0) {
+                        stringBuilder.append(minutesAgo).append("m ")
+                    }
+                    stringBuilder.append(remainingSeconds).append("s ago, ")
+                }
+                stringBuilder
+                    .append("executed ")
+                    .append(workerMetrics.getActionsExecuted())
+                    .append(" actions, ")
+                if (workerMetrics.getIsSandbox()) {
+                    stringBuilder.append("sandboxed, ")
+                }
+                if (workerMetrics.getIsMultiplex()) {
+                    stringBuilder.append("multiplexed, ")
+                }
+                val workerIds: String? =
+                    workerMetrics.getWorkerIdsList().stream()
+                        .sorted()
+                        .map({ e -> e.toString() })
+                        .collect(Collectors.joining(", "))
+                if (workerMetrics.getWorkerIdsList().size() === 1) {
+                    stringBuilder.append("id ").append(workerIds)
+                } else {
+                    stringBuilder.append("ids [").append(workerIds).append("]")
+                }
+                stringBuilder.append("\n")
+            }
+            return print(stringBuilder.toString())
         }
-        stringBuilder.append("\n");
-      }
-      return print(stringBuilder.toString());
     }
-  }
 }

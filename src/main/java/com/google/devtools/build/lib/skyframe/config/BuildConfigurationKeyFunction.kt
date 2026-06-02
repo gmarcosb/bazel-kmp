@@ -11,152 +11,141 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.config;
+package com.google.devtools.build.lib.skyframe.config
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.producers.BuildConfigurationKeyMapProducer;
-import com.google.devtools.build.lib.analysis.producers.BuildConfigurationKeyMapProducer.ResultSink;
-import com.google.devtools.build.lib.skyframe.BuildOptionsScopeFunction.BuildOptionsScopeFunctionException;
-import com.google.devtools.build.lib.skyframe.toolchains.PlatformLookupUtil.InvalidPlatformException;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.state.Driver;
-import com.google.devtools.build.skyframe.state.StateMachine;
-import com.google.devtools.common.options.OptionsParsingException;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.config.BuildOptions
 
-/** Function that returns a fully updated {@link BuildConfigurationKey}. */
-public final class BuildConfigurationKeyFunction implements SkyFunction {
-  /**
-   * {@link BuildConfigurationKeyMapProducer} works on a {@code Map<String, BuildOptions>}, but this
-   * skyfunction only operates on a single {@link BuildOptions}, so this static key is used to
-   * create that map and read the resulting {@link BuildConfigurationKey}.
-   */
-  private static final String BUILD_OPTIONS_MAP_SINGLETON_KEY = "key";
+/** Function that returns a fully updated [BuildConfigurationKey].  */
+class BuildConfigurationKeyFunction : SkyFunction {
+    @Throws(BuildConfigurationKeyFunctionException::class, java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment?): SkyValue? {
+        // Delegate all work to BuildConfigurationKeyProducer.
+        val key: com.google.devtools.build.lib.skyframe.config.BuildConfigurationKeyValue.Key =
+            skyKey.argument() as com.google.devtools.build.lib.skyframe.config.BuildConfigurationKeyValue.Key
+        val buildOptions: BuildOptions = key.buildOptions()
+        val sink: Sink = com.google.devtools.build.lib.skyframe.config.BuildConfigurationKeyFunction.Sink()
+        val driver: com.google.devtools.build.skyframe.state.Driver =
+            com.google.devtools.build.skyframe.state.Driver(
+                BuildConfigurationKeyMapProducer(
+                    sink,  /* runAfter= */
+                    StateMachine.DONE,
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(BUILD_OPTIONS_MAP_SINGLETON_KEY, buildOptions),
+                    null
+                )
+            )
 
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws BuildConfigurationKeyFunctionException, InterruptedException {
-    // Delegate all work to BuildConfigurationKeyProducer.
-    BuildConfigurationKeyValue.Key key = (BuildConfigurationKeyValue.Key) skyKey.argument();
-    BuildOptions buildOptions = key.buildOptions();
-    Sink sink = new Sink();
-    Driver driver =
-        new Driver(
-            new BuildConfigurationKeyMapProducer(
-                sink,
-                /* runAfter= */ StateMachine.DONE,
-                ImmutableMap.of(BUILD_OPTIONS_MAP_SINGLETON_KEY, buildOptions),
-                null));
+        val complete: Boolean = driver.drive(env)
 
-    boolean complete = driver.drive(env);
+        try {
+            // Check for exceptions before returning whether to restart.
+            sink.checkErrors()
+            if (!complete) {
+                return null
+            }
 
-    try {
-      // Check for exceptions before returning whether to restart.
-      sink.checkErrors();
-      if (!complete) {
-        return null;
-      }
-
-      BuildConfigurationKey buildConfigurationKey = sink.getKey();
-      return BuildConfigurationKeyValue.create(buildConfigurationKey);
-    } catch (OptionsParsingException e) {
-      throw new BuildConfigurationKeyFunctionException(e);
-    } catch (PlatformMappingException e) {
-      throw new BuildConfigurationKeyFunctionException(e);
-    } catch (InvalidPlatformException e) {
-      throw new BuildConfigurationKeyFunctionException(e);
-    } catch (BuildOptionsScopeFunctionException e) {
-      throw new BuildConfigurationKeyFunctionException(e);
-    }
-  }
-
-  /** Sink implementation to handle results from {@link BuildConfigurationKeyMapProducer}. */
-  private static final class Sink implements ResultSink {
-    @Nullable private ImmutableMap<String, BuildConfigurationKey> transitionedOptions;
-    @Nullable private OptionsParsingException optionsParsingException;
-    @Nullable private PlatformMappingException platformMappingException;
-    @Nullable private InvalidPlatformException invalidPlatformException;
-    @Nullable private BuildOptionsScopeFunctionException buildOptionsScopeFunctionException;
-
-    @Override
-    public void acceptBuildOptionsScopeFunctionError(BuildOptionsScopeFunctionException e) {
-      this.buildOptionsScopeFunctionException = e;
+            val buildConfigurationKey: BuildConfigurationKey? = sink.key
+            return BuildConfigurationKeyValue.Companion.create(buildConfigurationKey)
+        } catch (e: com.google.devtools.common.options.OptionsParsingException) {
+            throw BuildConfigurationKeyFunctionException(e)
+        } catch (e: PlatformMappingException) {
+            throw BuildConfigurationKeyFunctionException(e)
+        } catch (e: InvalidPlatformException) {
+            throw BuildConfigurationKeyFunctionException(e)
+        } catch (e: BuildOptionsScopeFunctionException) {
+            throw BuildConfigurationKeyFunctionException(e)
+        }
     }
 
-    @Override
-    public void acceptOptionsParsingError(OptionsParsingException e) {
-      this.optionsParsingException = e;
+    /** Sink implementation to handle results from [BuildConfigurationKeyMapProducer].  */
+    private class Sink : ResultSink {
+        private var transitionedOptions: com.google.common.collect.ImmutableMap<String?, BuildConfigurationKey?>? = null
+        private var optionsParsingException: com.google.devtools.common.options.OptionsParsingException? = null
+        private var platformMappingException: PlatformMappingException? = null
+        private var invalidPlatformException: InvalidPlatformException? = null
+        private var buildOptionsScopeFunctionException: BuildOptionsScopeFunctionException? = null
+
+        public override fun acceptBuildOptionsScopeFunctionError(e: BuildOptionsScopeFunctionException?) {
+            this.buildOptionsScopeFunctionException = e
+        }
+
+        public override fun acceptOptionsParsingError(e: com.google.devtools.common.options.OptionsParsingException?) {
+            this.optionsParsingException = e
+        }
+
+        public override fun acceptPlatformMappingError(e: PlatformMappingException?) {
+            this.platformMappingException = e
+        }
+
+        public override fun acceptPlatformFlagsError(e: InvalidPlatformException?) {
+            this.invalidPlatformException = e
+        }
+
+        public override fun acceptTransitionedConfigurations(
+            transitionedOptions: com.google.common.collect.ImmutableMap<String?, BuildConfigurationKey?>?
+        ) {
+            this.transitionedOptions = transitionedOptions
+        }
+
+        @Throws(
+            com.google.devtools.common.options.OptionsParsingException::class,
+            PlatformMappingException::class,
+            InvalidPlatformException::class,
+            BuildOptionsScopeFunctionException::class
+        )
+        fun checkErrors() {
+            if (this.optionsParsingException != null) {
+                throw this.optionsParsingException
+            }
+            if (this.platformMappingException != null) {
+                throw this.platformMappingException
+            }
+            if (this.invalidPlatformException != null) {
+                throw this.invalidPlatformException
+            }
+
+            if (this.buildOptionsScopeFunctionException != null) {
+                throw this.buildOptionsScopeFunctionException
+            }
+        }
+
+        val key: BuildConfigurationKey?
+            get() {
+                if (this.transitionedOptions != null) {
+                    return this.transitionedOptions.get(BUILD_OPTIONS_MAP_SINGLETON_KEY)
+                }
+                throw java.lang.IllegalStateException("No exceptions or result value found")
+            }
     }
 
-    @Override
-    public void acceptPlatformMappingError(PlatformMappingException e) {
-      this.platformMappingException = e;
+    /** Exception type for errors while creating the [BuildConfigurationKeyValue].  */
+    class BuildConfigurationKeyFunctionException : SkyFunctionException {
+        constructor(optionsParsingException: com.google.devtools.common.options.OptionsParsingException?) : super(
+            optionsParsingException,
+            Transience.PERSISTENT
+        )
+
+        constructor(platformMappingException: PlatformMappingException?) : super(
+            platformMappingException,
+            Transience.PERSISTENT
+        )
+
+        constructor(invalidPlatformException: InvalidPlatformException?) : super(
+            invalidPlatformException,
+            Transience.PERSISTENT
+        )
+
+        constructor(buildOptionsScopeFunctionException: BuildOptionsScopeFunctionException?) : super(
+            buildOptionsScopeFunctionException,
+            Transience.PERSISTENT
+        )
     }
 
-    @Override
-    public void acceptPlatformFlagsError(InvalidPlatformException e) {
-      this.invalidPlatformException = e;
+    companion object {
+        /**
+         * [BuildConfigurationKeyMapProducer] works on a `Map<String, BuildOptions>`, but this
+         * skyfunction only operates on a single [BuildOptions], so this static key is used to
+         * create that map and read the resulting [BuildConfigurationKey].
+         */
+        private const val BUILD_OPTIONS_MAP_SINGLETON_KEY = "key"
     }
-
-    @Override
-    public void acceptTransitionedConfigurations(
-        ImmutableMap<String, BuildConfigurationKey> transitionedOptions) {
-      this.transitionedOptions = transitionedOptions;
-    }
-
-    void checkErrors()
-        throws OptionsParsingException,
-            PlatformMappingException,
-            InvalidPlatformException,
-            BuildOptionsScopeFunctionException {
-      if (this.optionsParsingException != null) {
-        throw this.optionsParsingException;
-      }
-      if (this.platformMappingException != null) {
-        throw this.platformMappingException;
-      }
-      if (this.invalidPlatformException != null) {
-        throw this.invalidPlatformException;
-      }
-
-      if (this.buildOptionsScopeFunctionException != null) {
-        throw this.buildOptionsScopeFunctionException;
-      }
-    }
-
-    BuildConfigurationKey getKey() {
-      if (this.transitionedOptions != null) {
-        return this.transitionedOptions.get(BUILD_OPTIONS_MAP_SINGLETON_KEY);
-      }
-      throw new IllegalStateException("No exceptions or result value found");
-    }
-  }
-
-  /** Exception type for errors while creating the {@link BuildConfigurationKeyValue}. */
-  public static final class BuildConfigurationKeyFunctionException extends SkyFunctionException {
-
-    public BuildConfigurationKeyFunctionException(OptionsParsingException optionsParsingException) {
-      super(optionsParsingException, Transience.PERSISTENT);
-    }
-
-    public BuildConfigurationKeyFunctionException(
-        PlatformMappingException platformMappingException) {
-      super(platformMappingException, Transience.PERSISTENT);
-    }
-
-    public BuildConfigurationKeyFunctionException(
-        InvalidPlatformException invalidPlatformException) {
-      super(invalidPlatformException, Transience.PERSISTENT);
-    }
-
-    public BuildConfigurationKeyFunctionException(
-        BuildOptionsScopeFunctionException buildOptionsScopeFunctionException) {
-      super(buildOptionsScopeFunctionException, Transience.PERSISTENT);
-    }
-  }
 }

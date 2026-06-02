@@ -11,151 +11,145 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime.commands;
+package com.google.devtools.build.lib.runtime.commands
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Streams;
-import com.google.devtools.build.lib.analysis.config.output.ConfigurationForOutput;
-import com.google.devtools.build.lib.analysis.config.output.FragmentForOutput;
-import com.google.devtools.build.lib.analysis.config.output.FragmentOptionsForOutput;
-import com.google.devtools.build.lib.runtime.commands.ConfigCommand.ConfigurationDiffForOutput;
-import com.google.devtools.build.lib.runtime.commands.ConfigCommand.FragmentDiffForOutput;
-import com.google.devtools.build.lib.util.Pair;
-import com.google.gson.Gson;
-import java.io.PrintWriter;
-import java.util.Map;
-import java.util.stream.Collectors;
+import com.google.devtools.build.lib.analysis.config.output.ConfigurationForOutput
 
 /**
- * Formats output for {@link ConfigCommand}.
- *
- * <p>The basic contract is @link ConfigCommand} makes all important structural decisions: what data
+ * Formats output for [ConfigCommand].
+ * 
+ * 
+ * The basic contract is @link ConfigCommand} makes all important structural decisions: what data
  * gets reported, how different pieces of data relate to each other, and how data is ordered. A
- * {@link ConfigCommandOutputFormatter} then outputs this in a format-appropriate way.
+ * [ConfigCommandOutputFormatter] then outputs this in a format-appropriate way.
  */
-abstract class ConfigCommandOutputFormatter {
-  protected final PrintWriter writer;
+internal abstract class ConfigCommandOutputFormatter(writer: PrintWriter) {
+    protected val writer: PrintWriter
 
-  /** Constructs a formatter that writes output to the given {@link PrintWriter}. */
-  ConfigCommandOutputFormatter(PrintWriter writer) {
-    this.writer = writer;
-  }
-
-  /** Outputs a list of configuration hash IDs. */
-  public abstract void writeConfigurationIDs(Iterable<ConfigurationForOutput> configurations);
-
-  /** Outputs a single configuration. */
-  public abstract void writeConfiguration(ConfigurationForOutput configuration);
-
-  /** Outputs a series of configurations. */
-  public abstract void writeConfigurations(Iterable<ConfigurationForOutput> configurations);
-
-  /** Outputs the diff between two configurations */
-  public abstract void writeConfigurationDiff(ConfigurationDiffForOutput diff);
-
-  /** A {@link ConfigCommandOutputFormatter} that outputs plan user-readable text. */
-  static class TextOutputFormatter extends ConfigCommandOutputFormatter {
-    TextOutputFormatter(PrintWriter writer) {
-      super(writer);
+    /** Constructs a formatter that writes output to the given [PrintWriter].  */
+    init {
+        this.writer = writer
     }
 
-    @Override
-    public void writeConfigurationIDs(Iterable<ConfigurationForOutput> configurations) {
-      writer.println("Available configurations:");
-      configurations.forEach(
-          config ->
-              writer.printf(
-                  "%s %s%s%n", config.configHash, config.mnemonic, getSuffix(config)));
-    }
+    /** Outputs a list of configuration hash IDs.  */
+    abstract fun writeConfigurationIDs(configurations: Iterable<ConfigurationForOutput?>?)
 
-    private static String getSuffix(ConfigurationForOutput config) {
-      if (config.isExec) {
-        return " (exec)";
-      } else if (!config.hasTestConfig()) {
-        return " (test-trimmed)";
-      }
-      return "";
-    }
+    /** Outputs a single configuration.  */
+    abstract fun writeConfiguration(configuration: ConfigurationForOutput?)
 
-    @Override
-    public void writeConfiguration(ConfigurationForOutput configuration) {
-      writer.println("BuildConfigurationValue " + configuration.configHash + ":");
-      writer.println("Skyframe Key: " + configuration.skyKey);
+    /** Outputs a series of configurations.  */
+    abstract fun writeConfigurations(configurations: Iterable<ConfigurationForOutput?>?)
 
-      StringBuilder fragments = new StringBuilder();
-      for (FragmentForOutput fragment : configuration.getFragments()) {
-        fragments
-            .append(fragment.name)
-            .append(": [")
-            .append(String.join(",", fragment.fragmentOptions))
-            .append("], ");
-      }
+    /** Outputs the diff between two configurations  */
+    abstract fun writeConfigurationDiff(diff: ConfigurationDiffForOutput?)
 
-      writer.println("Fragments: " + fragments);
-      for (FragmentOptionsForOutput fragment : configuration.getFragmentOptions()) {
-        writer.println("FragmentOptions " + fragment.name + " {");
-        for (Map.Entry<String, String> optionSetting : fragment.getOptions().entrySet()) {
-          writer.printf("  %s: %s\n", optionSetting.getKey(), optionSetting.getValue());
+    /** A [ConfigCommandOutputFormatter] that outputs plan user-readable text.  */
+    internal class TextOutputFormatter(writer: PrintWriter) : ConfigCommandOutputFormatter(writer) {
+        override fun writeConfigurationIDs(configurations: Iterable<ConfigurationForOutput?>) {
+            writer.println("Available configurations:")
+            configurations.forEach(
+                java.util.function.Consumer { config: ConfigurationForOutput? ->
+                    writer.printf(
+                        "%s %s%s%n",
+                        config.configHash,
+                        config.mnemonic,
+                        com.google.devtools.build.lib.runtime.commands.ConfigCommandOutputFormatter.TextOutputFormatter.Companion.getSuffix(
+                            config
+                        )
+                    )
+                })
         }
-        writer.println("}");
-      }
-    }
 
-    @Override
-    public void writeConfigurations(Iterable<ConfigurationForOutput> configurations) {
-      for (ConfigurationForOutput config : configurations) {
-        writeConfiguration(config);
-      }
-    }
+        override fun writeConfiguration(configuration: ConfigurationForOutput) {
+            writer.println("BuildConfigurationValue " + configuration.configHash + ":")
+            writer.println("Skyframe Key: " + configuration.skyKey)
 
-    @Override
-    public void writeConfigurationDiff(ConfigurationDiffForOutput diff) {
-      writer.printf(
-          "Displaying diff between configs %s and %s\n", diff.configHash1, diff.configHash2);
-      for (FragmentDiffForOutput fragmentDiff : diff.fragmentsDiff) {
-        writer.println("FragmentOptions " + fragmentDiff.name + " {");
-        for (Map.Entry<String, Pair<String, String>> optionDiff :
-            fragmentDiff.optionsDiff.entrySet()) {
-          writer.printf(
-              "  %s: %s, %s\n",
-              optionDiff.getKey(), optionDiff.getValue().first, optionDiff.getValue().second);
+            val fragments: java.lang.StringBuilder = java.lang.StringBuilder()
+            for (fragment in configuration.getFragments()) {
+                fragments
+                    .append(fragment.name)
+                    .append(": [")
+                    .append(java.lang.String.join(",", fragment.fragmentOptions))
+                    .append("], ")
+            }
+
+            writer.println("Fragments: " + fragments)
+            for (fragment in configuration.getFragmentOptions()) {
+                writer.println("FragmentOptions " + fragment.name + " {")
+                for (optionSetting in fragment.getOptions().entrySet()) {
+                    writer.printf("  %s: %s\n", optionSetting.key, optionSetting.value)
+                }
+                writer.println("}")
+            }
         }
-        writer.println("}");
-      }
-    }
-  }
 
-  /** A {@link ConfigCommandOutputFormatter} that outputs structured JSON. */
-  static class JsonOutputFormatter extends ConfigCommandOutputFormatter {
-    private final Gson gson;
+        override fun writeConfigurations(configurations: Iterable<ConfigurationForOutput>) {
+            for (config in configurations) {
+                writeConfiguration(config)
+            }
+        }
 
-    JsonOutputFormatter(PrintWriter writer) {
-      super(writer);
-      this.gson = new Gson();
+        override fun writeConfigurationDiff(diff: ConfigurationDiffForOutput) {
+            writer.printf(
+                "Displaying diff between configs %s and %s\n", diff.configHash1, diff.configHash2
+            )
+            for (fragmentDiff in diff.fragmentsDiff) {
+                writer.println("FragmentOptions " + fragmentDiff.name + " {")
+                for (optionDiff in fragmentDiff.optionsDiff.entries) {
+                    writer.printf(
+                        "  %s: %s, %s\n",
+                        optionDiff.key, optionDiff.value.first, optionDiff.value.second
+                    )
+                }
+                writer.println("}")
+            }
+        }
+
+        companion object {
+            private fun getSuffix(config: ConfigurationForOutput): String {
+                if (config.isExec) {
+                    return " (exec)"
+                } else if (!config.hasTestConfig()) {
+                    return " (test-trimmed)"
+                }
+                return ""
+            }
+        }
     }
 
-    @Override
-    public void writeConfigurationIDs(Iterable<ConfigurationForOutput> configurations) {
-      Iterable<String> configurationIDs =
-          Streams.stream(configurations)
-              .map(config -> config.configHash)
-              .collect(Collectors.toList());
-      writer.println(gson.toJson(ImmutableMap.of("configuration-IDs", configurationIDs)));
-    }
+    /** A [ConfigCommandOutputFormatter] that outputs structured JSON.  */
+    internal class JsonOutputFormatter(writer: PrintWriter) : ConfigCommandOutputFormatter(writer) {
+        private val gson: Gson
 
-    @Override
-    public void writeConfiguration(ConfigurationForOutput configuration) {
-      writer.println(gson.toJson(configuration));
-    }
+        init {
+            this.gson = Gson()
+        }
 
-    @Override
-    public void writeConfigurations(Iterable<ConfigurationForOutput> configurations) {
-      writer.println(gson.toJson(configurations));
-    }
+        override fun writeConfigurationIDs(configurations: Iterable<ConfigurationForOutput?>) {
+            val configurationIDs: Iterable<String?> =
+                com.google.common.collect.Streams.stream<ConfigurationForOutput?>(configurations)
+                    .map<Any?> { config: ConfigurationForOutput? -> config.configHash }
+                    .collect(Collectors.toList())
+            writer.println(
+                gson.toJson(
+                    com.google.common.collect.ImmutableMap.of<String?, Iterable<String?>?>(
+                        "configuration-IDs",
+                        configurationIDs
+                    )
+                )
+            )
+        }
 
-    @Override
-    public void writeConfigurationDiff(ConfigurationDiffForOutput diff) {
-      writer.println(gson.toJson(diff));
+        override fun writeConfiguration(configuration: ConfigurationForOutput?) {
+            writer.println(gson.toJson(configuration))
+        }
+
+        override fun writeConfigurations(configurations: Iterable<ConfigurationForOutput?>?) {
+            writer.println(gson.toJson(configurations))
+        }
+
+        override fun writeConfigurationDiff(diff: ConfigurationDiffForOutput?) {
+            writer.println(gson.toJson(diff))
+        }
     }
-  }
 }

@@ -11,951 +11,1026 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.util
 
-package com.google.devtools.build.lib.util;
-
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-import static java.nio.charset.StandardCharsets.ISO_8859_1;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Strings;
-import com.google.common.io.CountingOutputStream;
-import com.google.common.net.InetAddresses;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InterruptedIOException;
-import java.io.OutputStreamWriter;
-import java.nio.file.DirectoryStream;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
-import java.nio.file.Path;
-import java.text.ParseException;
-import java.text.ParsePosition;
-import java.text.SimpleDateFormat;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.util.Date;
-import java.util.Optional;
-import java.util.PriorityQueue;
-import java.util.TimeZone;
-import java.util.function.Function;
-import java.util.logging.ErrorManager;
-import java.util.logging.Formatter;
-import java.util.logging.Handler;
-import java.util.logging.Level;
-import java.util.logging.LogManager;
-import java.util.logging.LogRecord;
-import javax.annotation.Nullable;
-import javax.annotation.concurrent.GuardedBy;
+import com.google.devtools.build.lib.clock.Clock.now
+import com.google.devtools.build.lib.supplier.InterruptibleSupplier.get
+import com.google.devtools.build.lib.util.LogHandlerQuerier
+import com.google.devtools.build.lib.util.SingleLineFormatter
+import com.google.devtools.build.lib.util.StringEncoding
+import java.io.FileOutputStream
+import java.io.IOException
+import java.io.InterruptedIOException
+import java.io.OutputStreamWriter
+import java.nio.file.LinkOption
+import java.text.ParsePosition
+import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.ZoneId
+import java.util.Locale
+import java.util.TimeZone
+import java.util.logging.ErrorManager
+import java.util.logging.LogRecord
 
 /**
  * A simple file-based logging handler that provides an API for getting the current log file and
  * (optionally) in addition creates a short symlink to the current log file.
- *
- * <p>The log file path is concatenated from 4 elements: the prefix (a fixed string, typically a
+ * 
+ * 
+ * The log file path is concatenated from 4 elements: the prefix (a fixed string, typically a
  * directory); the pattern (allowing some % variable substitutions); the timestamp; and the
  * extension.
- *
- * <p>The handler can be configured from the JVM command line: <code>
- *   -Djava.util.logging.config.file=/foo/bar/javalog.properties
- * </code> where the javalog.properties file might contain something like <code>
- *    handlers=com.google.devtools.build.lib.util.SimpleLogHandler
- *    com.google.devtools.build.lib.util.SimpleLogHandler.level=INFO
- *    com.google.devtools.build.lib.util.SimpleLogHandler.prefix=/foo/bar/logs/java.log
- *    com.google.devtools.build.lib.util.SimpleLogHandler.rotate_limit_bytes=1048576
- *    com.google.devtools.build.lib.util.SimpleLogHandler.total_limit_bytes=10485760
- *    com.google.devtools.build.lib.util.SimpleLogHandler.formatter=com.google.devtools.build.lib.util.SingleLineFormatter
- * </code>
- *
- * <p>The handler is thread-safe. IO operations ({@link #publish}, {@link #flush}, {@link #close})
- * and {@link #getCurrentLogFilePath} block other access to the handler until completed.
+ * 
+ * 
+ * The handler can be configured from the JVM command line: `
+ * -Djava.util.logging.config.file=/foo/bar/javalog.properties
+` *  where the javalog.properties file might contain something like `
+ * handlers=com.google.devtools.build.lib.util.SimpleLogHandler
+ * com.google.devtools.build.lib.util.SimpleLogHandler.level=INFO
+ * com.google.devtools.build.lib.util.SimpleLogHandler.prefix=/foo/bar/logs/java.log
+ * com.google.devtools.build.lib.util.SimpleLogHandler.rotate_limit_bytes=1048576
+ * com.google.devtools.build.lib.util.SimpleLogHandler.total_limit_bytes=10485760
+ * com.google.devtools.build.lib.util.SimpleLogHandler.formatter=com.google.devtools.build.lib.util.SingleLineFormatter
+` * 
+ * 
+ * 
+ * The handler is thread-safe. IO operations ([.publish], [.flush], [.close])
+ * and [.getCurrentLogFilePath] block other access to the handler until completed.
  */
-public final class SimpleLogHandler extends Handler {
-  /** Max number of bytes to write before rotating the log. */
-  private final int rotateLimitBytes;
-  /** Max number of bytes in all logs to keep before deleting oldest ones. */
-  private final int totalLimitBytes;
-  /** Log file extension; the current process ID by default. */
-  private final String extension;
-  /** True if the log file extension is not the process ID. */
-  private final boolean isStaticExtension;
-  /**
-   * Absolute path to symbolic link to current log file, or {@code Optional#empty()} if the link
-   * should not be created.
-   */
-  private final Optional<Path> symlinkPath;
-  /** Absolute path to common base name of log files. */
-  private final Path baseFilePath;
-  /** Log file currently in use. */
-  @GuardedBy("this")
-  private final Output output = new Output();
+class SimpleLogHandler private constructor(
+    prefix: String?,
+    pattern: String?,
+    extension: String?,
+    symlinkName: String?,
+    createSymlink: Boolean?,
+    rotateLimitBytes: Int?,
+    totalLimit: Int?,
+    logLevel: java.util.logging.Level?,
+    formatter: java.util.logging.Formatter?,
+    clock: java.time.Clock?
+) : java.util.logging.Handler() {
+    /** Max number of bytes to write before rotating the log.  */
+    private val rotateLimitBytes: Int
 
-  private static final String DEFAULT_PREFIX_STRING = "java.log";
-  private static final String DEFAULT_BASE_FILE_NAME_PATTERN = ".%h.%u.log.java.";
-  /** Source for timestamps in filenames; non-static for testing. */
-  private final Clock clock;
+    /** Max number of bytes in all logs to keep before deleting oldest ones.  */
+    private val totalLimitBytes: Int
 
-  @VisibleForTesting static final String DEFAULT_TIMESTAMP_FORMAT = "yyyyMMdd-HHmmss.";
-  /**
-   * Timestamp format for log filenames; non-static because {@link SimpleDateFormat} is not
-   * thread-safe.
-   */
-  @GuardedBy("this")
-  private final SimpleDateFormat timestampFormat = new SimpleDateFormat(DEFAULT_TIMESTAMP_FORMAT);
+    /** Log file extension; the current process ID by default.  */
+    private val extension: String?
 
-  /**
-   * A {@link} LogHandlerQuerier for working with {@code SimpleLogHandler} instances.
-   *
-   * <p>This querier is intended for situations where the logging handler is configured on the JVM
-   * command line to be {@link SimpleLogHandler}, but where the code which needs to query the
-   * handler does not know the handler's class or cannot import it. The command line then should in
-   * addition specify {@code
-   * -Dcom.google.devtools.build.lib.util.LogHandlerQuerier.class=com.google.devtools.build.lib.util.SimpleLogHandler$HandlerQuerier}
-   * and an instance of {@link SimpleLogHandler.HandlerQuerier} class can then be obtained from
-   * {@code LogHandlerQuerier.getInstance()}.
-   */
-  public static final class HandlerQuerier extends LogHandlerQuerier {
-    @Override
-    protected boolean canQuery(Handler handler) {
-      return handler instanceof SimpleLogHandler;
-    }
-
-    @Override
-    protected Optional<Path> getLogHandlerFilePath(Handler handler) {
-      return ((SimpleLogHandler) handler).getCurrentLogFilePath();
-    }
-  }
-
-  /** Creates a new {@link Builder}. */
-  public static Builder builder() {
-    return new Builder();
-  }
-
-  /**
-   * Builder class for {@link SimpleLogHandler}.
-   *
-   * <p>All setters are optional; if unset, values from the JVM logging configuration or (if those
-   * too are unset) reasonable fallback values will be used. See individual setter documentation.
-   */
-  public static final class Builder {
-    private String prefix;
-    private String pattern;
-    private String extension;
-    private String symlinkName;
-    private Boolean createSymlink;
-    private Integer rotateLimitBytes;
-    private Integer totalLimitBytes;
-    private Level logLevel;
-    private Formatter formatter;
-    private Clock clock;
-
-    @CanIgnoreReturnValue
-    public Builder setPrefix(String prefix) {
-      this.prefix = prefix;
-      return this;
-    }
+    /** True if the log file extension is not the process ID.  */
+    private val isStaticExtension: Boolean
 
     /**
-     * Sets the pattern for the log file name. The pattern may contain the following variables:
-     *
-     * <ul>
-     *   <li><code>%u</code> will be expanded to the username
-     *   <li><code>%h</code> will be expanded to the hostname
-     *   <li><code>%%</code> will be expanded to %
-     * </ul>
-     *
-     * <p>The log file name will be constructed by appending the expanded pattern to the prefix and
-     * then by appending a timestamp and the extension.
-     *
-     * <p>If unset, the value of "pattern" from the JVM logging configuration for {@link
-     * SimpleLogHandler} will be used; and if that's unset, {@link #DEFAULT_BASE_FILE_NAME_PATTERN}
-     * will be used.
-     *
-     * @param pattern the pattern string, possibly containing <code>%u</code>, <code>%h</code>,
-     *     <code>%%</code> variables as above
-     * @return this {@code Builder} object
+     * Absolute path to symbolic link to current log file, or `Optional#empty()` if the link
+     * should not be created.
      */
-    @CanIgnoreReturnValue
-    public Builder setPattern(String pattern) {
-      this.pattern = pattern;
-      return this;
-    }
+    private val symlinkPath: java.util.Optional<java.nio.file.Path?>
+
+    /** Absolute path to common base name of log files.  */
+    private val baseFilePath: java.nio.file.Path
+
+    /** Log file currently in use.  */
+    @javax.annotation.concurrent.GuardedBy("this")
+    private val output: Output = com.google.devtools.build.lib.util.SimpleLogHandler.Output()
+
+    /** Source for timestamps in filenames; non-static for testing.  */
+    private val clock: java.time.Clock?
 
     /**
-     * Sets the log file extension.
-     *
-     * <p>If unset, the value of "extension" from the JVM logging configuration for {@link
-     * SimpleLogHandler} will be used; and if that's unset, the process ID will be used.
-     *
-     * @param extension log file extension
-     * @return this {@code Builder} object
+     * Timestamp format for log filenames; non-static because [SimpleDateFormat] is not
+     * thread-safe.
      */
-    @CanIgnoreReturnValue
-    public Builder setExtension(String extension) {
-      this.extension = extension;
-      return this;
-    }
+    @javax.annotation.concurrent.GuardedBy("this")
+    private val timestampFormat: SimpleDateFormat =
+        SimpleDateFormat(com.google.devtools.build.lib.util.SimpleLogHandler.Companion.DEFAULT_TIMESTAMP_FORMAT)
 
     /**
-     * Sets the log file symlink filename.
-     *
-     * <p>If unset, the value of "symlink" from the JVM logging configuration for {@link
-     * SimpleLogHandler} will be used; and if that's unset, the prefix will be used.
-     *
-     * @param symlinkName either symlink filename without a directory part, or an absolute path
-     *     whose directory part matches the prefix
-     * @return this {@code Builder} object
+     * A [] LogHandlerQuerier for working with `SimpleLogHandler` instances.
+     * 
+     * 
+     * This querier is intended for situations where the logging handler is configured on the JVM
+     * command line to be [SimpleLogHandler], but where the code which needs to query the
+     * handler does not know the handler's class or cannot import it. The command line then should in
+     * addition specify `-Dcom.google.devtools.build.lib.util.LogHandlerQuerier.class=com.google.devtools.build.lib.util.SimpleLogHandler$HandlerQuerier`
+     * and an instance of [SimpleLogHandler.HandlerQuerier] class can then be obtained from
+     * `LogHandlerQuerier.getInstance()`.
      */
-    @CanIgnoreReturnValue
-    public Builder setSymlinkName(String symlinkName) {
-      this.symlinkName = symlinkName;
-      return this;
-    }
-
-    /**
-     * Sets whether symlinks to the log file should be created.
-     *
-     * <p>If unset, the value of "create_symlink" from the JVM logging configuration for {@link
-     * SimpleLogHandler} will be used; and if that's unset, the default behavior will depend on the
-     * platform: false on Windows (because by default, only administrator accounts can create
-     * symbolic links there) and true on other platforms.
-     *
-     * @return this {@code Builder} object
-     */
-    @CanIgnoreReturnValue
-    public Builder setCreateSymlink(boolean createSymlink) {
-      this.createSymlink = createSymlink;
-      return this;
-    }
-
-    /**
-     * Sets the log file size limit; if unset or 0, log size is unlimited.
-     *
-     * <p>If unset, the value of "rotate_limit_bytes" from the JVM logging configuration for {@link
-     * SimpleLogHandler} will be used; and if that's unset, the log fie size is unlimited.
-     *
-     * @param rotateLimitBytes maximum log file size in bytes; must be >= 0; 0 means unlimited
-     * @return this {@code Builder} object
-     */
-    @CanIgnoreReturnValue
-    public Builder setRotateLimitBytes(int rotateLimitBytes) {
-      this.rotateLimitBytes = rotateLimitBytes;
-      return this;
-    }
-
-    /**
-     * Sets the total rotateLimitBytes for log files.
-     *
-     * <p>If set, when opening a new handler or rotating a log file, the handler will scan for all
-     * log files with names matching the expected prefix, pattern, timestamp format, and extension,
-     * and delete the oldest ones to keep the total size under rotateLimitBytes.
-     *
-     * <p>If unset, the value of "total_limit_bytes" from the JVM logging configuration for {@link
-     * SimpleLogHandler} will be used; and if that's unset, the total log size is unlimited.
-     *
-     * @param totalLimitBytes maximum total log file size in bytes; must be >= 0; 0 means unlimited
-     * @return this {@code Builder} object
-     */
-    @CanIgnoreReturnValue
-    public Builder setTotalLimitBytes(int totalLimitBytes) {
-      this.totalLimitBytes = totalLimitBytes;
-      return this;
-    }
-
-    /**
-     * Sets the minimum level at which to log records.
-     *
-     * <p>If unset, the level named by the "level" field in the JVM logging configuration for {@link
-     * SimpleLogHandler} will be used; and if that's unset, all records are logged.
-     *
-     * @param logLevel minimum log level
-     * @return this {@code Builder} object
-     */
-    @CanIgnoreReturnValue
-    public Builder setLogLevel(Level logLevel) {
-      this.logLevel = logLevel;
-      return this;
-    }
-
-    /**
-     * Sets the log formatter.
-     *
-     * <p>If unset, the class named by the "formatter" field in the JVM logging configuration for
-     * {@link SimpleLogHandler} will be used; and if that's unset, {@link SingleLineFormatter} will
-     * be used.
-     *
-     * @param formatter log formatter
-     * @return this {@code Builder} object
-     */
-    @CanIgnoreReturnValue
-    public Builder setFormatter(Formatter formatter) {
-      this.formatter = formatter;
-      return this;
-    }
-
-    /**
-     * Sets the time source for timestamps in log filenames.
-     *
-     * <p>Intended for testing. If unset, the system clock in the system timezone will be used.
-     *
-     * @param clock time source for timestamps
-     * @return this {@code Builder} object
-     */
-    @CanIgnoreReturnValue
-    @VisibleForTesting
-    Builder setClockForTesting(Clock clock) {
-      this.clock = clock;
-      return this;
-    }
-
-    /** Builds a {@link SimpleLogHandler} instance. */
-    public SimpleLogHandler build() {
-      return new SimpleLogHandler(
-          prefix,
-          pattern,
-          extension,
-          symlinkName,
-          createSymlink,
-          rotateLimitBytes,
-          totalLimitBytes,
-          logLevel,
-          formatter,
-          clock);
-    }
-  }
-
-  /**
-   * Constructs a log handler with all state taken from the JVM logging configuration or (as
-   * fallback) the defaults; see {@link SimpleLogHandler.Builder} documentation.
-   *
-   * @throws IllegalArgumentException if invalid JVM logging configuration values are encountered;
-   *     see {@link SimpleLogHandler.Builder} documentation
-   */
-  public SimpleLogHandler() {
-    this(null, null, null, null, null, null, null, null, null, null);
-  }
-
-  /**
-   * Constructs a log handler, falling back to the JVM logging configuration or (as last fallback)
-   * the defaults for those arguments which are null; see {@link SimpleLogHandler.Builder}
-   * documentation.
-   *
-   * @throws IllegalArgumentException if invalid non-null arguments or configured values are
-   *     encountered; see {@link SimpleLogHandler.Builder} documentation
-   */
-  private SimpleLogHandler(
-      @Nullable String prefix,
-      @Nullable String pattern,
-      @Nullable String extension,
-      @Nullable String symlinkName,
-      @Nullable Boolean createSymlink,
-      @Nullable Integer rotateLimitBytes,
-      @Nullable Integer totalLimit,
-      @Nullable Level logLevel,
-      @Nullable Formatter formatter,
-      @Nullable Clock clock) {
-    this.baseFilePath =
-        getBaseFilePath(
-            getConfiguredStringProperty(prefix, "prefix", DEFAULT_PREFIX_STRING),
-            getConfiguredStringProperty(pattern, "pattern", DEFAULT_BASE_FILE_NAME_PATTERN));
-
-    String configuredSymlinkName =
-        getConfiguredStringProperty(
-            symlinkName,
-            "symlink",
-            getConfiguredStringProperty(prefix, "prefix", DEFAULT_PREFIX_STRING));
-    boolean configuredCreateSymlink =
-        getConfiguredBooleanProperty(
-            createSymlink, "create_symlink", OS.getCurrent() != OS.WINDOWS);
-    this.symlinkPath =
-        configuredCreateSymlink
-            ? Optional.of(
-                getSymlinkAbsolutePath(this.baseFilePath.getParent(), configuredSymlinkName))
-            : Optional.empty();
-    this.extension =
-        getConfiguredStringProperty(
-            extension, "extension", Long.toString(ProcessHandle.current().pid()));
-    this.isStaticExtension = (getConfiguredStringProperty(extension, "extension", null) != null);
-    this.rotateLimitBytes = getConfiguredIntProperty(rotateLimitBytes, "rotate_limit_bytes", 0);
-    checkArgument(this.rotateLimitBytes >= 0, "File size limits cannot be negative");
-    this.totalLimitBytes = getConfiguredIntProperty(totalLimit, "total_limit_bytes", 0);
-    checkArgument(this.totalLimitBytes >= 0, "File size limits cannot be negative");
-    setLevel(getConfiguredLevelProperty(logLevel, "level", Level.ALL));
-    setFormatter(getConfiguredFormatterProperty(formatter, "formatter", new SingleLineFormatter()));
-    if (clock != null) {
-      this.clock = clock;
-      this.timestampFormat.setTimeZone(TimeZone.getTimeZone(clock.getZone()));
-    } else {
-      this.clock = Clock.system(ZoneId.systemDefault());
-    }
-  }
-
-  /**
-   * Returns the absolute path of the current log file if a log file is open or {@code
-   * Optional#empty()} otherwise.
-   *
-   * <p>Since the log file is opened lazily, this method is expected to return {@code
-   * Optional#empty()} if no record has yet been published.
-   */
-  public synchronized Optional<Path> getCurrentLogFilePath() {
-    return output.isOpen() ? Optional.of(output.getPath()) : Optional.empty();
-  }
-
-  /**
-   * Returns the expected absolute path for the symbolic link to the current log file, or {@code
-   * Optional#empty()} if not used.
-   */
-  public Optional<Path> getSymbolicLinkPath() {
-    return symlinkPath;
-  }
-
-  @Override
-  public boolean isLoggable(LogRecord record) {
-    return record != null && super.isLoggable(record);
-  }
-
-  @Override
-  public synchronized void publish(LogRecord record) {
-    if (!isLoggable(record)) {
-      // Silently ignore null or filtered records, matching FileHandler behavior.
-      return;
-    }
-
-    // This allows us to do the I/O while not forgetting that we were interrupted.
-    boolean isInterrupted = Thread.interrupted();
-    try {
-      String message = getFormatter().format(record);
-      openOutputIfNeeded();
-      output.write(message);
-    } catch (Exception e) {
-      reportError(null, e, ErrorManager.WRITE_FAILURE);
-      // Failing to log is non-fatal. Continue to try to rotate the log if necessary, which may fix
-      // the underlying IO problem with the file.
-      if (e instanceof InterruptedIOException) {
-        isInterrupted = true;
-      }
-    }
-
-    try {
-      if (rotateLimitBytes > 0) {
-        output.closeIfByteCountAtleast(rotateLimitBytes);
-        openOutputIfNeeded();
-      }
-    } catch (IOException e) {
-      reportError("Failed to rotate log file", e, ErrorManager.GENERIC_FAILURE);
-      if (e instanceof InterruptedIOException) {
-        isInterrupted = true;
-      }
-    }
-    if (isInterrupted) {
-      Thread.currentThread().interrupt();
-    }
-  }
-
-  @Override
-  public synchronized void flush() {
-    boolean isInterrupted = Thread.interrupted();
-    if (output.isOpen()) {
-      try {
-        output.flush();
-      } catch (IOException e) {
-        reportError(null, e, ErrorManager.FLUSH_FAILURE);
-        if (e instanceof InterruptedIOException) {
-          isInterrupted = true;
+    class HandlerQuerier : LogHandlerQuerier() {
+        override fun canQuery(handler: java.util.logging.Handler?): Boolean {
+            return handler is SimpleLogHandler
         }
-      }
-    }
-    if (isInterrupted) {
-      Thread.currentThread().interrupt();
-    }
-  }
 
-  @Override
-  public synchronized void close() {
-    boolean isInterrupted = Thread.interrupted();
-    if (output.isOpen()) {
-      try {
-        output.write(getFormatter().getTail(this));
-      } catch (IOException e) {
-        reportError("Failed to write log tail", e, ErrorManager.WRITE_FAILURE);
-        if (e instanceof InterruptedIOException) {
-          isInterrupted = true;
+        override fun getLogHandlerFilePath(handler: java.util.logging.Handler): java.util.Optional<java.nio.file.Path?> {
+            return (handler as SimpleLogHandler).currentLogFilePath
         }
-      }
+    }
 
-      try {
-        output.close();
-      } catch (IOException e) {
-        reportError(null, e, ErrorManager.CLOSE_FAILURE);
-        if (e instanceof InterruptedIOException) {
-          isInterrupted = true;
+    /**
+     * Builder class for [SimpleLogHandler].
+     * 
+     * 
+     * All setters are optional; if unset, values from the JVM logging configuration or (if those
+     * too are unset) reasonable fallback values will be used. See individual setter documentation.
+     */
+    class Builder {
+        private var prefix: String? = null
+        private var pattern: String? = null
+        private var extension: String? = null
+        private var symlinkName: String? = null
+        private var createSymlink: Boolean? = null
+        private var rotateLimitBytes: Int? = null
+        private var totalLimitBytes: Int? = null
+        private var logLevel: java.util.logging.Level? = null
+        private var formatter: java.util.logging.Formatter? = null
+        private var clock: java.time.Clock? = null
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setPrefix(prefix: String?): Builder {
+            this.prefix = prefix
+            return this
         }
-      }
-    }
-    if (isInterrupted) {
-      Thread.currentThread().interrupt();
-    }
-  }
 
-  /**
-   * Checks if a value is null, and if it is, falls back to the JVM logging configuration, and if
-   * that too is missing, to a provided fallback value.
-   *
-   * @param builderValue possibly null value provided by the caller, e.g. from {@link
-   *     SimpleLogHandler.Builder}
-   * @param configuredName field name in the JVM logging configuration for {@link SimpleLogHandler}
-   * @param parse parser for the string value from the JVM logging configuration
-   * @param fallbackValue fallback to use if the {@code builderValue} is null and no value is
-   *     configured in the JVM logging configuration
-   * @param <T> value type
-   */
-  @Nullable
-  private static <T> T getConfiguredProperty(
-      @Nullable T builderValue,
-      String configuredName,
-      Function<String, T> parse,
-      @Nullable T fallbackValue) {
-    if (builderValue != null) {
-      return builderValue;
-    }
-
-    // .properties files are read as Latin-1 by java.util.Properties, with Unicode escape sequences
-    // interpreted. Since the Bazel client passes path properties as UTF-8 without escaping,
-    // configuredValue already contains a string in Bazel's internal string encoding (see
-    // StringEncoding).
-    String configuredValue =
-        LogManager.getLogManager()
-            .getProperty(SimpleLogHandler.class.getName() + "." + configuredName);
-    if (configuredValue != null) {
-      return parse.apply(configuredValue);
-    }
-    return fallbackValue;
-  }
-
-  /** Matches java.logging.* configuration behavior; configured strings are trimmed. */
-  private static String getConfiguredStringProperty(
-      String builderValue, String configuredName, String fallbackValue) {
-    return getConfiguredProperty(builderValue, configuredName, String::trim, fallbackValue);
-  }
-
-  /**
-   * Matches java.logging.* configuration behavior; "true" and "1" are true, "false" and "0" are
-   * false.
-   *
-   * @throws IllegalArgumentException if the configured boolean property cannot be parsed
-   */
-  private static boolean getConfiguredBooleanProperty(
-      Boolean builderValue, String configuredName, boolean fallbackValue) {
-    Boolean value =
-        getConfiguredProperty(
-            builderValue,
-            configuredName,
-            val -> {
-              val = val.trim().toLowerCase();
-              if ("true".equals(val) || "1".equals(val)) {
-                return true;
-              } else if ("false".equals(val) || "0".equals(val)) {
-                return false;
-              } else if (val.isEmpty()) {
-                return null;
-              }
-              throw new IllegalArgumentException("Cannot parse boolean property value");
-            },
-            null);
-    return value != null ? value : fallbackValue;
-  }
-
-  /**
-   * Empty configured values are ignored and the fallback is used instead.
-   *
-   * @throws NumberFormatException if the configured formatter value is non-numeric
-   */
-  private static int getConfiguredIntProperty(
-      Integer builderValue, String configuredName, int fallbackValue) {
-    Integer value =
-        getConfiguredProperty(
-            builderValue,
-            configuredName,
-            val -> {
-              val = val.trim();
-              return !val.isEmpty() ? Integer.parseInt(val) : null;
-            },
-            null);
-    return value != null ? value : fallbackValue;
-  }
-
-  /**
-   * Empty configured values are ignored and the fallback is used instead.
-   *
-   * @throws IllegalArgumentException if the configured level name cannot be parsed
-   */
-  private static Level getConfiguredLevelProperty(
-      Level builderValue, String configuredName, Level fallbackValue) {
-    Level value =
-        getConfiguredProperty(
-            builderValue,
-            configuredName,
-            val -> {
-              val = val.trim();
-              return !val.isEmpty() ? Level.parse(val) : null;
-            },
-            null);
-    return value != null ? value : fallbackValue;
-  }
-
-  /**
-   * Empty configured values are ignored and the fallback is used instead.
-   *
-   * @throws IllegalArgumentException if a formatter object cannot be instantiated from the
-   *     configured class name
-   */
-  private static Formatter getConfiguredFormatterProperty(
-      Formatter builderValue, String configuredName, Formatter fallbackValue) {
-    return getConfiguredProperty(
-        builderValue,
-        configuredName,
-        val -> {
-          val = val.trim();
-          if (!val.isEmpty()) {
-            try {
-              return (Formatter)
-                  Class.forName(val, true, SimpleLogHandler.class.getClassLoader())
-                      .asSubclass(Formatter.class)
-                      .getDeclaredConstructor()
-                      .newInstance();
-            } catch (ReflectiveOperationException e) {
-              throw new IllegalArgumentException(e);
-            }
-          } else {
-            return fallbackValue;
-          }
-        },
-        fallbackValue);
-  }
-
-  @VisibleForTesting
-  static String getLocalHostnameFirstComponent() {
-    String name = NetUtil.getCachedShortHostName();
-    if (!InetAddresses.isInetAddress(name)) {
-      // Keep only the first component of the name.
-      int firstDot = name.indexOf('.');
-      if (firstDot >= 0) {
-        name = name.substring(0, firstDot);
-      }
-    }
-    return name.toLowerCase();
-  }
-
-  /**
-   * Creates the log file absolute base path according to the given pattern.
-   *
-   * @param prefix non-null string to prepend to the base path
-   * @param pattern non-null string which may include the following variables: %h will be expanded
-   *     to the hostname; %u will be expanded to the username; %% will be expanded to %
-   * @throws IllegalArgumentException if an unknown variable is encountered in the pattern
-   */
-  private static Path getBaseFilePath(String prefix, String pattern) {
-    checkNotNull(prefix, "prefix");
-    checkNotNull(pattern, "pattern");
-
-    StringBuilder sb = new StringBuilder(100); // Typical name is < 100 bytes
-    boolean inVar = false;
-    String username = StringEncoding.platformToInternal(System.getProperty("user.name"));
-
-    if (Strings.isNullOrEmpty(username)) {
-      username = "unknown_user";
-    }
-
-    sb.append(prefix);
-
-    for (int i = 0; i < pattern.length(); ++i) {
-      char c = pattern.charAt(i);
-      if (inVar) {
-        inVar = false;
-        switch (c) {
-          case '%':
-            sb.append('%');
-            break;
-          case 'h':
-            sb.append(getLocalHostnameFirstComponent());
-            break;
-          case 'u':
-            sb.append(username);
-            break;
-          default:
-            throw new IllegalArgumentException("Unknown variable " + c + " in " + pattern);
+        /**
+         * Sets the pattern for the log file name. The pattern may contain the following variables:
+         * 
+         * 
+         *  * `%u` will be expanded to the username
+         *  * `%h` will be expanded to the hostname
+         *  * `%%` will be expanded to %
+         * 
+         * 
+         * 
+         * The log file name will be constructed by appending the expanded pattern to the prefix and
+         * then by appending a timestamp and the extension.
+         * 
+         * 
+         * If unset, the value of "pattern" from the JVM logging configuration for [ ] will be used; and if that's unset, [.DEFAULT_BASE_FILE_NAME_PATTERN]
+         * will be used.
+         * 
+         * @param pattern the pattern string, possibly containing `%u`, `%h`,
+         * `%%` variables as above
+         * @return this `Builder` object
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setPattern(pattern: String?): Builder {
+            this.pattern = pattern
+            return this
         }
-      } else {
-        if (c == '%') {
-          inVar = true;
+
+        /**
+         * Sets the log file extension.
+         * 
+         * 
+         * If unset, the value of "extension" from the JVM logging configuration for [ ] will be used; and if that's unset, the process ID will be used.
+         * 
+         * @param extension log file extension
+         * @return this `Builder` object
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setExtension(extension: String?): Builder {
+            this.extension = extension
+            return this
+        }
+
+        /**
+         * Sets the log file symlink filename.
+         * 
+         * 
+         * If unset, the value of "symlink" from the JVM logging configuration for [ ] will be used; and if that's unset, the prefix will be used.
+         * 
+         * @param symlinkName either symlink filename without a directory part, or an absolute path
+         * whose directory part matches the prefix
+         * @return this `Builder` object
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setSymlinkName(symlinkName: String?): Builder {
+            this.symlinkName = symlinkName
+            return this
+        }
+
+        /**
+         * Sets whether symlinks to the log file should be created.
+         * 
+         * 
+         * If unset, the value of "create_symlink" from the JVM logging configuration for [ ] will be used; and if that's unset, the default behavior will depend on the
+         * platform: false on Windows (because by default, only administrator accounts can create
+         * symbolic links there) and true on other platforms.
+         * 
+         * @return this `Builder` object
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setCreateSymlink(createSymlink: Boolean): Builder {
+            this.createSymlink = createSymlink
+            return this
+        }
+
+        /**
+         * Sets the log file size limit; if unset or 0, log size is unlimited.
+         * 
+         * 
+         * If unset, the value of "rotate_limit_bytes" from the JVM logging configuration for [ ] will be used; and if that's unset, the log fie size is unlimited.
+         * 
+         * @param rotateLimitBytes maximum log file size in bytes; must be >= 0; 0 means unlimited
+         * @return this `Builder` object
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setRotateLimitBytes(rotateLimitBytes: Int): Builder {
+            this.rotateLimitBytes = rotateLimitBytes
+            return this
+        }
+
+        /**
+         * Sets the total rotateLimitBytes for log files.
+         * 
+         * 
+         * If set, when opening a new handler or rotating a log file, the handler will scan for all
+         * log files with names matching the expected prefix, pattern, timestamp format, and extension,
+         * and delete the oldest ones to keep the total size under rotateLimitBytes.
+         * 
+         * 
+         * If unset, the value of "total_limit_bytes" from the JVM logging configuration for [ ] will be used; and if that's unset, the total log size is unlimited.
+         * 
+         * @param totalLimitBytes maximum total log file size in bytes; must be >= 0; 0 means unlimited
+         * @return this `Builder` object
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setTotalLimitBytes(totalLimitBytes: Int): Builder {
+            this.totalLimitBytes = totalLimitBytes
+            return this
+        }
+
+        /**
+         * Sets the minimum level at which to log records.
+         * 
+         * 
+         * If unset, the level named by the "level" field in the JVM logging configuration for [ ] will be used; and if that's unset, all records are logged.
+         * 
+         * @param logLevel minimum log level
+         * @return this `Builder` object
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setLogLevel(logLevel: java.util.logging.Level?): Builder {
+            this.logLevel = logLevel
+            return this
+        }
+
+        /**
+         * Sets the log formatter.
+         * 
+         * 
+         * If unset, the class named by the "formatter" field in the JVM logging configuration for
+         * [SimpleLogHandler] will be used; and if that's unset, [SingleLineFormatter] will
+         * be used.
+         * 
+         * @param formatter log formatter
+         * @return this `Builder` object
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setFormatter(formatter: java.util.logging.Formatter?): Builder {
+            this.formatter = formatter
+            return this
+        }
+
+        /**
+         * Sets the time source for timestamps in log filenames.
+         * 
+         * 
+         * Intended for testing. If unset, the system clock in the system timezone will be used.
+         * 
+         * @param clock time source for timestamps
+         * @return this `Builder` object
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        @com.google.common.annotations.VisibleForTesting
+        fun setClockForTesting(clock: java.time.Clock?): Builder {
+            this.clock = clock
+            return this
+        }
+
+        /** Builds a [SimpleLogHandler] instance.  */
+        fun build(): SimpleLogHandler {
+            return com.google.devtools.build.lib.util.SimpleLogHandler(
+                prefix,
+                pattern,
+                extension,
+                symlinkName,
+                createSymlink,
+                rotateLimitBytes,
+                totalLimitBytes,
+                logLevel,
+                formatter,
+                clock
+            )
+        }
+    }
+
+    /**
+     * Constructs a log handler with all state taken from the JVM logging configuration or (as
+     * fallback) the defaults; see [SimpleLogHandler.Builder] documentation.
+     * 
+     * @throws IllegalArgumentException if invalid JVM logging configuration values are encountered;
+     * see [SimpleLogHandler.Builder] documentation
+     */
+    constructor() : this(null, null, null, null, null, null, null, null, null, null)
+
+    /**
+     * Constructs a log handler, falling back to the JVM logging configuration or (as last fallback)
+     * the defaults for those arguments which are null; see [SimpleLogHandler.Builder]
+     * documentation.
+     * 
+     * @throws IllegalArgumentException if invalid non-null arguments or configured values are
+     * encountered; see [SimpleLogHandler.Builder] documentation
+     */
+    init {
+        this.baseFilePath =
+            com.google.devtools.build.lib.util.SimpleLogHandler.Companion.getBaseFilePath(
+                com.google.devtools.build.lib.util.SimpleLogHandler.Companion.getConfiguredStringProperty(
+                    prefix,
+                    "prefix",
+                    com.google.devtools.build.lib.util.SimpleLogHandler.Companion.DEFAULT_PREFIX_STRING
+                ),
+                com.google.devtools.build.lib.util.SimpleLogHandler.Companion.getConfiguredStringProperty(
+                    pattern,
+                    "pattern",
+                    com.google.devtools.build.lib.util.SimpleLogHandler.Companion.DEFAULT_BASE_FILE_NAME_PATTERN
+                )
+            )
+
+        val configuredSymlinkName: String? =
+            com.google.devtools.build.lib.util.SimpleLogHandler.Companion.getConfiguredStringProperty(
+                symlinkName,
+                "symlink",
+                com.google.devtools.build.lib.util.SimpleLogHandler.Companion.getConfiguredStringProperty(
+                    prefix,
+                    "prefix",
+                    com.google.devtools.build.lib.util.SimpleLogHandler.Companion.DEFAULT_PREFIX_STRING
+                )
+            )
+        val configuredCreateSymlink: Boolean =
+            com.google.devtools.build.lib.util.SimpleLogHandler.Companion.getConfiguredBooleanProperty(
+                createSymlink,
+                "create_symlink",
+                com.google.devtools.build.lib.util.OS.Companion.getCurrent() != com.google.devtools.build.lib.util.OS.WINDOWS
+            )
+        this.symlinkPath =
+            if (configuredCreateSymlink)
+                java.util.Optional.of<java.nio.file.Path?>(
+                    com.google.devtools.build.lib.util.SimpleLogHandler.Companion.getSymlinkAbsolutePath(
+                        this.baseFilePath.getParent(),
+                        configuredSymlinkName
+                    )
+                )
+            else
+                java.util.Optional.empty<java.nio.file.Path?>()
+        this.extension =
+            com.google.devtools.build.lib.util.SimpleLogHandler.Companion.getConfiguredStringProperty(
+                extension, "extension", java.lang.ProcessHandle.current().pid().toString()
+            )
+        this.isStaticExtension =
+            (com.google.devtools.build.lib.util.SimpleLogHandler.Companion.getConfiguredStringProperty(
+                extension,
+                "extension",
+                null
+            ) != null)
+        this.rotateLimitBytes = com.google.devtools.build.lib.util.SimpleLogHandler.Companion.getConfiguredIntProperty(
+            rotateLimitBytes,
+            "rotate_limit_bytes",
+            0
+        )
+        com.google.common.base.Preconditions.checkArgument(
+            this.rotateLimitBytes >= 0,
+            "File size limits cannot be negative"
+        )
+        this.totalLimitBytes = com.google.devtools.build.lib.util.SimpleLogHandler.Companion.getConfiguredIntProperty(
+            totalLimit,
+            "total_limit_bytes",
+            0
+        )
+        com.google.common.base.Preconditions.checkArgument(
+            this.totalLimitBytes >= 0,
+            "File size limits cannot be negative"
+        )
+        setLevel(
+            com.google.devtools.build.lib.util.SimpleLogHandler.Companion.getConfiguredLevelProperty(
+                logLevel,
+                "level",
+                java.util.logging.Level.ALL
+            )
+        )
+        setFormatter(
+            com.google.devtools.build.lib.util.SimpleLogHandler.Companion.getConfiguredFormatterProperty(
+                formatter,
+                "formatter",
+                SingleLineFormatter()
+            )
+        )
+        if (clock != null) {
+            this.clock = clock
+            this.timestampFormat.setTimeZone(TimeZone.getTimeZone(clock.getZone()))
         } else {
-          sb.append(c);
+            this.clock = java.time.Clock.system(ZoneId.systemDefault())
         }
-      }
     }
 
-    return Path.of(StringEncoding.internalToPlatform(sb.toString())).toAbsolutePath();
-  }
+    @get:kotlin.jvm.Synchronized
+    val currentLogFilePath: java.util.Optional<java.nio.file.Path?>
+        /**
+         * Returns the absolute path of the current log file if a log file is open or `Optional#empty()` otherwise.
+         * 
+         * 
+         * Since the log file is opened lazily, this method is expected to return `Optional#empty()` if no record has yet been published.
+         */
+        get() = if (output.isOpen) java.util.Optional.of<java.nio.file.Path?>(output.path) else java.util.Optional.empty<java.nio.file.Path?>()
 
-  /**
-   * Returns the absolute path for a symlink in the specified directory.
-   *
-   * @throws IllegalArgumentException if the symlink includes a directory component which doesn't
-   *     equal {@code logDir}
-   */
-  private static Path getSymlinkAbsolutePath(Path logDir, String symlink) {
-    checkNotNull(symlink);
-    checkArgument(!symlink.isEmpty());
-    Path symlinkPath = Path.of(StringEncoding.internalToPlatform(symlink));
-    if (!symlinkPath.isAbsolute()) {
-      symlinkPath = logDir.resolve(symlinkPath);
-    }
-    checkArgument(
-        symlinkPath.getParent().equals(logDir), "symlink is not a top-level file in logDir");
-    return symlinkPath;
-  }
+    val symbolicLinkPath: java.util.Optional<java.nio.file.Path?>
+        /**
+         * Returns the expected absolute path for the symbolic link to the current log file, or `Optional#empty()` if not used.
+         */
+        get() = symlinkPath
 
-  private static final class Output {
-    /** Log file currently in use. */
-    @Nullable private Path file;
-
-    /** Output stream for {@link #file} which counts the number of bytes written. */
-    @Nullable private CountingOutputStream stream;
-    /** Writer for {@link #stream}. */
-    @Nullable private OutputStreamWriter writer;
-
-    public boolean isOpen() {
-      return writer != null;
+    override fun isLoggable(record: LogRecord?): Boolean {
+        return record != null && super.isLoggable(record)
     }
 
-    /**
-     * Opens the specified file in append mode, first closing the current file if needed.
-     *
-     * @throws IOException if the file could not be opened
-     */
-    public void open(Path file) throws IOException {
-      try {
-        close();
-        this.file = file;
-        stream = new CountingOutputStream(new FileOutputStream(file.toFile(), true));
-        writer = new OutputStreamWriter(stream, ISO_8859_1);
-      } catch (IOException e) {
-        close();
-        throw e;
-      }
-    }
-
-    /**
-     * Returns the currently open file's path.
-     *
-     * @throws NullPointerException if not open
-     */
-    public Path getPath() {
-      return file;
-    }
-
-    /**
-     * Writes the string to the current file in UTF-8 encoding.
-     *
-     * @throws NullPointerException if not open
-     * @throws IOException if an underlying IO operation failed
-     */
-    public void write(String string) throws IOException {
-      writer.write(string);
-    }
-
-    /**
-     * Flushes the current file.
-     *
-     * @throws NullPointerException if not open
-     * @throws IOException if an underlying IO operation failed
-     */
-    public void flush() throws IOException {
-      writer.flush();
-    }
-
-    /**
-     * Closes the current file if it is open.
-     *
-     * @throws IOException if an underlying IO operation failed
-     */
-    public void close() throws IOException {
-      try {
-        if (isOpen()) {
-          writer.close();
+    @kotlin.jvm.Synchronized
+    override fun publish(record: LogRecord?) {
+        if (!isLoggable(record)) {
+            // Silently ignore null or filtered records, matching FileHandler behavior.
+            return
         }
-      } finally {
-        writer = null;
-        stream = null;
-        file = null;
-      }
-    }
 
-    /**
-     * Closes the current file unless the number of bytes written to it was under the specified
-     * limit.
-     *
-     * @throws NullPointerException if not open
-     * @throws IOException if an underlying IO operation failed
-     */
-    void closeIfByteCountAtleast(int limit) throws IOException {
-      if (stream.getCount() < limit && stream.getCount() + 8192L >= limit) {
-        // The writer and its internal encoder buffer output before writing to the output stream.
-        // The default size of the encoder's buffer is 8192 bytes. To count the bytes in the output
-        // stream accurately, we have to flush. But flushing unnecessarily harms performance; let's
-        // flush only when it matters - per record and within expected buffer size from the limit.
-        flush();
-      }
-      if (stream.getCount() >= limit) {
-        close();
-      }
-    }
-  }
-
-  /**
-   * Opens a new log file if one is not open, updating the symbolic link and deleting old logs if
-   * needed.
-   */
-  @GuardedBy("this")
-  private void openOutputIfNeeded() {
-    if (!output.isOpen()) {
-      // Ensure the log file's directory exists.
-      checkState(baseFilePath.isAbsolute());
-      baseFilePath.getParent().toFile().mkdirs();
-
-      try {
-        output.open(
-            Path.of(
-                baseFilePath + timestampFormat.format(Date.from(Instant.now(clock))) + extension));
-        output.write(getFormatter().getHead(this));
-      } catch (IOException e) {
+        // This allows us to do the I/O while not forgetting that we were interrupted.
+        var isInterrupted: Boolean = java.lang.Thread.interrupted()
         try {
-          output.close();
-        } catch (IOException eClose) {
-          // Already handling a prior IO failure.
+            val message: String? = getFormatter().format(record)
+            openOutputIfNeeded()
+            output.write(message)
+        } catch (e: java.lang.Exception) {
+            reportError(null, e, ErrorManager.WRITE_FAILURE)
+            // Failing to log is non-fatal. Continue to try to rotate the log if necessary, which may fix
+            // the underlying IO problem with the file.
+            if (e is InterruptedIOException) {
+                isInterrupted = true
+            }
         }
-        reportError("Failed to open log file", e, ErrorManager.OPEN_FAILURE);
-        return;
-      }
 
-      if (totalLimitBytes > 0) {
-        deleteOldLogs();
-      }
-
-      // Try to create relative symlink from currentLogFile to baseFile, but don't treat a failure
-      // as fatal.
-      if (symlinkPath.isPresent()) {
         try {
-          checkState(symlinkPath.get().getParent().equals(output.getPath().getParent()));
-          if (Files.exists(symlinkPath.get(), LinkOption.NOFOLLOW_LINKS)) {
-            Files.delete(symlinkPath.get());
-          }
-          Files.createSymbolicLink(symlinkPath.get(), output.getPath().getFileName());
-        } catch (IOException e) {
-          reportError(
-              "Failed to create symbolic link to log file", e, ErrorManager.GENERIC_FAILURE);
+            if (rotateLimitBytes > 0) {
+                output.closeIfByteCountAtleast(rotateLimitBytes)
+                openOutputIfNeeded()
+            }
+        } catch (e: IOException) {
+            reportError("Failed to rotate log file", e, ErrorManager.GENERIC_FAILURE)
+            if (e is InterruptedIOException) {
+                isInterrupted = true
+            }
         }
-      }
-    }
-  }
-
-  /**
-   * Parses the absolute path of a logfile (e.g from a previous run of the program) and extracts the
-   * timestamp.
-   *
-   * @throws ParseException if the path does not match the expected prefix, resolved pattern,
-   *     timestamp format, or extension
-   */
-  @GuardedBy("this")
-  private Date parseLogFileTimestamp(Path path) throws ParseException {
-    String pathString = path.toString();
-    if (!pathString.startsWith(baseFilePath.toString())) {
-      throw new ParseException("Wrong prefix or pattern", 0);
-    }
-    ParsePosition parsePosition = new ParsePosition(baseFilePath.toString().length());
-    Date timestamp = timestampFormat.parse(pathString, parsePosition);
-    if (timestamp == null) {
-      throw new ParseException("Wrong timestamp format", parsePosition.getErrorIndex());
-    }
-    if (isStaticExtension) {
-      if (!pathString.substring(parsePosition.getIndex()).equals(extension)) {
-        throw new ParseException("Wrong file extension", parsePosition.getIndex());
-      }
-    } else {
-      try {
-        Long.parseLong(pathString.substring(parsePosition.getIndex()));
-      } catch (NumberFormatException e) {
-        throw new ParseException("File extension is not a numeric PID", parsePosition.getIndex());
-      }
-    }
-    return timestamp;
-  }
-
-  /** File path ordered by timestamp. */
-  private static final class PathByTimestamp implements Comparable<PathByTimestamp> {
-    private final Path path;
-    private final Date timestamp;
-    private final long size;
-
-    PathByTimestamp(Path path, Date timestamp, long size) {
-      this.path = path;
-      this.timestamp = timestamp;
-      this.size = size;
+        if (isInterrupted) {
+            java.lang.Thread.currentThread().interrupt()
+        }
     }
 
-    Path getPath() {
-      return path;
+    @kotlin.jvm.Synchronized
+    override fun flush() {
+        var isInterrupted: Boolean = java.lang.Thread.interrupted()
+        if (output.isOpen) {
+            try {
+                output.flush()
+            } catch (e: IOException) {
+                reportError(null, e, ErrorManager.FLUSH_FAILURE)
+                if (e is InterruptedIOException) {
+                    isInterrupted = true
+                }
+            }
+        }
+        if (isInterrupted) {
+            java.lang.Thread.currentThread().interrupt()
+        }
     }
 
-    long getSize() {
-      return size;
+    @kotlin.jvm.Synchronized
+    override fun close() {
+        var isInterrupted: Boolean = java.lang.Thread.interrupted()
+        if (output.isOpen) {
+            try {
+                output.write(getFormatter().getTail(this))
+            } catch (e: IOException) {
+                reportError("Failed to write log tail", e, ErrorManager.WRITE_FAILURE)
+                if (e is InterruptedIOException) {
+                    isInterrupted = true
+                }
+            }
+
+            try {
+                output.close()
+            } catch (e: IOException) {
+                reportError(null, e, ErrorManager.CLOSE_FAILURE)
+                if (e is InterruptedIOException) {
+                    isInterrupted = true
+                }
+            }
+        }
+        if (isInterrupted) {
+            java.lang.Thread.currentThread().interrupt()
+        }
     }
 
-    @Override
-    public int compareTo(PathByTimestamp rhs) {
-      return this.timestamp.compareTo(rhs.timestamp);
-    }
-  }
+    private class Output {
+        /** Log file currently in use.  */
+        private var file: java.nio.file.Path? = null
 
-  /**
-   * Deletes the oldest log files matching the expected prefix, pattern, timestamp format, and
-   * extension, to keep the total size under {@link #totalLimitBytes} (if set to non-0).
-   *
-   * <p>Each log file's timestamp is determined only from the filename. The current log file will
-   * not be deleted.
-   */
-  @GuardedBy("this")
-  private void deleteOldLogs() {
-    checkState(baseFilePath.isAbsolute());
-    PriorityQueue<PathByTimestamp> queue = new PriorityQueue<>();
-    long totalSize = 0;
-    try (DirectoryStream<Path> dirStream = Files.newDirectoryStream(baseFilePath.getParent())) {
-      for (Path path : dirStream) {
+        /** Output stream for [.file] which counts the number of bytes written.  */
+        private var stream: com.google.common.io.CountingOutputStream? = null
+
+        /** Writer for [.stream].  */
+        private var writer: OutputStreamWriter? = null
+
+        val isOpen: Boolean
+            get() = writer != null
+
+        /**
+         * Opens the specified file in append mode, first closing the current file if needed.
+         * 
+         * @throws IOException if the file could not be opened
+         */
+        @Throws(IOException::class)
+        fun open(file: java.nio.file.Path) {
+            try {
+                close()
+                this.file = file
+                stream = com.google.common.io.CountingOutputStream(FileOutputStream(file.toFile(), true))
+                writer = OutputStreamWriter(stream, java.nio.charset.StandardCharsets.ISO_8859_1)
+            } catch (e: IOException) {
+                close()
+                throw e
+            }
+        }
+
+        val path: java.nio.file.Path?
+            /**
+             * Returns the currently open file's path.
+             * 
+             * @throws NullPointerException if not open
+             */
+            get() = file
+
+        /**
+         * Writes the string to the current file in UTF-8 encoding.
+         * 
+         * @throws NullPointerException if not open
+         * @throws IOException if an underlying IO operation failed
+         */
+        @Throws(IOException::class)
+        fun write(string: String?) {
+            writer.write(string)
+        }
+
+        /**
+         * Flushes the current file.
+         * 
+         * @throws NullPointerException if not open
+         * @throws IOException if an underlying IO operation failed
+         */
+        @Throws(IOException::class)
+        fun flush() {
+            writer.flush()
+        }
+
+        /**
+         * Closes the current file if it is open.
+         * 
+         * @throws IOException if an underlying IO operation failed
+         */
+        @Throws(IOException::class)
+        fun close() {
+            try {
+                if (this.isOpen) {
+                    writer.close()
+                }
+            } finally {
+                writer = null
+                stream = null
+                file = null
+            }
+        }
+
+        /**
+         * Closes the current file unless the number of bytes written to it was under the specified
+         * limit.
+         * 
+         * @throws NullPointerException if not open
+         * @throws IOException if an underlying IO operation failed
+         */
+        @Throws(IOException::class)
+        fun closeIfByteCountAtleast(limit: Int) {
+            if (stream.getCount() < limit && stream.getCount() + 8192L >= limit) {
+                // The writer and its internal encoder buffer output before writing to the output stream.
+                // The default size of the encoder's buffer is 8192 bytes. To count the bytes in the output
+                // stream accurately, we have to flush. But flushing unnecessarily harms performance; let's
+                // flush only when it matters - per record and within expected buffer size from the limit.
+                flush()
+            }
+            if (stream.getCount() >= limit) {
+                close()
+            }
+        }
+    }
+
+    /**
+     * Opens a new log file if one is not open, updating the symbolic link and deleting old logs if
+     * needed.
+     */
+    @javax.annotation.concurrent.GuardedBy("this")
+    private fun openOutputIfNeeded() {
+        if (!output.isOpen) {
+            // Ensure the log file's directory exists.
+            com.google.common.base.Preconditions.checkState(baseFilePath.isAbsolute())
+            baseFilePath.getParent().toFile().mkdirs()
+
+            try {
+                output.open(
+                    java.nio.file.Path.of(
+                        baseFilePath.toString() + timestampFormat.format(java.util.Date.from(Instant.now(clock))) + extension
+                    )
+                )
+                output.write(getFormatter().getHead(this))
+            } catch (e: IOException) {
+                try {
+                    output.close()
+                } catch (eClose: IOException) {
+                    // Already handling a prior IO failure.
+                }
+                reportError("Failed to open log file", e, ErrorManager.OPEN_FAILURE)
+                return
+            }
+
+            if (totalLimitBytes > 0) {
+                deleteOldLogs()
+            }
+
+            // Try to create relative symlink from currentLogFile to baseFile, but don't treat a failure
+            // as fatal.
+            if (symlinkPath.isPresent()) {
+                try {
+                    com.google.common.base.Preconditions.checkState(
+                        symlinkPath.get().getParent() == output.path.getParent()
+                    )
+                    if (java.nio.file.Files.exists(symlinkPath.get(), LinkOption.NOFOLLOW_LINKS)) {
+                        java.nio.file.Files.delete(symlinkPath.get())
+                    }
+                    java.nio.file.Files.createSymbolicLink(symlinkPath.get(), output.path.getFileName())
+                } catch (e: IOException) {
+                    reportError(
+                        "Failed to create symbolic link to log file", e, ErrorManager.GENERIC_FAILURE
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Parses the absolute path of a logfile (e.g from a previous run of the program) and extracts the
+     * timestamp.
+     * 
+     * @throws ParseException if the path does not match the expected prefix, resolved pattern,
+     * timestamp format, or extension
+     */
+    @javax.annotation.concurrent.GuardedBy("this")
+    @Throws(java.text.ParseException::class)
+    private fun parseLogFileTimestamp(path: java.nio.file.Path): java.util.Date {
+        val pathString = path.toString()
+        if (!pathString.startsWith(baseFilePath.toString())) {
+            throw java.text.ParseException("Wrong prefix or pattern", 0)
+        }
+        val parsePosition: ParsePosition = ParsePosition(baseFilePath.toString().length)
+        val timestamp: java.util.Date = timestampFormat.parse(pathString, parsePosition)
+        if (timestamp == null) {
+            throw java.text.ParseException("Wrong timestamp format", parsePosition.getErrorIndex())
+        }
+        if (isStaticExtension) {
+            if (pathString.substring(parsePosition.getIndex()) != extension) {
+                throw java.text.ParseException("Wrong file extension", parsePosition.getIndex())
+            }
+        } else {
+            try {
+                pathString.substring(parsePosition.getIndex()).toLong()
+            } catch (e: java.lang.NumberFormatException) {
+                throw java.text.ParseException("File extension is not a numeric PID", parsePosition.getIndex())
+            }
+        }
+        return timestamp
+    }
+
+    /** File path ordered by timestamp.  */
+    private class PathByTimestamp(path: java.nio.file.Path?, timestamp: java.util.Date, size: Long) :
+        Comparable<PathByTimestamp?> {
+        private val path: java.nio.file.Path?
+        private val timestamp: java.util.Date
+        val size: Long
+
+        init {
+            this.path = path
+            this.timestamp = timestamp
+            this.size = size
+        }
+
+        fun getPath(): java.nio.file.Path? {
+            return path
+        }
+
+        override fun compareTo(rhs: PathByTimestamp): Int {
+            return this.timestamp.compareTo(rhs.timestamp)
+        }
+    }
+
+    /**
+     * Deletes the oldest log files matching the expected prefix, pattern, timestamp format, and
+     * extension, to keep the total size under [.totalLimitBytes] (if set to non-0).
+     * 
+     * 
+     * Each log file's timestamp is determined only from the filename. The current log file will
+     * not be deleted.
+     */
+    @javax.annotation.concurrent.GuardedBy("this")
+    private fun deleteOldLogs() {
+        com.google.common.base.Preconditions.checkState(baseFilePath.isAbsolute())
+        val queue: java.util.PriorityQueue<PathByTimestamp> = java.util.PriorityQueue<PathByTimestamp>()
+        var totalSize: Long = 0
         try {
-          Date timestamp = parseLogFileTimestamp(path);
-          long size = Files.size(path);
-          totalSize += size;
-          if (!output.getPath().equals(path)) {
-            queue.add(new PathByTimestamp(path, timestamp, size));
-          }
-        } catch (ParseException e) {
-          // Ignore files which don't look like our logs.
+            java.nio.file.Files.newDirectoryStream(baseFilePath.getParent()).use { dirStream ->
+                for (path in dirStream) {
+                    try {
+                        val timestamp: java.util.Date = parseLogFileTimestamp(path)
+                        val size: Long = java.nio.file.Files.size(path)
+                        totalSize += size
+                        if (output.path != path) {
+                            queue.add(PathByTimestamp(path, timestamp, size))
+                        }
+                    } catch (e: java.text.ParseException) {
+                        // Ignore files which don't look like our logs.
+                    }
+                }
+                if (totalLimitBytes > 0) {
+                    while (totalSize > totalLimitBytes && !queue.isEmpty()) {
+                        val entry: PathByTimestamp = queue.poll()
+                        java.nio.file.Files.delete(entry.getPath())
+                        totalSize -= entry.size
+                    }
+                }
+            }
+        } catch (e: IOException) {
+            reportError("Failed to clean up old log files", e, ErrorManager.GENERIC_FAILURE)
         }
-      }
-
-      if (totalLimitBytes > 0) {
-        while (totalSize > totalLimitBytes && !queue.isEmpty()) {
-          PathByTimestamp entry = queue.poll();
-          Files.delete(entry.getPath());
-          totalSize -= entry.getSize();
-        }
-      }
-    } catch (IOException e) {
-      reportError("Failed to clean up old log files", e, ErrorManager.GENERIC_FAILURE);
     }
-  }
+
+    companion object {
+        private const val DEFAULT_PREFIX_STRING = "java.log"
+        private const val DEFAULT_BASE_FILE_NAME_PATTERN = ".%h.%u.log.java."
+
+        @com.google.common.annotations.VisibleForTesting
+        const val DEFAULT_TIMESTAMP_FORMAT: String = "yyyyMMdd-HHmmss."
+
+        /** Creates a new [Builder].  */
+        @kotlin.jvm.JvmStatic
+        fun builder(): Builder {
+            return com.google.devtools.build.lib.util.SimpleLogHandler.Builder()
+        }
+
+        /**
+         * Checks if a value is null, and if it is, falls back to the JVM logging configuration, and if
+         * that too is missing, to a provided fallback value.
+         * 
+         * @param builderValue possibly null value provided by the caller, e.g. from [     ]
+         * @param configuredName field name in the JVM logging configuration for [SimpleLogHandler]
+         * @param parse parser for the string value from the JVM logging configuration
+         * @param fallbackValue fallback to use if the `builderValue` is null and no value is
+         * configured in the JVM logging configuration
+         * @param <T> value type
+        </T> */
+        private fun <T> getConfiguredProperty(
+            builderValue: T?,
+            configuredName: String?,
+            parse: java.util.function.Function<String?, T?>,
+            fallbackValue: T?
+        ): T? {
+            if (builderValue != null) {
+                return builderValue
+            }
+
+            // .properties files are read as Latin-1 by java.util.Properties, with Unicode escape sequences
+            // interpreted. Since the Bazel client passes path properties as UTF-8 without escaping,
+            // configuredValue already contains a string in Bazel's internal string encoding (see
+            // StringEncoding).
+            val configuredValue: String? =
+                java.util.logging.LogManager.getLogManager()
+                    .getProperty(com.google.devtools.build.lib.util.SimpleLogHandler::class.java.getName() + "." + configuredName)
+            if (configuredValue != null) {
+                return parse.apply(configuredValue)
+            }
+            return fallbackValue
+        }
+
+        /** Matches java.logging.* configuration behavior; configured strings are trimmed.  */
+        private fun getConfiguredStringProperty(
+            builderValue: String?, configuredName: String?, fallbackValue: String?
+        ): String? {
+            return com.google.devtools.build.lib.util.SimpleLogHandler.Companion.getConfiguredProperty<String?>(
+                builderValue,
+                configuredName,
+                java.util.function.Function { obj: String? -> obj.trim { it <= ' ' } },
+                fallbackValue
+            )
+        }
+
+        /**
+         * Matches java.logging.* configuration behavior; "true" and "1" are true, "false" and "0" are
+         * false.
+         * 
+         * @throws IllegalArgumentException if the configured boolean property cannot be parsed
+         */
+        private fun getConfiguredBooleanProperty(
+            builderValue: Boolean?, configuredName: String?, fallbackValue: Boolean
+        ): Boolean {
+            val value: Boolean? =
+                com.google.devtools.build.lib.util.SimpleLogHandler.Companion.getConfiguredProperty<Boolean?>(
+                    builderValue,
+                    configuredName,
+                    java.util.function.Function { `val`: String? ->
+                        var `val` = `val`
+                        `val` = `val`.trim { it <= ' ' }.lowercase(Locale.getDefault())
+                        if ("true" == `val` || "1" == `val`) {
+                            return@getConfiguredProperty true
+                        } else if ("false" == `val` || "0" == `val`) {
+                            return@getConfiguredProperty false
+                        } else if (`val`.isEmpty()) {
+                            return@getConfiguredProperty null
+                        }
+                        throw java.lang.IllegalArgumentException("Cannot parse boolean property value")
+                    },
+                    null
+                )
+            return if (value != null) value else fallbackValue
+        }
+
+        /**
+         * Empty configured values are ignored and the fallback is used instead.
+         * 
+         * @throws NumberFormatException if the configured formatter value is non-numeric
+         */
+        private fun getConfiguredIntProperty(
+            builderValue: Int?, configuredName: String?, fallbackValue: Int
+        ): Int {
+            val value: Int? =
+                com.google.devtools.build.lib.util.SimpleLogHandler.Companion.getConfiguredProperty<Int?>(
+                    builderValue,
+                    configuredName,
+                    java.util.function.Function { `val`: String? ->
+                        var `val` = `val`
+                        `val` = `val`.trim { it <= ' ' }
+                        if (!`val`.isEmpty()) `val`.toInt() else null
+                    },
+                    null
+                )
+            return if (value != null) value else fallbackValue
+        }
+
+        /**
+         * Empty configured values are ignored and the fallback is used instead.
+         * 
+         * @throws IllegalArgumentException if the configured level name cannot be parsed
+         */
+        private fun getConfiguredLevelProperty(
+            builderValue: java.util.logging.Level?, configuredName: String?, fallbackValue: java.util.logging.Level?
+        ): java.util.logging.Level? {
+            val value: java.util.logging.Level? =
+                com.google.devtools.build.lib.util.SimpleLogHandler.Companion.getConfiguredProperty<java.util.logging.Level?>(
+                    builderValue,
+                    configuredName,
+                    java.util.function.Function { `val`: String? ->
+                        var `val` = `val`
+                        `val` = `val`.trim { it <= ' ' }
+                        if (!`val`.isEmpty()) java.util.logging.Level.parse(`val`) else null
+                    },
+                    null
+                )
+            return if (value != null) value else fallbackValue
+        }
+
+        /**
+         * Empty configured values are ignored and the fallback is used instead.
+         * 
+         * @throws IllegalArgumentException if a formatter object cannot be instantiated from the
+         * configured class name
+         */
+        private fun getConfiguredFormatterProperty(
+            builderValue: java.util.logging.Formatter?,
+            configuredName: String?,
+            fallbackValue: java.util.logging.Formatter?
+        ): java.util.logging.Formatter? {
+            return com.google.devtools.build.lib.util.SimpleLogHandler.Companion.getConfiguredProperty<java.util.logging.Formatter?>(
+                builderValue,
+                configuredName,
+                java.util.function.Function { `val`: String? ->
+                    var `val` = `val`
+                    `val` = `val`.trim { it <= ' ' }
+                    if (!`val`.isEmpty()) {
+                        try {
+                            return@getConfiguredProperty java.lang.Class.forName(
+                                `val`,
+                                true,
+                                com.google.devtools.build.lib.util.SimpleLogHandler::class.java.getClassLoader()
+                            )
+                                .asSubclass<java.util.logging.Formatter?>(java.util.logging.Formatter::class.java)
+                                .getDeclaredConstructor()
+                                .newInstance() as java.util.logging.Formatter?
+                        } catch (e: java.lang.ReflectiveOperationException) {
+                            throw java.lang.IllegalArgumentException(e)
+                        }
+                    } else {
+                        return@getConfiguredProperty fallbackValue
+                    }
+                },
+                fallbackValue
+            )
+        }
+
+        @kotlin.jvm.JvmStatic
+        @get:com.google.common.annotations.VisibleForTesting
+        val localHostnameFirstComponent: String?
+            get() {
+                var name: String = com.google.devtools.build.lib.util.NetUtil.getCachedShortHostName()
+                if (!com.google.common.net.InetAddresses.isInetAddress(name)) {
+                    // Keep only the first component of the name.
+                    val firstDot: Int = name.indexOf('.')
+                    if (firstDot >= 0) {
+                        name = name.substring(0, firstDot)
+                    }
+                }
+                return name.lowercase(Locale.getDefault())
+            }
+
+        /**
+         * Creates the log file absolute base path according to the given pattern.
+         * 
+         * @param prefix non-null string to prepend to the base path
+         * @param pattern non-null string which may include the following variables: %h will be expanded
+         * to the hostname; %u will be expanded to the username; %% will be expanded to %
+         * @throws IllegalArgumentException if an unknown variable is encountered in the pattern
+         */
+        private fun getBaseFilePath(prefix: String?, pattern: String?): java.nio.file.Path {
+            com.google.common.base.Preconditions.checkNotNull<String?>(prefix, "prefix")
+            com.google.common.base.Preconditions.checkNotNull<String?>(pattern, "pattern")
+
+            val sb: java.lang.StringBuilder = java.lang.StringBuilder(100) // Typical name is < 100 bytes
+            var inVar = false
+            var username: String? = StringEncoding.platformToInternal(java.lang.System.getProperty("user.name"))
+
+            if (com.google.common.base.Strings.isNullOrEmpty(username)) {
+                username = "unknown_user"
+            }
+
+            sb.append(prefix)
+
+            for (i in 0..<pattern!!.length) {
+                val c = pattern.get(i)
+                if (inVar) {
+                    inVar = false
+                    when (c) {
+                        '%' -> sb.append('%')
+                        'h' -> sb.append(com.google.devtools.build.lib.util.SimpleLogHandler.Companion.getLocalHostnameFirstComponent())
+                        'u' -> sb.append(username)
+                        else -> throw java.lang.IllegalArgumentException("Unknown variable " + c + " in " + pattern)
+                    }
+                } else {
+                    if (c == '%') {
+                        inVar = true
+                    } else {
+                        sb.append(c)
+                    }
+                }
+            }
+
+            return java.nio.file.Path.of(StringEncoding.internalToPlatform(sb.toString())).toAbsolutePath()
+        }
+
+        /**
+         * Returns the absolute path for a symlink in the specified directory.
+         * 
+         * @throws IllegalArgumentException if the symlink includes a directory component which doesn't
+         * equal `logDir`
+         */
+        private fun getSymlinkAbsolutePath(logDir: java.nio.file.Path, symlink: String?): java.nio.file.Path {
+            com.google.common.base.Preconditions.checkNotNull<String?>(symlink)
+            com.google.common.base.Preconditions.checkArgument(!symlink.isEmpty())
+            var symlinkPath: java.nio.file.Path = java.nio.file.Path.of(StringEncoding.internalToPlatform(symlink))
+            if (!symlinkPath.isAbsolute()) {
+                symlinkPath = logDir.resolve(symlinkPath)
+            }
+            com.google.common.base.Preconditions.checkArgument(
+                symlinkPath.getParent() == logDir, "symlink is not a top-level file in logDir"
+            )
+            return symlinkPath
+        }
+    }
 }

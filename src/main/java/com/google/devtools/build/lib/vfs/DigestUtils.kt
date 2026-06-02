@@ -11,198 +11,233 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.stats.CacheStats;
-import com.google.common.base.Preconditions;
-import java.io.IOException;
-import javax.annotation.Nullable;
+import com.github.benmanes.caffeine.cache.Caffeine
+import com.google.devtools.build.lib.vfs.FileStatus
+import com.google.devtools.build.lib.vfs.PathFragment
+import com.google.devtools.build.lib.vfs.XattrProvider
+import java.io.IOException
 
 /**
  * Utility class for getting digests of files.
- *
- * <p>This class implements an optional cache of file digests when the computation of the digests is
- * costly (i.e. when {@link Path#getFastDigest()} is not available). The cache can be enabled via
- * the {@link #configureCache(long)} function, but note that enabling this cache might have an
+ * 
+ * 
+ * This class implements an optional cache of file digests when the computation of the digests is
+ * costly (i.e. when [Path.getFastDigest] is not available). The cache can be enabled via
+ * the [.configureCache] function, but note that enabling this cache might have an
  * impact on correctness because not all changes to files can be purely detected from their
  * metadata.
  */
-public class DigestUtils {
-  // Typical size for a digest byte array.
-  public static final int ESTIMATED_SIZE = 32;
+object DigestUtils {
+    // Typical size for a digest byte array.
+    const val ESTIMATED_SIZE: Int = 32
 
-  /**
-   * Keys used to cache the values of the digests for files where we don't have fast digests.
-   *
-   * <p>The cache keys are derived from many properties of the file metadata in an attempt to be
-   * able to detect most file changes.
-   */
-  private static record CacheKey(
-      PathFragment path, long nodeId, long changeTime, long lastModifiedTime, long size) {
     /**
-     * Constructs a new cache key.
-     *
-     * @param path path to the file
-     * @param status file status data from which to obtain the cache key properties
-     * @throws IOException if reading the file status data fails
+     * Global cache of files to their digests.
+     * 
+     * 
+     * This is null when the cache is disabled.
+     * 
+     * 
+     * Note that we do not use a [com.github.benmanes.caffeine.cache.LoadingCache] because
+     * our keys represent the paths as strings, not as [Path] instances. As a result, the
+     * loading function cannot actually compute the digests of the files so we have to handle this
+     * externally.
      */
-    private CacheKey(Path path, FileStatus status) throws IOException {
-      this(
-          path.asFragment(),
-          status.getNodeId(),
-          status.getLastChangeTime(),
-          status.getLastModifiedTime(),
-          status.getSize());
-    }
-  }
+    private var globalCache: com.github.benmanes.caffeine.cache.Cache<CacheKey?, ByteArray?>? = null
 
-  /**
-   * Global cache of files to their digests.
-   *
-   * <p>This is null when the cache is disabled.
-   *
-   * <p>Note that we do not use a {@link com.github.benmanes.caffeine.cache.LoadingCache} because
-   * our keys represent the paths as strings, not as {@link Path} instances. As a result, the
-   * loading function cannot actually compute the digests of the files so we have to handle this
-   * externally.
-   */
-  private static Cache<CacheKey, byte[]> globalCache = null;
-
-  /** Private constructor to prevent instantiation of utility class. */
-  private DigestUtils() {}
-
-  /**
-   * Enables the caching of file digests based on file status data.
-   *
-   * <p>If the cache was already enabled, this causes the cache to be reinitialized thus losing all
-   * contents. If the given size is zero, the cache is disabled altogether.
-   *
-   * @param maximumSize maximumSize of the cache in number of entries
-   */
-  public static void configureCache(long maximumSize) {
-    if (maximumSize == 0) {
-      globalCache = null;
-    } else {
-      globalCache = Caffeine.newBuilder().maximumSize(maximumSize).recordStats().build();
-    }
-  }
-
-  /**
-   * Clears the cache contents without changing its size. No-op if the cache hasn't yet been
-   * initialized.
-   */
-  public static void clearCache() {
-    if (globalCache != null) {
-      globalCache.invalidateAll();
-    }
-  }
-
-  /**
-   * Obtains cache statistics.
-   *
-   * <p>The cache must have previously been enabled by a call to {@link #configureCache(long)}.
-   *
-   * @return an immutable snapshot of the cache statistics
-   */
-  public static CacheStats getCacheStats() {
-    Cache<CacheKey, byte[]> cache = globalCache;
-    Preconditions.checkNotNull(cache, "configureCache() must have been called with a size >= 0");
-    return cache.stats();
-  }
-
-  /**
-   * Gets the digest of {@code path}, using a constant-time xattr call if the filesystem supports
-   * it, and calculating the digest manually otherwise.
-   *
-   * <p>If {@link Path#getFastDigest} has already been attempted and was not available, call {@link
-   * #manuallyComputeDigest} to skip an additional attempt to obtain the fast digest.
-   *
-   * <p>Prefer calling {@link #manuallyComputeDigest(Path, FileStatus)} when a recently obtained
-   * {@link FileStatus} is available.
-   *
-   * @param path the file path
-   */
-  public static byte[] getDigestWithManualFallback(Path path, XattrProvider xattrProvider)
-      throws IOException {
-    return getDigestWithManualFallback(path, xattrProvider, null);
-  }
-
-  /**
-   * Same as {@link #getDigestWithManualFallback(Path, XattrProvider)}, but providing the ability to
-   * reuse a recently obtained {@link FileStatus}.
-   *
-   * @param path the file path
-   * @param status a recently obtained file status, if available
-   */
-  public static byte[] getDigestWithManualFallback(
-      Path path, XattrProvider xattrProvider, @Nullable FileStatus status) throws IOException {
-    byte[] digest = xattrProvider.getFastDigest(path);
-    return digest != null ? digest : manuallyComputeDigest(path, status);
-  }
-
-  /**
-   * Calculates a digest manually (i.e., assuming that a fast digest can't obtained).
-   *
-   * <p>Prefer calling {@link #manuallyComputeDigest(Path, FileStatus)} when a recently obtained
-   * {@link FileStatus} is available.
-   *
-   * @param path the file path
-   */
-  public static byte[] manuallyComputeDigest(Path path) throws IOException {
-    return manuallyComputeDigest(path, null);
-  }
-
-  /**
-   * Same as {@link #manuallyComputeDigest(Path)}, but providing the ability to reuse a recently
-   * obtained {@link FileStatus}.
-   *
-   * @param path the file path
-   * @param status a recently obtained file status, if available
-   */
-  public static byte[] manuallyComputeDigest(Path path, @Nullable FileStatus status)
-      throws IOException {
-    byte[] digest;
-
-    // Attempt a cache lookup if the cache is enabled.
-    Cache<CacheKey, byte[]> cache = globalCache;
-    CacheKey key = null;
-    if (cache != null) {
-      key = new CacheKey(path, status != null ? status : path.stat());
-      digest = cache.getIfPresent(key);
-      if (digest != null) {
-        return digest;
-      }
+    /**
+     * Enables the caching of file digests based on file status data.
+     * 
+     * 
+     * If the cache was already enabled, this causes the cache to be reinitialized thus losing all
+     * contents. If the given size is zero, the cache is disabled altogether.
+     * 
+     * @param maximumSize maximumSize of the cache in number of entries
+     */
+    @kotlin.jvm.JvmStatic
+    fun configureCache(maximumSize: Long) {
+        if (maximumSize == 0L) {
+            com.google.devtools.build.lib.vfs.DigestUtils.globalCache = null
+        } else {
+            com.google.devtools.build.lib.vfs.DigestUtils.globalCache =
+                Caffeine.newBuilder().maximumSize(maximumSize).recordStats().build<CacheKey?, ByteArray?>()
+        }
     }
 
-    digest = path.getDigest();
-
-    Preconditions.checkNotNull(digest, "Missing digest for %s", path);
-    if (cache != null) {
-      cache.put(key, digest);
+    /**
+     * Clears the cache contents without changing its size. No-op if the cache hasn't yet been
+     * initialized.
+     */
+    @kotlin.jvm.JvmStatic
+    fun clearCache() {
+        if (com.google.devtools.build.lib.vfs.DigestUtils.globalCache != null) {
+            com.google.devtools.build.lib.vfs.DigestUtils.globalCache.invalidateAll()
+        }
     }
-    return digest;
-  }
 
-  /**
-   * Combines two digests into one such that swapping the arguments results in the same result. May
-   * clobber either argument.
-   */
-  public static byte[] combineUnordered(byte[] lhs, byte[] rhs) {
-    int n = rhs.length;
-    if (lhs.length >= n) {
-      for (int i = 0; i < n; i++) {
-        // Use + as in Guava's Hashing.combineUnordered.
-        // This has a number of advantages over XOR, which was used in the past:
-        // * Identical inputs will not cancel each other out.
-        // * Due to the carry, addition isn't a linear operation on the level of bit vectors.
-        //   This prevents adversaries from producing linear combinations (i.e., subsets of input
-        //   sets) that collide with other inputs.
-        lhs[i] += rhs[i];
-      }
-      return lhs;
+    @kotlin.jvm.JvmStatic
+    val cacheStats: com.github.benmanes.caffeine.cache.stats.CacheStats?
+        /**
+         * Obtains cache statistics.
+         * 
+         * 
+         * The cache must have previously been enabled by a call to [.configureCache].
+         * 
+         * @return an immutable snapshot of the cache statistics
+         */
+        get() {
+            val cache: com.github.benmanes.caffeine.cache.Cache<CacheKey?, ByteArray?>? =
+                com.google.devtools.build.lib.vfs.DigestUtils.globalCache
+            com.google.common.base.Preconditions.checkNotNull<com.github.benmanes.caffeine.cache.Cache<CacheKey?, ByteArray?>?>(
+                cache,
+                "configureCache() must have been called with a size >= 0"
+            )
+            return cache.stats()
+        }
+
+    /**
+     * Gets the digest of `path`, using a constant-time xattr call if the filesystem supports
+     * it, and calculating the digest manually otherwise.
+     * 
+     * 
+     * If [Path.getFastDigest] has already been attempted and was not available, call [ ][.manuallyComputeDigest] to skip an additional attempt to obtain the fast digest.
+     * 
+     * 
+     * Prefer calling [.manuallyComputeDigest] when a recently obtained
+     * [FileStatus] is available.
+     * 
+     * @param path the file path
+     */
+    @Throws(IOException::class)
+    fun getDigestWithManualFallback(
+        path: com.google.devtools.build.lib.vfs.Path,
+        xattrProvider: XattrProvider
+    ): ByteArray? {
+        return com.google.devtools.build.lib.vfs.DigestUtils.getDigestWithManualFallback(path, xattrProvider, null)
     }
-    return combineUnordered(rhs, lhs);
-  }
+
+    /**
+     * Same as [.getDigestWithManualFallback], but providing the ability to
+     * reuse a recently obtained [FileStatus].
+     * 
+     * @param path the file path
+     * @param status a recently obtained file status, if available
+     */
+    @Throws(IOException::class)
+    fun getDigestWithManualFallback(
+        path: com.google.devtools.build.lib.vfs.Path, xattrProvider: XattrProvider, status: FileStatus?
+    ): ByteArray? {
+        val digest: ByteArray? = xattrProvider.getFastDigest(path)
+        return if (digest != null) digest else com.google.devtools.build.lib.vfs.DigestUtils.manuallyComputeDigest(
+            path,
+            status
+        )
+    }
+
+    /**
+     * Same as [.manuallyComputeDigest], but providing the ability to reuse a recently
+     * obtained [FileStatus].
+     * 
+     * @param path the file path
+     * @param status a recently obtained file status, if available
+     */
+    /**
+     * Calculates a digest manually (i.e., assuming that a fast digest can't obtained).
+     * 
+     * 
+     * Prefer calling [.manuallyComputeDigest] when a recently obtained
+     * [FileStatus] is available.
+     * 
+     * @param path the file path
+     */
+    @kotlin.jvm.JvmOverloads
+    @Throws(IOException::class)
+    fun manuallyComputeDigest(path: com.google.devtools.build.lib.vfs.Path, status: FileStatus? = null): ByteArray? {
+        var digest: ByteArray?
+
+        // Attempt a cache lookup if the cache is enabled.
+        val cache: com.github.benmanes.caffeine.cache.Cache<CacheKey?, ByteArray?>? =
+            com.google.devtools.build.lib.vfs.DigestUtils.globalCache
+        var key: CacheKey? = null
+        if (cache != null) {
+            key = com.google.devtools.build.lib.vfs.DigestUtils.CacheKey(
+                path,
+                if (status != null) status else path.stat()
+            )
+            digest = cache.getIfPresent(key)
+            if (digest != null) {
+                return digest
+            }
+        }
+
+        digest = path.getDigest()
+
+        com.google.common.base.Preconditions.checkNotNull<ByteArray?>(digest, "Missing digest for %s", path)
+        if (cache != null) {
+            cache.put(key, digest)
+        }
+        return digest
+    }
+
+    /**
+     * Combines two digests into one such that swapping the arguments results in the same result. May
+     * clobber either argument.
+     */
+    @kotlin.jvm.JvmStatic
+    fun combineUnordered(lhs: ByteArray, rhs: ByteArray): ByteArray {
+        val n = rhs.size
+        if (lhs.size >= n) {
+            for (i in 0..<n) {
+                // Use + as in Guava's Hashing.combineUnordered.
+                // This has a number of advantages over XOR, which was used in the past:
+                // * Identical inputs will not cancel each other out.
+                // * Due to the carry, addition isn't a linear operation on the level of bit vectors.
+                //   This prevents adversaries from producing linear combinations (i.e., subsets of input
+                //   sets) that collide with other inputs.
+                lhs[i] = (lhs[i] + rhs[i]).toByte()
+            }
+            return lhs
+        }
+        return com.google.devtools.build.lib.vfs.DigestUtils.combineUnordered(rhs, lhs)
+    }
+
+    /**
+     * Keys used to cache the values of the digests for files where we don't have fast digests.
+     * 
+     * 
+     * The cache keys are derived from many properties of the file metadata in an attempt to be
+     * able to detect most file changes.
+     */
+    private class CacheKey(path: PathFragment?, nodeId: Long, changeTime: Long, lastModifiedTime: Long, size: Long) {
+        /**
+         * Constructs a new cache key.
+         * 
+         * @param path path to the file
+         * @param status file status data from which to obtain the cache key properties
+         * @throws IOException if reading the file status data fails
+         */
+        private constructor(path: com.google.devtools.build.lib.vfs.Path, status: FileStatus) : this(
+            path.asFragment(),
+            status.getNodeId(),
+            status.getLastChangeTime(),
+            status.getLastModifiedTime(),
+            status.getSize()
+        )
+
+        val path: PathFragment?
+        val nodeId: Long
+        val changeTime: Long
+        val lastModifiedTime: Long
+        val size: Long
+
+        init {
+            this.path = path
+            this.nodeId = nodeId
+            this.changeTime = changeTime
+            this.lastModifiedTime = lastModifiedTime
+            this.size = size
+        }
+    }
 }

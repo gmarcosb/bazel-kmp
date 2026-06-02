@@ -11,68 +11,60 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.base.Function;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.pkgcache.TargetPatternResolverUtil;
-import com.google.devtools.build.skyframe.GraphTraversingHelper;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
 /**
  * Declares a dependency on all targets in a package, to ensure those targets are in the graph. Does
  * no error-checking on the package id provided, so callers should have already verified that there
  * is a package with this id.
  */
-class CollectTargetsInPackageFunction implements SkyFunction {
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws SkyFunctionException, InterruptedException {
-    CollectTargetsInPackageValue.CollectTargetsInPackageKey argument =
-        (CollectTargetsInPackageValue.CollectTargetsInPackageKey) skyKey.argument();
-    PackageIdentifier packageId = argument.packageId();
-    PackageValue packageValue;
-    try {
-      packageValue = (PackageValue) env.getValueOrThrow(packageId, NoSuchPackageException.class);
-    } catch (NoSuchPackageException e) {
-      // If the argument is a package that doesn't exist, the aggregator function can return
-      // a success value immediately.
-      return CollectTargetsInPackageValue.INSTANCE;
-    }
-    if (env.valuesMissing()) {
-      return null;
-    }
-    Package pkg = packageValue.getPackage();
-    if (pkg.containsErrors()) {
-      env.getListener()
-          .handle(
-              Event.error(
-                  "package contains errors: " + packageId.getPackageFragment().getPathString()));
-    }
-    return GraphTraversingHelper.declareDependenciesAndCheckIfValuesMissing(
-            env,
-            Iterables.transform(
-                TargetPatternResolverUtil.resolvePackageTargets(pkg, argument.filteringPolicy()),
-                TO_TRANSITIVE_TRAVERSAL_KEY))
-        ? null
-        : CollectTargetsInPackageValue.INSTANCE;
-  }
-
-  private static final Function<Target, SkyKey> TO_TRANSITIVE_TRAVERSAL_KEY =
-      new Function<Target, SkyKey>() {
-        @Override
-        public SkyKey apply(Target target) {
-          return TransitiveTraversalValue.key(target.getLabel());
+internal class CollectTargetsInPackageFunction : SkyFunction {
+    @Throws(SkyFunctionException::class, java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment): SkyValue? {
+        val argument: CollectTargetsInPackageKey =
+            skyKey.argument() as CollectTargetsInPackageKey
+        val packageId: PackageIdentifier = argument.packageId
+        val packageValue: PackageValue?
+        try {
+            packageValue = env.getValueOrThrow<E?>(packageId, NoSuchPackageException::class.java) as PackageValue?
+        } catch (e: NoSuchPackageException) {
+            // If the argument is a package that doesn't exist, the aggregator function can return
+            // a success value immediately.
+            return CollectTargetsInPackageValue.INSTANCE
         }
-      };
+        if (env.valuesMissing()) {
+            return null
+        }
+        val pkg: Package = packageValue.getPackage()
+        if (pkg.containsErrors()) {
+            env.getListener()
+                .handle(
+                    Event.error(
+                        "package contains errors: " + packageId.getPackageFragment().getPathString()
+                    )
+                )
+        }
+        return if (GraphTraversingHelper.declareDependenciesAndCheckIfValuesMissing(
+                env,
+                com.google.common.collect.Iterables.transform<F?, T?>(
+                    TargetPatternResolverUtil.resolvePackageTargets(pkg, argument.filteringPolicy),
+                    TO_TRANSITIVE_TRAVERSAL_KEY
+                )
+            )
+        )
+            null
+        else
+            CollectTargetsInPackageValue.INSTANCE
+    }
+
+    companion object {
+        private val TO_TRANSITIVE_TRAVERSAL_KEY: com.google.common.base.Function<Target?, SkyKey?> =
+            object : com.google.common.base.Function<Target?, SkyKey?> {
+                override fun apply(target: Target): SkyKey? {
+                    return TransitiveTraversalValue.key(target.getLabel())
+                }
+            }
+    }
 }

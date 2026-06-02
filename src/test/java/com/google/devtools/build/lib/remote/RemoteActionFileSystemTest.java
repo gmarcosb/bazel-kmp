@@ -214,9 +214,9 @@ public final class RemoteActionFileSystemTest extends RemoteActionFileSystemTest
     assertThat(actionFs.exists(path, /* followSymlinks= */ true)).isTrue();
 
     FileStatus st = actionFs.stat(path, /* followSymlinks= */ true);
-    assertThat(st.isFile()).isTrue();
+    assertThat(st.isFile).isTrue();
     assertThat(st).isInstanceOf(FileStatusWithDigest.class);
-    assertThat(((FileStatusWithDigest) st).getDigest()).isEqualTo(metadata.getDigest());
+    assertThat(((FileStatusWithDigest) st).digest).isEqualTo(metadata.getDigest());
   }
 
   @Test
@@ -230,7 +230,7 @@ public final class RemoteActionFileSystemTest extends RemoteActionFileSystemTest
     assertThat(actionFs.exists(path, /* followSymlinks= */ true)).isTrue();
 
     FileStatus st = actionFs.stat(path, /* followSymlinks= */ true);
-    assertThat(st.isDirectory()).isTrue();
+    assertThat(st.isDirectory).isTrue();
   }
 
   @Test
@@ -244,9 +244,9 @@ public final class RemoteActionFileSystemTest extends RemoteActionFileSystemTest
     assertThat(actionFs.exists(path, /* followSymlinks= */ true)).isTrue();
 
     FileStatus st = actionFs.stat(path, /* followSymlinks= */ true);
-    assertThat(st.isFile()).isTrue();
+    assertThat(st.isFile).isTrue();
     assertThat(st).isInstanceOf(FileStatusWithDigest.class);
-    assertThat(((FileStatusWithDigest) st).getDigest()).isEqualTo(metadata.getDigest());
+    assertThat(((FileStatusWithDigest) st).digest).isEqualTo(metadata.getDigest());
   }
 
   @Test
@@ -259,8 +259,8 @@ public final class RemoteActionFileSystemTest extends RemoteActionFileSystemTest
     assertThat(actionFs.exists(path)).isTrue();
 
     FileStatus st = actionFs.stat(path, /* followSymlinks= */ true);
-    assertThat(st.isFile()).isTrue();
-    assertThat(st.getSize()).isEqualTo("local contents".getBytes(UTF_8).length);
+    assertThat(st.isFile).isTrue();
+    assertThat(st.size).isEqualTo("local contents".getBytes(UTF_8).length);
   }
 
   @Test

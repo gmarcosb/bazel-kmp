@@ -11,412 +11,403 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.base.Preconditions.checkArgument;
-
-import com.google.common.base.Preconditions;
-import com.google.common.util.concurrent.SettableFuture;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.ActionExecutionException;
-import com.google.devtools.build.lib.actions.ActionLookupData;
-import com.google.devtools.build.lib.actions.Artifact.OwnerlessArtifactWrapper;
-import com.google.devtools.build.lib.actions.LostInputsActionExecutionException;
-import com.google.devtools.build.lib.actions.SharedActionEvent;
-import com.google.devtools.build.lib.bugreport.BugReport;
-import com.google.devtools.build.lib.skyframe.ActionExecutionValue.ActionTransformException;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunction.Environment;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.errorprone.annotations.DoNotCall;
-import java.util.concurrent.ConcurrentMap;
-import javax.annotation.Nullable;
-import javax.annotation.concurrent.GuardedBy;
+import com.google.devtools.build.lib.actions.Action
 
 /**
  * A state machine representing the synchronous or asynchronous execution of an action. This is
  * shared between all instances of the same shared action and must therefore be thread-safe. Note
  * that only one caller will receive events and output for this action.
  */
-final class ActionExecutionState {
-  /** The owner of this object. Only the owner is allowed to continue work on the state machine. */
-  private final ActionLookupData actionLookupData;
+internal class ActionExecutionState(actionLookupData: ActionLookupData?, state: ActionStepOrResult?) {
+    /** The owner of this object. Only the owner is allowed to continue work on the state machine.  */
+    private val actionLookupData: ActionLookupData
 
-  // Both state and completionFuture may only be read or set when holding the lock for this. The
-  // state machine for these looks like this:
-  //
-  // !state.isDone,completionFuture=null -----> !state.isDone,completionFuture=<value>
-  //                           |                  |
-  //                           |                  | completionFuture.set()
-  //                           v                  v
-  //                    state.isDone,completionFuture=null
-  //
-  // (Also, via obsolete(), all states can transition to state==Obsolete.INSTANCE with a null
-  // completionFuture, which is terminal.)
-  //
-  // No other states are legal. In particular, state.isDone,completionFuture=<value> is not a legal
-  // state.
+    // Both state and completionFuture may only be read or set when holding the lock for this. The
+    // state machine for these looks like this:
+    //
+    // !state.isDone,completionFuture=null -----> !state.isDone,completionFuture=<value>
+    //                           |                  |
+    //                           |                  | completionFuture.set()
+    //                           v                  v
+    //                    state.isDone,completionFuture=null
+    //
+    // (Also, via obsolete(), all states can transition to state==Obsolete.INSTANCE with a null
+    // completionFuture, which is terminal.)
+    //
+    // No other states are legal. In particular, state.isDone,completionFuture=<value> is not a legal
+    // state.
+    @javax.annotation.concurrent.GuardedBy("this")
+    private var state: ActionStepOrResult
 
-  @GuardedBy("this")
-  private ActionStepOrResult state;
+    /**
+     * A future to represent action completion of the primary action (randomly picked from the set of
+     * shared actions). This is initially `null`, and is only set to a non-null value if this
+     * turns out to be a shared action, and the primary action is not finished yet (i.e., `!state.isDone`. It is non-null while the primary action is being executed, at which point the
+     * thread completing the primary action completes the future, and also sets this field to null.
+     * 
+     * 
+     * The reason for this roundabout approach is to avoid memory allocation if this is not a
+     * shared action, and to release the memory once the action is done.
+     * 
+     * 
+     * Skyframe will attempt to cancel this future if the evaluation is interrupted, which violates
+     * the concurrency assumptions this class makes. Beware!
+     */
+    @javax.annotation.concurrent.GuardedBy("this")
+    private var completionFuture: com.google.common.util.concurrent.SettableFuture<java.lang.Void?>? = null
 
-  /**
-   * A future to represent action completion of the primary action (randomly picked from the set of
-   * shared actions). This is initially {@code null}, and is only set to a non-null value if this
-   * turns out to be a shared action, and the primary action is not finished yet (i.e., {@code
-   * !state.isDone}. It is non-null while the primary action is being executed, at which point the
-   * thread completing the primary action completes the future, and also sets this field to null.
-   *
-   * <p>The reason for this roundabout approach is to avoid memory allocation if this is not a
-   * shared action, and to release the memory once the action is done.
-   *
-   * <p>Skyframe will attempt to cancel this future if the evaluation is interrupted, which violates
-   * the concurrency assumptions this class makes. Beware!
-   */
-  @GuardedBy("this")
-  @Nullable
-  private SettableFuture<Void> completionFuture;
-
-  ActionExecutionState(ActionLookupData actionLookupData, ActionStepOrResult state) {
-    this.actionLookupData = Preconditions.checkNotNull(actionLookupData);
-    this.state = Preconditions.checkNotNull(state);
-  }
-
-  @Nullable
-  ActionExecutionValue getResultOrDependOnFuture(
-      SkyFunction.Environment env,
-      ActionLookupData actionLookupData,
-      Action action,
-      SharedActionCallback sharedActionCallback)
-      throws ActionExecutionException, InterruptedException {
-    if (this.actionLookupData.equals(actionLookupData)) {
-      // This object is owned by the Skyframe node executed by the current thread, so we use it to
-      // run the state machine.
-      return runStateMachine(env);
+    init {
+        this.actionLookupData = com.google.common.base.Preconditions.checkNotNull<ActionLookupData>(actionLookupData)
+        this.state = com.google.common.base.Preconditions.checkNotNull<ActionStepOrResult>(state)
     }
 
-    // This is a shared action, and the primary action is owned by another Skyframe node. If the
-    // primary action is done, we simply return the done value. If this state is obsolete (e.g.
-    // because the other node is rewinding), we restart. Otherwise we register a dependency on the
-    // completionFuture and return null.
-    ActionExecutionValue result;
-    synchronized (this) {
-      if (state == Obsolete.INSTANCE) {
-        scheduleRestart(env);
-        return null;
-      }
-      if (!state.isDone()) {
-        if (completionFuture == null) {
-          completionFuture = SettableFuture.create();
+    @Throws(ActionExecutionException::class, java.lang.InterruptedException::class)
+    fun getResultOrDependOnFuture(
+        env: SkyFunction.Environment,
+        actionLookupData: ActionLookupData?,
+        action: Action,
+        sharedActionCallback: SharedActionCallback
+    ): ActionExecutionValue? {
+        if (this.actionLookupData.equals(actionLookupData)) {
+            // This object is owned by the Skyframe node executed by the current thread, so we use it to
+            // run the state machine.
+            return runStateMachine(env)
         }
-        // We expect to only call this once per shared action; this method should only be called
-        // again after the future is completed.
-        sharedActionCallback.actionStarted();
-        env.dependOnFuture(completionFuture);
-        if (!env.valuesMissing()) {
-          Preconditions.checkState(
-              completionFuture.isCancelled(), "%s %s", this.actionLookupData, actionLookupData);
-          // The future is unexpectedly done. This must be because it was registered by another
-          // thread earlier and was canceled by Skyframe. We are about to be interrupted ourselves,
-          // but have to do something in the meantime. We can just register a dep with a new future,
-          // then complete it and return. If for some reason this argument is incorrect, we will be
-          // restarted immediately and hopefully have a more consistent result.
-          scheduleRestart(env);
+
+        // This is a shared action, and the primary action is owned by another Skyframe node. If the
+        // primary action is done, we simply return the done value. If this state is obsolete (e.g.
+        // because the other node is rewinding), we restart. Otherwise we register a dependency on the
+        // completionFuture and return null.
+        val result: ActionExecutionValue
+        synchronized(this) {
+            if (state === com.google.devtools.build.lib.skyframe.ActionExecutionState.Obsolete.Companion.INSTANCE) {
+                scheduleRestart(env)
+                return null
+            }
+            if (!state.isDone) {
+                if (completionFuture == null) {
+                    completionFuture = com.google.common.util.concurrent.SettableFuture.create<java.lang.Void?>()
+                }
+                // We expect to only call this once per shared action; this method should only be called
+                // again after the future is completed.
+                sharedActionCallback.actionStarted()
+                env.dependOnFuture(completionFuture)
+                if (!env.valuesMissing()) {
+                    com.google.common.base.Preconditions.checkState(
+                        completionFuture.isCancelled(), "%s %s", this.actionLookupData, actionLookupData
+                    )
+                    // The future is unexpectedly done. This must be because it was registered by another
+                    // thread earlier and was canceled by Skyframe. We are about to be interrupted ourselves,
+                    // but have to do something in the meantime. We can just register a dep with a new future,
+                    // then complete it and return. If for some reason this argument is incorrect, we will be
+                    // restarted immediately and hopefully have a more consistent result.
+                    scheduleRestart(env)
+                }
+                return null
+            }
+            result = state.get()
         }
-        return null;
-      }
-      result = state.get();
-    }
-    sharedActionCallback.actionCompleted();
+        sharedActionCallback.actionCompleted()
 
-    ActionExecutionValue transformed;
-    try {
-      transformed = result.transformForSharedAction(action);
-    } catch (ActionTransformException e) {
-      throw new IllegalStateException(
-          String.format("Cannot share %s and %s", this.actionLookupData, actionLookupData), e);
-    }
-    env.getListener().post(new SharedActionEvent(result, transformed));
-    return transformed;
-  }
-
-  private static void scheduleRestart(Environment env) {
-    SettableFuture<Void> dummyFuture = SettableFuture.create();
-    env.dependOnFuture(dummyFuture);
-    dummyFuture.set(null);
-  }
-
-  @Nullable
-  private ActionExecutionValue runStateMachine(SkyFunction.Environment env)
-      throws ActionExecutionException, InterruptedException {
-    ActionStepOrResult original;
-    synchronized (this) {
-      if (state == Obsolete.INSTANCE) {
-        scheduleRestart(env);
-        return null;
-      }
-      original = state;
-    }
-    ActionStepOrResult current = original;
-    // We do the work _outside_ a synchronized block to avoid blocking threads working on shared
-    // actions that only want to register with the completionFuture.
-    try {
-      while (!current.isDone()) {
-        // Run the state machine for one step; isDone returned false, so this is safe.
-        current = current.run(env);
-
-        // This method guarantees that it either blocks until the action is completed and returns
-        // a non-null value, or it registers a dependency with Skyframe and returns null; it must
-        // not return null without registering a dependency, i.e., if {@code !env.valuesMissing()}.
-        if (env.valuesMissing()) {
-          if (current.isDone()) {
-            // This can happen if there was an error in a dep, but another dep was missing. The
-            // Skyframe contract is that this SkyFunction should eagerly process that exception, so
-            // that errors can be transformed in --nokeep_going mode.
-            ActionExecutionValue value = current.get();
-            BugReport.sendBugReport(
-                new IllegalStateException(
-                    actionLookupData + " returned " + value + " with values missing"));
-          }
-          return null;
+        val transformed: ActionExecutionValue?
+        try {
+            transformed = result.transformForSharedAction(action)
+        } catch (e: ActionTransformException) {
+            throw java.lang.IllegalStateException(
+                String.format("Cannot share %s and %s", this.actionLookupData, actionLookupData), e
+            )
         }
-      }
-    } finally {
-      synchronized (this) {
-        if (state != Obsolete.INSTANCE) {
-          Preconditions.checkState(state == original, "Another thread illegally modified state");
-          state = current;
-          if (current.isDone() && completionFuture != null) {
-            completionFuture.set(null);
-            completionFuture = null;
-          }
+        env.getListener().post(SharedActionEvent(result, transformed))
+        return transformed
+    }
+
+    @Throws(ActionExecutionException::class, java.lang.InterruptedException::class)
+    private fun runStateMachine(env: SkyFunction.Environment): ActionExecutionValue? {
+        val original: ActionStepOrResult
+        synchronized(this) {
+            if (state === com.google.devtools.build.lib.skyframe.ActionExecutionState.Obsolete.Companion.INSTANCE) {
+                scheduleRestart(env)
+                return null
+            }
+            original = state
         }
-      }
-    }
-    // We're done, return the value to the caller (or throw an exception).
-    return current.get();
-  }
+        var current = original
+        // We do the work _outside_ a synchronized block to avoid blocking threads working on shared
+        // actions that only want to register with the completionFuture.
+        try {
+            while (!current.isDone) {
+                // Run the state machine for one step; isDone returned false, so this is safe.
+                current = current.run(env)
 
-  /**
-   * Removes this state from {@code buildActionMap}, marks it obsolete so that racing shared actions
-   * with a reference to this state will restart, and signals to coalesced shared actions that they
-   * should re-evaluate.
-   */
-  synchronized void obsolete(
-      SkyKey requester,
-      ConcurrentMap<OwnerlessArtifactWrapper, ActionExecutionState> buildActionMap,
-      OwnerlessArtifactWrapper ownerlessArtifactWrapper) {
-    if (actionLookupData.equals(requester)) {
-      // An action state's owner only obsoletes it when rewinding. The lost inputs exception thrown
-      // from ActionStepOrResult#run left its state undone.
-      Preconditions.checkState(
-          !state.isDone(), "owner unexpectedly obsoleted done state: %s", actionLookupData);
-      ActionExecutionState removedState = buildActionMap.remove(ownerlessArtifactWrapper);
-      Preconditions.checkState(
-          removedState == this,
-          "owner removed unexpected state from buildActionMap; owner: %s, removed: %s",
-          actionLookupData,
-          removedState.actionLookupData);
-      state = Obsolete.INSTANCE;
-      if (completionFuture != null) {
-        completionFuture.set(null);
-        completionFuture = null;
-      }
-      return;
-    }
-    if (!state.isDone()) {
-      // An action obsoletes other actions' states when rewinding its dependencies. It may race with
-      // other actions to do so. Removing the buildActionMap entry must only be done by the race's
-      // winner, to ensure the removal only happens once and removes this state.
-      //
-      // An action may also attempt to obsolete a dependency's not-done state, if it lost the race
-      // with another rewinding action, and the dep started evaluating. If so, then do nothing,
-      // because that dep is already doing what it needs to.
-      return;
-    }
-    ActionExecutionState removedState = buildActionMap.remove(ownerlessArtifactWrapper);
-    Preconditions.checkState(
-        removedState == this,
-        "removed unexpected state from buildActionMap; requester: %s, this: %s, removed: %s",
-        requester,
-        actionLookupData,
-        removedState.actionLookupData);
-    state = Obsolete.INSTANCE;
-  }
-
-  /** A callback to receive events for shared actions that are not executed. */
-  public interface SharedActionCallback {
-    /** Called if the action is shared and the primary action is already executing. */
-    void actionStarted();
-
-    /**
-     * Called when the primary action is done (on the next call to {@link
-     * #getResultOrDependOnFuture}.
-     */
-    void actionCompleted();
-  }
-
-  /**
-   * A state machine where instances of this interface either represent an intermediate state that
-   * requires more work to be done (possibly waiting for a ListenableFuture to complete) or the
-   * final result of the executed action (either an ActionExecutionValue or an Exception).
-   *
-   * <p>This design allows us to store the current state of the in-progress action execution using a
-   * single object reference.
-   *
-   * <p>Do not implement this interface directly! In order to implement an action step, subclass
-   * {@link ActionStep}, and implement {@link #run}. In order to represent a result, use {@link
-   * #of}.
-   */
-  sealed interface ActionStepOrResult permits ActionStep, Finished, Exceptional, Obsolete {
-    static ActionStepOrResult of(ActionExecutionValue value) {
-      return new Finished(value);
+                // This method guarantees that it either blocks until the action is completed and returns
+                // a non-null value, or it registers a dependency with Skyframe and returns null; it must
+                // not return null without registering a dependency, i.e., if {@code !env.valuesMissing()}.
+                if (env.valuesMissing()) {
+                    if (current.isDone) {
+                        // This can happen if there was an error in a dep, but another dep was missing. The
+                        // Skyframe contract is that this SkyFunction should eagerly process that exception, so
+                        // that errors can be transformed in --nokeep_going mode.
+                        val value: ActionExecutionValue = current.get()
+                        BugReport.sendBugReport(
+                            java.lang.IllegalStateException(
+                                actionLookupData.toString() + " returned " + value + " with values missing"
+                            )
+                        )
+                    }
+                    return null
+                }
+            }
+        } finally {
+            synchronized(this) {
+                if (state !== com.google.devtools.build.lib.skyframe.ActionExecutionState.Obsolete.Companion.INSTANCE) {
+                    com.google.common.base.Preconditions.checkState(
+                        state === original,
+                        "Another thread illegally modified state"
+                    )
+                    state = current
+                    if (current.isDone && completionFuture != null) {
+                        completionFuture.set(null)
+                        completionFuture = null
+                    }
+                }
+            }
+        }
+        // We're done, return the value to the caller (or throw an exception).
+        return current.get()
     }
 
     /**
-     * Must not be called with a {@link LostInputsActionExecutionException}. Throw it from {@link
-     * #run} instead.
+     * Removes this state from `buildActionMap`, marks it obsolete so that racing shared actions
+     * with a reference to this state will restart, and signals to coalesced shared actions that they
+     * should re-evaluate.
      */
-    static ActionStepOrResult of(ActionExecutionException exception) {
-      checkArgument(
-          !(exception instanceof LostInputsActionExecutionException),
-          "unexpected LostInputs exception: %s",
-          exception);
-      return new Exceptional(exception);
+    @kotlin.jvm.Synchronized
+    fun obsolete(
+        requester: SkyKey?,
+        buildActionMap: ConcurrentMap<OwnerlessArtifactWrapper?, ActionExecutionState>,
+        ownerlessArtifactWrapper: OwnerlessArtifactWrapper?
+    ) {
+        if (actionLookupData.equals(requester)) {
+            // An action state's owner only obsoletes it when rewinding. The lost inputs exception thrown
+            // from ActionStepOrResult#run left its state undone.
+            com.google.common.base.Preconditions.checkState(
+                !state.isDone, "owner unexpectedly obsoleted done state: %s", actionLookupData
+            )
+            val removedState: ActionExecutionState = buildActionMap.remove(ownerlessArtifactWrapper)
+            com.google.common.base.Preconditions.checkState(
+                removedState == this,
+                "owner removed unexpected state from buildActionMap; owner: %s, removed: %s",
+                actionLookupData,
+                removedState.actionLookupData
+            )
+            state = com.google.devtools.build.lib.skyframe.ActionExecutionState.Obsolete.Companion.INSTANCE
+            if (completionFuture != null) {
+                completionFuture.set(null)
+                completionFuture = null
+            }
+            return
+        }
+        if (!state.isDone) {
+            // An action obsoletes other actions' states when rewinding its dependencies. It may race with
+            // other actions to do so. Removing the buildActionMap entry must only be done by the race's
+            // winner, to ensure the removal only happens once and removes this state.
+            //
+            // An action may also attempt to obsolete a dependency's not-done state, if it lost the race
+            // with another rewinding action, and the dep started evaluating. If so, then do nothing,
+            // because that dep is already doing what it needs to.
+            return
+        }
+        val removedState: ActionExecutionState = buildActionMap.remove(ownerlessArtifactWrapper)
+        com.google.common.base.Preconditions.checkState(
+            removedState == this,
+            "removed unexpected state from buildActionMap; requester: %s, this: %s, removed: %s",
+            requester,
+            actionLookupData,
+            removedState.actionLookupData
+        )
+        state = com.google.devtools.build.lib.skyframe.ActionExecutionState.Obsolete.Companion.INSTANCE
     }
 
-    @DoNotCall("Throw from #run instead.")
-    static ActionStepOrResult of(LostInputsActionExecutionException ignored) {
-      throw new IllegalArgumentException();
-    }
+    /** A callback to receive events for shared actions that are not executed.  */
+    interface SharedActionCallback {
+        /** Called if the action is shared and the primary action is already executing.  */
+        fun actionStarted()
 
-    static ActionStepOrResult of(InterruptedException exception) {
-      return new Exceptional(exception);
+        /**
+         * Called when the primary action is done (on the next call to [ ][.getResultOrDependOnFuture].
+         */
+        fun actionCompleted()
     }
 
     /**
-     * Returns true if and only if the underlying action is complete, i.e., it is legal to call
-     * {@link #get}. The return value of a single object must not change over time. Instead, call
-     * {@link ActionStepOrResult#of} to return a final result (or exception).
+     * A state machine where instances of this interface either represent an intermediate state that
+     * requires more work to be done (possibly waiting for a ListenableFuture to complete) or the
+     * final result of the executed action (either an ActionExecutionValue or an Exception).
+     * 
+     * 
+     * This design allows us to store the current state of the in-progress action execution using a
+     * single object reference.
+     * 
+     * 
+     * Do not implement this interface directly! In order to implement an action step, subclass
+     * [ActionStep], and implement [.run]. In order to represent a result, use [ ][.of].
      */
-    boolean isDone();
+    internal interface ActionStepOrResult {
+        /**
+         * Returns true if and only if the underlying action is complete, i.e., it is legal to call
+         * [.get]. The return value of a single object must not change over time. Instead, call
+         * [ActionStepOrResult.of] to return a final result (or exception).
+         */
+        val isDone: Boolean
+
+        /**
+         * Returns the next state of the state machine after performing some work towards the end goal
+         * of executing the action. This must only be called if [.isDone] returns false, and must
+         * only be called by one thread at a time for the same instance.
+         */
+        @Throws(LostInputsActionExecutionException::class, java.lang.InterruptedException::class)
+        fun run(env: SkyFunction.Environment?): ActionStepOrResult
+
+        /**
+         * Returns the final value of the action or an exception to indicate that the action failed (or
+         * the process was interrupted). This must only be called if [.isDone] returns true.
+         */
+        @Throws(ActionExecutionException::class, java.lang.InterruptedException::class)
+        fun get(): ActionExecutionValue
+
+        companion object {
+            fun of(value: ActionExecutionValue?): ActionStepOrResult {
+                return com.google.devtools.build.lib.skyframe.ActionExecutionState.Finished(value)
+            }
+
+            /**
+             * Must not be called with a [LostInputsActionExecutionException]. Throw it from [ ][.run] instead.
+             */
+            fun of(exception: ActionExecutionException): ActionStepOrResult {
+                com.google.common.base.Preconditions.checkArgument(
+                    exception !is LostInputsActionExecutionException,
+                    "unexpected LostInputs exception: %s",
+                    exception
+                )
+                return Exceptional(exception)
+            }
+
+            @com.google.errorprone.annotations.DoNotCall("Throw from #run instead.")
+            fun of(ignored: LostInputsActionExecutionException?): ActionStepOrResult? {
+                throw java.lang.IllegalArgumentException()
+            }
+
+            fun of(exception: java.lang.InterruptedException): ActionStepOrResult {
+                return Exceptional(exception)
+            }
+        }
+    }
 
     /**
-     * Returns the next state of the state machine after performing some work towards the end goal
-     * of executing the action. This must only be called if {@link #isDone} returns false, and must
-     * only be called by one thread at a time for the same instance.
+     * Abstract implementation of [ActionStepOrResult] that declares final implementations for
+     * [.isDone] (to return false) and [.get] (to throw [IllegalStateException]).
+     * 
+     * 
+     * The framework prevents concurrent calls to [.run], so implementations can keep state
+     * without having to lock. Note that there may be multiple calls to [.run] from different
+     * threads, as long as they do not overlap in time.
      */
-    ActionStepOrResult run(SkyFunction.Environment env)
-        throws LostInputsActionExecutionException, InterruptedException;
+    internal abstract class ActionStep : ActionStepOrResult {
+        override fun isDone(): Boolean {
+            return false
+        }
+
+        override fun get(): ActionExecutionValue? {
+            throw java.lang.IllegalStateException()
+        }
+    }
 
     /**
-     * Returns the final value of the action or an exception to indicate that the action failed (or
-     * the process was interrupted). This must only be called if {@link #isDone} returns true.
+     * Represents a finished action with a specific value. We specifically avoid anonymous inner
+     * classes to not accidentally retain a reference to the ActionRunner.
      */
-    ActionExecutionValue get() throws ActionExecutionException, InterruptedException;
-  }
+    private class Finished(value: ActionExecutionValue?) : ActionStepOrResult {
+        private val value: ActionExecutionValue?
 
-  /**
-   * Abstract implementation of {@link ActionStepOrResult} that declares final implementations for
-   * {@link #isDone} (to return false) and {@link #get} (to throw {@link IllegalStateException}).
-   *
-   * <p>The framework prevents concurrent calls to {@link #run}, so implementations can keep state
-   * without having to lock. Note that there may be multiple calls to {@link #run} from different
-   * threads, as long as they do not overlap in time.
-   */
-  abstract static non-sealed class ActionStep implements ActionStepOrResult {
-    @Override
-    public final boolean isDone() {
-      return false;
+        init {
+            this.value = value
+        }
+
+        override fun isDone(): Boolean {
+            return true
+        }
+
+        override fun run(env: SkyFunction.Environment?): ActionStepOrResult? {
+            throw java.lang.IllegalStateException()
+        }
+
+        override fun get(): ActionExecutionValue? {
+            return value
+        }
     }
 
-    @Override
-    public final ActionExecutionValue get() {
-      throw new IllegalStateException();
-    }
-  }
+    /**
+     * Represents a finished action with an exception. We specifically avoid anonymous inner classes
+     * to not accidentally retain a reference to the ActionRunner.
+     */
+    private class Exceptional : ActionStepOrResult {
+        private val e: java.lang.Exception
 
-  /**
-   * Represents a finished action with a specific value. We specifically avoid anonymous inner
-   * classes to not accidentally retain a reference to the ActionRunner.
-   */
-  private static final class Finished implements ActionStepOrResult {
-    private final ActionExecutionValue value;
+        internal constructor(e: ActionExecutionException) {
+            this.e = e
+        }
 
-    Finished(ActionExecutionValue value) {
-      this.value = value;
-    }
+        internal constructor(e: java.lang.InterruptedException) {
+            this.e = e
+        }
 
-    @Override
-    public boolean isDone() {
-      return true;
-    }
+        override fun isDone(): Boolean {
+            return true
+        }
 
-    @Override
-    public ActionStepOrResult run(SkyFunction.Environment env) {
-      throw new IllegalStateException();
-    }
+        override fun run(env: SkyFunction.Environment?): ActionStepOrResult? {
+            throw java.lang.IllegalStateException()
+        }
 
-    @Override
-    public ActionExecutionValue get() {
-      return value;
-    }
-  }
-
-  /**
-   * Represents a finished action with an exception. We specifically avoid anonymous inner classes
-   * to not accidentally retain a reference to the ActionRunner.
-   */
-  private static final class Exceptional implements ActionStepOrResult {
-    private final Exception e;
-
-    Exceptional(ActionExecutionException e) {
-      this.e = e;
+        @Throws(ActionExecutionException::class, java.lang.InterruptedException::class)
+        override fun get(): ActionExecutionValue? {
+            if (e is java.lang.InterruptedException) {
+                throw e
+            }
+            throw e as ActionExecutionException?
+        }
     }
 
-    Exceptional(InterruptedException e) {
-      this.e = e;
+    /**
+     * Represents an action state that is obsolete. Any non-primary shared actions observing this
+     * state must restart (see [.scheduleRestart].
+     */
+    private class Obsolete : ActionStepOrResult {
+        override fun isDone(): Boolean {
+            return false
+        }
+
+        override fun run(env: SkyFunction.Environment?): ActionStepOrResult? {
+            throw java.lang.IllegalStateException()
+        }
+
+        override fun get(): ActionExecutionValue? {
+            throw java.lang.IllegalStateException()
+        }
+
+        companion object {
+            private val INSTANCE: Obsolete = com.google.devtools.build.lib.skyframe.ActionExecutionState.Obsolete()
+        }
     }
 
-    @Override
-    public boolean isDone() {
-      return true;
+    companion object {
+        private fun scheduleRestart(env: SkyFunction.Environment) {
+            val dummyFuture: com.google.common.util.concurrent.SettableFuture<java.lang.Void?> =
+                com.google.common.util.concurrent.SettableFuture.create<java.lang.Void?>()
+            env.dependOnFuture(dummyFuture)
+            dummyFuture.set(null)
+        }
     }
-
-    @Override
-    public ActionStepOrResult run(SkyFunction.Environment env) {
-      throw new IllegalStateException();
-    }
-
-    @Override
-    public ActionExecutionValue get() throws ActionExecutionException, InterruptedException {
-      if (e instanceof InterruptedException interruptedException) {
-        throw interruptedException;
-      }
-      throw (ActionExecutionException) e;
-    }
-  }
-
-  /**
-   * Represents an action state that is obsolete. Any non-primary shared actions observing this
-   * state must restart (see {@link #scheduleRestart}.
-   */
-  private static final class Obsolete implements ActionStepOrResult {
-    private static final Obsolete INSTANCE = new Obsolete();
-
-    @Override
-    public boolean isDone() {
-      return false;
-    }
-
-    @Override
-    public ActionStepOrResult run(SkyFunction.Environment env) {
-      throw new IllegalStateException();
-    }
-
-    @Override
-    public ActionExecutionValue get() {
-      throw new IllegalStateException();
-    }
-  }
 }

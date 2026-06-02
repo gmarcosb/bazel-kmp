@@ -11,75 +11,63 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.actiongraph.v2;
+package com.google.devtools.build.lib.skyframe.actiongraph.v2
 
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.Action;
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.ActionGraphContainer;
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.Artifact;
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.AspectDescriptor;
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.Configuration;
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.DepSetOfFiles;
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.PathFragment;
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.RuleClass;
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.Target;
-import com.google.protobuf.util.JsonFormat;
-import java.io.IOException;
-import java.io.PrintStream;
+import com.google.devtools.build.lib.analysis.AnalysisProtosV2.Action
 
-/** Handles the monolithic output channel. Supports only the JSON format. */
-public class MonolithicOutputHandler implements AqueryOutputHandler {
-  private final ActionGraphContainer.Builder actionGraphContainerBuilder =
-      ActionGraphContainer.newBuilder();
-  private final JsonFormat.Printer jsonPrinter = JsonFormat.printer();
-  private final PrintStream printStream;
+/** Handles the monolithic output channel. Supports only the JSON format.  */
+class MonolithicOutputHandler(printStream: PrintStream) : AqueryOutputHandler {
+    private val actionGraphContainerBuilder: ActionGraphContainer.Builder = ActionGraphContainer.newBuilder()
+    private val jsonPrinter: JsonFormat.Printer = JsonFormat.printer()
+    private val printStream: PrintStream
 
-  public MonolithicOutputHandler(PrintStream printStream) {
-    this.printStream = printStream;
-  }
+    init {
+        this.printStream = printStream
+    }
 
-  @Override
-  public void outputArtifact(Artifact message) throws IOException {
-    actionGraphContainerBuilder.addArtifacts(message);
-  }
+    @Throws(IOException::class)
+    override fun outputArtifact(message: Artifact?) {
+        actionGraphContainerBuilder.addArtifacts(message)
+    }
 
-  @Override
-  public void outputAction(Action message) throws IOException {
-    actionGraphContainerBuilder.addActions(message);
-  }
+    @Throws(IOException::class)
+    override fun outputAction(message: Action?) {
+        actionGraphContainerBuilder.addActions(message)
+    }
 
-  @Override
-  public void outputTarget(Target message) throws IOException {
-    actionGraphContainerBuilder.addTargets(message);
-  }
+    @Throws(IOException::class)
+    override fun outputTarget(message: Target?) {
+        actionGraphContainerBuilder.addTargets(message)
+    }
 
-  @Override
-  public void outputDepSetOfFiles(DepSetOfFiles message) throws IOException {
-    actionGraphContainerBuilder.addDepSetOfFiles(message);
-  }
+    @Throws(IOException::class)
+    override fun outputDepSetOfFiles(message: DepSetOfFiles?) {
+        actionGraphContainerBuilder.addDepSetOfFiles(message)
+    }
 
-  @Override
-  public void outputConfiguration(Configuration message) throws IOException {
-    actionGraphContainerBuilder.addConfiguration(message);
-  }
+    @Throws(IOException::class)
+    override fun outputConfiguration(message: Configuration?) {
+        actionGraphContainerBuilder.addConfiguration(message)
+    }
 
-  @Override
-  public void outputAspectDescriptor(AspectDescriptor message) throws IOException {
-    actionGraphContainerBuilder.addAspectDescriptors(message);
-  }
+    @Throws(IOException::class)
+    override fun outputAspectDescriptor(message: AspectDescriptor?) {
+        actionGraphContainerBuilder.addAspectDescriptors(message)
+    }
 
-  @Override
-  public void outputRuleClass(RuleClass message) throws IOException {
-    actionGraphContainerBuilder.addRuleClasses(message);
-  }
+    @Throws(IOException::class)
+    override fun outputRuleClass(message: RuleClass?) {
+        actionGraphContainerBuilder.addRuleClasses(message)
+    }
 
-  @Override
-  public void outputPathFragment(PathFragment message) throws IOException {
-    actionGraphContainerBuilder.addPathFragments(message);
-  }
+    @Throws(IOException::class)
+    override fun outputPathFragment(message: PathFragment?) {
+        actionGraphContainerBuilder.addPathFragments(message)
+    }
 
-  @Override
-  public void close() throws IOException {
-    jsonPrinter.appendTo(actionGraphContainerBuilder.build(), printStream);
-    printStream.println();
-  }
+    @Throws(IOException::class)
+    override fun close() {
+        jsonPrinter.appendTo(actionGraphContainerBuilder.build(), printStream)
+        printStream.println()
+    }
 }

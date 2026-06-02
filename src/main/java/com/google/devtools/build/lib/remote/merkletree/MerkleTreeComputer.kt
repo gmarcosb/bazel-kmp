@@ -1123,9 +1123,9 @@ class MerkleTreeComputer(
             }
             val entries: MutableCollection<Dirent> = dirPath.getRelative(relPath).readdir(Symlinks.FOLLOW)
             for (entry in entries) {
-                val basename = entry.getName()
+                val basename = entry.name
                 val path: PathFragment = relPath.getChild(basename)
-                when (entry.getType()) {
+                when (entry.type) {
                     Dirent.Type.FILE -> inputs.put(path, ChildActionInput(dir, path))
                     Dirent.Type.DIRECTORY -> explodeDirectory(dir, path, dirPath, inputs)
                     else -> throw IOException(

@@ -11,65 +11,57 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.sandbox
 
-package com.google.devtools.build.lib.sandbox;
+import com.google.devtools.build.lib.exec.AbstractSpawnStrategy
 
-import com.google.common.base.Joiner;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.exec.AbstractSpawnStrategy;
-import com.google.devtools.build.lib.exec.ExecutionOptions;
-import com.google.devtools.build.lib.exec.SpawnRunner;
-import com.google.devtools.build.lib.exec.TreeDeleter;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.IOException;
-import java.time.Duration;
-
-/** Strategy that uses sandboxing to execute a process. */
-public final class LinuxSandboxedStrategy extends AbstractSpawnStrategy {
-  LinuxSandboxedStrategy(SpawnRunner spawnRunner, ExecutionOptions executionOptions) {
-    super(spawnRunner, executionOptions);
-  }
-
-  @Override
-  public String toString() {
-    return "linux-sandbox";
-  }
-
-  /**
-   * Creates a sandboxed spawn runner that uses the {@code linux-sandbox} tool.
-   *
-   * @param cmdEnv the command environment to use
-   * @param sandboxBase path to the sandbox base directory
-   * @param timeoutKillDelay additional grace period before killing timing out commands
-   */
-  static LinuxSandboxedSpawnRunner create(
-      CommandEnvironment cmdEnv,
-      Path sandboxBase,
-      Duration timeoutKillDelay,
-      TreeDeleter treeDeleter,
-      SandboxOptions options) {
-    Path inaccessibleHelperFile = null;
-    Path inaccessibleHelperDir = null;
-    if (!options.getSandboxBlockPath().isEmpty()) {
-      try {
-        inaccessibleHelperFile = LinuxSandboxUtil.getInaccessibleHelperFile(sandboxBase);
-        inaccessibleHelperDir = LinuxSandboxUtil.getInaccessibleHelperDir(sandboxBase);
-      } catch (IOException e) {
-        cmdEnv
-            .getReporter()
-            .handle(
-                Event.warn(
-                    "Could not block access to: "
-                        + Joiner.on(",").join(options.getSandboxBlockPath())));
-      }
+/** Strategy that uses sandboxing to execute a process.  */
+class LinuxSandboxedStrategy internal constructor(spawnRunner: SpawnRunner?, executionOptions: ExecutionOptions?) :
+    AbstractSpawnStrategy(spawnRunner, executionOptions) {
+    override fun toString(): String {
+        return "linux-sandbox"
     }
-    return new LinuxSandboxedSpawnRunner(
-        cmdEnv,
-        sandboxBase,
-        inaccessibleHelperFile,
-        inaccessibleHelperDir,
-        timeoutKillDelay,
-        treeDeleter);
-  }
+
+    companion object {
+        /**
+         * Creates a sandboxed spawn runner that uses the `linux-sandbox` tool.
+         * 
+         * @param cmdEnv the command environment to use
+         * @param sandboxBase path to the sandbox base directory
+         * @param timeoutKillDelay additional grace period before killing timing out commands
+         */
+        fun create(
+            cmdEnv: CommandEnvironment,
+            sandboxBase: com.google.devtools.build.lib.vfs.Path,
+            timeoutKillDelay: java.time.Duration?,
+            treeDeleter: TreeDeleter?,
+            options: SandboxOptions
+        ): LinuxSandboxedSpawnRunner {
+            var inaccessibleHelperFile: com.google.devtools.build.lib.vfs.Path? = null
+            var inaccessibleHelperDir: com.google.devtools.build.lib.vfs.Path? = null
+            if (!options.getSandboxBlockPath().isEmpty()) {
+                try {
+                    inaccessibleHelperFile = LinuxSandboxUtil.getInaccessibleHelperFile(sandboxBase)
+                    inaccessibleHelperDir = LinuxSandboxUtil.getInaccessibleHelperDir(sandboxBase)
+                } catch (e: IOException) {
+                    cmdEnv
+                        .getReporter()
+                        .handle(
+                            com.google.devtools.build.lib.events.Event.warn(
+                                "Could not block access to: "
+                                        + com.google.common.base.Joiner.on(",").join(options.getSandboxBlockPath())
+                            )
+                        )
+                }
+            }
+            return LinuxSandboxedSpawnRunner(
+                cmdEnv,
+                sandboxBase,
+                inaccessibleHelperFile,
+                inaccessibleHelperDir,
+                timeoutKillDelay,
+                treeDeleter
+            )
+        }
+    }
 }

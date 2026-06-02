@@ -11,75 +11,73 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.skyframe.NodeEntry.DirtyType;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.EvaluationProgressReceiver
+import com.google.devtools.build.skyframe.EvaluationProgressReceiver.EvaluationState
+import com.google.devtools.build.skyframe.EvaluationProgressReceiver.NodeState
+import com.google.devtools.build.skyframe.GroupedDeps
+import com.google.devtools.build.skyframe.NodeEntry.DirtyType
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
 
 /**
- * Helper class to allow implementing {@link EvaluationProgressReceiver} implementations which
- * delegate to a bunch of other {@link EvaluationProgressReceiver}s.
+ * Helper class to allow implementing [EvaluationProgressReceiver] implementations which
+ * delegate to a bunch of other [EvaluationProgressReceiver]s.
  */
-public class CompoundEvaluationProgressReceiverBase implements EvaluationProgressReceiver {
-  protected final ImmutableList<? extends EvaluationProgressReceiver> receivers;
+open class CompoundEvaluationProgressReceiverBase protected constructor(receivers: com.google.common.collect.ImmutableList<out EvaluationProgressReceiver>) :
+    EvaluationProgressReceiver {
+    protected val receivers: com.google.common.collect.ImmutableList<out EvaluationProgressReceiver>
 
-  protected CompoundEvaluationProgressReceiverBase(
-      ImmutableList<? extends EvaluationProgressReceiver> receivers) {
-    this.receivers = receivers;
-  }
-
-  @Override
-  public void dirtied(SkyKey skyKey, DirtyType dirtyType) {
-    for (EvaluationProgressReceiver receiver : receivers) {
-      receiver.dirtied(skyKey, dirtyType);
+    init {
+        this.receivers = receivers
     }
-  }
 
-  @Override
-  public void deleted(SkyKey skyKey) {
-    for (EvaluationProgressReceiver receiver : receivers) {
-      receiver.deleted(skyKey);
+    override fun dirtied(skyKey: SkyKey?, dirtyType: DirtyType?) {
+        for (receiver in receivers) {
+            receiver.dirtied(skyKey, dirtyType)
+        }
     }
-  }
 
-  @Override
-  public void enqueueing(SkyKey skyKey) {
-    for (EvaluationProgressReceiver receiver : receivers) {
-      receiver.enqueueing(skyKey);
+    override fun deleted(skyKey: SkyKey?) {
+        for (receiver in receivers) {
+            receiver.deleted(skyKey)
+        }
     }
-  }
 
-  @Override
-  public void stateStarting(SkyKey skyKey, NodeState state) {
-    for (EvaluationProgressReceiver receiver : receivers) {
-      receiver.stateStarting(skyKey, state);
+    override fun enqueueing(skyKey: SkyKey?) {
+        for (receiver in receivers) {
+            receiver.enqueueing(skyKey)
+        }
     }
-  }
 
-  @Override
-  public void stateEnding(SkyKey skyKey, NodeState state) {
-    for (EvaluationProgressReceiver receiver : receivers) {
-      receiver.stateEnding(skyKey, state);
+    override fun stateStarting(skyKey: SkyKey?, state: NodeState?) {
+        for (receiver in receivers) {
+            receiver.stateStarting(skyKey, state)
+        }
     }
-  }
 
-  @Override
-  public void evaluated(
-      SkyKey skyKey,
-      EvaluationState state,
-      @Nullable SkyValue newValue,
-      @Nullable ErrorInfo newError,
-      @Nullable GroupedDeps directDeps) {
-    for (EvaluationProgressReceiver receiver : receivers) {
-      receiver.evaluated(skyKey, state, newValue, newError, directDeps);
+    override fun stateEnding(skyKey: SkyKey?, state: NodeState?) {
+        for (receiver in receivers) {
+            receiver.stateEnding(skyKey, state)
+        }
     }
-  }
 
-  @Override
-  public void changePruned(SkyKey skyKey) {
-    for (EvaluationProgressReceiver receiver : receivers) {
-      receiver.changePruned(skyKey);
+    override fun evaluated(
+        skyKey: SkyKey?,
+        state: EvaluationState?,
+        newValue: SkyValue?,
+        newError: com.google.devtools.build.skyframe.ErrorInfo?,
+        directDeps: GroupedDeps?
+    ) {
+        for (receiver in receivers) {
+            receiver.evaluated(skyKey, state, newValue, newError, directDeps)
+        }
     }
-  }
+
+    override fun changePruned(skyKey: SkyKey?) {
+        for (receiver in receivers) {
+            receiver.changePruned(skyKey)
+        }
+    }
 }

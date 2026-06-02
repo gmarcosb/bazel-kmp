@@ -11,21 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
-
-import static com.google.common.base.Preconditions.checkNotNull;
+package com.google.devtools.build.lib.skyframe
 
 /**
- * Thrown on {@link DiffAwareness#getDiff} to indicate that something is wrong with the
- * {@link DiffAwareness} instance and it should not be used again.
+ * Thrown on [DiffAwareness.getDiff] to indicate that something is wrong with the
+ * [DiffAwareness] instance and it should not be used again.
  */
-public class BrokenDiffAwarenessException extends Exception {
+class BrokenDiffAwarenessException : java.lang.Exception {
+    constructor(msg: String?) : super(com.google.common.base.Preconditions.checkNotNull<String?>(msg))
 
-  public BrokenDiffAwarenessException(String msg) {
-    super(checkNotNull(msg));
-  }
-
-  public BrokenDiffAwarenessException(String msg, Throwable cause) {
-    super(checkNotNull(msg), cause);
-  }
+    constructor(
+        msg: String?,
+        cause: Throwable?
+    ) : super(com.google.common.base.Preconditions.checkNotNull<String?>(msg), cause)
 }

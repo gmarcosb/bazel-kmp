@@ -11,14 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.common.options
 
-package com.google.devtools.common.options;
-
-/** Indicates that a flag is declared more than once. */
-public class DuplicateOptionDeclarationException extends Exception {
-
-  DuplicateOptionDeclarationException(String message) {
-    super(message);
-  }
-
-}
+/** Indicates that a flag is declared more than once.  */
+class DuplicateOptionDeclarationException internal constructor(message: String?) : java.lang.Exception(message)

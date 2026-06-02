@@ -11,145 +11,155 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.PrintWriter;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.regex.Pattern;
+import java.io.BufferedReader
+import java.io.IOException
+import java.io.PrintWriter
+import java.util.HashMap
 
 /**
- * Analyzes thread dumps from {@code jcmd Thread.dump_to_file}, or {@link
- * com.google.devtools.build.lib.util.ThreadDumper}.
- *
- * <p>The analyzer groups threads with the same stack trace and sorts them by name.
+ * Analyzes thread dumps from `jcmd Thread.dump_to_file`, or [ ].
+ * 
+ * 
+ * The analyzer groups threads with the same stack trace and sorts them by name.
  */
-public final class ThreadDumpAnalyzer {
-  private static final Pattern THREAD_PATTERN = Pattern.compile("#(\\d+)\\s\"([^\"]+)\".*");
-  private static final Pattern THREAD_STATE_PATTERN =
-      Pattern.compile("\\s+-\\s(locked|lock|parking|waiting).*");
+class ThreadDumpAnalyzer {
+    private val threadsPerStackTrace: MutableMap<String?, MutableList<ThreadLine>> =
+        HashMap<String?, MutableList<ThreadLine>>()
 
-  private final Map<String, List<ThreadLine>> threadsPerStackTrace = new HashMap<>();
+    @kotlin.jvm.JvmRecord
+    private data class ThreadLine(
+        val raw: String?,
+        val id: String?,
+        val name: String?,
+        val states: MutableList<String?>?
+    )
 
-  private record ThreadLine(String raw, String id, String name, List<String> states) {}
+    /**
+     * The result of the thread dump analysis.
+     * 
+     * @param otherLines The lines that are not related to threads.
+     * @param groupedStackTraces The stack traces of the threads that have the same stack trace. The
+     * threads in each stack trace are sorted by name.
+     */
+    @kotlin.jvm.JvmRecord
+    data class AnalyzedThreadDump(val otherLines: MutableList<String?>?, val groupedStackTraces: MutableList<String?>?)
 
-  /**
-   * The result of the thread dump analysis.
-   *
-   * @param otherLines The lines that are not related to threads.
-   * @param groupedStackTraces The stack traces of the threads that have the same stack trace. The
-   *     threads in each stack trace are sorted by name.
-   */
-  public record AnalyzedThreadDump(List<String> otherLines, List<String> groupedStackTraces) {}
+    /**
+     * Analyzes the given thread dump from the given input stream.
+     * 
+     * @return The analyzed thread dump.
+     */
+    @Throws(IOException::class)
+    fun analyze(`in`: java.io.InputStream): AnalyzedThreadDump {
+        val otherLines: java.util.ArrayList<String?> = java.util.ArrayList<String?>()
 
-  /**
-   * Analyzes the given thread dump from the given input stream.
-   *
-   * @return The analyzed thread dump.
-   */
-  public AnalyzedThreadDump analyze(InputStream in) throws IOException {
-    var otherLines = new ArrayList<String>();
+        val reader: BufferedReader =
+            BufferedReader(java.io.InputStreamReader(`in`, java.nio.charset.StandardCharsets.UTF_8))
+        while (true) {
+            val line: String? = reader.readLine()
+            if (line == null) {
+                break
+            }
 
-    var reader = new BufferedReader(new InputStreamReader(in, UTF_8));
-    while (true) {
-      var line = reader.readLine();
-      if (line == null) {
-        break;
-      }
-
-      var threadMatcher = THREAD_PATTERN.matcher(line);
-      if (threadMatcher.matches()) {
-        var threadLine =
-            new ThreadLine(line, threadMatcher.group(1), threadMatcher.group(2), new ArrayList<>());
-        if (groupStackTrace(threadLine, reader)) {
-          break;
+            val threadMatcher: java.util.regex.Matcher = THREAD_PATTERN.matcher(line)
+            if (threadMatcher.matches()) {
+                val threadLine =
+                    ThreadLine(line, threadMatcher.group(1), threadMatcher.group(2), java.util.ArrayList<String?>())
+                if (groupStackTrace(threadLine, reader)) {
+                    break
+                }
+            } else {
+                otherLines.add(line)
+            }
         }
-      } else {
-        otherLines.add(line);
-      }
-    }
 
-    // Sort the threads with the same stack trace by name
-    for (var threads : threadsPerStackTrace.values()) {
-      threads.sort((a, b) -> a.name().compareTo(b.name()));
-    }
-
-    var sortedEntries = new ArrayList<>(threadsPerStackTrace.entrySet());
-    // Sort the entries by the first thread's name in the group.
-    sortedEntries.sort(Comparator.comparing(x -> x.getValue().getFirst().name()));
-
-    var groupedStackTraces = new ArrayList<String>();
-    for (var entry : sortedEntries) {
-      var sb = new StringBuilder();
-      var stackTrace = entry.getKey();
-      var threads = entry.getValue();
-      for (var thread : threads) {
-        sb.append(thread.raw()).append(System.lineSeparator());
-        for (var state : thread.states()) {
-          sb.append(state).append(System.lineSeparator());
+        // Sort the threads with the same stack trace by name
+        for (threads in threadsPerStackTrace.values) {
+            threads.sort(java.util.Comparator { a: ThreadLine?, b: ThreadLine? -> a!!.name!!.compareTo(b!!.name!!) })
         }
-      }
-      sb.append(stackTrace);
-      groupedStackTraces.add(sb.toString());
+
+        val sortedEntries: java.util.ArrayList<MutableMap.MutableEntry<String?, MutableList<ThreadLine>>> =
+            java.util.ArrayList<MutableMap.MutableEntry<String?, MutableList<ThreadLine>>>(threadsPerStackTrace.entries)
+        // Sort the entries by the first thread's name in the group.
+        sortedEntries.sort(
+            java.util.Comparator.comparing<MutableMap.MutableEntry<String?, MutableList<ThreadLine?>?>?, String?>(
+                java.util.function.Function { x: MutableMap.MutableEntry<String?, MutableList<ThreadLine?>?>? -> x!!.value.getFirst().name })
+        )
+
+        val groupedStackTraces: java.util.ArrayList<String?> = java.util.ArrayList<String?>()
+        for (entry in sortedEntries) {
+            val sb: java.lang.StringBuilder = java.lang.StringBuilder()
+            val stackTrace: String? = entry.key
+            val threads: MutableList<ThreadLine> = entry.value
+            for (thread in threads) {
+                sb.append(thread.raw).append(java.lang.System.lineSeparator())
+                for (state in thread.states!!) {
+                    sb.append(state).append(java.lang.System.lineSeparator())
+                }
+            }
+            sb.append(stackTrace)
+            groupedStackTraces.add(sb.toString())
+        }
+
+        return AnalyzedThreadDump(otherLines, groupedStackTraces)
     }
 
-    return new AnalyzedThreadDump(otherLines, groupedStackTraces);
-  }
-
-  /**
-   * Analyzes the given thread dump from the given input stream and writes the analysis to the given
-   * output stream.
-   */
-  public void analyze(InputStream in, OutputStream out) throws IOException {
-    var analyzedThreadDump = analyze(in);
-    try (var writer = new PrintWriter(out, false, UTF_8)) {
-      for (var line : analyzedThreadDump.otherLines) {
-        writer.println(line);
-      }
-      for (var stackTrace : analyzedThreadDump.groupedStackTraces) {
-        writer.println(stackTrace);
-      }
+    /**
+     * Analyzes the given thread dump from the given input stream and writes the analysis to the given
+     * output stream.
+     */
+    @Throws(IOException::class)
+    fun analyze(`in`: java.io.InputStream, out: java.io.OutputStream) {
+        val analyzedThreadDump = analyze(`in`)
+        PrintWriter(out, false, java.nio.charset.StandardCharsets.UTF_8).use { writer ->
+            for (line in analyzedThreadDump.otherLines!!) {
+                writer.println(line)
+            }
+            for (stackTrace in analyzedThreadDump.groupedStackTraces!!) {
+                writer.println(stackTrace)
+            }
+        }
     }
-  }
 
-  /**
-   * Groups the stack trace of the given thread with other threads having the same stack trace.
-   *
-   * @return true if reached EOF.
-   */
-  private boolean groupStackTrace(ThreadLine threadLine, BufferedReader reader) throws IOException {
-    StringBuilder sb = new StringBuilder();
-    boolean eof = false;
-    while (true) {
-      var line = reader.readLine();
-      if (line == null) {
-        eof = true;
-        break;
-      }
+    /**
+     * Groups the stack trace of the given thread with other threads having the same stack trace.
+     * 
+     * @return true if reached EOF.
+     */
+    @Throws(IOException::class)
+    private fun groupStackTrace(threadLine: ThreadLine, reader: BufferedReader): Boolean {
+        val sb: java.lang.StringBuilder = java.lang.StringBuilder()
+        var eof = false
+        while (true) {
+            val line: String? = reader.readLine()
+            if (line == null) {
+                eof = true
+                break
+            }
 
-      if (line.isBlank()) {
-        break;
-      }
+            if (line.isBlank()) {
+                break
+            }
 
-      if (THREAD_STATE_PATTERN.matcher(line).matches()) {
-        threadLine.states.add(line);
-      } else {
-        sb.append(line).append(System.lineSeparator());
-      }
+            if (THREAD_STATE_PATTERN.matcher(line).matches()) {
+                threadLine.states!!.add(line)
+            } else {
+                sb.append(line).append(java.lang.System.lineSeparator())
+            }
+        }
+        val stackTrace = sb.toString()
+        val threads: MutableList<ThreadLine?> =
+            threadsPerStackTrace.computeIfAbsent(stackTrace) { t: String? -> java.util.ArrayList<ThreadLine?>() }
+        threads.add(threadLine)
+        return eof
     }
-    var stackTrace = sb.toString();
-    var threads = threadsPerStackTrace.computeIfAbsent(stackTrace, t -> new ArrayList<>());
-    threads.add(threadLine);
-    return eof;
-  }
+
+    companion object {
+        private val THREAD_PATTERN: java.util.regex.Pattern =
+            java.util.regex.Pattern.compile("#(\\d+)\\s\"([^\"]+)\".*")
+        private val THREAD_STATE_PATTERN: java.util.regex.Pattern =
+            java.util.regex.Pattern.compile("\\s+-\\s(locked|lock|parking|waiting).*")
+    }
 }

@@ -11,22 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
+import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories
 
 /**
  * This value represents the result of looking up all the packages under a given package path root,
@@ -34,70 +21,82 @@ import com.google.devtools.build.skyframe.SkyValue;
  */
 @Immutable
 @ThreadSafe
-public class RecursivePkgValue implements SkyValue {
-  @SerializationConstant
-  static final RecursivePkgValue EMPTY =
-      new RecursivePkgValue(NestedSetBuilder.<String>emptySet(Order.STABLE_ORDER), false);
+class RecursivePkgValue private constructor(packages: NestedSet<String?>?, hasErrors: Boolean) : SkyValue {
+    private val packages: NestedSet<String?>?
+    private val hasErrors: Boolean
 
-  private final NestedSet<String> packages;
-  private final boolean hasErrors;
-
-  private RecursivePkgValue(NestedSet<String> packages, boolean hasErrors) {
-    this.packages = packages;
-    this.hasErrors = hasErrors;
-  }
-
-  static RecursivePkgValue create(NestedSetBuilder<String> packages, boolean hasErrors) {
-    if (packages.isEmpty() && !hasErrors) {
-      return EMPTY;
-    }
-    return new RecursivePkgValue(packages.build(), hasErrors);
-  }
-
-  /** Create a transitive package lookup request. */
-  @ThreadSafe
-  public static Key key(
-      RepositoryName repositoryName, RootedPath rootedPath, IgnoredSubdirectories excludedPaths) {
-    return Key.create(repositoryName, rootedPath, excludedPaths);
-  }
-
-  public NestedSet<String> getPackages() {
-    return packages;
-  }
-
-  public boolean hasErrors() {
-    return hasErrors;
-  }
-
-  @VisibleForSerialization
-  @AutoCodec
-  static class Key extends RecursivePkgSkyKey {
-    private static final SkyKeyInterner<Key> interner = SkyKey.newInterner();
-
-    private Key(
-        RepositoryName repositoryName, RootedPath rootedPath, IgnoredSubdirectories excludedPaths) {
-      super(repositoryName, rootedPath, excludedPaths);
+    init {
+        this.packages = packages
+        this.hasErrors = hasErrors
     }
 
-    private static Key create(
-        RepositoryName repositoryName, RootedPath rootedPath, IgnoredSubdirectories excludedPaths) {
-      return interner.intern(new Key(repositoryName, rootedPath, excludedPaths));
+    fun getPackages(): NestedSet<String?>? {
+        return packages
     }
 
-    @VisibleForSerialization
-    @AutoCodec.Interner
-    static Key intern(Key key) {
-      return interner.intern(key);
+    fun hasErrors(): Boolean {
+        return hasErrors
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.RECURSIVE_PKG;
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    @AutoCodec
+    internal class Key private constructor(
+        repositoryName: RepositoryName?,
+        rootedPath: RootedPath?,
+        excludedPaths: IgnoredSubdirectories?
+    ) : RecursivePkgSkyKey(repositoryName, rootedPath, excludedPaths) {
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.RECURSIVE_PKG
+        }
+
+        val skyKeyInterner: SkyKeyInterner<Key?>
+            get() = com.google.devtools.build.lib.skyframe.RecursivePkgValue.Key.Companion.interner
+
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
+
+            private fun create(
+                repositoryName: RepositoryName?, rootedPath: RootedPath?, excludedPaths: IgnoredSubdirectories?
+            ): Key {
+                return com.google.devtools.build.lib.skyframe.RecursivePkgValue.Key.Companion.interner.intern(
+                    com.google.devtools.build.lib.skyframe.RecursivePkgValue.Key(
+                        repositoryName,
+                        rootedPath,
+                        excludedPaths
+                    )
+                )
+            }
+
+            @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+            @AutoCodec.Interner
+            fun intern(key: Key?): Key {
+                return com.google.devtools.build.lib.skyframe.RecursivePkgValue.Key.Companion.interner.intern(key)
+            }
+        }
     }
 
-    @Override
-    public SkyKeyInterner<Key> getSkyKeyInterner() {
-      return interner;
+    companion object {
+        @SerializationConstant
+        val EMPTY: RecursivePkgValue =
+            RecursivePkgValue(NestedSetBuilder.< String > emptySet < kotlin . String ? > (Order.STABLE_ORDER), false)
+
+        fun create(packages: NestedSetBuilder<String?>, hasErrors: Boolean): RecursivePkgValue? {
+            if (packages.isEmpty() && !hasErrors) {
+                return EMPTY
+            }
+            return RecursivePkgValue(packages.build(), hasErrors)
+        }
+
+        /** Create a transitive package lookup request.  */
+        @ThreadSafe
+        fun key(
+            repositoryName: RepositoryName?, rootedPath: RootedPath?, excludedPaths: IgnoredSubdirectories?
+        ): Key {
+            return com.google.devtools.build.lib.skyframe.RecursivePkgValue.Key.Companion.create(
+                repositoryName,
+                rootedPath,
+                excludedPaths
+            )
+        }
     }
-  }
 }

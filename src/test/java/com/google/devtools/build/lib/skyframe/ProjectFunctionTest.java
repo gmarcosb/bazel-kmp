@@ -269,11 +269,11 @@ public class ProjectFunctionTest extends BuildViewTestCase {
         SkyframeExecutorTestUtils.evaluate(skyframeExecutor, key, false, reporter);
     assertThat(result.hasError()).isFalse();
     ProjectValue value = result.get(key);
-    assertThat(value.getEnforcementPolicy()).isEqualTo(ProjectValue.EnforcementPolicy.WARN);
+    assertThat(value.enforcementPolicy).isEqualTo(ProjectValue.EnforcementPolicy.WARN);
     assertThat(value.getAlwaysAllowedConfigs()).isEqualTo(ImmutableList.of("--config=foo"));
     assertThat(value.getActualProjectFile()).isEqualTo(Label.parseCanonical("//test:PROJECT.scl"));
-    assertThat(value.getBuildableUnits().get("default").isDefault()).isTrue();
-    assertThat(value.getBuildableUnits().get("non_default").isDefault()).isFalse();
+    assertThat(value.getBuildableUnits().get("default").isDefault).isTrue();
+    assertThat(value.getBuildableUnits().get("non_default").isDefault).isFalse();
     assertThat(value.getProjectDirectories()).hasSize(1);
     assertThat(value.getProjectDirectories().get("default")).containsExactly("//test/...");
 
@@ -356,7 +356,7 @@ public class ProjectFunctionTest extends BuildViewTestCase {
     assertThat(result.hasError()).isFalse();
 
     // Project-wide defaults:
-    assertThat(result.get(key).getEnforcementPolicy())
+    assertThat(result.get(key).enforcementPolicy)
         .isEqualTo(ProjectValue.EnforcementPolicy.WARN);
     assertThat(result.get(key).getAlwaysAllowedConfigs()).isNull();
     assertThat(result.get(key).getProjectDirectories()).hasSize(1);
@@ -367,7 +367,7 @@ public class ProjectFunctionTest extends BuildViewTestCase {
         .isTrue();
     assertThat(result.get(key).getBuildableUnits().get("foo").flags()).isEmpty();
     assertThat(result.get(key).getBuildableUnits().get("foo").description()).isEqualTo("foo");
-    assertThat(result.get(key).getBuildableUnits().get("foo").isDefault()).isFalse();
+    assertThat(result.get(key).getBuildableUnits().get("foo").isDefault).isFalse();
   }
 
   /** Asserts that a PROJECT.scl with the given contexts fails with the given message. */

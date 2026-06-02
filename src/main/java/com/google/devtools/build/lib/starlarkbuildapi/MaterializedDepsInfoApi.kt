@@ -11,54 +11,47 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi
 
-package com.google.devtools.build.lib.starlarkbuildapi;
+import com.google.devtools.build.lib.starlarkbuildapi.core.ProviderApi
+import com.google.devtools.build.lib.starlarkbuildapi.core.StructApi
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.docgen.annot.StarlarkConstructor;
-import com.google.devtools.build.lib.starlarkbuildapi.core.ProviderApi;
-import com.google.devtools.build.lib.starlarkbuildapi.core.StructApi;
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.ParamType;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Sequence;
-
-/** The provider returned from Materialize Rules to materialize dependencies. */
-@StarlarkBuiltin(
+/** The provider returned from Materialize Rules to materialize dependencies.  */
+@net.starlark.java.annot.StarlarkBuiltin(
     name = "MaterializedDepsInfo",
-    category = DocCategory.PROVIDER,
-    doc = "The provider returned from materializer rules to materialize dependencies.")
-public interface MaterializedDepsInfoApi extends StructApi {
+    category = com.google.devtools.build.docgen.annot.DocCategory.PROVIDER,
+    doc = "The provider returned from materializer rules to materialize dependencies."
+)
+interface MaterializedDepsInfoApi : StructApi {
+    @get:net.starlark.java.annot.StarlarkMethod(
+        name = "deps",
+        doc = "The list of dependencies. These may be ConfiguredTarget or DormantDependency objects.",
+        structField = true
+    )
+    val deps: com.google.common.collect.ImmutableList<*>?
 
-  /** The global provider name. */
-  String NAME = "MaterializedDepsInfo";
+    /** Provider for [MaterializedDepsInfoApi] objects.  */
+    @net.starlark.java.annot.StarlarkBuiltin(name = "Provider", documented = false, doc = "")
+    interface Provider : ProviderApi {
+        @net.starlark.java.annot.StarlarkMethod(
+            name = NAME,
+            selfCall = true,
+            doc = "The <code>MaterializedDepsInfo</code> constructor.",
+            documented = false,
+            parameters = [net.starlark.java.annot.Param(
+                name = "deps",
+                positional = true,
+                named = true,
+                allowedTypes = [net.starlark.java.annot.ParamType(type = net.starlark.java.eval.Sequence::class)]
+            )]
+        )
+        @com.google.devtools.build.docgen.annot.StarlarkConstructor
+        @Throws(net.starlark.java.eval.EvalException::class)
+        fun materializedDepsInfo(dependencies: net.starlark.java.eval.Sequence<*>?): MaterializedDepsInfoApi?
+    }
 
-  @StarlarkMethod(
-      name = "deps",
-      doc = "The list of dependencies. These may be ConfiguredTarget or DormantDependency objects.",
-      structField = true)
-  ImmutableList<?> getDeps();
-
-  /** Provider for {@link MaterializedDepsInfoApi} objects. */
-  @StarlarkBuiltin(name = "Provider", documented = false, doc = "")
-  interface Provider extends ProviderApi {
-
-    @StarlarkMethod(
-        name = NAME,
-        selfCall = true,
-        doc = "The <code>MaterializedDepsInfo</code> constructor.",
-        documented = false,
-        parameters = {
-          @Param(
-              name = "deps",
-              positional = true,
-              named = true,
-              allowedTypes = {@ParamType(type = Sequence.class)})
-        })
-    @StarlarkConstructor
-    MaterializedDepsInfoApi materializedDepsInfo(Sequence<?> dependencies) throws EvalException;
-  }
+    companion object {
+        /** The global provider name.  */
+        const val NAME: String = "MaterializedDepsInfo"
+    }
 }

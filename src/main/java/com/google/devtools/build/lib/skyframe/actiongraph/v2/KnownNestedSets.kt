@@ -11,53 +11,42 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.actiongraph.v2;
+package com.google.devtools.build.lib.skyframe.actiongraph.v2
 
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.DepSetOfFiles;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet.Node;
-import java.io.IOException;
-import java.util.HashSet;
-import java.util.Set;
+import com.google.devtools.build.lib.actions.Artifact
 
-/** Cache for NestedSets in the action graph. */
-public class KnownNestedSets extends BaseCache<Object, DepSetOfFiles> {
-  private final KnownArtifacts knownArtifacts;
-
-  KnownNestedSets(AqueryOutputHandler aqueryOutputHandler, KnownArtifacts knownArtifacts) {
-    super(aqueryOutputHandler);
-    this.knownArtifacts = knownArtifacts;
-  }
-
-  @Override
-  protected Object transformToKey(Object nestedSet) {
-    return ((NestedSet) nestedSet).toNode();
-  }
-
-  @Override
-  DepSetOfFiles createProto(Object nestedSetObject, int id)
-      throws IOException, InterruptedException {
-    NestedSet<?> nestedSet = (NestedSet) nestedSetObject;
-    DepSetOfFiles.Builder depSetBuilder = DepSetOfFiles.newBuilder().setId(id);
-
-    // Some malformed NestedSets have duplicate non-leaf child subsets. This does not add any
-    // meaningful info and sometimes even corrupt the proto3 output. More context: b/186193294.
-    Set<Node> visited = new HashSet<>();
-    for (NestedSet<?> succ : nestedSet.getNonLeaves()) {
-      if (visited.add(succ.toNode())) {
-        depSetBuilder.addTransitiveDepSetIds(this.dataToIdAndStreamOutputProto(succ));
-      }
+/** Cache for NestedSets in the action graph.  */
+class KnownNestedSets internal constructor(
+    aqueryOutputHandler: AqueryOutputHandler?,
+    private val knownArtifacts: KnownArtifacts
+) : BaseCache<Any?, DepSetOfFiles?>(aqueryOutputHandler) {
+    override fun transformToKey(nestedSet: Any): Any {
+        return (nestedSet as NestedSet).toNode()
     }
-    for (Object elem : nestedSet.getLeaves()) {
-      depSetBuilder.addDirectArtifactIds(
-          knownArtifacts.dataToIdAndStreamOutputProto((Artifact) elem));
-    }
-    return depSetBuilder.build();
-  }
 
-  @Override
-  void toOutput(DepSetOfFiles depSetOfFilesProto) throws IOException {
-    aqueryOutputHandler.outputDepSetOfFiles(depSetOfFilesProto);
-  }
+    @Throws(IOException::class, InterruptedException::class)
+    override fun createProto(nestedSetObject: Any?, id: Int): DepSetOfFiles {
+        val nestedSet: NestedSet<*> = nestedSetObject as NestedSet
+        val depSetBuilder: DepSetOfFiles.Builder = DepSetOfFiles.newBuilder().setId(id)
+
+        // Some malformed NestedSets have duplicate non-leaf child subsets. This does not add any
+        // meaningful info and sometimes even corrupt the proto3 output. More context: b/186193294.
+        val visited: MutableSet<Node?> = HashSet<Node?>()
+        for (succ in nestedSet.getNonLeaves()) {
+            if (visited.add(succ.toNode())) {
+                depSetBuilder.addTransitiveDepSetIds(this.dataToIdAndStreamOutputProto(succ))
+            }
+        }
+        for (elem in nestedSet.getLeaves()) {
+            depSetBuilder.addDirectArtifactIds(
+                knownArtifacts.dataToIdAndStreamOutputProto(elem as Artifact?)
+            )
+        }
+        return depSetBuilder.build()
+    }
+
+    @Throws(IOException::class)
+    override fun toOutput(depSetOfFilesProto: DepSetOfFiles?) {
+        aqueryOutputHandler.outputDepSetOfFiles(depSetOfFilesProto)
+    }
 }

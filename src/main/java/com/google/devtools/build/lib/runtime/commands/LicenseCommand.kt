@@ -11,107 +11,107 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime.commands;
+package com.google.devtools.build.lib.runtime.commands
 
-import static com.google.devtools.build.lib.runtime.Command.BuildPhase.NONE;
+import com.google.devtools.build.lib.runtime.Command.BuildPhase.NONE
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.NoBuildEvent;
-import com.google.devtools.build.lib.runtime.BlazeCommand;
-import com.google.devtools.build.lib.runtime.BlazeCommandResult;
-import com.google.devtools.build.lib.runtime.Command;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.util.ResourceFileLoader;
-import com.google.devtools.build.lib.util.io.OutErr;
-import com.google.devtools.common.options.OptionsParsingResult;
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.FileVisitResult;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
-
-/** A command that prints an embedded license text. */
+/** A command that prints an embedded license text.  */
 @Command(
     name = "license",
     buildPhase = NONE,
     allowResidue = true,
     mustRunInWorkspace = false,
     shortDescription = "Prints the license of this software.",
-    help = "Prints the license of this software.\n\n%{options}")
-public class LicenseCommand implements BlazeCommand {
+    help = "Prints the license of this software.\n\n%{options}"
+)
+class LicenseCommand : BlazeCommand {
+    public override fun exec(
+        env: CommandEnvironment,
+        options: com.google.devtools.common.options.OptionsParsingResult?
+    ): BlazeCommandResult {
+        env.getEventBus().post(NoBuildEvent())
+        val outErr: OutErr = env.getReporter().getOutErr()
 
-  private static final ImmutableSet<String> JAVA_LICENSE_FILES =
-      ImmutableSet.of("ASSEMBLY_EXCEPTION", "DISCLAIMER", "LICENSE", "THIRD_PARTY_README");
+        outErr.printOutLn("Licenses of all components included in this binary:\n")
 
-  private static final String BAZEL_LICENSE = "license/LICENSE";
+        try {
+            outErr.printOutLn(ResourceFileLoader.loadResource(this.javaClass, BAZEL_LICENSE))
+        } catch (e: IOException) {
+            throw java.lang.IllegalStateException(
+                "I/O error while trying to print 'LICENSE' resource: " + e.message, e
+            )
+        }
 
-  public static boolean isSupported() {
-    return ResourceFileLoader.resourceExists(LicenseCommand.class, BAZEL_LICENSE);
-  }
+        val bundledJdk: java.nio.file.Path =
+            env.getDirectories()
+                .getEmbeddedBinariesRoot()
+                .getRelative("embedded_tools/jdk")
+                .getPathFile()
+                .toPath()
+        if (java.nio.file.Files.exists(bundledJdk)) {
+            outErr.printOutLn(
+                "This binary comes with a bundled JDK, which contains the following license files:\n"
+            )
+            printJavaLicenseFiles(outErr, bundledJdk)
+        }
 
-  @Override
-  public BlazeCommandResult exec(CommandEnvironment env, OptionsParsingResult options) {
-    env.getEventBus().post(new NoBuildEvent());
-    OutErr outErr = env.getReporter().getOutErr();
+        val bundledJre: java.nio.file.Path =
+            env.getDirectories()
+                .getEmbeddedBinariesRoot()
+                .getRelative("embedded_tools/jre")
+                .getPathFile()
+                .toPath()
+        if (java.nio.file.Files.exists(bundledJre)) {
+            outErr.printOutLn(
+                "This binary comes with a bundled JRE, which contains the following license files:\n"
+            )
+            printJavaLicenseFiles(outErr, bundledJre)
+        }
 
-    outErr.printOutLn("Licenses of all components included in this binary:\n");
-
-    try {
-      outErr.printOutLn(ResourceFileLoader.loadResource(this.getClass(), BAZEL_LICENSE));
-    } catch (IOException e) {
-      throw new IllegalStateException(
-          "I/O error while trying to print 'LICENSE' resource: " + e.getMessage(), e);
+        return BlazeCommandResult.success()
     }
 
-    Path bundledJdk =
-        env.getDirectories()
-            .getEmbeddedBinariesRoot()
-            .getRelative("embedded_tools/jdk")
-            .getPathFile()
-            .toPath();
-    if (Files.exists(bundledJdk)) {
-      outErr.printOutLn(
-          "This binary comes with a bundled JDK, which contains the following license files:\n");
-      printJavaLicenseFiles(outErr, bundledJdk);
-    }
+    companion object {
+        private val JAVA_LICENSE_FILES: com.google.common.collect.ImmutableSet<String?> =
+            com.google.common.collect.ImmutableSet.of<String?>(
+                "ASSEMBLY_EXCEPTION",
+                "DISCLAIMER",
+                "LICENSE",
+                "THIRD_PARTY_README"
+            )
 
-    Path bundledJre =
-        env.getDirectories()
-            .getEmbeddedBinariesRoot()
-            .getRelative("embedded_tools/jre")
-            .getPathFile()
-            .toPath();
-    if (Files.exists(bundledJre)) {
-      outErr.printOutLn(
-          "This binary comes with a bundled JRE, which contains the following license files:\n");
-      printJavaLicenseFiles(outErr, bundledJre);
-    }
+        private const val BAZEL_LICENSE = "license/LICENSE"
 
-    return BlazeCommandResult.success();
-  }
+        val isSupported: Boolean
+            get() = ResourceFileLoader.resourceExists(
+                LicenseCommand::class.java,
+                BAZEL_LICENSE
+            )
 
-  private static void printJavaLicenseFiles(OutErr outErr, Path bundledJdkOrJre) {
-    try {
-      Files.walkFileTree(
-          bundledJdkOrJre,
-          new SimpleFileVisitor<Path>() {
-            @Override
-            public FileVisitResult visitFile(Path path, BasicFileAttributes basicFileAttributes)
-                throws IOException {
-              if (JAVA_LICENSE_FILES.contains(path.getFileName().toString())) {
-                outErr.printOutLn(path + ":\n");
-                Files.copy(path, outErr.getOutputStream());
-                outErr.printOutLn("\n");
-              }
-              return super.visitFile(path, basicFileAttributes);
+        private fun printJavaLicenseFiles(outErr: OutErr, bundledJdkOrJre: java.nio.file.Path?) {
+            try {
+                java.nio.file.Files.walkFileTree(
+                    bundledJdkOrJre,
+                    object : SimpleFileVisitor<java.nio.file.Path?>() {
+                        @Throws(IOException::class)
+                        override fun visitFile(
+                            path: java.nio.file.Path,
+                            basicFileAttributes: BasicFileAttributes?
+                        ): FileVisitResult? {
+                            if (JAVA_LICENSE_FILES.contains(path.getFileName().toString())) {
+                                outErr.printOutLn(path.toString() + ":\n")
+                                java.nio.file.Files.copy(path, outErr.getOutputStream())
+                                outErr.printOutLn("\n")
+                            }
+                            return super.visitFile(path, basicFileAttributes)
+                        }
+                    })
+            } catch (e: IOException) {
+                throw UncheckedIOException(
+                    "I/O error while trying to print license file of bundled JDK or JRE: " + e.message,
+                    e
+                )
             }
-          });
-    } catch (IOException e) {
-      throw new UncheckedIOException(
-          "I/O error while trying to print license file of bundled JDK or JRE: " + e.getMessage(),
-          e);
+        }
     }
-  }
 }

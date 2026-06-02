@@ -257,7 +257,7 @@ public class PrepareDepsOfPatternsFunctionTest extends BuildViewTestCase {
         .hasExceptionThat()
         .hasMessageThat()
         .contains("no such package 'nope'");
-    assertThat(evaluationResult.getError(pdopsKey).getCycleInfo().get(0).getCycle())
+    assertThat(evaluationResult.getError(pdopsKey).getCycleInfo().get(0).cycle)
         .containsExactly(Label.parseCanonical("//foo:t1"), Label.parseCanonical("//foo:t2"))
         .inOrder();
   }

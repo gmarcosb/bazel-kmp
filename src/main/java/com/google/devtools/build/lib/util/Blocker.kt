@@ -11,58 +11,64 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import static java.lang.invoke.MethodType.methodType;
-
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-
-/** Blocker wrapper for jdk.internal.misc.Blocker. */
-public final class Blocker {
-
-  public static Object begin() {
-    try {
-      return BEGIN.invoke();
-    } catch (Throwable e) {
-      throw new LinkageError(e.getMessage(), e);
+/** Blocker wrapper for jdk.internal.misc.Blocker.  */
+object Blocker {
+    fun begin(): Any? {
+        try {
+            return com.google.devtools.build.lib.util.Blocker.BEGIN.invoke()
+        } catch (e: Throwable) {
+            throw java.lang.LinkageError(e.getMessage(), e)
+        }
     }
-  }
 
-  public static void end(Object comp) {
-    try {
-      END.invoke(comp);
-    } catch (Throwable e) {
-      throw new LinkageError(e.getMessage(), e);
+    fun end(comp: Any?) {
+        try {
+            com.google.devtools.build.lib.util.Blocker.END.invoke(comp)
+        } catch (e: Throwable) {
+            throw java.lang.LinkageError(e.getMessage(), e)
+        }
     }
-  }
 
-  private static final MethodHandle BEGIN = getBegin();
+    private val BEGIN: java.lang.invoke.MethodHandle = com.google.devtools.build.lib.util.Blocker.getBegin()
 
-  private static final MethodHandle END = getEnd();
+    private val END: java.lang.invoke.MethodHandle = com.google.devtools.build.lib.util.Blocker.getEnd()
 
-  private static Class<?> blockerType() {
-    return Runtime.version().feature() >= 23 ? boolean.class : long.class;
-  }
-
-  private static MethodHandle getEnd() {
-    try {
-      return MethodHandles.lookup()
-          .findStatic(
-              jdk.internal.misc.Blocker.class, "end", methodType(void.class, blockerType()));
-    } catch (ReflectiveOperationException e) {
-      throw new LinkageError(e.getMessage(), e);
+    private fun blockerType(): java.lang.Class<*> {
+        return if (java.lang.Runtime.version()
+                .feature() >= 23
+        ) Boolean::class.javaPrimitiveType else Long::class.javaPrimitiveType
     }
-  }
 
-  private static MethodHandle getBegin() {
-    try {
-      return MethodHandles.lookup()
-          .findStatic(jdk.internal.misc.Blocker.class, "begin", methodType(blockerType()));
-    } catch (ReflectiveOperationException e) {
-      throw new LinkageError(e.getMessage(), e);
-    }
-  }
+    private val end: java.lang.invoke.MethodHandle
+        get() {
+            try {
+                return java.lang.invoke.MethodHandles.lookup()
+                    .findStatic(
+                        jdk.internal.misc.Blocker::class.java,
+                        "end",
+                        java.lang.invoke.MethodType.methodType(
+                            Void.TYPE,
+                            com.google.devtools.build.lib.util.Blocker.blockerType()
+                        )
+                    )
+            } catch (e: java.lang.ReflectiveOperationException) {
+                throw java.lang.LinkageError(e.getMessage(), e)
+            }
+        }
 
-  private Blocker() {}
+    private val begin: java.lang.invoke.MethodHandle
+        get() {
+            try {
+                return java.lang.invoke.MethodHandles.lookup()
+                    .findStatic(
+                        jdk.internal.misc.Blocker::class.java,
+                        "begin",
+                        java.lang.invoke.MethodType.methodType(com.google.devtools.build.lib.util.Blocker.blockerType())
+                    )
+            } catch (e: java.lang.ReflectiveOperationException) {
+                throw java.lang.LinkageError(e.getMessage(), e)
+            }
+        }
 }

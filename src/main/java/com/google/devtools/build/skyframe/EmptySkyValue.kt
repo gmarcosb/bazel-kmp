@@ -11,17 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant
 
 /**
  * A SkyValue with no attached data. Preferable to a specialized empty value class to minimize
  * bloat.
  */
-public final class EmptySkyValue implements SkyValue {
-
-  @SerializationConstant public static final EmptySkyValue INSTANCE = new EmptySkyValue();
-
-  public EmptySkyValue() {}
+object EmptySkyValue : SkyValue {
+    @SerializationConstant
+    val INSTANCE: EmptySkyValue = EmptySkyValue()
 }

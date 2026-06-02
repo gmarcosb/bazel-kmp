@@ -11,65 +11,64 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.actiongraph.v2;
+package com.google.devtools.build.lib.skyframe.actiongraph.v2
 
-import java.io.IOException;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Basic class to abstract action graph cache functionality.
  */
-abstract class BaseCache<K, P> {
-  private final Map<K, Integer> cache = new ConcurrentHashMap<>();
-  protected final AqueryOutputHandler aqueryOutputHandler;
-  // protobuf interprets the value 0 as "default value" for uint64, thus treating the field as
-  // "unset". We should start from 1 instead.
-  private final AtomicInteger nextId = new AtomicInteger(1);
+internal abstract class BaseCache<K, P>(protected val aqueryOutputHandler: AqueryOutputHandler?) {
+    private val cache: MutableMap<K?, Int?> = ConcurrentHashMap<K?, Int?>()
 
-  BaseCache(AqueryOutputHandler aqueryOutputHandler) {
-    this.aqueryOutputHandler = aqueryOutputHandler;
-  }
+    // protobuf interprets the value 0 as "default value" for uint64, thus treating the field as
+    // "unset". We should start from 1 instead.
+    private val nextId = AtomicInteger(1)
 
-  protected K transformToKey(K data) {
-    // In most cases, the data is the key but it can be overridden by subclasses.
-    return data;
-  }
+    protected open fun transformToKey(data: K?): K? {
+        // In most cases, the data is the key but it can be overridden by subclasses.
+        return data
+    }
 
-  /**
-   * Store the data in the internal cache, if it's not yet present. Return the generated id. Ids are
-   * positive and unique.
-   *
-   * <p>Stream the proto to output, the first time it's generated.
-   */
-  int dataToIdAndStreamOutputProto(K data) throws IOException, InterruptedException {
-    int id = -1;
-    K key = transformToKey(data);
-    boolean shouldOutputProto = false;
+    /**
+     * Store the data in the internal cache, if it's not yet present. Return the generated id. Ids are
+     * positive and unique.
+     * 
+     * 
+     * Stream the proto to output, the first time it's generated.
+     */
+    @Throws(IOException::class, InterruptedException::class)
+    fun dataToIdAndStreamOutputProto(data: K?): Int {
+        var id = -1
+        val key = transformToKey(data)
+        var shouldOutputProto = false
 
-    // Double-checked locking here:
-    // Once cache.get(key) != null it won't be changed again.
-    if (cache.get(key) == null) {
-      synchronized (this) {
+        // Double-checked locking here:
+        // Once cache.get(key) != null it won't be changed again.
         if (cache.get(key) == null) {
-          id = nextId.getAndIncrement();
-          // Note that this cannot be replaced by computeIfAbsent since createProto is a recursive
-          // operation for the case of nested sets which will call dataToId on the same object and
-          // thus computeIfAbsent again.
-          cache.put(key, id);
-          shouldOutputProto = true;
+            synchronized(this) {
+                if (cache.get(key) == null) {
+                    id = nextId.getAndIncrement()
+                    // Note that this cannot be replaced by computeIfAbsent since createProto is a recursive
+                    // operation for the case of nested sets which will call dataToId on the same object and
+                    // thus computeIfAbsent again.
+                    cache.put(key, id)
+                    shouldOutputProto = true
+                }
+            }
         }
-      }
+        if (shouldOutputProto) {
+            val proto = createProto(data, id)
+            toOutput(proto)
+        }
+        return cache.get(key)!!
     }
-    if (shouldOutputProto) {
-      P proto = createProto(data, id);
-      toOutput(proto);
-    }
-    return cache.get(key);
-  }
 
-  abstract P createProto(K key, int id) throws IOException, InterruptedException;
+    @Throws(IOException::class, InterruptedException::class)
+    abstract fun createProto(key: K?, id: Int): P?
 
-  abstract void toOutput(P proto) throws IOException;
+    @Throws(IOException::class)
+    abstract fun toOutput(proto: P?)
 }

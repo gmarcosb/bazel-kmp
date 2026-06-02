@@ -30,10 +30,10 @@ public class CycleInfoSubject extends Subject {
   }
 
   public IterableSubject hasPathToCycleThat() {
-    return check("getPathToCycle()").that(actual.getPathToCycle());
+    return check("getPathToCycle()").that(actual.pathToCycle);
   }
 
   public IterableSubject hasCycleThat() {
-    return check("getCycle()").that(actual.getCycle());
+    return check("getCycle()").that(actual.cycle);
   }
 }

@@ -11,34 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.skyframe.Differencer.DiffWithDelta.Delta;
-import java.util.Collection;
-import java.util.Map;
+import com.google.devtools.build.skyframe.Differencer
+import com.google.devtools.build.skyframe.Differencer.DiffWithDelta.Delta
+import com.google.devtools.build.skyframe.SkyKey
 
 /**
- * Immutable implementation of {@link Differencer.Diff}.
+ * Immutable implementation of [Differencer.Diff].
  */
-public class ImmutableDiff implements Differencer.Diff {
+class ImmutableDiff(valuesToInvalidate: Iterable<SkyKey?>, valuesToInject: MutableMap<SkyKey?, Delta?>) :
+    com.google.devtools.build.skyframe.Differencer.Diff {
+    private val valuesToInvalidate: com.google.common.collect.ImmutableList<SkyKey?>
+    private val valuesToInject: com.google.common.collect.ImmutableMap<SkyKey?, Delta?>
 
-  private final ImmutableList<SkyKey> valuesToInvalidate;
-  private final ImmutableMap<SkyKey, Delta> valuesToInject;
+    init {
+        this.valuesToInvalidate = com.google.common.collect.ImmutableList.copyOf<SkyKey?>(valuesToInvalidate)
+        this.valuesToInject = com.google.common.collect.ImmutableMap.copyOf<SkyKey?, Delta?>(valuesToInject)
+    }
 
-  public ImmutableDiff(Iterable<SkyKey> valuesToInvalidate, Map<SkyKey, Delta> valuesToInject) {
-    this.valuesToInvalidate = ImmutableList.copyOf(valuesToInvalidate);
-    this.valuesToInject = ImmutableMap.copyOf(valuesToInject);
-  }
+    override fun changedKeysWithoutNewValues(): MutableCollection<SkyKey?> {
+        return valuesToInvalidate
+    }
 
-  @Override
-  public Collection<SkyKey> changedKeysWithoutNewValues() {
-    return valuesToInvalidate;
-  }
-
-  @Override
-  public Map<SkyKey, Delta> changedKeysWithNewValues() {
-    return valuesToInject;
-  }
+    override fun changedKeysWithNewValues(): MutableMap<SkyKey?, Delta?> {
+        return valuesToInject
+    }
 }

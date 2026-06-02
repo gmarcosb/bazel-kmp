@@ -11,115 +11,120 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Throwables;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.bugreport.BugReporter;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.bugreport.BugReporter
+import com.google.devtools.build.lib.bugreport.BugReporter.logUnexpected
+import com.google.devtools.build.lib.supplier.InterruptibleSupplier.get
+import com.google.devtools.build.skyframe.SkyFunction
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
+import com.google.devtools.build.skyframe.SkyframeLookupResult
 
 /**
- * Helper to check if requested nodes are done in the graph. The only method {@link
- * #declareDependenciesAndCheckIfValuesMissing} calls {@link
- * SkyFunction.Environment#getValuesAndExceptions} and checks that all nodes are done, either with
+ * Helper to check if requested nodes are done in the graph. The only method [ ][.declareDependenciesAndCheckIfValuesMissing] calls [ ][SkyFunction.Environment.getValuesAndExceptions] and checks that all nodes are done, either with
  * values or expected exceptions.
- *
- * <p>Only use this helper if you know what you are doing! Most Skyframe users should not need to
+ * 
+ * 
+ * Only use this helper if you know what you are doing! Most Skyframe users should not need to
  * call it.
  */
-public final class GraphTraversingHelper {
-
-  /**
-   * Returns false iff for each key in {@code skyKeys}, the corresponding node is done with values
-   * in the Skyframe graph.
-   */
-  public static boolean declareDependenciesAndCheckIfValuesMissing(
-      SkyFunction.Environment env, Iterable<? extends SkyKey> skyKeys) throws InterruptedException {
-    return declareDependenciesAndCheckIfValuesMissing(
-        env, skyKeys, /*exceptionClass1=*/ null, /*exceptionClass2=*/ null);
-  }
-
-  /**
-   * Returns false iff for each key in {@code skyKeys}, corresponding node is done with values or
-   * specified {@code exceptionClass} errors in the Skyframe graph.
-   *
-   * <p>The exception class given cannot be a supertype or a subtype of {@link RuntimeException}, or
-   * a subtype of {@link InterruptedException}. See {@link
-   * SkyFunctionException#validateExceptionType} for details.
-   */
-  public static <E extends Exception> boolean declareDependenciesAndCheckIfValuesMissing(
-      SkyFunction.Environment env, Iterable<? extends SkyKey> skyKeys, Class<E> exceptionClass)
-      throws InterruptedException {
-    return declareDependenciesAndCheckIfValuesMissing(
-        env, skyKeys, exceptionClass, /*exceptionClass2=*/ null);
-  }
-
-  public static <E1 extends Exception, E2 extends Exception>
-      boolean declareDependenciesAndCheckIfValuesMissing(
-          SkyFunction.Environment env,
-          Iterable<? extends SkyKey> skyKeys,
-          @Nullable Class<E1> exceptionClass1,
-          @Nullable Class<E2> exceptionClass2)
-          throws InterruptedException {
-    return declareDependenciesAndCheckIfValuesMissing(
-        env, skyKeys, exceptionClass1, exceptionClass2, BugReporter.defaultInstance());
-  }
-
-  @VisibleForTesting
-  static <E1 extends Exception, E2 extends Exception>
-      boolean declareDependenciesAndCheckIfValuesMissing(
-          SkyFunction.Environment env,
-          Iterable<? extends SkyKey> skyKeys,
-          @Nullable Class<E1> exceptionClass1,
-          @Nullable Class<E2> exceptionClass2,
-          BugReporter bugReporter)
-          throws InterruptedException {
-    SkyframeLookupResult result = env.getValuesAndExceptions(skyKeys);
-    if (env.valuesMissing()) {
-      return true;
+object GraphTraversingHelper {
+    /**
+     * Returns false iff for each key in `skyKeys`, corresponding node is done with values or
+     * specified `exceptionClass` errors in the Skyframe graph.
+     * 
+     * 
+     * The exception class given cannot be a supertype or a subtype of [RuntimeException], or
+     * a subtype of [InterruptedException]. See [ ][SkyFunctionException.validateExceptionType] for details.
+     */
+    @Throws(java.lang.InterruptedException::class)
+    fun <E : java.lang.Exception?> declareDependenciesAndCheckIfValuesMissing(
+        env: com.google.devtools.build.skyframe.SkyFunction.Environment,
+        skyKeys: Iterable<out SkyKey?>,
+        exceptionClass: java.lang.Class<E?>?
+    ): Boolean {
+        return GraphTraversingHelper.declareDependenciesAndCheckIfValuesMissing<E?, java.lang.Exception?>(
+            env, skyKeys, exceptionClass,  /*exceptionClass2=*/null
+        )
     }
-    for (SkyKey key : skyKeys) {
-      try {
-        SkyValue value = result.getOrThrow(key, exceptionClass1, exceptionClass2);
-        if (value == null) {
-          bugReporter.logUnexpected("Value for: '%s' was missing, this should never happen", key);
-          return true;
+
+    /**
+     * Returns false iff for each key in `skyKeys`, the corresponding node is done with values
+     * in the Skyframe graph.
+     */
+    @kotlin.jvm.JvmOverloads
+    @Throws(java.lang.InterruptedException::class)
+    fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?>
+            declareDependenciesAndCheckIfValuesMissing(
+        env: com.google.devtools.build.skyframe.SkyFunction.Environment,
+        skyKeys: Iterable<out SkyKey?>,
+        exceptionClass1: java.lang.Class<E1?>? = null,
+        exceptionClass2: java.lang.Class<E2?>? = null
+    ): Boolean {
+        return GraphTraversingHelper.declareDependenciesAndCheckIfValuesMissing<E1?, E2?>(
+            env, skyKeys, exceptionClass1, exceptionClass2, BugReporter.defaultInstance()
+        )
+    }
+
+    @com.google.common.annotations.VisibleForTesting
+    @Throws(java.lang.InterruptedException::class)
+    fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?>
+            declareDependenciesAndCheckIfValuesMissing(
+        env: com.google.devtools.build.skyframe.SkyFunction.Environment,
+        skyKeys: Iterable<out SkyKey?>,
+        exceptionClass1: java.lang.Class<E1?>?,
+        exceptionClass2: java.lang.Class<E2?>?,
+        bugReporter: BugReporter
+    ): Boolean {
+        val result: SkyframeLookupResult = env.getValuesAndExceptions(skyKeys)
+        if (env.valuesMissing()) {
+            return true
         }
-      } catch (Exception e) {
-        if ((exceptionClass1 != null && exceptionClass1.isInstance(e))
-            || (exceptionClass2 != null && exceptionClass2.isInstance(e))) {
-          continue;
+        for (key in skyKeys) {
+            try {
+                val value: SkyValue? = result.getOrThrow<E1?, E2?>(key, exceptionClass1, exceptionClass2)
+                if (value == null) {
+                    bugReporter.logUnexpected("Value for: '%s' was missing, this should never happen", key)
+                    return true
+                }
+            } catch (e: java.lang.Exception) {
+                if ((exceptionClass1 != null && exceptionClass1.isInstance(e))
+                    || (exceptionClass2 != null && exceptionClass2.isInstance(e))
+                ) {
+                    continue
+                }
+                com.google.common.base.Throwables.throwIfUnchecked(e)
+                throw java.lang.IllegalStateException(
+                    "unexpected exception from " + com.google.common.collect.Iterables.toString(skyKeys), e
+                )
+            }
         }
-        Throwables.throwIfUnchecked(e);
-        throw new IllegalStateException(
-            "unexpected exception from " + Iterables.toString(skyKeys), e);
-      }
+        return false
     }
-    return false;
-  }
 
-  /**
-   * Returns false iff for each key in {@code skyKeys}, the corresponding node is done with values
-   * in the Skyframe graph, and every node evaluated successfully without an exception.
-   *
-   * <p>Prefer {@link #declareDependenciesAndCheckIfValuesMissing} when possible. This method is for
-   * {@link SkyFunction} callers that don't handle child exceptions themselves, and just want to
-   * propagate child exceptions upwards via Skyframe.
-   */
-  public static boolean declareDependenciesAndCheckIfValuesMissingMaybeWithExceptions(
-      SkyFunction.Environment env, Iterable<? extends SkyKey> skyKeys) throws InterruptedException {
-    SkyframeLookupResult result = env.getValuesAndExceptions(skyKeys);
-    if (env.valuesMissing()) {
-      return true;
+    /**
+     * Returns false iff for each key in `skyKeys`, the corresponding node is done with values
+     * in the Skyframe graph, and every node evaluated successfully without an exception.
+     * 
+     * 
+     * Prefer [.declareDependenciesAndCheckIfValuesMissing] when possible. This method is for
+     * [SkyFunction] callers that don't handle child exceptions themselves, and just want to
+     * propagate child exceptions upwards via Skyframe.
+     */
+    @Throws(java.lang.InterruptedException::class)
+    fun declareDependenciesAndCheckIfValuesMissingMaybeWithExceptions(
+        env: com.google.devtools.build.skyframe.SkyFunction.Environment, skyKeys: Iterable<out SkyKey?>
+    ): Boolean {
+        val result: SkyframeLookupResult = env.getValuesAndExceptions(skyKeys)
+        if (env.valuesMissing()) {
+            return true
+        }
+        for (key in skyKeys) {
+            if (result.get(key) == null) {
+                return true
+            }
+        }
+        return false
     }
-    for (SkyKey key : skyKeys) {
-      if (result.get(key) == null) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private GraphTraversingHelper() {}
 }

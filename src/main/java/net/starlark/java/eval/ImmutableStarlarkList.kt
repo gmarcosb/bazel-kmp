@@ -11,120 +11,102 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.eval
 
-package net.starlark.java.eval;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import java.util.Arrays;
-
-/** Partial implementation of an immutable {@code StarlarkList}. */
-abstract class ImmutableStarlarkList<E> extends StarlarkList<E> {
-
-  @Override
-  public final boolean isImmutable() {
-    return true;
-  }
-
-  @Override
-  public final boolean updateIteratorCount(int delta) {
-    return false;
-  }
-
-  @Override
-  public final Mutability mutability() {
-    return Mutability.IMMUTABLE;
-  }
-
-  @Override
-  public final void unsafeShallowFreeze() {
-    Mutability.Freezable.checkUnsafeShallowFreezePrecondition(this);
-  }
-
-  @Override
-  public final void addElement(E element) throws EvalException {
-    Starlark.checkMutable(this);
-  }
-
-  @Override
-  public final void addElementAt(int index, E element) throws EvalException {
-    Starlark.checkMutable(this);
-  }
-
-  @Override
-  public final void addElements(Iterable<? extends E> elements) throws EvalException {
-    Starlark.checkMutable(this);
-  }
-
-  @Override
-  public final void removeElementAt(int index) throws EvalException {
-    Starlark.checkMutable(this);
-  }
-
-  @Override
-  public final void setElementAt(int index, E value) throws EvalException {
-    Starlark.checkMutable(this);
-  }
-
-  @Override
-  public final void clearElements() throws EvalException {
-    Starlark.checkMutable(this);
-  }
-
-  @Override
-  public ImmutableList<E> getImmutableList() {
-    // Optimization: a frozen array needn't be copied.
-    // If the entire array is full, we can wrap it directly.
-    return Tuple.wrapImmutable(elems());
-  }
-
-  @Override
-  @SuppressWarnings("unchecked")
-  public E get(int i) {
-    Object[] elems = elems();
-    Preconditions.checkElementIndex(i, elems.length);
-    return (E) elems[i]; // unchecked
-  }
-
-  @Override
-  public int size() {
-    return elems().length;
-  }
-
-  @Override
-  public boolean contains(Object o) {
-    // StarlarkList contains only valid Starlark objects (which are non-null)
-    if (o == null) {
-      return false;
+/** Partial implementation of an immutable `StarlarkList`.  */
+internal abstract class ImmutableStarlarkList<E> : net.starlark.java.eval.StarlarkList<E?>() {
+    override fun isImmutable(): Boolean {
+        return true
     }
-    Object[] elems = elems();
-    int size = elems.length;
-    for (int i = 0; i < size; i++) {
-      Object elem = elems[i];
-      if (o.equals(elem)) {
-        return true;
-      }
-    }
-    return false;
-  }
 
-  /** Returns a new array of class Object[] containing the list elements. */
-  @Override
-  public Object[] toArray() {
-    Object[] elems = elems();
-    return Arrays.copyOf(elems, elems.length, Object[].class);
-  }
-
-  @SuppressWarnings("unchecked")
-  @Override
-  public <T> T[] toArray(T[] a) {
-    Object[] elems = elems();
-    if (a.length < elems.length) {
-      return (T[]) Arrays.copyOf(elems, elems.length, a.getClass());
-    } else {
-      System.arraycopy(elems, 0, a, 0, elems.length);
-      Arrays.fill(a, elems.length, a.length, null);
-      return a;
+    override fun updateIteratorCount(delta: Int): Boolean {
+        return false
     }
-  }
+
+    override fun mutability(): net.starlark.java.eval.Mutability? {
+        return net.starlark.java.eval.Mutability.Companion.IMMUTABLE
+    }
+
+    override fun unsafeShallowFreeze() {
+        net.starlark.java.eval.Mutability.Freezable.Companion.checkUnsafeShallowFreezePrecondition(this)
+    }
+
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun addElement(element: E?) {
+        net.starlark.java.eval.Starlark.Companion.checkMutable(this)
+    }
+
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun addElementAt(index: Int, element: E?) {
+        net.starlark.java.eval.Starlark.Companion.checkMutable(this)
+    }
+
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun addElements(elements: Iterable<out E?>?) {
+        net.starlark.java.eval.Starlark.Companion.checkMutable(this)
+    }
+
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun removeElementAt(index: Int) {
+        net.starlark.java.eval.Starlark.Companion.checkMutable(this)
+    }
+
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun setElementAt(index: Int, value: E?) {
+        net.starlark.java.eval.Starlark.Companion.checkMutable(this)
+    }
+
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun clearElements() {
+        net.starlark.java.eval.Starlark.Companion.checkMutable(this)
+    }
+
+    override fun getImmutableList(): com.google.common.collect.ImmutableList<E?> {
+        // Optimization: a frozen array needn't be copied.
+        // If the entire array is full, we can wrap it directly.
+        return net.starlark.java.eval.Tuple.Companion.wrapImmutable<E?>(elems())
+    }
+
+    override fun get(i: Int): E? {
+        val elems: Array<Any?> = elems()
+        com.google.common.base.Preconditions.checkElementIndex(i, elems.size)
+        return elems[i] as E? // unchecked
+    }
+
+    override fun size(): Int {
+        return elems().length
+    }
+
+    override fun contains(o: Any?): Boolean {
+        // StarlarkList contains only valid Starlark objects (which are non-null)
+        if (o == null) {
+            return false
+        }
+        val elems: Array<Any?> = elems()
+        val size = elems.size
+        for (i in 0..<size) {
+            val elem = elems[i]
+            if (o == elem) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /** Returns a new array of class Object[] containing the list elements.  */
+    override fun toArray(): Array<Any?> {
+        val elems: Array<Any?> = elems()
+        return java.util.Arrays.copyOf<Any?, Any?>(elems, elems.size, Array<Any>::class.java)
+    }
+
+    override fun <T> toArray(a: Array<T?>): Array<T?> {
+        val elems: Array<Any?> = elems()
+        if (a.size < elems.size) {
+            return java.util.Arrays.copyOf<Any?, Any?>(elems, elems.size, a.getClass()) as Array<T?>
+        } else {
+            java.lang.System.arraycopy(elems, 0, a, 0, elems.size)
+            java.util.Arrays.fill(a, elems.size, a.size, null)
+            return a
+        }
+    }
 }

@@ -11,19 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.actiongraph.v2;
+package com.google.devtools.build.lib.skyframe.actiongraph.v2
 
-import java.util.concurrent.Callable;
+import java.util.concurrent.Callable
 
-/** AqueryOutputHandler that receives and consumes tasks via a work queue. */
-public interface AqueryConsumingOutputHandler extends AqueryOutputHandler {
+/** AqueryOutputHandler that receives and consumes tasks via a work queue.  */
+interface AqueryConsumingOutputHandler : AqueryOutputHandler {
+    fun startConsumer(): Callable<Void?>?
 
-  Callable<Void> startConsumer();
-
-  /**
-   * Stops the consumer thread.
-   *
-   * @param discardRemainingTasks true in case an error occurred with the producer
-   */
-  void stopConsumer(boolean discardRemainingTasks) throws InterruptedException;
+    /**
+     * Stops the consumer thread.
+     * 
+     * @param discardRemainingTasks true in case an error occurred with the producer
+     */
+    @Throws(InterruptedException::class)
+    fun stopConsumer(discardRemainingTasks: Boolean)
 }

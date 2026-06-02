@@ -84,8 +84,8 @@ public final class FileDependencySerializerTest {
     ExecutionException e =
         assertThrows(ExecutionException.class, () -> ((FutureFileDataInfo) result).get());
     assertThat(e).hasCauseThat().isInstanceOf(MissingSkyframeEntryException.class);
-    assertThat(serializer.getCounters().nodesWithProcessingErrors.get()).isEqualTo(1);
-    assertThat(serializer.getCounters().nodesWaitingForDeps.get()).isEqualTo(0);
+    assertThat(serializer.counters.nodesWithProcessingErrors.get()).isEqualTo(1);
+    assertThat(serializer.counters.nodesWaitingForDeps.get()).isEqualTo(0);
   }
 
   @Test
@@ -95,8 +95,8 @@ public final class FileDependencySerializerTest {
     FileDataInfoOrFuture result = serializer.registerDependency(key);
 
     assertThat(result).isEqualTo(InvalidationDataInfoOrFuture.ConstantFileData.CONSTANT_FILE);
-    assertThat(serializer.getCounters().nodesWaitingForDeps.get()).isEqualTo(0);
-    assertThat(serializer.getCounters().nodesWithProcessingErrors.get()).isEqualTo(0);
+    assertThat(serializer.counters.nodesWaitingForDeps.get()).isEqualTo(0);
+    assertThat(serializer.counters.nodesWithProcessingErrors.get()).isEqualTo(0);
   }
 
   @Test
@@ -112,7 +112,7 @@ public final class FileDependencySerializerTest {
     when(symlinkFsv.realRootedPath(symlinkRootedPath)).thenReturn(symlinkRootedPath);
     when(symlinkFsv.exists()).thenReturn(true);
     when(symlinkFsv.isDirectory()).thenReturn(false);
-    when(nodeEntry.getValue()).thenReturn(symlinkFsv);
+    when(nodeEntry.value).thenReturn(symlinkFsv);
     when(graph.getIfPresent(symlinkKey)).thenReturn(nodeEntry);
 
     // Symlink resolution calls getVersion on link path.
@@ -128,8 +128,8 @@ public final class FileDependencySerializerTest {
     ExecutionException e =
         assertThrows(ExecutionException.class, () -> ((FutureFileDataInfo) result).get());
     assertThat(e).hasCauseThat().isInstanceOf(MissingSkyframeEntryException.class);
-    assertThat(serializer.getCounters().nodesWithProcessingErrors.get()).isEqualTo(1);
-    assertThat(serializer.getCounters().nodesWaitingForDeps.get()).isEqualTo(0);
+    assertThat(serializer.counters.nodesWithProcessingErrors.get()).isEqualTo(1);
+    assertThat(serializer.counters.nodesWaitingForDeps.get()).isEqualTo(0);
   }
 
   @Test
@@ -147,7 +147,7 @@ public final class FileDependencySerializerTest {
     when(fsv.realRootedPath(rootedPath)).thenReturn(rootedPath);
     when(fsv.exists()).thenReturn(true);
     when(fsv.isDirectory()).thenReturn(false);
-    when(nodeEntry.getValue()).thenReturn(fsv);
+    when(nodeEntry.value).thenReturn(fsv);
     when(graph.getIfPresent(key)).thenReturn(nodeEntry);
 
     when(versionGetter.getFilePathOrSymlinkVersion(rootedPath.asPath())).thenReturn(2L);

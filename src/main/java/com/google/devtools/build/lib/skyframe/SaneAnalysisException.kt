@@ -11,10 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
 /**
  * Marker interface for exceptions during loading/analysis that do not prevent targets from being
- * configured. See {@link SkyframeBuildView#convertToAnalysisException}.
+ * configured. See [SkyframeBuildView.convertToAnalysisException].
  */
-public interface SaneAnalysisException extends DetailedException {}
+interface SaneAnalysisException : DetailedException

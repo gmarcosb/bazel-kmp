@@ -11,256 +11,210 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
-import static com.google.devtools.build.lib.skyframe.serialization.analysis.AlwaysMatch.ALWAYS_MATCH_RESULT;
-import static com.google.devtools.build.lib.skyframe.serialization.analysis.NestedMatchResultTypes.createNestedMatchResult;
-import static com.google.devtools.build.lib.skyframe.serialization.analysis.NoMatch.NO_MATCH_RESULT;
-
-import com.google.common.util.concurrent.FutureCallback;
-import com.google.common.util.concurrent.Futures;
-import com.google.devtools.build.lib.concurrent.QuiescingFuture;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileOpMatchResultTypes.FileOpMatchResult;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileOpMatchResultTypes.FileOpMatchResultOrFuture;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileOpMatchResultTypes.FutureFileOpMatchResult;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileSystemDependencies.FileOpDependency;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.NestedMatchResultTypes.AnalysisAndSourceMatch;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.NestedMatchResultTypes.AnalysisMatch;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.NestedMatchResultTypes.FutureNestedMatchResult;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.NestedMatchResultTypes.NestedMatchResult;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.NestedMatchResultTypes.NestedMatchResultOrFuture;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.NestedMatchResultTypes.SourceMatch;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.VarHandle;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.Executor;
+import com.google.devtools.build.lib.concurrent.QuiescingFuture
 
 /**
- * Computes matching versions for {@link NestedDependencies} with memoization.
- *
- * <p>Uses a backing {@link FileOpMatchMemoizingLookup} instance for any {@link FileOpDependency}
+ * Computes matching versions for [NestedDependencies] with memoization.
+ * 
+ * 
+ * Uses a backing [FileOpMatchMemoizingLookup] instance for any [FileOpDependency]
  * lookups.
- *
- * <p>The {@code validityHorizon} (VH) parameter of {@link #getValueOrFuture} has subtle semantics,
+ * 
+ * 
+ * The `validityHorizon` (VH) parameter of [.getValueOrFuture] has subtle semantics,
  * but works correctly, even in the presence of multiple overlapping nodes at different versions and
- * VH values. See {@link VersionedChangesValidator} and {@link VersionedChanges} for more details.
+ * VH values. See [VersionedChangesValidator] and [VersionedChanges] for more details.
  */
-final class NestedMatchMemoizingLookup
-    extends AbstractValueOrFutureMap<
-        NestedDependencies, NestedMatchResultOrFuture, NestedMatchResult, FutureNestedMatchResult> {
-  private final Executor executor;
-  private final FileOpMatchMemoizingLookup fileOpMatches;
+internal class NestedMatchMemoizingLookup
+    (
+    executor: java.util.concurrent.Executor,
+    fileOpMatches: FileOpMatchMemoizingLookup,
+    map: ConcurrentMap<NestedDependencies?, NestedMatchResultOrFuture?>?
+) : AbstractValueOrFutureMap<NestedDependencies?, NestedMatchResultOrFuture?, NestedMatchResult?, FutureNestedMatchResult?>(
+    map,
+    java.util.function.BiFunction { key: NestedDependencies?, consumer: java.util.function.BiConsumer<NestedDependencies?, NestedMatchResult?>? ->
+        FutureNestedMatchResult(
+            key,
+            consumer
+        )
+    },
+    FutureNestedMatchResult::class.java
+) {
+    private val executor: java.util.concurrent.Executor
+    private val fileOpMatches: FileOpMatchMemoizingLookup
 
-  NestedMatchMemoizingLookup(
-      Executor executor,
-      FileOpMatchMemoizingLookup fileOpMatches,
-      ConcurrentMap<NestedDependencies, NestedMatchResultOrFuture> map) {
-    super(map, FutureNestedMatchResult::new, FutureNestedMatchResult.class);
-    this.executor = executor;
-    this.fileOpMatches = fileOpMatches;
-  }
-
-  NestedMatchResultOrFuture getValueOrFuture(NestedDependencies key, int validityHorizon) {
-    NestedMatchResultOrFuture result = getOrCreateValueForSubclasses(key);
-    if (result instanceof FutureNestedMatchResult future && future.tryTakeOwnership()) {
-      try {
-        return populateFutureNestedMatchResult(validityHorizon, future);
-      } finally {
-        future.verifyComplete();
-      }
-    }
-    return result;
-  }
-
-  private NestedMatchResultOrFuture populateFutureNestedMatchResult(
-      int validityHorizon, FutureNestedMatchResult ownedFuture) {
-    return switch (ownedFuture.key()) {
-      case NestedDependencies.AvailableNestedDependencies nested -> {
-        var aggregator = new NestedFutureResultAggregator();
-        for (int i = 0; i < nested.analysisDependenciesCount(); i++) {
-          switch (nested.getAnalysisDependency(i)) {
-            case FileOpDependency dependency:
-              aggregator.addAnalysisResultOrFuture(
-                  fileOpMatches.getValueOrFuture(dependency, validityHorizon));
-              break;
-            case NestedDependencies child:
-              // In a common case, the cache reader sends a single top-level request that traverses
-              // the full set of dependencies and waits for that request to complete. Parallelizes
-              // recursive traversal of child nodes to avoid being singly-threaded in this scenario.
-              aggregator.signalNestedTaskAdded();
-              executor.execute(
-                  () -> {
-                    switch (getValueOrFuture(child, validityHorizon)) {
-                      case NestedMatchResult result:
-                        aggregator.addNestedResult(result);
-                        aggregator.signalNestedTaskComplete();
-                        break;
-                      case FutureNestedMatchResult future:
-                        // The aggregator decrements when the future completes.
-                        aggregator.addFutureNestedMatchResult(future);
-                        break;
-                    }
-                  });
-              break;
-          }
-        }
-        for (int i = 0; i < nested.sourcesCount(); i++) {
-          aggregator.addSourceResultOrFuture(
-              fileOpMatches.getValueOrFuture(nested.getSource(i), validityHorizon));
-        }
-        aggregator.notifyAllDependenciesAdded();
-        yield ownedFuture.completeWith(aggregator);
-      }
-      case NestedDependencies.MissingNestedDependencies missing ->
-          ownedFuture.completeWith(ALWAYS_MATCH_RESULT);
-    };
-  }
-
-  private static final class NestedFutureResultAggregator
-      extends QuiescingFuture<NestedMatchResult> {
-    private volatile int earliestAnalysisMatch = VersionedChanges.NO_MATCH;
-    private volatile int earliestSourceMatch = VersionedChanges.NO_MATCH;
-
-    private NestedFutureResultAggregator() {
-      super(directExecutor());
+    init {
+        this.executor = executor
+        this.fileOpMatches = fileOpMatches
     }
 
-    private void addAnalysisResultOrFuture(FileOpMatchResultOrFuture resultOrFuture) {
-      switch (resultOrFuture) {
-        case FileOpMatchResult result:
-          updateAnalysisVersionIfEarlier(result.version());
-          break;
-        case FutureFileOpMatchResult future:
-          increment();
-          Futures.addCallback(
-              future,
-              new ResultCallback<FileOpMatchResult>() {
-                @Override
-                void processResult(FileOpMatchResult result) {
-                  updateAnalysisVersionIfEarlier(result.version());
-                }
-              },
-              directExecutor());
-          break;
-      }
-    }
-
-    private void addSourceResultOrFuture(FileOpMatchResultOrFuture resultOrFuture) {
-      switch (resultOrFuture) {
-        case FileOpMatchResult result:
-          updateSourceVersionIfEarlier(result.version());
-          break;
-        case FutureFileOpMatchResult future:
-          increment();
-          Futures.addCallback(
-              future,
-              new ResultCallback<FileOpMatchResult>() {
-                @Override
-                void processResult(FileOpMatchResult result) {
-                  updateSourceVersionIfEarlier(result.version());
-                }
-              },
-              directExecutor());
-          break;
-      }
-    }
-
-    private void addNestedResult(NestedMatchResult result) {
-      switch (result) {
-        case NO_MATCH_RESULT:
-          break;
-        case ALWAYS_MATCH_RESULT:
-          earliestAnalysisMatch = VersionedChanges.ALWAYS_MATCH;
-          break;
-        case AnalysisMatch(int version):
-          updateAnalysisVersionIfEarlier(version);
-          break;
-        case SourceMatch(int version):
-          updateSourceVersionIfEarlier(version);
-          break;
-        case AnalysisAndSourceMatch(int analysisVersion, int sourceVersion):
-          updateAnalysisVersionIfEarlier(analysisVersion);
-          updateSourceVersionIfEarlier(sourceVersion);
-          break;
-      }
-    }
-
-    private void addFutureNestedMatchResult(FutureNestedMatchResult future) {
-      Futures.addCallback(
-          future,
-          new ResultCallback<NestedMatchResult>() {
-            @Override
-            void processResult(NestedMatchResult result) {
-              addNestedResult(result);
+    fun getValueOrFuture(key: NestedDependencies?, validityHorizon: Int): NestedMatchResultOrFuture? {
+        val result: NestedMatchResultOrFuture? = getOrCreateValueForSubclasses(key)
+        if (result is FutureNestedMatchResult && result.tryTakeOwnership()) {
+            try {
+                return populateFutureNestedMatchResult(validityHorizon, result)
+            } finally {
+                result.verifyComplete()
             }
-          },
-          directExecutor());
+        }
+        return result
     }
 
-    private void signalNestedTaskAdded() {
-      increment();
+    private fun populateFutureNestedMatchResult(
+        validityHorizon: Int, ownedFuture: FutureNestedMatchResult
+    ): NestedMatchResultOrFuture? {
+        return when (ownedFuture.key()) {
+            -> {
+                val aggregator = NestedFutureResultAggregator()
+                /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
+                /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
+                aggregator.notifyAllDependenciesAdded()
+                ownedFuture.completeWith(aggregator)
+            }
+
+            -> ownedFuture.completeWith(AlwaysMatch.ALWAYS_MATCH_RESULT)
+        }
     }
 
-    private void signalNestedTaskComplete() {
-      decrement();
+    private class NestedFutureResultAggregator
+
+        : QuiescingFuture<NestedMatchResult?>(com.google.common.util.concurrent.MoreExecutors.directExecutor()) {
+        @kotlin.concurrent.Volatile
+        private var earliestAnalysisMatch: Int = VersionedChanges.Companion.NO_MATCH
+
+        @kotlin.concurrent.Volatile
+        private var earliestSourceMatch: Int = VersionedChanges.Companion.NO_MATCH
+
+        fun addAnalysisResultOrFuture(resultOrFuture: FileOpMatchResultOrFuture) {
+            when (resultOrFuture) {
+                -> updateAnalysisVersionIfEarlier(result.version())
+                -> {
+                    increment()
+                    com.google.common.util.concurrent.Futures.addCallback<FileOpMatchResult?>(
+                        future,
+                        object : ResultCallback<FileOpMatchResult?>() {
+                            override fun processResult(result: FileOpMatchResult) {
+                                updateAnalysisVersionIfEarlier(result.version())
+                            }
+                        },
+                        com.google.common.util.concurrent.MoreExecutors.directExecutor()
+                    )
+                }
+            }
+        }
+
+        fun addSourceResultOrFuture(resultOrFuture: FileOpMatchResultOrFuture) {
+            when (resultOrFuture) {
+                -> updateSourceVersionIfEarlier(result.version())
+                -> {
+                    increment()
+                    com.google.common.util.concurrent.Futures.addCallback<FileOpMatchResult?>(
+                        future,
+                        object : ResultCallback<FileOpMatchResult?>() {
+                            override fun processResult(result: FileOpMatchResult) {
+                                updateSourceVersionIfEarlier(result.version())
+                            }
+                        },
+                        com.google.common.util.concurrent.MoreExecutors.directExecutor()
+                    )
+                }
+            }
+        }
+
+        fun addNestedResult(result: NestedMatchResult) {
+            when (result) {
+                NoMatch.NO_MATCH_RESULT -> {}
+                AlwaysMatch.ALWAYS_MATCH_RESULT -> earliestAnalysisMatch = VersionedChanges.Companion.ALWAYS_MATCH
+                -> updateAnalysisVersionIfEarlier(version)
+                -> updateSourceVersionIfEarlier(version)
+                -> {
+                    updateAnalysisVersionIfEarlier(analysisVersion)
+                    updateSourceVersionIfEarlier(sourceVersion)
+                }
+            }
+        }
+
+        fun addFutureNestedMatchResult(future: FutureNestedMatchResult) {
+            com.google.common.util.concurrent.Futures.addCallback<NestedMatchResult?>(
+                future,
+                object : ResultCallback<NestedMatchResult?>() {
+                    override fun processResult(result: NestedMatchResult) {
+                        addNestedResult(result)
+                    }
+                },
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
+        }
+
+        fun signalNestedTaskAdded() {
+            increment()
+        }
+
+        fun signalNestedTaskComplete() {
+            decrement()
+        }
+
+        fun notifyAllDependenciesAdded() {
+            decrement()
+        }
+
+        protected val value: NestedMatchResult?
+            get() = NestedMatchResultTypes.createNestedMatchResult(earliestAnalysisMatch, earliestSourceMatch)
+
+        fun updateAnalysisVersionIfEarlier(version: Int) {
+            var snapshot: Int
+            do {
+                snapshot = earliestAnalysisMatch
+            } while (version < snapshot && !ANALYSIS_MATCH_HANDLE.compareAndSet(this, snapshot, version))
+        }
+
+        fun updateSourceVersionIfEarlier(version: Int) {
+            var snapshot: Int
+            do {
+                snapshot = earliestSourceMatch
+            } while (version < snapshot && !SOURCE_MATCH_HANDLE.compareAndSet(this, snapshot, version))
+        }
+
+        /** [FutureCallback] implementation that includes common future handling behavior.  */
+        private abstract inner class ResultCallback<T> : com.google.common.util.concurrent.FutureCallback<T?> {
+            abstract fun processResult(result: T?)
+
+            override fun onSuccess(result: T?) {
+                processResult(result)
+                decrement()
+            }
+
+            override fun onFailure(t: Throwable) {
+                notifyException(t)
+            }
+        }
+
+        companion object {
+            private val ANALYSIS_MATCH_HANDLE: java.lang.invoke.VarHandle
+            private val SOURCE_MATCH_HANDLE: java.lang.invoke.VarHandle
+
+            init {
+                try {
+                    ANALYSIS_MATCH_HANDLE =
+                        java.lang.invoke.MethodHandles.lookup()
+                            .findVarHandle(
+                                NestedFutureResultAggregator::class.java,
+                                "earliestAnalysisMatch",
+                                Int::class.javaPrimitiveType
+                            )
+                    SOURCE_MATCH_HANDLE =
+                        java.lang.invoke.MethodHandles.lookup()
+                            .findVarHandle(
+                                NestedFutureResultAggregator::class.java,
+                                "earliestSourceMatch",
+                                Int::class.javaPrimitiveType
+                            )
+                } catch (e: java.lang.ReflectiveOperationException) {
+                    throw java.lang.ExceptionInInitializerError(e)
+                }
+            }
+        }
     }
-
-    private void notifyAllDependenciesAdded() {
-      decrement();
-    }
-
-    @Override
-    protected NestedMatchResult getValue() {
-      return createNestedMatchResult(earliestAnalysisMatch, earliestSourceMatch);
-    }
-
-    private void updateAnalysisVersionIfEarlier(int version) {
-      int snapshot;
-      do {
-        snapshot = earliestAnalysisMatch;
-      } while (version < snapshot && !ANALYSIS_MATCH_HANDLE.compareAndSet(this, snapshot, version));
-    }
-
-    private void updateSourceVersionIfEarlier(int version) {
-      int snapshot;
-      do {
-        snapshot = earliestSourceMatch;
-      } while (version < snapshot && !SOURCE_MATCH_HANDLE.compareAndSet(this, snapshot, version));
-    }
-
-    /** {@link FutureCallback} implementation that includes common future handling behavior. */
-    private abstract class ResultCallback<T> implements FutureCallback<T> {
-      abstract void processResult(T result);
-
-      @Override
-      public final void onSuccess(T result) {
-        processResult(result);
-        decrement();
-      }
-
-      @Override
-      public final void onFailure(Throwable t) {
-        notifyException(t);
-      }
-    }
-
-    private static final VarHandle ANALYSIS_MATCH_HANDLE;
-    private static final VarHandle SOURCE_MATCH_HANDLE;
-
-    static {
-      try {
-        ANALYSIS_MATCH_HANDLE =
-            MethodHandles.lookup()
-                .findVarHandle(
-                    NestedFutureResultAggregator.class, "earliestAnalysisMatch", int.class);
-        SOURCE_MATCH_HANDLE =
-            MethodHandles.lookup()
-                .findVarHandle(
-                    NestedFutureResultAggregator.class, "earliestSourceMatch", int.class);
-      } catch (ReflectiveOperationException e) {
-        throw new ExceptionInInitializerError(e);
-      }
-    }
-  }
 }

@@ -11,181 +11,179 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.base.Preconditions.checkState;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.Iterables;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.skyframe.serialization.SharedValueDeserializationContext.LookupAbandonedException;
-import com.google.devtools.build.lib.skyframe.serialization.SharedValueDeserializationContext.PeerFailedException;
-import com.google.devtools.build.lib.skyframe.serialization.SharedValueDeserializationContext.SkyframeLookup;
-import com.google.devtools.build.skyframe.SkyFunction.Environment.SkyKeyComputeState;
-import com.google.devtools.build.skyframe.SkyFunction.LookupEnvironment;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyframeLookupResult;
-import java.util.ArrayDeque;
-import java.util.concurrent.ExecutionException;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.skyframe.serialization.SharedValueDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.SharedValueDeserializationContext.LookupAbandonedException
+import com.google.devtools.build.lib.skyframe.serialization.SharedValueDeserializationContext.PeerFailedException
+import com.google.devtools.build.lib.skyframe.serialization.SkyframeDependencyException
+import com.google.devtools.build.lib.skyframe.serialization.SkyframeLookupContinuation
+import com.google.devtools.build.skyframe.SkyFunction.LookupEnvironment
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyframeLookupResult
+import java.util.ArrayDeque
+import java.util.concurrent.ExecutionException
 
 /**
  * A partial deserialization result that may require one or more Skyframe lookups to complete.
- *
- * <p>This class is designed to reside in {@link SkyKeyComputeState}. In particular, note that
- * {@link #abandon} should be called.
+ * 
+ * 
+ * This class is designed to reside in [SkyKeyComputeState]. In particular, note that
+ * [.abandon] should be called.
  */
-public final class SkyframeLookupContinuation {
-  private final ArrayDeque<SkyframeLookup<?>> skyframeLookups;
-  private final ListenableFuture<?> result;
+class SkyframeLookupContinuation internal constructor(
+    skyframeLookups: ArrayDeque<com.google.devtools.build.lib.skyframe.serialization.SharedValueDeserializationContext.SkyframeLookup<*>>,
+    result: com.google.common.util.concurrent.ListenableFuture<*>?
+) {
+    private val skyframeLookups: ArrayDeque<com.google.devtools.build.lib.skyframe.serialization.SharedValueDeserializationContext.SkyframeLookup<*>>
+    private val result: com.google.common.util.concurrent.ListenableFuture<*>?
 
-  private State state = State.LOOKUP;
+    private var state: State =
+        com.google.devtools.build.lib.skyframe.serialization.SkyframeLookupContinuation.State.LOOKUP
 
-  SkyframeLookupContinuation(
-      ArrayDeque<SkyframeLookup<?>> skyframeLookups, ListenableFuture<?> result) {
-    this.skyframeLookups = skyframeLookups;
-    this.result = result;
-  }
+    init {
+        this.skyframeLookups = skyframeLookups
+        this.result = result
+    }
 
-  private static enum State {
-    /** Start state that performs initial Skyframe lookups for any keys. */
-    LOOKUP,
+    private enum class State {
+        /** Start state that performs initial Skyframe lookups for any keys.  */
+        LOOKUP,
+
+        /**
+         * State that is ready to resume from restart.
+         * 
+         * 
+         * If this state is reached, all values should be present in Skyframe.
+         */
+        RESUME,
+
+        /**
+         * Marker indicating completion.
+         * 
+         * 
+         * It's an error to call [.process] from this state.
+         */
+        ENDED
+    }
+
     /**
-     * State that is ready to resume from restart.
-     *
-     * <p>If this state is reached, all values should be present in Skyframe.
+     * Performs the next deserialization processing step.
+     * 
+     * 
+     * Clients may need to call this twice, with the 2nd call being after a Skyframe restart.
+     * 
+     * @return a future containing the deserialization result (which could be pending deserialization
+     * occurring in other threads) or null if a Skyframe restart is needed
      */
-    RESUME,
+    @Throws(java.lang.InterruptedException::class, SkyframeDependencyException::class)
+    fun process(env: LookupEnvironment): com.google.common.util.concurrent.ListenableFuture<*>? {
+        return when (state) {
+            com.google.devtools.build.lib.skyframe.serialization.SkyframeLookupContinuation.State.LOOKUP -> doLookup(env)
+            com.google.devtools.build.lib.skyframe.serialization.SkyframeLookupContinuation.State.RESUME -> resume(env)
+            com.google.devtools.build.lib.skyframe.serialization.SkyframeLookupContinuation.State.ENDED -> throw java.lang.IllegalStateException(
+                "already ended: " + result
+            )
+        }
+    }
+
     /**
-     * Marker indicating completion.
-     *
-     * <p>It's an error to call {@link #process} from this state.
+     * Performs state cleanup.
+     * 
+     * 
+     * This must be called if the lookups cannot be completed, for example, if [ ][SkyKeyComputeState.close] is called on any containing compute state or if there's an error.
      */
-    ENDED;
-  }
-
-  /**
-   * Performs the next deserialization processing step.
-   *
-   * <p>Clients may need to call this twice, with the 2nd call being after a Skyframe restart.
-   *
-   * @return a future containing the deserialization result (which could be pending deserialization
-   *     occurring in other threads) or null if a Skyframe restart is needed
-   */
-  @Nullable
-  public ListenableFuture<?> process(LookupEnvironment env)
-      throws InterruptedException, SkyframeDependencyException {
-    return switch (state) {
-      case LOOKUP -> doLookup(env);
-      case RESUME -> resume(env);
-      case ENDED -> throw new IllegalStateException("already ended: " + result);
-    };
-  }
-
-  /**
-   * Performs state cleanup.
-   *
-   * <p>This must be called if the lookups cannot be completed, for example, if {@link
-   * SkyKeyComputeState#close} is called on any containing compute state or if there's an error.
-   */
-  public void abandon(LookupAbandonedException exception) {
-    for (SkyframeLookup<?> lookup : skyframeLookups) {
-      lookup.abandon(exception);
-    }
-    skyframeLookups.clear();
-  }
-
-  @VisibleForTesting
-  ArrayDeque<SkyframeLookup<?>> getSkyframeLookupsForTesting() {
-    return skyframeLookups;
-  }
-
-  /**
-   * Performs any needed Skyframe lookups.
-   *
-   * @return a future containing the deserialization result or null if a Skyframe restart is needed
-   */
-  @Nullable
-  private ListenableFuture<?> doLookup(LookupEnvironment env)
-      throws InterruptedException, SkyframeDependencyException {
-    if (skyframeLookups.isEmpty()) {
-      this.state = State.ENDED;
-      return result;
+    fun abandon(exception: LookupAbandonedException?) {
+        for (lookup in skyframeLookups) {
+            lookup.abandon(exception)
+        }
+        skyframeLookups.clear()
     }
 
-    // TODO: b/335901349 - consider implementing an optimized codepath for unary lookups.
-    SkyframeLookupResult lookupResult;
-    try {
-      // This is the only method that can throw InterruptedException.
-      lookupResult =
-          env.getValuesAndExceptions(Iterables.transform(skyframeLookups, SkyframeLookup::getKey));
-    } catch (InterruptedException e) {
-      abandon(new LookupAbandonedException(e));
-      Thread.currentThread().interrupt(); // Restores the interrupted status.
-      throw e;
+    @com.google.common.annotations.VisibleForTesting
+    fun getSkyframeLookupsForTesting(): ArrayDeque<com.google.devtools.build.lib.skyframe.serialization.SharedValueDeserializationContext.SkyframeLookup<*>> {
+        return skyframeLookups
     }
-    int lookupCount = skyframeLookups.size();
-    for (int i = 0; i < lookupCount; i++) {
-      SkyframeLookup<?> lookup = skyframeLookups.pollFirst();
-      if (lookupResult.queryDep(lookup.getKey(), lookup)) {
-        throwDependencyExceptionIfFailed(lookup);
-      } else {
-        // Consumes lookups from the front of the queue and keeps any that are not available by
-        // appending them to the back. The `lookupCount` loop bound ensures the re-appended lookups
-        // won't be consumed. Reusing `skyframeLookups` to store the lookups to perform after
-        // Skyframe restart reduces churn.
-        skyframeLookups.addLast(lookup); // value not available in Skyframe
-      }
-    }
-    if (skyframeLookups.isEmpty()) { // all lookups succeeded
-      this.state = State.ENDED;
-      return result;
-    }
-    this.state = State.RESUME;
-    return null; // Skyframe restart needed
-  }
 
-  /**
-   * Resumes deserialization after a Skyframe restart by consuming pending values.
-   *
-   * @return a future containing the deserialization result
-   */
-  private ListenableFuture<?> resume(LookupEnvironment env) throws SkyframeDependencyException {
-    // There was a Skyframe restart. Everything that was requested should be available now. This
-    // method should not be reachable by error bubbling because it can only be reached by
-    // pre-existing SkyKeyComputeState, which is evicted before error bubbling.
+    /**
+     * Performs any needed Skyframe lookups.
+     * 
+     * @return a future containing the deserialization result or null if a Skyframe restart is needed
+     */
+    @Throws(java.lang.InterruptedException::class, SkyframeDependencyException::class)
+    private fun doLookup(env: LookupEnvironment): com.google.common.util.concurrent.ListenableFuture<*>? {
+        if (skyframeLookups.isEmpty()) {
+            this.state = com.google.devtools.build.lib.skyframe.serialization.SkyframeLookupContinuation.State.ENDED
+            return result
+        }
 
-    SkyframeLookupResult lookupResult = env.getLookupHandleForPreviouslyRequestedDeps();
-    for (SkyframeLookup<?> lookup : skyframeLookups) {
-      SkyKey key = lookup.getKey();
-      checkState(
-          lookupResult.queryDep(key, lookup),
-          "previously requested key %s missing from Skyframe after restart",
-          key);
-      throwDependencyExceptionIfFailed(lookup);
+        // TODO: b/335901349 - consider implementing an optimized codepath for unary lookups.
+        val lookupResult: SkyframeLookupResult
+        try {
+            // This is the only method that can throw InterruptedException.
+            lookupResult =
+                env.getValuesAndExceptions(
+                    com.google.common.collect.Iterables.transform<com.google.devtools.build.lib.skyframe.serialization.SharedValueDeserializationContext.SkyframeLookup<*>?, SkyKey?>(
+                        skyframeLookups,
+                        com.google.common.base.Function { obj: com.google.devtools.build.lib.skyframe.serialization.SharedValueDeserializationContext.SkyframeLookup<*>? -> obj.getKey() })
+                )
+        } catch (e: java.lang.InterruptedException) {
+            abandon(LookupAbandonedException(e))
+            java.lang.Thread.currentThread().interrupt() // Restores the interrupted status.
+            throw e
+        }
+        val lookupCount: Int = skyframeLookups.size()
+        /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
+        if (skyframeLookups.isEmpty()) { // all lookups succeeded
+            this.state = com.google.devtools.build.lib.skyframe.serialization.SkyframeLookupContinuation.State.ENDED
+            return result
+        }
+        this.state = com.google.devtools.build.lib.skyframe.serialization.SkyframeLookupContinuation.State.RESUME
+        return null // Skyframe restart needed
     }
-    skyframeLookups.clear();
-    this.state = State.ENDED;
-    return result;
-  }
 
-  private void throwDependencyExceptionIfFailed(SkyframeLookup<?> lookup)
-      throws SkyframeDependencyException {
-    if (!lookup.isFailed()) {
-      return;
+    /**
+     * Resumes deserialization after a Skyframe restart by consuming pending values.
+     * 
+     * @return a future containing the deserialization result
+     */
+    @Throws(SkyframeDependencyException::class)
+    private fun resume(env: LookupEnvironment): com.google.common.util.concurrent.ListenableFuture<*>? {
+        // There was a Skyframe restart. Everything that was requested should be available now. This
+        // method should not be reachable by error bubbling because it can only be reached by
+        // pre-existing SkyKeyComputeState, which is evicted before error bubbling.
+
+        val lookupResult: SkyframeLookupResult = env.getLookupHandleForPreviouslyRequestedDeps()
+        for (lookup in skyframeLookups) {
+            val key: SkyKey? = lookup.getKey()
+            com.google.common.base.Preconditions.checkState(
+                lookupResult.queryDep(key, lookup),
+                "previously requested key %s missing from Skyframe after restart",
+                key
+            )
+            throwDependencyExceptionIfFailed(lookup)
+        }
+        skyframeLookups.clear()
+        this.state = com.google.devtools.build.lib.skyframe.serialization.SkyframeLookupContinuation.State.ENDED
+        return result
     }
-    this.state = State.ENDED;
-    try {
-      var unused = Futures.getDone(lookup);
-    } catch (ExecutionException e) {
-      // In general, SkyframeLookups can contain either SkyframeDependencyExceptions or
-      // LookupAbandonedExceptions. This is only reachable before any LookupAbandonedExceptions can
-      // be propagated.
-      var cause = (SkyframeDependencyException) e.getCause();
-      abandon(new PeerFailedException(cause));
-      throw cause;
+
+    @Throws(SkyframeDependencyException::class)
+    private fun throwDependencyExceptionIfFailed(lookup: com.google.devtools.build.lib.skyframe.serialization.SharedValueDeserializationContext.SkyframeLookup<*>) {
+        if (!lookup.isFailed()) {
+            return
+        }
+        this.state = com.google.devtools.build.lib.skyframe.serialization.SkyframeLookupContinuation.State.ENDED
+        try {
+            val unused: java.lang.Void? = com.google.common.util.concurrent.Futures.getDone<java.lang.Void?>(lookup)
+        } catch (e: ExecutionException) {
+            // In general, SkyframeLookups can contain either SkyframeDependencyExceptions or
+            // LookupAbandonedExceptions. This is only reachable before any LookupAbandonedExceptions can
+            // be propagated.
+            val cause: SkyframeDependencyException = e.getCause() as SkyframeDependencyException
+            abandon(PeerFailedException(cause))
+            throw cause
+        }
+        throw java.lang.IllegalStateException("should have thrown an exception: " + lookup)
     }
-    throw new IllegalStateException("should have thrown an exception: " + lookup);
-  }
 }

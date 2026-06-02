@@ -11,25 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
-
-import com.google.devtools.build.lib.util.DetailedExitCode;
+import com.google.devtools.build.lib.util.DetailedExitCode
 
 /**
  * This event is fired when the Blaze command is complete (clean, build, test, etc.). It is fired
- * even if the command terminated abnormally, possibly even before {@link CommandStartEvent} was
+ * even if the command terminated abnormally, possibly even before [CommandStartEvent] was
  * fired. Subscribers should be tolerant to such a situation.
  */
-public class CommandCompleteEvent {
-  private final DetailedExitCode detailedExitCode;
+class CommandCompleteEvent(detailedExitCode: DetailedExitCode?) {
+    private val detailedExitCode: DetailedExitCode?
 
-  public CommandCompleteEvent(DetailedExitCode detailedExitCode) {
-    this.detailedExitCode = detailedExitCode;
-  }
+    init {
+        this.detailedExitCode = detailedExitCode
+    }
 
-  /** Returns the exit code of the blaze command. */
-  public DetailedExitCode getExitCode() {
-    return detailedExitCode;
-  }
+    val exitCode: DetailedExitCode?
+        /** Returns the exit code of the blaze command.  */
+        get() = detailedExitCode
 }

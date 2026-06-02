@@ -11,121 +11,117 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import static com.google.common.base.MoreObjects.toStringHelper;
-import static com.google.common.base.Preconditions.checkArgument;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencies.AvailableFileDependencies;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencies.MissingFileDependencies;
-import java.util.Arrays;
-import java.util.Collection;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencies
+import com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencies.AvailableFileDependencies
+import com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencyDeserializer.NestedDependenciesOrFuture
+import com.google.devtools.build.lib.skyframe.serialization.analysis.FileSystemDependencies
 
 /**
- * A representation of a recursively composable set of {@link FileSystemDependencies}.
- *
- * <p>This corresponds to a previously serialized {@link
- * com.google.devtools.build.lib.skyframe.AbstractNestedFileOpNodes} instance, but this
+ * A representation of a recursively composable set of [FileSystemDependencies].
+ * 
+ * 
+ * This corresponds to a previously serialized [ ] instance, but this
  * implementation is mostly decoupled from Bazel code.
  */
-abstract sealed class NestedDependencies
-    implements FileSystemDependencies, FileDependencyDeserializer.NestedDependenciesOrFuture
-    permits NestedDependencies.AvailableNestedDependencies,
-        NestedDependencies.MissingNestedDependencies {
-  // While formally possible, we don't anticipate analysisDependencies being empty often.
-  // `sources` could be frequently empty.
-  static final FileDependencies[] EMPTY_SOURCES = new FileDependencies[0];
+internal abstract class NestedDependencies
 
-  static NestedDependencies from(
-      FileSystemDependencies[] analysisDependencies, FileDependencies[] sources) {
-    for (FileSystemDependencies dep : analysisDependencies) {
-      if (dep.isMissingData()) {
-        return new MissingNestedDependencies();
-      }
-    }
-    int size = sources.length;
-    var availableSources = new AvailableFileDependencies[size];
-    for (int i = 0; i < size; i++) {
-      switch (sources[i]) {
-        case AvailableFileDependencies available:
-          availableSources[i] = available;
-          break;
-        case MissingFileDependencies unused:
-          return new MissingNestedDependencies();
-      }
-    }
-    return new AvailableNestedDependencies(analysisDependencies, availableSources);
-  }
+    : FileSystemDependencies, NestedDependenciesOrFuture {
+    internal class AvailableNestedDependencies private constructor(
+        analysisDependencies: Array<FileSystemDependencies>,
+        sources: Array<AvailableFileDependencies?>
+    ) : NestedDependencies() {
+        private val analysisDependencies: Array<FileSystemDependencies>
+        private val sources: Array<AvailableFileDependencies?>
 
-  @VisibleForTesting
-  static NestedDependencies from(
-      Collection<? extends FileSystemDependencies> analysisDependencies,
-      Collection<FileDependencies> sources) {
-    return from(
-        analysisDependencies.toArray(FileSystemDependencies[]::new),
-        sources.toArray(FileDependencies[]::new));
-  }
+        init {
+            com.google.common.base.Preconditions.checkArgument(
+                analysisDependencies.size >= 1 || sources.size >= 1,
+                "analysisDependencies and sources both empty"
+            )
+            this.analysisDependencies = analysisDependencies
+            this.sources = sources
+        }
 
-  static NestedDependencies newMissingInstance() {
-    return new MissingNestedDependencies();
-  }
+        val isMissingData: Boolean
+            get() = false
 
-  static final class AvailableNestedDependencies extends NestedDependencies {
-    private final FileSystemDependencies[] analysisDependencies;
-    private final AvailableFileDependencies[] sources;
+        fun analysisDependenciesCount(): Int {
+            return analysisDependencies.size
+        }
 
-    private AvailableNestedDependencies(
-        FileSystemDependencies[] analysisDependencies, AvailableFileDependencies[] sources) {
-      checkArgument(
-          analysisDependencies.length >= 1 || sources.length >= 1,
-          "analysisDependencies and sources both empty");
-      this.analysisDependencies = analysisDependencies;
-      this.sources = sources;
+        fun getAnalysisDependency(index: Int): FileSystemDependencies? {
+            return analysisDependencies[index]
+        }
+
+        fun sourcesCount(): Int {
+            return sources.size
+        }
+
+        fun getSource(index: Int): AvailableFileDependencies? {
+            return sources[index]
+        }
+
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(this)
+                .add("analysisDependencies", java.util.Arrays.asList<FileSystemDependencies?>(*analysisDependencies))
+                .add("sources", java.util.Arrays.asList<AvailableFileDependencies?>(*sources))
+                .toString()
+        }
     }
 
-    @Override
-    public boolean isMissingData() {
-      return false;
+    /**
+     * Signals missing data in the nested set of dependencies.
+     * 
+     * 
+     * This is deliberately not a singleton to avoid a memory leak in the weak-value caches in
+     * [FileDependencyDeserializer].
+     */
+    internal class MissingNestedDependencies private constructor() : NestedDependencies() {
+        val isMissingData: Boolean
+            get() = true
     }
 
-    int analysisDependenciesCount() {
-      return analysisDependencies.length;
-    }
+    companion object {
+        // While formally possible, we don't anticipate analysisDependencies being empty often.
+        // `sources` could be frequently empty.
+        @kotlin.jvm.JvmField
+        val EMPTY_SOURCES: Array<FileDependencies?> = arrayOfNulls<FileDependencies>(0)
 
-    FileSystemDependencies getAnalysisDependency(int index) {
-      return analysisDependencies[index];
-    }
+        fun from(
+            analysisDependencies: Array<FileSystemDependencies>, sources: Array<FileDependencies?>
+        ): NestedDependencies {
+            for (dep in analysisDependencies) {
+                if (dep.isMissingData()) {
+                    return MissingNestedDependencies()
+                }
+            }
+            val size = sources.size
+            val availableSources: Array<AvailableFileDependencies?> = arrayOfNulls<AvailableFileDependencies>(size)
+            for (i in 0..<size) {
+                when (sources[i]) {
+                    -> availableSources[i] = available
+                    -> return MissingNestedDependencies()
+                }
+            }
+            return AvailableNestedDependencies(analysisDependencies, availableSources)
+        }
 
-    int sourcesCount() {
-      return sources.length;
-    }
+        @com.google.common.annotations.VisibleForTesting
+        fun from(
+            analysisDependencies: MutableCollection<out FileSystemDependencies?>,
+            sources: MutableCollection<FileDependencies?>
+        ): NestedDependencies {
+            return Companion.from(
+                analysisDependencies.toArray<FileSystemDependencies?>(java.util.function.IntFunction { _Dummy_.__Array__() }),
+                sources.toArray<FileDependencies?>(java.util.function.IntFunction { _Dummy_.__Array__() })
+            )
+        }
 
-    AvailableFileDependencies getSource(int index) {
-      return sources[index];
+        @kotlin.jvm.JvmStatic
+        fun newMissingInstance(): NestedDependencies {
+            return MissingNestedDependencies()
+        }
     }
-
-    @Override
-    public String toString() {
-      return toStringHelper(this)
-          .add("analysisDependencies", Arrays.asList(analysisDependencies))
-          .add("sources", Arrays.asList(sources))
-          .toString();
-    }
-  }
-
-  /**
-   * Signals missing data in the nested set of dependencies.
-   *
-   * <p>This is deliberately not a singleton to avoid a memory leak in the weak-value caches in
-   * {@link FileDependencyDeserializer}.
-   */
-  static final class MissingNestedDependencies extends NestedDependencies {
-    private MissingNestedDependencies() {}
-
-    @Override
-    public boolean isMissingData() {
-      return true;
-    }
-  }
 }

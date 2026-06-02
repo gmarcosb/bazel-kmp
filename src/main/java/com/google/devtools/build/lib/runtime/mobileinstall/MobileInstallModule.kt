@@ -11,19 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime.mobileinstall;
+package com.google.devtools.build.lib.runtime.mobileinstall
 
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.ServerBuilder;
-import com.google.devtools.common.options.OptionsParsingResult;
+import com.google.devtools.build.lib.runtime.BlazeModule
+import com.google.devtools.common.options.OptionsParsingResult
 
 /**
  * Module for mobile_install.
  */
-public final class MobileInstallModule extends BlazeModule {
-  @Override
-  public void serverInit(OptionsParsingResult startupOptions, ServerBuilder builder) {
-    builder.addCommands(
-        new MobileInstallCommand());
-  }
+class MobileInstallModule : BlazeModule() {
+    public override fun serverInit(startupOptions: OptionsParsingResult?, builder: ServerBuilder) {
+        builder.addCommands(
+            MobileInstallCommand()
+        )
+    }
 }

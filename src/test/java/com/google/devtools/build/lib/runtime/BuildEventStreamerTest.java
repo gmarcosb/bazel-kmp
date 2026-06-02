@@ -859,8 +859,8 @@ public final class BuildEventStreamerTest extends FoundationTestCase {
     BuildEventStreamer.OutErrProvider outErr = mock(BuildEventStreamer.OutErrProvider.class);
     String stdoutMsg = "Some text that was written to stdout.";
     String stderrMsg = "The UI text that bazel wrote to stderr.";
-    when(outErr.getOut()).thenReturn(ImmutableList.of(stdoutMsg));
-    when(outErr.getErr()).thenReturn(ImmutableList.of(stderrMsg));
+    when(outErr.out).thenReturn(ImmutableList.of(stdoutMsg));
+    when(outErr.err).thenReturn(ImmutableList.of(stderrMsg));
     BuildEvent startEvent =
         new GenericBuildEvent(
             testId("Initial"), ImmutableSet.of(ProgressEvent.INITIAL_PROGRESS_UPDATE));
@@ -886,8 +886,8 @@ public final class BuildEventStreamerTest extends FoundationTestCase {
 
     // As there is only one progress event, the OutErrProvider should be queried
     // only once for stdout and stderr.
-    verify(outErr, times(1)).getOut();
-    verify(outErr, times(1)).getErr();
+    verify(outErr, times(1)).out;
+    verify(outErr, times(1)).err;
   }
 
   @Test
@@ -897,8 +897,8 @@ public final class BuildEventStreamerTest extends FoundationTestCase {
     BuildEventStreamer.OutErrProvider outErr = mock(BuildEventStreamer.OutErrProvider.class);
     String stdoutMsg = "Some text that was written to stdout.";
     String stderrMsg = "The UI text that bazel wrote to stderr.";
-    when(outErr.getOut()).thenReturn(ImmutableList.of(stdoutMsg));
-    when(outErr.getErr()).thenReturn(ImmutableList.of(stderrMsg));
+    when(outErr.out).thenReturn(ImmutableList.of(stdoutMsg));
+    when(outErr.err).thenReturn(ImmutableList.of(stderrMsg));
     BuildEvent startEvent =
         new GenericBuildEvent(
             testId("Initial"), ImmutableSet.of(ProgressEvent.INITIAL_PROGRESS_UPDATE));
@@ -920,8 +920,8 @@ public final class BuildEventStreamerTest extends FoundationTestCase {
 
     // As there is only one progress event, the OutErrProvider should be queried
     // only once for stdout and stderr.
-    verify(outErr, times(1)).getOut();
-    verify(outErr, times(1)).getErr();
+    verify(outErr, times(1)).out;
+    verify(outErr, times(1)).err;
   }
 
   private static <T> ImmutableList<ImmutableList<Pair<T, T>>> consumeToLists(
@@ -1060,10 +1060,10 @@ public final class BuildEventStreamerTest extends FoundationTestCase {
     String firstStderrMsg = "The UI text that bazel wrote to stderr.";
     String secondStdoutMsg = "More text that was written to stdout, still before the start event.";
     String secondStderrMsg = "More text written to stderr, still before the start event.";
-    when(outErr.getOut())
+    when(outErr.out)
         .thenReturn(ImmutableList.of(firstStdoutMsg))
         .thenReturn(ImmutableList.of(secondStdoutMsg));
-    when(outErr.getErr())
+    when(outErr.err)
         .thenReturn(ImmutableList.of(firstStderrMsg))
         .thenReturn(ImmutableList.of(secondStderrMsg));
     BuildEvent startEvent =
@@ -1090,8 +1090,8 @@ public final class BuildEventStreamerTest extends FoundationTestCase {
 
     // As there is only one progress event, the OutErrProvider should be queried
     // only once per flush() for stdout and stderr.
-    verify(outErr, times(2)).getOut();
-    verify(outErr, times(2)).getErr();
+    verify(outErr, times(2)).out;
+    verify(outErr, times(2)).err;
   }
 
   @Test
@@ -1102,8 +1102,8 @@ public final class BuildEventStreamerTest extends FoundationTestCase {
     String firstStderrMsg = "The UI text that bazel wrote to stderr.";
     String secondStdoutMsg = "More text that was written to stdout, still before the start event.";
     String secondStderrMsg = "More text written to stderr, still before the start event.";
-    when(outErr.getOut()).thenReturn(ImmutableList.of(firstStdoutMsg, secondStdoutMsg));
-    when(outErr.getErr()).thenReturn(ImmutableList.of(firstStderrMsg, secondStderrMsg));
+    when(outErr.out).thenReturn(ImmutableList.of(firstStdoutMsg, secondStdoutMsg));
+    when(outErr.err).thenReturn(ImmutableList.of(firstStderrMsg, secondStderrMsg));
     BuildEvent startEvent =
         new GenericBuildEvent(
             testId("Initial"), ImmutableSet.of(ProgressEvent.INITIAL_PROGRESS_UPDATE));
@@ -1134,8 +1134,8 @@ public final class BuildEventStreamerTest extends FoundationTestCase {
     assertThat(thirdProgressEventProto.getProgress().getStderr()).isEqualTo(secondStderrMsg);
 
     // The OutErrProvider should be queried only once per flush().
-    verify(outErr, times(1)).getOut();
-    verify(outErr, times(1)).getErr();
+    verify(outErr, times(1)).out;
+    verify(outErr, times(1)).err;
   }
 
   @Test
@@ -1215,8 +1215,8 @@ public final class BuildEventStreamerTest extends FoundationTestCase {
     BuildEventStreamer.OutErrProvider outErr = mock(BuildEventStreamer.OutErrProvider.class);
     String stdoutMsg = "Some text that was written to stdout.";
     String stderrMsg = "The UI text that bazel wrote to stderr.";
-    when(outErr.getOut()).thenReturn(ImmutableList.of(stdoutMsg)).thenReturn(ImmutableList.of());
-    when(outErr.getErr()).thenReturn(ImmutableList.of(stderrMsg)).thenReturn(ImmutableList.of());
+    when(outErr.out).thenReturn(ImmutableList.of(stdoutMsg)).thenReturn(ImmutableList.of());
+    when(outErr.err).thenReturn(ImmutableList.of(stderrMsg)).thenReturn(ImmutableList.of());
     BuildEvent startEvent =
         new GenericBuildEvent(
             testId("Initial"), ImmutableSet.of(ProgressEvent.INITIAL_PROGRESS_UPDATE));
@@ -1245,8 +1245,8 @@ public final class BuildEventStreamerTest extends FoundationTestCase {
     BuildEventStreamer.OutErrProvider outErr = mock(BuildEventStreamer.OutErrProvider.class);
     String stdoutMsg = "Some text that was written to stdout.";
     String stderrMsg = "The UI text that bazel wrote to stderr.";
-    when(outErr.getOut()).thenReturn(ImmutableList.of(stdoutMsg));
-    when(outErr.getErr()).thenReturn(ImmutableList.of(stderrMsg));
+    when(outErr.out).thenReturn(ImmutableList.of(stdoutMsg));
+    when(outErr.err).thenReturn(ImmutableList.of(stderrMsg));
 
     BuildEvent unexpectedStartEvent =
         new GenericBuildEvent(testId("unexpected start"), ImmutableSet.of());
@@ -1278,8 +1278,8 @@ public final class BuildEventStreamerTest extends FoundationTestCase {
         .that(initial.childrenEvents.contains(eventsSeen.get(2).eventId))
         .isTrue();
 
-    verify(outErr, times(1)).getOut();
-    verify(outErr, times(1)).getErr();
+    verify(outErr, times(1)).out;
+    verify(outErr, times(1)).err;
   }
 
   @Test
@@ -1391,11 +1391,11 @@ public final class BuildEventStreamerTest extends FoundationTestCase {
     String middleStderr = "Stderr *while* finishing.";
     String lateStdout = "Stdout after finishing.";
     String lateStderr = "Stderr after finishing.";
-    when(outErr.getOut())
+    when(outErr.out)
         .thenReturn(ImmutableList.of(earlyStdout))
         .thenReturn(ImmutableList.of(middleStdout))
         .thenReturn(ImmutableList.of(lateStdout));
-    when(outErr.getErr())
+    when(outErr.err)
         .thenReturn(ImmutableList.of(earlyStderr))
         .thenReturn(ImmutableList.of(middleStderr))
         .thenReturn(ImmutableList.of(lateStderr));
@@ -1458,11 +1458,11 @@ public final class BuildEventStreamerTest extends FoundationTestCase {
     String middleStderr = "Stderr *while* finishing.";
     String lateStdout = "DoneStdout";
     String lateStderr = "DoneStderr";
-    when(outErr.getOut())
+    when(outErr.out)
         .thenReturn(ImmutableList.of(earlyStdout))
         .thenReturn(ImmutableList.of(middleStdout))
         .thenReturn(ImmutableList.of(lateStdout + 1, lateStdout + 2, lateStdout + 3));
-    when(outErr.getErr())
+    when(outErr.err)
         .thenReturn(ImmutableList.of(earlyStderr))
         .thenReturn(ImmutableList.of(middleStderr))
         .thenReturn(ImmutableList.of(lateStderr + 1, lateStderr + 2, lateStderr + 3));

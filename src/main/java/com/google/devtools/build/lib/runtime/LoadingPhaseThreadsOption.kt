@@ -11,64 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.util.ResourceConverter;
-import com.google.devtools.build.lib.util.TestType;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParsingException;
+import com.google.common.flogger.GoogleLogger
+import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryFunction.name
+import com.google.devtools.build.lib.util.ResourceConverter
 
-/** Defines the --loading_phase_threads option which is used by multiple commands. */
-@OptionsClass
-public abstract class LoadingPhaseThreadsOption extends OptionsBase {
+/** Defines the --loading_phase_threads option which is used by multiple commands.  */
+@com.google.devtools.common.options.OptionsClass
+abstract class LoadingPhaseThreadsOption : com.google.devtools.common.options.OptionsBase() {
+    @get:com.google.devtools.common.options.Option(
+        name = "loading_phase_threads",
+        defaultValue = "auto",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.EXECUTION_STRATEGY,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        converter = LoadingPhaseThreadCountConverter::class,
+        help = ("Number of parallel threads to use for the loading/analysis phase."
+                + "Takes "
+                + ResourceConverter.FLAG_SYNTAX
+                + ". \"auto\" sets a reasonable default based on "
+                + "host resources. Must be at least 1.")
+    )
+    abstract val threads: Int
 
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
+    /**
+     * A converter for loading phase thread count. Takes {@value FLAG_SYNTAX}. Caps at 20 for tests.
+     */
+    class LoadingPhaseThreadCountConverter
 
-  @Option(
-      name = "loading_phase_threads",
-      defaultValue = "auto",
-      documentationCategory = OptionDocumentationCategory.EXECUTION_STRATEGY,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      converter = LoadingPhaseThreadCountConverter.class,
-      help =
-          "Number of parallel threads to use for the loading/analysis phase."
-              + "Takes "
-              + ResourceConverter.FLAG_SYNTAX
-              + ". \"auto\" sets a reasonable default based on "
-              + "host resources. Must be at least 1.")
-  public abstract int getThreads();
-
-  /**
-   * A converter for loading phase thread count. Takes {@value FLAG_SYNTAX}. Caps at 20 for tests.
-   */
-  public static final class LoadingPhaseThreadCountConverter
-      extends ResourceConverter.IntegerConverter {
-
-    public LoadingPhaseThreadCountConverter() {
-      // TODO(jmmv): Using the number of cores has proven to yield reasonable analysis times on
-      // Mac Pros and MacBook Pros but we should probably do better than this. (We haven't made
-      // any guarantees that "auto" means number of cores precisely to leave us room to tune this
-      // further in the future.)
-      super(/* auto= */ HOST_CPUS_SUPPLIER, /* minValue= */ 1, /* maxValue= */ Integer.MAX_VALUE);
+        :
+        com.google.devtools.build.lib.util.ResourceConverter.IntegerConverter( /* auto= */ResourceConverter.HOST_CPUS_SUPPLIER,  /* minValue= */
+            1,  /* maxValue= */
+            java.lang.Integer.MAX_VALUE
+        ) {
+        @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+        override fun checkAndLimit(value: Int): Int? {
+            // Cap thread count while running tests. Test cases are typically small and large thread
+            // pools vying for a relatively small number of CPU cores may induce non-optimal
+            // performance.
+            //
+            // TODO(jmmv): If tests care about this, it's them who should be setting a cap.
+            var value = value
+            if (com.google.devtools.build.lib.util.TestType.isInTest()) {
+                value = java.lang.Math.min(20, value)
+                logger.atInfo().log("Running under a test; loading_phase_threads capped at %d", value)
+            }
+            return super.checkAndLimit(value)
+        }
     }
 
-    @Override
-    public Integer checkAndLimit(Integer value) throws OptionsParsingException {
-      // Cap thread count while running tests. Test cases are typically small and large thread
-      // pools vying for a relatively small number of CPU cores may induce non-optimal
-      // performance.
-      //
-      // TODO(jmmv): If tests care about this, it's them who should be setting a cap.
-      if (TestType.isInTest()) {
-        value = Math.min(20, value);
-        logger.atInfo().log("Running under a test; loading_phase_threads capped at %d", value);
-      }
-      return super.checkAndLimit(value);
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
     }
-  }
 }

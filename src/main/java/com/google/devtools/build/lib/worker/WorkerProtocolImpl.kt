@@ -11,18 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.worker;
+package com.google.devtools.build.lib.worker
 
-import com.google.devtools.build.lib.worker.WorkerProtocol.WorkRequest;
-import com.google.devtools.build.lib.worker.WorkerProtocol.WorkResponse;
-import java.io.Closeable;
-import java.io.IOException;
+import com.google.devtools.build.lib.worker.WorkerProtocol.WorkRequest
 
-/** Represents the communication between Bazel and a persistent worker. */
-interface WorkerProtocolImpl extends Closeable {
-  /** Writes the provided work request to the worker. */
-  void putRequest(WorkRequest request) throws IOException;
+/** Represents the communication between Bazel and a persistent worker.  */
+internal interface WorkerProtocolImpl : java.io.Closeable {
+    /** Writes the provided work request to the worker.  */
+    @Throws(IOException::class)
+    fun putRequest(request: WorkRequest?)
 
-  /** Reads a response from the worker. */
-  WorkResponse getResponse() throws IOException;
+    @get:Throws(IOException::class)
+    val response: WorkResponse?
 }

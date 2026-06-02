@@ -11,22 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
 /**
  * Interface accepting requests to put current thread to sleep.
- *
- * <p>The only implementation of this interface intended for production use is {@link JavaSleeper}.
- * Use {@link com.google.devtools.build.lib.testutil.ManualSleeper ManualSleeper} for testing.
+ * 
+ * 
+ * The only implementation of this interface intended for production use is [JavaSleeper].
+ * Use [ManualSleeper][com.google.devtools.build.lib.testutil.ManualSleeper] for testing.
  */
-public interface Sleeper {
-
-  /**
-   * Puts current thread to sleep for given duration.
-   *
-   * @throws InterruptedException if current thread is being cast into oblivion
-   * @throws IllegalArgumentException if {@code milliseconds} is negative
-   */
-  void sleepMillis(long milliseconds) throws InterruptedException;
+interface Sleeper {
+    /**
+     * Puts current thread to sleep for given duration.
+     * 
+     * @throws InterruptedException if current thread is being cast into oblivion
+     * @throws IllegalArgumentException if `milliseconds` is negative
+     */
+    @Throws(java.lang.InterruptedException::class)
+    fun sleepMillis(milliseconds: Long)
 }

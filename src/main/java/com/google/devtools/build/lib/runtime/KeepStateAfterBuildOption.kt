@@ -11,34 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
-
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
+import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryFunction.name
 
 /**
- * An option class for <code>--keep_state_after_build</code>.
- *
- * <p>This needs to be separate from {@link CommonCommandOptions} because it's accessed from <code>
- * SkyframeExecutor</code> and referencing {@link CommonCommandOptions} would cause a dependency
+ * An option class for `--keep_state_after_build`.
+ * 
+ * 
+ * This needs to be separate from [CommonCommandOptions] because it's accessed from `
+ * SkyframeExecutor` and referencing [CommonCommandOptions] would cause a dependency
  * cycle.
  */
-@OptionsClass
-public abstract class KeepStateAfterBuildOption extends OptionsBase {
-  @Option(
-      name = "keep_state_after_build",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.BUILD_TIME_OPTIMIZATION,
-      effectTags = {OptionEffectTag.LOSES_INCREMENTAL_STATE},
-      help =
-          "If false, Blaze will discard the inmemory state from this build when the build "
-              + "finishes. Subsequent builds will not have any incrementality with respect to this "
-              + "one.")
-  public abstract boolean getKeepStateAfterBuild();
-
-  public abstract void setKeepStateAfterBuild(boolean value);
+@com.google.devtools.common.options.OptionsClass
+abstract class KeepStateAfterBuildOption : com.google.devtools.common.options.OptionsBase() {
+    @get:com.google.devtools.common.options.Option(
+        name = "keep_state_after_build",
+        defaultValue = "true",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.BUILD_TIME_OPTIMIZATION,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.LOSES_INCREMENTAL_STATE],
+        help = ("If false, Blaze will discard the inmemory state from this build when the build "
+                + "finishes. Subsequent builds will not have any incrementality with respect to this "
+                + "one.")
+    )
+    abstract var keepStateAfterBuild: Boolean
 }

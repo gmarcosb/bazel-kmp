@@ -53,7 +53,7 @@ public final class GlobFunctionTest extends GlobTestBase {
       String pattern, Globber.Operation globberOperation, String... expecteds) throws Exception {
     Iterable<String> matches =
         Iterables.transform(
-            runSingleGlob(pattern, globberOperation).getMatches(), Functions.toStringFunction());
+                runSingleGlob(pattern, globberOperation).matches, Functions.toStringFunction());
     if (recursionInSingleFunction) {
       assertThat(matches).containsExactlyElementsIn(ImmutableList.copyOf(expecteds));
     } else {
@@ -105,7 +105,7 @@ public final class GlobFunctionTest extends GlobTestBase {
   @Override
   protected Iterable<String> getSubpackagesMatches(String pattern) throws Exception {
     return Iterables.transform(
-        runSingleGlob(pattern, Globber.Operation.SUBPACKAGES).getMatches(),
+            runSingleGlob(pattern, Globber.Operation.SUBPACKAGES).matches,
         Functions.toStringFunction());
   }
 }

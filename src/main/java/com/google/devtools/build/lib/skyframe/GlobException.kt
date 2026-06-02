@@ -11,42 +11,38 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.io.FileSymlinkInfiniteExpansionException;
-import com.google.devtools.build.lib.io.InconsistentFilesystemException;
-import com.google.devtools.build.lib.packages.producers.GlobError;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.io.FileSymlinkInfiniteExpansionException
 
 /**
- * Used to declare all the exception types that can be wrapped in the exception thrown by {@link
- * GlobFunction#compute}.
+ * Used to declare all the exception types that can be wrapped in the exception thrown by [ ][GlobFunction.compute].
  */
-final class GlobException extends SkyFunctionException {
+internal class GlobException : SkyFunctionException {
+    constructor(e: InconsistentFilesystemException?, transience: Transience?) : super(e, transience)
 
-  GlobException(InconsistentFilesystemException e, Transience transience) {
-    super(e, transience);
-  }
+    constructor(e: FileSymlinkInfiniteExpansionException?, transience: Transience?) : super(e, transience)
 
-  GlobException(FileSymlinkInfiniteExpansionException e, Transience transience) {
-    super(e, transience);
-  }
+    companion object {
+        /**
+         * If any exception are caught and stored in [ ] in [ ], wrap it inside a [GlobException] and throw.
+         */
+        @Throws(GlobException::class)
+        fun handleExceptions(error: GlobError?) {
+            if (error == null) {
+                return
+            }
+            when (error.kind()) {
+                com.google.devtools.build.lib.packages.producers.GlobError.Kind.INCONSISTENT_FILESYSTEM -> throw GlobException(
+                    error.inconsistentFilesystem(),
+                    Transience.TRANSIENT
+                )
 
-  /**
-   * If any exception are caught and stored in {@link
-   * com.google.devtools.build.skyframe.SkyFunction.Environment.SkyKeyComputeState} in {@link
-   * GlobFunction}, wrap it inside a {@link GlobException} and throw.
-   */
-  static void handleExceptions(@Nullable GlobError error) throws GlobException {
-    if (error == null) {
-      return;
+                com.google.devtools.build.lib.packages.producers.GlobError.Kind.FILE_SYMLINK_INFINITE_EXPANSION -> throw GlobException(
+                    error.fileSymlinkInfiniteExpansion(),
+                    Transience.PERSISTENT
+                )
+            }
+        }
     }
-    switch (error.kind()) {
-      case INCONSISTENT_FILESYSTEM:
-        throw new GlobException(error.inconsistentFilesystem(), Transience.TRANSIENT);
-      case FILE_SYMLINK_INFINITE_EXPANSION:
-        throw new GlobException(error.fileSymlinkInfiniteExpansion(), Transience.PERSISTENT);
-    }
-  }
 }

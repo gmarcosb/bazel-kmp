@@ -11,68 +11,53 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.eval
 
-package net.starlark.java.eval;
+/** An immutable singleton implementation of a `StarlarkList`.  */
+internal class ImmutableSingletonStarlarkList<E>(elem: Any?) : net.starlark.java.eval.ImmutableStarlarkList<E?>() {
+    private val elem: Any?
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import java.util.Arrays;
-
-/** An immutable singleton implementation of a {@code StarlarkList}. */
-final class ImmutableSingletonStarlarkList<E> extends ImmutableStarlarkList<E> {
-  private final Object elem;
-
-  ImmutableSingletonStarlarkList(Object elem) {
-    this.elem = elem;
-  }
-
-  @Override
-  @SuppressWarnings("unchecked")
-  public ImmutableList<E> getImmutableList() {
-    return ImmutableList.of((E) elem);
-  }
-
-  @Override
-  @SuppressWarnings("unchecked")
-  public E get(int i) {
-    Preconditions.checkElementIndex(i, 1);
-    return (E) elem; // unchecked
-  }
-
-  @Override
-  public int size() {
-    return 1;
-  }
-
-  @Override
-  public boolean contains(Object o) {
-    // StarlarkList contains only valid Starlark objects (which are non-null)
-    if (o == null) {
-      return false;
+    init {
+        this.elem = elem
     }
-    return o.equals(elem);
-  }
 
-  /** Returns a new array of class Object[] containing the list elements. */
-  @Override
-  public Object[] toArray() {
-    return new Object[] {elem};
-  }
-
-  @SuppressWarnings("unchecked")
-  @Override
-  public <T> T[] toArray(T[] a) {
-    if (a.length < 1) {
-      return (T[]) new Object[] {elem};
-    } else {
-      a[0] = (T) elem;
-      Arrays.fill(a, 1, a.length, null);
-      return a;
+    override fun getImmutableList(): com.google.common.collect.ImmutableList<E?> {
+        return com.google.common.collect.ImmutableList.of<E?>(elem as E?)
     }
-  }
 
-  @Override
-  Object[] elems() {
-    return new Object[] {elem};
-  }
+    override fun get(i: Int): E? {
+        com.google.common.base.Preconditions.checkElementIndex(i, 1)
+        return elem as E? // unchecked
+    }
+
+    override fun size(): Int {
+        return 1
+    }
+
+    override fun contains(o: Any?): Boolean {
+        // StarlarkList contains only valid Starlark objects (which are non-null)
+        if (o == null) {
+            return false
+        }
+        return o == elem
+    }
+
+    /** Returns a new array of class Object[] containing the list elements.  */
+    override fun toArray(): Array<Any?> {
+        return arrayOf<Any?>(elem)
+    }
+
+    override fun <T> toArray(a: Array<T?>): Array<T?> {
+        if (a.size < 1) {
+            return arrayOf<Any?>(elem) as Array<T?>
+        } else {
+            a[0] = elem as T?
+            java.util.Arrays.fill(a, 1, a.size, null)
+            return a
+        }
+    }
+
+    override fun elems(): Array<Any?> {
+        return arrayOf<Any?>(elem)
+    }
 }

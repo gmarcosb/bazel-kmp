@@ -11,86 +11,84 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import static com.google.common.base.MoreObjects.toStringHelper;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencies
+import com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencies.AvailableFileDependencies
+import com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencyDeserializer.ListingDependenciesOrFuture
+import com.google.devtools.build.lib.skyframe.serialization.analysis.FileSystemDependencies.FileOpDependency
+import com.google.devtools.build.lib.skyframe.serialization.analysis.VersionedChanges
 
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencies.AvailableFileDependencies;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencies.MissingFileDependencies;
+/** Type representing a directory listing operation.  */
+internal abstract class ListingDependencies
 
-/** Type representing a directory listing operation. */
-abstract sealed class ListingDependencies
-    implements FileSystemDependencies.FileOpDependency,
-        FileDependencyDeserializer.ListingDependenciesOrFuture
-    permits ListingDependencies.AvailableListingDependencies,
-        ListingDependencies.MissingListingDependencies {
+    : FileOpDependency, ListingDependenciesOrFuture {
+    internal class AvailableListingDependencies private constructor(realDirectory: AvailableFileDependencies) :
+        ListingDependencies() {
+        private val realDirectory: AvailableFileDependencies
 
-  static ListingDependencies from(FileDependencies realDirectory) {
-    return switch (realDirectory) {
-      case AvailableFileDependencies availableRealDirectory ->
-          new AvailableListingDependencies(availableRealDirectory);
-      case MissingFileDependencies unused -> newMissingInstance();
-    };
-  }
+        init {
+            this.realDirectory = realDirectory
+        }
 
-  static ListingDependencies newMissingInstance() {
-    return new MissingListingDependencies();
-  }
+        val isMissingData: Boolean
+            get() = false
 
-  static final class AvailableListingDependencies extends ListingDependencies {
-    private final AvailableFileDependencies realDirectory;
+        /**
+         * Determines if this listing is invalidated by anything in `changes`.
+         * 
+         * 
+         * The caller should ensure the following.
+         * 
+         * 
+         *  * This listing is known to be valid at `validityHorizon` (VH).
+         *  * All changes over the range `(VH, VC])` are registered with `changes` before
+         * calling this method. (VC is the synced version of the cache reader.)
+         * 
+         * 
+         * 
+         * See description of [VersionedChanges] for more details.
+         * 
+         * @return the earliest version where a matching (invalidating) change is identified, otherwise
+         * [VersionedChanges.NO_MATCH].
+         */
+        fun findEarliestMatch(changes: VersionedChanges, validityHorizon: Int): Int {
+            return changes.matchListingChange(realDirectory.resolvedPath(), validityHorizon)
+        }
 
-    private AvailableListingDependencies(AvailableFileDependencies realDirectory) {
-      this.realDirectory = realDirectory;
-    }
+        fun realDirectory(): AvailableFileDependencies {
+            return realDirectory
+        }
 
-    @Override
-    public boolean isMissingData() {
-      return false;
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(this).add("realDirectory", realDirectory)
+                .toString()
+        }
     }
 
     /**
-     * Determines if this listing is invalidated by anything in {@code changes}.
-     *
-     * <p>The caller should ensure the following.
-     *
-     * <ul>
-     *   <li>This listing is known to be valid at {@code validityHorizon} (VH).
-     *   <li>All changes over the range {@code (VH, VC])} are registered with {@code changes} before
-     *       calling this method. (VC is the synced version of the cache reader.)
-     * </ul>
-     *
-     * <p>See description of {@link VersionedChanges} for more details.
-     *
-     * @return the earliest version where a matching (invalidating) change is identified, otherwise
-     *     {@link VersionedChanges#NO_MATCH}.
+     * Signals missing listing data.
+     * 
+     * 
+     * This is deliberately not a singleton to avoid a memory leak in the weak-value caches in
+     * [FileDependencyDeserializer].
      */
-    int findEarliestMatch(VersionedChanges changes, int validityHorizon) {
-      return changes.matchListingChange(realDirectory.resolvedPath(), validityHorizon);
+    internal class MissingListingDependencies private constructor() : ListingDependencies() {
+        val isMissingData: Boolean
+            get() = true
     }
 
-    AvailableFileDependencies realDirectory() {
-      return realDirectory;
-    }
+    companion object {
+        fun from(realDirectory: FileDependencies): ListingDependencies {
+            return when (realDirectory) {
+                -> AvailableListingDependencies(availableRealDirectory)
+                -> newMissingInstance()
+            }
+        }
 
-    @Override
-    public String toString() {
-      return toStringHelper(this).add("realDirectory", realDirectory).toString();
+        @kotlin.jvm.JvmStatic
+        fun newMissingInstance(): ListingDependencies {
+            return MissingListingDependencies()
+        }
     }
-  }
-
-  /**
-   * Signals missing listing data.
-   *
-   * <p>This is deliberately not a singleton to avoid a memory leak in the weak-value caches in
-   * {@link FileDependencyDeserializer}.
-   */
-  static final class MissingListingDependencies extends ListingDependencies {
-    private MissingListingDependencies() {}
-
-    @Override
-    public boolean isMissingData() {
-      return true;
-    }
-  }
 }

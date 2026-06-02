@@ -11,23 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi
 
-package com.google.devtools.build.lib.starlarkbuildapi;
-
-import com.google.devtools.build.docgen.annot.DocCategory;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.eval.StarlarkValue;
-
-/** The interface for late bound defaults in Starlark. */
-@StarlarkBuiltin(
+/** The interface for late bound defaults in Starlark.  */
+@net.starlark.java.annot.StarlarkBuiltin(
     name = "LateBoundDefault",
-    category = DocCategory.BUILTIN,
-    doc =
-        "Represents a late-bound default attribute value of type 'Label'. The value of a"
+    category = com.google.devtools.build.docgen.annot.DocCategory.BUILTIN,
+    doc = ("Represents a late-bound default attribute value of type 'Label'. The value of a"
             + " LateBoundDefault is only resolvable in the context of a rule implementation"
             + " function, and depends on the current build configuration. For example, a"
             + " LateBoundDefault might represent the Label of the java toolchain in the current"
             + " build configuration. <p>See <a"
             + " href=\"../globals/bzl.html#configuration_field\">configuration_field</a> for"
             + " example usage.")
-public interface LateBoundDefaultApi extends StarlarkValue {}
+)
+interface LateBoundDefaultApi : net.starlark.java.eval.StarlarkValue

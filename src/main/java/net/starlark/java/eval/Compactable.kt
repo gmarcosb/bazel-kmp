@@ -11,23 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.eval
 
-package net.starlark.java.eval;
-
-/** An interface for Starlark values that can be mutated in-place to reduce memory usage. */
-public interface Compactable extends StarlarkValue {
-  /**
-   * Mutates this value in-place to reduce memory usage, and returns an optimized value (which might
-   * be the same as this instance).
-   *
-   * <p>This operation is not protected by the mutability mechanism. It is the caller's
-   * responsibility to ensure this value is not concurrently accessed during this method's
-   * execution.
-   *
-   * <p>The mutated value and the returned value are both equivalent to the original value.
-   *
-   * <p>If this value is {@link Freezable}, its {@link Freezable#mutability} must be frozen prior to
-   * calling this method.
-   */
-  StarlarkValue unsafeOptimizeMemoryLayout();
+/** An interface for Starlark values that can be mutated in-place to reduce memory usage.  */
+interface Compactable : net.starlark.java.eval.StarlarkValue {
+    /**
+     * Mutates this value in-place to reduce memory usage, and returns an optimized value (which might
+     * be the same as this instance).
+     * 
+     * 
+     * This operation is not protected by the mutability mechanism. It is the caller's
+     * responsibility to ensure this value is not concurrently accessed during this method's
+     * execution.
+     * 
+     * 
+     * The mutated value and the returned value are both equivalent to the original value.
+     * 
+     * 
+     * If this value is [Freezable], its [Freezable.mutability] must be frozen prior to
+     * calling this method.
+     */
+    fun unsafeOptimizeMemoryLayout(): net.starlark.java.eval.StarlarkValue?
 }

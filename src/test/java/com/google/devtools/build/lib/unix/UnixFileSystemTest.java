@@ -101,12 +101,12 @@ public class UnixFileSystemTest extends SymlinkAwareFileSystemTest {
 
     assertThat(regular.isFile()).isTrue();
     assertThat(regular.isSpecialFile()).isFalse();
-    assertThat(regular.stat().isFile()).isTrue();
-    assertThat(regular.stat().isSpecialFile()).isFalse();
+    assertThat(regular.stat().isFile).isTrue();
+    assertThat(regular.stat().isSpecialFile).isFalse();
     assertThat(fifo.isFile()).isTrue();
     assertThat(fifo.isSpecialFile()).isTrue();
-    assertThat(fifo.stat().isFile()).isTrue();
-    assertThat(fifo.stat().isSpecialFile()).isTrue();
+    assertThat(fifo.stat().isFile).isTrue();
+    assertThat(fifo.stat().isSpecialFile).isTrue();
   }
 
   @Test

@@ -11,140 +11,119 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.vfs.Dirent;
-import java.util.AbstractCollection;
-import java.util.Arrays;
-import java.util.BitSet;
-import java.util.Collection;
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.Objects;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.skyframe.Dirents
+import java.util.AbstractCollection
+import java.util.BitSet
 
-/** A space-efficient, sorted, immutable dirent structure. */
-final class CompactSortedDirents extends AbstractCollection<Dirent> implements Dirents {
+/** A space-efficient, sorted, immutable dirent structure.  */
+internal class CompactSortedDirents private constructor(private val names: Array<String?>, packedTypes: BitSet) :
+    AbstractCollection<com.google.devtools.build.lib.vfs.Dirent?>(), Dirents {
+    private val packedTypes: BitSet
 
-  private final String[] names;
-  private final BitSet packedTypes;
-
-  private CompactSortedDirents(String[] names, BitSet packedTypes) {
-    this.names = names;
-    this.packedTypes = packedTypes;
-  }
-
-  static CompactSortedDirents create(Collection<Dirent> dirents) {
-    final Dirent[] direntArray = dirents.toArray(Dirent[]::new);
-    Integer[] indices = new Integer[dirents.size()];
-    for (int i = 0; i < dirents.size(); i++) {
-      indices[i] = i;
+    init {
+        this.packedTypes = packedTypes
     }
-    Arrays.sort(indices, Comparator.comparing(o -> direntArray[o]));
-    String[] names = new String[dirents.size()];
-    BitSet packedTypes = new BitSet(dirents.size() * 2);
-    for (int i = 0; i < dirents.size(); i++) {
-      Dirent dirent = direntArray[indices[i]];
-      names[i] = dirent.getName();
-      packType(packedTypes, dirent.getType(), i);
+
+    override fun equals(obj: Any?): Boolean {
+        if (obj !is CompactSortedDirents) {
+            return false
+        }
+        if (this === obj) {
+            return true
+        }
+        return names.contentEquals(obj.names) && packedTypes == obj.packedTypes
     }
-    return new CompactSortedDirents(names, packedTypes);
-  }
 
-  @Override
-  public boolean equals(Object obj) {
-    if (!(obj instanceof CompactSortedDirents other)) {
-      return false;
+    override fun hashCode(): Int {
+        return java.util.Objects.hash(names.contentHashCode(), packedTypes)
     }
-    if (this == obj) {
-      return true;
+
+    override fun maybeGetDirent(baseName: String?): com.google.devtools.build.lib.vfs.Dirent? {
+        val pos: Int = java.util.Arrays.binarySearch(names, baseName)
+        return if (pos < 0) null else direntAt(pos)
     }
-    return Arrays.equals(names, other.names) && packedTypes.equals(other.packedTypes);
-  }
 
-  @Override
-  public int hashCode() {
-    return Objects.hash(Arrays.hashCode(names), packedTypes);
-  }
+    override fun iterator(): MutableIterator<com.google.devtools.build.lib.vfs.Dirent?> {
+        return object : MutableIterator<com.google.devtools.build.lib.vfs.Dirent?> {
+            private var i = 0
 
-  @Override
-  @Nullable
-  public Dirent maybeGetDirent(String baseName) {
-    int pos = Arrays.binarySearch(names, baseName);
-    return pos < 0 ? null : direntAt(pos);
-  }
+            override fun hasNext(): Boolean {
+                return i < size
+            }
 
-  @Override
-  public Iterator<Dirent> iterator() {
-    return new Iterator<>() {
+            override fun next(): com.google.devtools.build.lib.vfs.Dirent {
+                return direntAt(i++)
+            }
 
-      private int i = 0;
-
-      @Override
-      public boolean hasNext() {
-        return i < size();
-      }
-
-      @Override
-      public Dirent next() {
-        return direntAt(i++);
-      }
-
-      @Override
-      public void remove() {
-        throw new UnsupportedOperationException();
-      }
-    };
-  }
-
-  @Override
-  public int size() {
-    return names.length;
-  }
-
-  /** Returns the type of the ith dirent. */
-  private Dirent.Type unpackType(int i) {
-    int start = i * 2;
-    boolean upper = packedTypes.get(start);
-    boolean lower = packedTypes.get(start + 1);
-    if (!upper && !lower) {
-      return Dirent.Type.FILE;
-    } else if (!upper && lower) {
-      return Dirent.Type.DIRECTORY;
-    } else if (upper && !lower) {
-      return Dirent.Type.SYMLINK;
-    } else {
-      return Dirent.Type.UNKNOWN;
+            override fun remove() {
+                throw java.lang.UnsupportedOperationException()
+            }
+        }
     }
-  }
 
-  /** Sets the type of the ith dirent. */
-  private static void packType(BitSet bitSet, Dirent.Type type, int i) {
-    int start = i * 2;
-    switch (type) {
-      case FILE:
-        pack(bitSet, start, false, false);
-        break;
-      case DIRECTORY:
-        pack(bitSet, start, false, true);
-        break;
-      case SYMLINK:
-        pack(bitSet, start, true, false);
-        break;
-      case UNKNOWN:
-        pack(bitSet, start, true, true);
-        break;
+    override fun size(): Int {
+        return names.size
     }
-  }
 
-  private static void pack(BitSet bitSet, int start, boolean upper, boolean lower) {
-    bitSet.set(start, upper);
-    bitSet.set(start + 1, lower);
-  }
+    /** Returns the type of the ith dirent.  */
+    private fun unpackType(i: Int): com.google.devtools.build.lib.vfs.Dirent.Type {
+        val start = i * 2
+        val upper: Boolean = packedTypes.get(start)
+        val lower: Boolean = packedTypes.get(start + 1)
+        if (!upper && !lower) {
+            return com.google.devtools.build.lib.vfs.Dirent.Type.FILE
+        } else if (!upper && lower) {
+            return com.google.devtools.build.lib.vfs.Dirent.Type.DIRECTORY
+        } else if (upper && !lower) {
+            return com.google.devtools.build.lib.vfs.Dirent.Type.SYMLINK
+        } else {
+            return com.google.devtools.build.lib.vfs.Dirent.Type.UNKNOWN
+        }
+    }
 
-  private Dirent direntAt(int i) {
-    Preconditions.checkState(i >= 0 && i < size(), "i: %s, size: %s", i, size());
-    return new Dirent(names[i], unpackType(i));
-  }
+    private fun direntAt(i: Int): com.google.devtools.build.lib.vfs.Dirent {
+        com.google.common.base.Preconditions.checkState(i >= 0 && i < size, "i: %s, size: %s", i, size)
+        return com.google.devtools.build.lib.vfs.Dirent(names[i], unpackType(i))
+    }
+
+    companion object {
+        fun create(dirents: MutableCollection<com.google.devtools.build.lib.vfs.Dirent?>): CompactSortedDirents {
+            val direntArray: Array<com.google.devtools.build.lib.vfs.Dirent> =
+                dirents.toArray<com.google.devtools.build.lib.vfs.Dirent?>(java.util.function.IntFunction { _Dummy_.__Array__() })
+            val indices = arrayOfNulls<Int>(dirents.size)
+            for (i in dirents.indices) {
+                indices[i] = i
+            }
+            java.util.Arrays.sort<Int?>(
+                indices,
+                java.util.Comparator.comparing<Int?, com.google.devtools.build.lib.vfs.Dirent?>(java.util.function.Function { o: Int? -> direntArray[o!!] })
+            )
+            val names = arrayOfNulls<String>(dirents.size)
+            val packedTypes: BitSet = BitSet(dirents.size * 2)
+            for (i in dirents.indices) {
+                val dirent: com.google.devtools.build.lib.vfs.Dirent = direntArray[indices[i]!!]
+                names[i] = dirent.getName()
+                packType(packedTypes, dirent.getType(), i)
+            }
+            return CompactSortedDirents(names, packedTypes)
+        }
+
+        /** Sets the type of the ith dirent.  */
+        private fun packType(bitSet: BitSet, type: com.google.devtools.build.lib.vfs.Dirent.Type, i: Int) {
+            val start = i * 2
+            when (type) {
+                com.google.devtools.build.lib.vfs.Dirent.Type.FILE -> pack(bitSet, start, false, false)
+                com.google.devtools.build.lib.vfs.Dirent.Type.DIRECTORY -> pack(bitSet, start, false, true)
+                com.google.devtools.build.lib.vfs.Dirent.Type.SYMLINK -> pack(bitSet, start, true, false)
+                com.google.devtools.build.lib.vfs.Dirent.Type.UNKNOWN -> pack(bitSet, start, true, true)
+            }
+        }
+
+        private fun pack(bitSet: BitSet, start: Int, upper: Boolean, lower: Boolean) {
+            bitSet.set(start, upper)
+            bitSet.set(start + 1, lower)
+        }
+    }
 }

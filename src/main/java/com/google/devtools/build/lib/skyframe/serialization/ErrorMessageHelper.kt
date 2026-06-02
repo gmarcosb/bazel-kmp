@@ -11,34 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static java.lang.Math.min;
+/** Utility for formatting error messages.  */
+object ErrorMessageHelper {
+    @com.google.common.annotations.VisibleForTesting
+    const val MAX_ERRORS_TO_REPORT: Int = 5
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-
-/** Utility for formatting error messages. */
-public final class ErrorMessageHelper {
-  @VisibleForTesting static final int MAX_ERRORS_TO_REPORT = 5;
-
-  public static String getErrorMessage(ImmutableList<Throwable> errors) {
-    var message = new StringBuilder();
-    if (errors.size() > 1) {
-      message.append("There were ").append(errors.size()).append(" write errors.");
-      if (errors.size() > MAX_ERRORS_TO_REPORT) {
-        message
-            .append(" Only the first ")
-            .append(MAX_ERRORS_TO_REPORT)
-            .append(" will be reported.");
-      }
-      message.append('\n');
+    fun getErrorMessage(errors: com.google.common.collect.ImmutableList<Throwable?>): String {
+        val message: java.lang.StringBuilder = java.lang.StringBuilder()
+        if (errors.size() > 1) {
+            message.append("There were ").append(errors.size()).append(" write errors.")
+            if (errors.size() > MAX_ERRORS_TO_REPORT) {
+                message
+                    .append(" Only the first ")
+                    .append(MAX_ERRORS_TO_REPORT)
+                    .append(" will be reported.")
+            }
+            message.append('\n')
+        }
+        /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
+        return message.toString()
     }
-    for (int i = 0; i < min(errors.size(), MAX_ERRORS_TO_REPORT); i++) {
-      message.append(errors.get(i).getMessage()).append('\n');
-    }
-    return message.toString();
-  }
-
-  private ErrorMessageHelper() {}
 }

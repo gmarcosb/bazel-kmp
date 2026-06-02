@@ -11,34 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
-
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.util.Collections;
-import java.util.List;
+import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.util.Collections
 
 /**
- * Codec for {@link Collections.EMPTY_LIST}
- *
- * <p>TODO(shahan): this might be better as an AutoCodec field tag, but this package, the logical
+ * Codec for [Collections.EMPTY_LIST]
+ * 
+ * 
+ * TODO(shahan): this might be better as an AutoCodec field tag, but this package, the logical
  * home for the codec, is a dependency of AutoCodec, so doing so would create a circular dependency.
  */
-@SuppressWarnings("rawtypes")
-class EmptyListCodec extends LeafObjectCodec<List> {
+internal class EmptyListCodec : LeafObjectCodec<MutableList<*>?>() {
+    override fun getEncodedClass(): java.lang.Class<out MutableList<*>?> {
+        return Collections.emptyList<Any?>().getClass()
+    }
 
-  @Override
-  public Class<? extends List> getEncodedClass() {
-    return Collections.emptyList().getClass();
-  }
+    override fun serialize(
+        context: LeafSerializationContext?, unusedValue: MutableList<*>?, unusedCodedOut: CodedOutputStream?
+    ) {
+    }
 
-  @Override
-  public void serialize(
-      LeafSerializationContext context, List unusedValue, CodedOutputStream unusedCodedOut) {}
-
-  @Override
-  public List deserialize(LeafDeserializationContext context, CodedInputStream unusedCodedIn) {
-    return Collections.emptyList();
-  }
+    override fun deserialize(context: LeafDeserializationContext?, unusedCodedIn: CodedInputStream?): MutableList<*> {
+        return Collections.emptyList<Any?>()
+    }
 }

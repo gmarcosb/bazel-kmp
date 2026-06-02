@@ -11,33 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
-
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
+import ExtendedEventHandler.Postable
+import com.google.devtools.build.lib.events.ExtendedEventHandler
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
 /**
- * Suppresses {@link #post} when the provided {@link Postable} represents a progress event (denoted
- * by a return of {@code false} from {@link Postable#storeForReplay}), but otherwise delegates calls
- * to its wrapped {@link ExtendedEventHandler}.
+ * Suppresses [.post] when the provided [Postable] represents a progress event (denoted
+ * by a return of `false` from [Postable.storeForReplay]), but otherwise delegates calls
+ * to its wrapped [ExtendedEventHandler].
  */
-final class ProgressSuppressingEventHandler implements ExtendedEventHandler {
-  private final ExtendedEventHandler delegate;
+internal class ProgressSuppressingEventHandler(listener: ExtendedEventHandler) : ExtendedEventHandler {
+    private val delegate: ExtendedEventHandler
 
-  ProgressSuppressingEventHandler(ExtendedEventHandler listener) {
-    this.delegate = listener;
-  }
-
-  @Override
-  public void post(Postable obj) {
-    if (obj.storeForReplay()) {
-      delegate.post(obj);
+    init {
+        this.delegate = listener
     }
-  }
 
-  @Override
-  public void handle(Event event) {
-    delegate.handle(event);
-  }
+    override fun post(obj: Postable) {
+        if (obj.storeForReplay()) {
+            delegate.post(obj)
+        }
+    }
+
+    override fun handle(event: com.google.devtools.build.lib.events.Event?) {
+        delegate.handle(event)
+    }
 }

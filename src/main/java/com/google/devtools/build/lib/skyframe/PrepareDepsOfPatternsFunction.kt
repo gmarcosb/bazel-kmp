@@ -11,140 +11,131 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.base.Function;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.bugreport.BugReport;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.cmdline.TargetParsingException;
-import com.google.devtools.build.lib.cmdline.TargetPattern;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.io.InconsistentFilesystemException;
-import com.google.devtools.build.lib.io.ProcessPackageDirectoryException;
-import com.google.devtools.build.lib.pkgcache.ParsingFailedEvent;
-import com.google.devtools.build.lib.skyframe.PrepareDepsOfPatternValue.PrepareDepsOfPatternSkyKeyException;
-import com.google.devtools.build.lib.skyframe.PrepareDepsOfPatternValue.PrepareDepsOfPatternSkyKeyValue;
-import com.google.devtools.build.lib.skyframe.PrepareDepsOfPatternValue.PrepareDepsOfPatternSkyKeysAndExceptions;
-import com.google.devtools.build.lib.skyframe.PrepareDepsOfPatternsValue.TargetPatternSequence;
-import com.google.devtools.build.lib.skyframe.TargetPatternValue.TargetPatternKey;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.SkyframeLookupResult;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.RepositoryMapping
 
 /**
  * PrepareDepsOfPatternsFunction ensures the graph loads targets matching the pattern sequence and
  * their transitive dependencies.
  */
-public class PrepareDepsOfPatternsFunction implements SkyFunction {
+class PrepareDepsOfPatternsFunction : SkyFunction {
+    /**
+     * Given a [SkyKey] that contains a sequence of target patterns, when this function returns
+     * [PrepareDepsOfPatternsValue], then all targets matching that sequence, and those targets'
+     * transitive dependencies, have been loaded.
+     */
+    @Throws(java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment): SkyValue? {
+        val eventHandler: ExtendedEventHandler = env.getListener()
 
-  public static ImmutableList<SkyKey> getSkyKeys(
-      SkyKey skyKey, ExtendedEventHandler eventHandler, RepositoryMapping mainRepoMapping) {
-    TargetPatternSequence targetPatternSequence = (TargetPatternSequence) skyKey.argument();
-    TargetPattern.Parser mainRepoTargetParser =
-        new TargetPattern.Parser(
-            targetPatternSequence.getOffset(), RepositoryName.MAIN, mainRepoMapping);
-    PrepareDepsOfPatternSkyKeysAndExceptions prepareDepsOfPatternSkyKeysAndExceptions =
-        PrepareDepsOfPatternValue.keys(targetPatternSequence.getPatterns(), mainRepoTargetParser);
-
-    ImmutableList.Builder<SkyKey> skyKeyBuilder = ImmutableList.builder();
-    for (PrepareDepsOfPatternSkyKeyValue skyKeyValue :
-        prepareDepsOfPatternSkyKeysAndExceptions.getValues()) {
-      skyKeyBuilder.add(skyKeyValue.getSkyKey());
-    }
-    for (PrepareDepsOfPatternSkyKeyException skyKeyException :
-        prepareDepsOfPatternSkyKeysAndExceptions.getExceptions()) {
-      TargetParsingException e = skyKeyException.getException();
-      // We post an event here rather than in handleTargetParsingException because the
-      // TargetPatternFunction already posts an event unless the pattern cannot be parsed, in
-      // which case the caller (i.e., us) needs to post an event.
-      eventHandler.post(
-          new ParsingFailedEvent(skyKeyException.getOriginalPattern(), e.getMessage()));
-      handleTargetParsingException(eventHandler, skyKeyException.getOriginalPattern(), e);
-    }
-
-    return skyKeyBuilder.build();
-  }
-
-  private static final Function<SkyKey, TargetPatternKey> SKY_TO_TARGET_PATTERN =
-      new Function<SkyKey, TargetPatternKey>() {
-        @Nullable
-        @Override
-        public TargetPatternKey apply(SkyKey skyKey) {
-          return (TargetPatternKey) skyKey.argument();
+        val repositoryMappingValue: RepositoryMappingValue? =
+            env.getValue(RepositoryMappingValue.Companion.key(RepositoryName.MAIN)) as RepositoryMappingValue?
+        if (repositoryMappingValue == null) {
+            return null
         }
-      };
+        val mainRepoMapping: RepositoryMapping? = repositoryMappingValue.repositoryMapping
+        val skyKeys: com.google.common.collect.ImmutableList<SkyKey> = getSkyKeys(skyKey, eventHandler, mainRepoMapping)
 
-  public static ImmutableList<TargetPatternKey> getTargetPatternKeys(
-      ImmutableList<SkyKey> skyKeys) {
-    return ImmutableList.copyOf(Iterables.transform(skyKeys, SKY_TO_TARGET_PATTERN));
-  }
-
-  /**
-   * Given a {@link SkyKey} that contains a sequence of target patterns, when this function returns
-   * {@link PrepareDepsOfPatternsValue}, then all targets matching that sequence, and those targets'
-   * transitive dependencies, have been loaded.
-   */
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env) throws InterruptedException {
-    ExtendedEventHandler eventHandler = env.getListener();
-
-    RepositoryMappingValue repositoryMappingValue =
-        (RepositoryMappingValue) env.getValue(RepositoryMappingValue.key(RepositoryName.MAIN));
-    if (repositoryMappingValue == null) {
-      return null;
-    }
-    RepositoryMapping mainRepoMapping = repositoryMappingValue.repositoryMapping();
-    ImmutableList<SkyKey> skyKeys = getSkyKeys(skyKey, eventHandler, mainRepoMapping);
-
-    SkyframeLookupResult tokensByKey = env.getValuesAndExceptions(skyKeys);
-    if (env.valuesMissing()) {
-      return null;
-    }
-
-    for (SkyKey key : skyKeys) {
-      try {
-        SkyValue value =
-            tokensByKey.getOrThrow(
-                key,
-                TargetParsingException.class,
-                ProcessPackageDirectoryException.class,
-                InconsistentFilesystemException.class);
-        if (value == null) {
-          BugReport.sendNonFatalBugReport(
-              new IllegalStateException(
-                  "SkyValue " + key + " was missing, this should never happen"));
-          return null;
+        val tokensByKey: SkyframeLookupResult = env.getValuesAndExceptions(skyKeys)
+        if (env.valuesMissing()) {
+            return null
         }
-      } catch (TargetParsingException e) {
-        // If a target pattern can't be evaluated, notify the user of the problem and keep going.
-        handleTargetParsingException(eventHandler, key, e);
-      } catch (ProcessPackageDirectoryException | InconsistentFilesystemException e) {
-        // ProcessPackageDirectoryException indicates a catastrophic
-        // InconsistentFilesystemException, which will be handled later by a caller.
-        return null;
-      }
+
+        for (key in skyKeys) {
+            try {
+                val value: SkyValue? =
+                    tokensByKey.getOrThrow<E1?, E2?, E3?>(
+                        key,
+                        TargetParsingException::class.java,
+                        ProcessPackageDirectoryException::class.java,
+                        InconsistentFilesystemException::class.java
+                    )
+                if (value == null) {
+                    BugReport.sendNonFatalBugReport(
+                        java.lang.IllegalStateException(
+                            "SkyValue " + key + " was missing, this should never happen"
+                        )
+                    )
+                    return null
+                }
+            } catch (e: TargetParsingException) {
+                // If a target pattern can't be evaluated, notify the user of the problem and keep going.
+                Companion.handleTargetParsingException(eventHandler, key, e)
+            } catch (e: ProcessPackageDirectoryException) {
+                // ProcessPackageDirectoryException indicates a catastrophic
+                // InconsistentFilesystemException, which will be handled later by a caller.
+                return null
+            } catch (e: InconsistentFilesystemException) {
+                return null
+            }
+        }
+
+        return PrepareDepsOfPatternsValue(getTargetPatternKeys(skyKeys))
     }
 
-    return new PrepareDepsOfPatternsValue(getTargetPatternKeys(skyKeys));
-  }
+    companion object {
+        fun getSkyKeys(
+            skyKey: SkyKey, eventHandler: ExtendedEventHandler, mainRepoMapping: RepositoryMapping?
+        ): com.google.common.collect.ImmutableList<SkyKey> {
+            val targetPatternSequence: TargetPatternSequence = skyKey.argument() as TargetPatternSequence
+            val mainRepoTargetParser: TargetPattern.Parser =
+                Parser(
+                    targetPatternSequence.getOffset(), RepositoryName.MAIN, mainRepoMapping
+                )
+            val prepareDepsOfPatternSkyKeysAndExceptions: PrepareDepsOfPatternSkyKeysAndExceptions =
+                PrepareDepsOfPatternValue.Companion.keys(targetPatternSequence.getPatterns(), mainRepoTargetParser)
 
-  private static void handleTargetParsingException(
-      ExtendedEventHandler eventHandler, SkyKey key, TargetParsingException e) {
-    TargetPatternKey patternKey = (TargetPatternKey) key.argument();
-    String rawPattern = patternKey.getPattern();
-    handleTargetParsingException(eventHandler, rawPattern, e);
-  }
+            val skyKeyBuilder: com.google.common.collect.ImmutableList.Builder<SkyKey?> =
+                com.google.common.collect.ImmutableList.builder<SkyKey?>()
+            for (skyKeyValue in prepareDepsOfPatternSkyKeysAndExceptions.getValues()) {
+                skyKeyBuilder.add(skyKeyValue.getSkyKey())
+            }
+            for (skyKeyException in prepareDepsOfPatternSkyKeysAndExceptions.getExceptions()) {
+                val e: TargetParsingException = skyKeyException.getException()
+                // We post an event here rather than in handleTargetParsingException because the
+                // TargetPatternFunction already posts an event unless the pattern cannot be parsed, in
+                // which case the caller (i.e., us) needs to post an event.
+                eventHandler.post(
+                    ParsingFailedEvent(skyKeyException.getOriginalPattern(), e.getMessage())
+                )
+                Companion.handleTargetParsingException(eventHandler, skyKeyException.getOriginalPattern(), e)
+            }
 
-  private static void handleTargetParsingException(
-      ExtendedEventHandler eventHandler, String rawPattern, TargetParsingException e) {
-    String errorMessage = e.getMessage();
-    eventHandler.handle(Event.error("Skipping '" + rawPattern + "': " + errorMessage));
-  }
+            return skyKeyBuilder.build()
+        }
+
+        private val SKY_TO_TARGET_PATTERN: com.google.common.base.Function<SkyKey?, TargetPatternKey?> =
+            object : com.google.common.base.Function<SkyKey?, TargetPatternKey?> {
+                override fun apply(skyKey: SkyKey): TargetPatternKey? {
+                    return skyKey.argument() as TargetPatternKey?
+                }
+            }
+
+        fun getTargetPatternKeys(
+            skyKeys: com.google.common.collect.ImmutableList<SkyKey>
+        ): com.google.common.collect.ImmutableList<TargetPatternKey?> {
+            return com.google.common.collect.ImmutableList.copyOf<TargetPatternKey?>(
+                com.google.common.collect.Iterables.transform<SkyKey?, TargetPatternKey?>(
+                    skyKeys,
+                    SKY_TO_TARGET_PATTERN
+                )
+            )
+        }
+
+        private fun handleTargetParsingException(
+            eventHandler: ExtendedEventHandler, key: SkyKey, e: TargetParsingException
+        ) {
+            val patternKey: TargetPatternKey = key.argument() as TargetPatternKey
+            val rawPattern: String? = patternKey.getPattern()
+            Companion.handleTargetParsingException(eventHandler, rawPattern, e)
+        }
+
+        private fun handleTargetParsingException(
+            eventHandler: ExtendedEventHandler, rawPattern: String?, e: TargetParsingException
+        ) {
+            val errorMessage: String? = e.getMessage()
+            eventHandler.handle(Event.error("Skipping '" + rawPattern + "': " + errorMessage))
+        }
+    }
 }

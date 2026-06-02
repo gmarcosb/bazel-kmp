@@ -11,13 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.util.io
 
-package com.google.devtools.build.lib.util.io;
-
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-import java.io.IOException;
-import java.io.OutputStream;
+import com.google.devtools.build.lib.supplier.InterruptibleSupplier.get
+import com.google.devtools.build.lib.util.io.LineFlushingOutputStream
+import java.io.IOException
 
 /**
  * A stream that writes to another one, emittig a prefix before every line
@@ -25,49 +23,47 @@ import java.io.OutputStream;
  * useful for anything other than simple text data (e.g. log files). Here's
  * an example which demonstrates how an explicit flush or a flush caused by
  * a full buffer causes a newline to be added to the output.
- *
- * <code>
+ * 
+ * `
  * foo bar
  * baz ba[flush]ng
  * boo
- * </code>
- *
+` * 
+ * 
  * This results in this output being emitted:
- *
- * <code>
+ * 
+ * `
  * my prefix: foo bar
  * my prefix: ba
  * my prefix: ng
  * my prefix: boo
- * </code>
+` * 
  */
-public final class LinePrefixingOutputStream extends LineFlushingOutputStream {
+class LinePrefixingOutputStream(linePrefix: String, sink: java.io.OutputStream) : LineFlushingOutputStream() {
+    private val linePrefix: ByteArray?
+    private val sink: java.io.OutputStream
 
-  private byte[] linePrefix;
-  private final OutputStream sink;
-
-  public LinePrefixingOutputStream(String linePrefix, OutputStream sink) {
-    this.linePrefix = linePrefix.getBytes(UTF_8);
-    this.sink = sink;
-  }
-
-  @Override
-  protected void flushingHook() throws IOException {
-    synchronized (sink) {
-      if (len == 0) {
-        sink.flush();
-        return;
-      }
-      byte lastByte = buffer[len - 1];
-      boolean lineIsIncomplete = lastByte != NEWLINE;
-      sink.write(linePrefix);
-      sink.write(buffer, 0, len);
-      if (lineIsIncomplete) {
-        sink.write(NEWLINE);
-      }
-      sink.flush();
-      len = 0;
+    init {
+        this.linePrefix = linePrefix.toByteArray(java.nio.charset.StandardCharsets.UTF_8)
+        this.sink = sink
     }
-  }
 
+    @Throws(IOException::class)
+    override fun flushingHook() {
+        synchronized(sink) {
+            if (len == 0) {
+                sink.flush()
+                return
+            }
+            val lastByte: Byte = buffer[len - 1]
+            val lineIsIncomplete = lastByte != LineFlushingOutputStream.Companion.NEWLINE
+            sink.write(linePrefix)
+            sink.write(buffer, 0, len)
+            if (lineIsIncomplete) {
+                sink.write(LineFlushingOutputStream.Companion.NEWLINE.toInt())
+            }
+            sink.flush()
+            len = 0
+        }
+    }
 }

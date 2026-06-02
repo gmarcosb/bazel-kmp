@@ -11,149 +11,147 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
-
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.bugreport.Crash;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.server.CommandProtos.ExecRequest;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.IdleTask;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.ExitCode;
-import com.google.protobuf.Any;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
 
 /**
- * The result of a Blaze command. It is usually a {@link ExitCode} with optional {@link
- * FailureDetail}, but can be an instruction to the client to execute a particular binary for "blaze
+ * The result of a Blaze command. It is usually a [ExitCode] with optional [ ], but can be an instruction to the client to execute a particular binary for "blaze
  * run".
  */
 @Immutable
-public final class BlazeCommandResult {
-  private final DetailedExitCode detailedExitCode;
+class BlazeCommandResult private constructor(
+    detailedExitCode: DetailedExitCode?,
+    execDescription: ExecRequest?,
+    shutdown: Boolean,
+    responseExtensions: com.google.common.collect.ImmutableList<Any?>?,
+    idleTasks: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.server.IdleTask?>?
+) {
+    private val detailedExitCode: DetailedExitCode
 
-  @Nullable private final ExecRequest execDescription;
-  private final ImmutableList<Any> responseExtensions;
-  private final boolean shutdown;
-  private final ImmutableList<IdleTask> idleTasks;
+    private val execDescription: ExecRequest?
+    private val responseExtensions: com.google.common.collect.ImmutableList<Any?>?
+    private val shutdown: Boolean
+    private val idleTasks: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.server.IdleTask?>?
 
-  private BlazeCommandResult(
-      DetailedExitCode detailedExitCode,
-      @Nullable ExecRequest execDescription,
-      boolean shutdown,
-      ImmutableList<Any> responseExtensions,
-      ImmutableList<IdleTask> idleTasks) {
-    this.detailedExitCode = Preconditions.checkNotNull(detailedExitCode);
-    this.execDescription = execDescription;
-    this.shutdown = shutdown;
-    this.responseExtensions = responseExtensions;
-    this.idleTasks = idleTasks;
-  }
+    init {
+        this.detailedExitCode = com.google.common.base.Preconditions.checkNotNull<DetailedExitCode>(detailedExitCode)
+        this.execDescription = execDescription
+        this.shutdown = shutdown
+        this.responseExtensions = responseExtensions
+        this.idleTasks = idleTasks
+    }
 
-  private BlazeCommandResult(
-      DetailedExitCode detailedExitCode, @Nullable ExecRequest execDescription, boolean shutdown) {
-    this(detailedExitCode, execDescription, shutdown, ImmutableList.of(), ImmutableList.of());
-  }
+    private constructor(detailedExitCode: DetailedExitCode?, execDescription: ExecRequest?, shutdown: Boolean) : this(
+        detailedExitCode,
+        execDescription,
+        shutdown,
+        com.google.common.collect.ImmutableList.of<Any?>(),
+        com.google.common.collect.ImmutableList.of<com.google.devtools.build.lib.server.IdleTask?>()
+    )
 
-  public ExitCode getExitCode() {
-    return detailedExitCode.getExitCode();
-  }
+    val exitCode: ExitCode?
+        get() = detailedExitCode.getExitCode()
 
-  public DetailedExitCode getDetailedExitCode() {
-    return detailedExitCode;
-  }
+    fun getDetailedExitCode(): DetailedExitCode {
+        return detailedExitCode
+    }
 
-  @Nullable
-  public FailureDetail getFailureDetail() {
-    return detailedExitCode.getFailureDetail();
-  }
+    val failureDetail: FailureDetail?
+        get() = detailedExitCode.getFailureDetail()
 
-  public boolean shutdown() {
-    return shutdown;
-  }
+    fun shutdown(): Boolean {
+        return shutdown
+    }
 
-  @Nullable
-  public ExecRequest getExecRequest() {
-    return execDescription;
-  }
+    val execRequest: ExecRequest?
+        get() = execDescription
 
-  public boolean isSuccess() {
-    return detailedExitCode.isSuccess();
-  }
+    val isSuccess: Boolean
+        get() = detailedExitCode.isSuccess()
 
-  public ImmutableList<Any> getResponseExtensions() {
-    return responseExtensions;
-  }
+    fun getResponseExtensions(): com.google.common.collect.ImmutableList<Any?>? {
+        return responseExtensions
+    }
 
-  public ImmutableList<IdleTask> getIdleTasks() {
-    return idleTasks;
-  }
+    fun getIdleTasks(): com.google.common.collect.ImmutableList<com.google.devtools.build.lib.server.IdleTask?>? {
+        return idleTasks
+    }
 
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("exitCode", getExitCode())
-        .add("failureDetail", getFailureDetail())
-        .add("execDescription", execDescription)
-        .add("shutdown", shutdown)
-        .add("responseExtensions", responseExtensions)
-        .toString();
-  }
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("exitCode", this.exitCode)
+            .add("failureDetail", this.failureDetail)
+            .add("execDescription", execDescription)
+            .add("shutdown", shutdown)
+            .add("responseExtensions", responseExtensions)
+            .toString()
+    }
 
-  public static BlazeCommandResult shutdownOnSuccess() {
-    return new BlazeCommandResult(DetailedExitCode.success(), null, true);
-  }
+    companion object {
+        @kotlin.jvm.JvmStatic
+        fun shutdownOnSuccess(): BlazeCommandResult {
+            return BlazeCommandResult(DetailedExitCode.success(), null, true)
+        }
 
-  static BlazeCommandResult createShutdown(Crash crash) {
-    return new BlazeCommandResult(crash.detailedExitCode, null, true);
-  }
+        fun createShutdown(crash: Crash): BlazeCommandResult {
+            return BlazeCommandResult(crash.detailedExitCode, null, true)
+        }
 
-  public static BlazeCommandResult success() {
-    return new BlazeCommandResult(DetailedExitCode.success(), null, false);
-  }
+        @kotlin.jvm.JvmStatic
+        fun success(): BlazeCommandResult {
+            return BlazeCommandResult(DetailedExitCode.success(), null, false)
+        }
 
-  public static BlazeCommandResult failureDetail(FailureDetail failureDetail) {
-    return new BlazeCommandResult(DetailedExitCode.of(failureDetail), null, false);
-  }
+        fun failureDetail(failureDetail: FailureDetail?): BlazeCommandResult {
+            return BlazeCommandResult(DetailedExitCode.of(failureDetail), null, false)
+        }
 
-  public static BlazeCommandResult detailedExitCode(DetailedExitCode detailedExitCode) {
-    return new BlazeCommandResult(detailedExitCode, null, false);
-  }
+        fun detailedExitCode(detailedExitCode: DetailedExitCode?): BlazeCommandResult {
+            return BlazeCommandResult(detailedExitCode, null, false)
+        }
 
-  public static BlazeCommandResult withResponseExtensions(
-      BlazeCommandResult result, ImmutableList<Any> responseExtensions) {
-    return new BlazeCommandResult(
-        result.detailedExitCode,
-        result.execDescription,
-        result.shutdown,
-        responseExtensions,
-        result.idleTasks);
-  }
+        fun withResponseExtensions(
+            result: BlazeCommandResult, responseExtensions: com.google.common.collect.ImmutableList<Any?>?
+        ): BlazeCommandResult {
+            return BlazeCommandResult(
+                result.detailedExitCode,
+                result.execDescription,
+                result.shutdown,
+                responseExtensions,
+                result.idleTasks
+            )
+        }
 
-  public static BlazeCommandResult withIdleTasks(
-      BlazeCommandResult result, ImmutableList<IdleTask> idleTasks) {
-    return new BlazeCommandResult(
-        result.detailedExitCode,
-        result.execDescription,
-        result.shutdown,
-        result.responseExtensions,
-        idleTasks);
-  }
+        fun withIdleTasks(
+            result: BlazeCommandResult,
+            idleTasks: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.server.IdleTask?>?
+        ): BlazeCommandResult {
+            return BlazeCommandResult(
+                result.detailedExitCode,
+                result.execDescription,
+                result.shutdown,
+                result.responseExtensions,
+                idleTasks
+            )
+        }
 
-  public static BlazeCommandResult execute(ExecRequest execDescription) {
-    return new BlazeCommandResult(
-        DetailedExitCode.success(), Preconditions.checkNotNull(execDescription), false);
-  }
+        fun execute(execDescription: ExecRequest?): BlazeCommandResult {
+            return BlazeCommandResult(
+                DetailedExitCode.success(),
+                com.google.common.base.Preconditions.checkNotNull<ExecRequest?>(execDescription),
+                false
+            )
+        }
 
-  public static BlazeCommandResult execute(
-      ExecRequest execDescription, DetailedExitCode detailedExitCode) {
-    return new BlazeCommandResult(
-        Preconditions.checkNotNull(detailedExitCode),
-        Preconditions.checkNotNull(execDescription),
-        false);
-  }
+        fun execute(
+            execDescription: ExecRequest?, detailedExitCode: DetailedExitCode?
+        ): BlazeCommandResult {
+            return BlazeCommandResult(
+                com.google.common.base.Preconditions.checkNotNull<DetailedExitCode?>(detailedExitCode),
+                com.google.common.base.Preconditions.checkNotNull<ExecRequest?>(execDescription),
+                false
+            )
+        }
+    }
 }

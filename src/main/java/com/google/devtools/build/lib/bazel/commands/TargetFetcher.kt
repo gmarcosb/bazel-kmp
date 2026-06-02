@@ -35,7 +35,7 @@ class TargetFetcher private constructor(private val env: CommandEnvironment) {
                 .setStartupOptions(env.getRuntime().getStartupOptionsProvider())
                 .setOutErr(env.getReporter().getOutErr())
                 .setTargets(targets)
-                .setStartTimeMillis(env.getCommandStartTime())
+                .setStartTimeMillis(env.commandStartTime)
                 .build()
 
         val result = BuildTool(env).processRequest(request, null, options)

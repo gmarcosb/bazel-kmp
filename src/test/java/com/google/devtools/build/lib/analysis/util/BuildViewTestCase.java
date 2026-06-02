@@ -1937,7 +1937,7 @@ public abstract class BuildViewTestCase extends FoundationTestCase {
   }
 
   protected void useLoadingOptions(String... options) throws OptionsParsingException {
-    customLoadingOptions = Options.parse(LoadingOptions.class, options).getOptions();
+    customLoadingOptions = Options.parse(LoadingOptions.class, options).options;
   }
 
   protected AnalysisResult update(String target, int loadingPhaseThreads, boolean doAnalysis)

@@ -11,81 +11,70 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
+package com.google.devtools.build.lib.util.io
 
-import java.io.ByteArrayOutputStream;
-import java.io.UnsupportedEncodingException;
+import com.google.devtools.build.lib.util.io.OutErr
+import java.io.UnsupportedEncodingException
 
 /**
- * An implementation of {@link OutErr} that captures all out / err output and
+ * An implementation of [OutErr] that captures all out / err output and
  * makes it available as ISO-8859-1 strings. Useful for implementing test
  * cases that assert particular output.
  */
-public class RecordingOutErr extends OutErr {
+class RecordingOutErr : OutErr {
+    constructor() : super(java.io.ByteArrayOutputStream(), java.io.ByteArrayOutputStream())
 
-  public RecordingOutErr() {
-    super(new ByteArrayOutputStream(), new ByteArrayOutputStream());
-  }
+    constructor(out: java.io.ByteArrayOutputStream?, err: java.io.ByteArrayOutputStream?) : super(out, err)
 
-  public RecordingOutErr(ByteArrayOutputStream out, ByteArrayOutputStream err) {
-    super(out, err);
-  }
-
-  /**
-   * Reset the captured content; that is, reset the out / err buffers.
-   */
-  public void reset() {
-    getOutputStream().reset();
-    getErrorStream().reset();
-  }
-
-  /**
-   * Interprets the captured out content as an {@code ISO-8859-1} encoded
-   * string.
-   */
-  public String outAsLatin1() {
-    try {
-      return getOutputStream().toString("ISO-8859-1");
-    } catch (UnsupportedEncodingException e) {
-      throw new AssertionError(e);
+    /**
+     * Reset the captured content; that is, reset the out / err buffers.
+     */
+    fun reset() {
+        this.outputStream.reset()
+        this.errorStream.reset()
     }
-  }
 
-  /**
-   * Interprets the captured err content as an {@code ISO-8859-1} encoded
-   * string.
-   */
-  public String errAsLatin1() {
-    try {
-      return getErrorStream().toString("ISO-8859-1");
-    } catch (UnsupportedEncodingException e) {
-      throw new AssertionError(e);
+    /**
+     * Interprets the captured out content as an `ISO-8859-1` encoded
+     * string.
+     */
+    fun outAsLatin1(): String {
+        try {
+            return this.outputStream.toString("ISO-8859-1")
+        } catch (e: UnsupportedEncodingException) {
+            throw java.lang.AssertionError(e)
+        }
     }
-  }
 
-  /**
-   * Returns true if any output was recorded.
-   */
-  public boolean hasRecordedOutput() {
-    return getOutputStream().size() > 0 || getErrorStream().size() > 0;
-  }
+    /**
+     * Interprets the captured err content as an `ISO-8859-1` encoded
+     * string.
+     */
+    fun errAsLatin1(): String {
+        try {
+            return this.errorStream.toString("ISO-8859-1")
+        } catch (e: UnsupportedEncodingException) {
+            throw java.lang.AssertionError(e)
+        }
+    }
 
-  @Override
-  public String toString() {
-    String out = outAsLatin1();
-    String err = errAsLatin1();
-    return "" + ((out.length() > 0) ? ("stdout: " + out + "\n") : "")
-              + ((err.length() > 0) ? ("stderr: " + err) : "");
-  }
+    /**
+     * Returns true if any output was recorded.
+     */
+    fun hasRecordedOutput(): Boolean {
+        return this.outputStream.size() > 0 || this.errorStream.size() > 0
+    }
 
-  @Override
-  public ByteArrayOutputStream getOutputStream() {
-    return (ByteArrayOutputStream) super.getOutputStream();
-  }
+    override fun toString(): String {
+        val out = outAsLatin1()
+        val err = errAsLatin1()
+        return ("" + (if (out.length > 0) ("stdout: " + out + "\n") else "")
+                + (if (err.length > 0) ("stderr: " + err) else ""))
+    }
 
-  @Override
-  public ByteArrayOutputStream getErrorStream() {
-    return (ByteArrayOutputStream) super.getErrorStream();
-  }
+    val outputStream: java.io.ByteArrayOutputStream?
+        get() = super.getOutputStream() as java.io.ByteArrayOutputStream?
 
+    val errorStream: java.io.ByteArrayOutputStream?
+        get() = super.getErrorStream() as java.io.ByteArrayOutputStream?
 }

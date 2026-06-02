@@ -11,52 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.eval
 
-package net.starlark.java.eval;
+import com.google.devtools.build.lib.supplier.InterruptibleSupplier.get
 
-import com.google.common.base.Preconditions;
+/** An immutable [StarlarkList] that lazily invokes a supplier to obtain its elements.  */
+class LazyImmutableStarlarkList<E> internal constructor(supplier: net.starlark.java.eval.StarlarkList.SerializableListSupplier<E?>?) :
+    net.starlark.java.eval.ImmutableStarlarkList<E?>(), net.starlark.java.eval.Compactable {
+    private var supplier: net.starlark.java.eval.StarlarkList.SerializableListSupplier<E?>?
 
-/** An immutable {@link StarlarkList} that lazily invokes a supplier to obtain its elements. */
-public final class LazyImmutableStarlarkList<E> extends ImmutableStarlarkList<E>
-    implements Compactable {
-  private SerializableListSupplier<E> supplier;
-  private volatile Object[] elems;
+    @kotlin.concurrent.Volatile
+    private var elems: Array<Any?>?
 
-  LazyImmutableStarlarkList(SerializableListSupplier<E> supplier) {
-    this.supplier = supplier;
-  }
+    init {
+        this.supplier = supplier
+    }
 
-  @Override
-  public int size() {
-    return elems().length;
-  }
+    override fun size(): Int {
+        return elems().length
+    }
 
-  @Override
-  @SuppressWarnings("unchecked")
-  public E get(int i) {
-    Object[] elems = elems();
-    Preconditions.checkElementIndex(i, elems.length);
-    return (E) elems[i];
-  }
+    override fun get(i: Int): E? {
+        val elems = elems()
+        com.google.common.base.Preconditions.checkElementIndex(i, elems.size)
+        return elems[i] as E?
+    }
 
-  @Override
-  Object[] elems() {
-    if (elems == null) {
-      synchronized (this) {
+    override fun elems(): Array<Any?> {
         if (elems == null) {
-          elems = supplier.get().toArray();
-          supplier = null;
+            synchronized(this) {
+                if (elems == null) {
+                    elems = supplier.get().toArray()
+                    supplier = null
+                }
+            }
         }
-      }
+        return elems!!
     }
-    return elems;
-  }
 
-  @Override
-  public StarlarkList<E> unsafeOptimizeMemoryLayout() {
-    if (elems != null) {
-      return StarlarkList.wrap(Mutability.IMMUTABLE, elems);
+    override fun unsafeOptimizeMemoryLayout(): net.starlark.java.eval.StarlarkList<E?>? {
+        if (elems != null) {
+            return net.starlark.java.eval.StarlarkList.Companion.wrap<E?>(
+                net.starlark.java.eval.Mutability.Companion.IMMUTABLE,
+                elems
+            )
+        }
+        return this
     }
-    return this;
-  }
 }

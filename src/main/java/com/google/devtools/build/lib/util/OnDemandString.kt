@@ -11,28 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
 /**
- * This class serves as a base implementation for a {@code CharSequence}
+ * This class serves as a base implementation for a `CharSequence`
  * that delays string construction (mostly till the execution phase).
  */
-public abstract class OnDemandString implements CharSequence {
+abstract class OnDemandString : CharSequence {
+    override fun charAt(index: Int): Char {
+        throw java.lang.UnsupportedOperationException()
+    }
 
-  @Override
-  public char charAt(int index) {
-    throw new UnsupportedOperationException();
-  }
+    override fun length(): Int {
+        return toString().length
+    }
 
-  @Override
-  public int length() {
-    return toString().length();
-  }
-
-  @Override
-  public CharSequence subSequence(int start, int end) {
-    throw new UnsupportedOperationException();
-  }
-
+    override fun subSequence(start: Int, end: Int): CharSequence? {
+        throw java.lang.UnsupportedOperationException()
+    }
 }

@@ -50,7 +50,7 @@ public class LinkBuildVariablesTest extends LinkBuildVariablesTestCase {
   @Test
   public void testIsUsingFissionIsIdenticalForCompileAndLink() {
     assertThat(LinkBuildVariables.IS_USING_FISSION.getVariableName())
-        .isEqualTo(CompileBuildVariables.IS_USING_FISSION.getVariableName());
+        .isEqualTo(CompileBuildVariables.IS_USING_FISSION.variableName);
   }
 
   @Test
@@ -125,8 +125,7 @@ public class LinkBuildVariablesTest extends LinkBuildVariablesTestCase {
             variables
                 .getVariable(
                     LinkBuildVariables.LIBRARY_SEARCH_DIRECTORIES.getVariableName(),
-                    PathMapper.NOOP)
-                .isTruthy())
+                    PathMapper.NOOP).isTruthy)
         .isTrue();
     List<String> variableValue =
         getSequenceVariableValue(
@@ -484,8 +483,7 @@ public class LinkBuildVariablesTest extends LinkBuildVariablesTestCase {
 
     assertThat(
             testVariables
-                .getVariable(LinkBuildVariables.IS_CC_TEST.getVariableName(), PathMapper.NOOP)
-                .isTruthy())
+                .getVariable(LinkBuildVariables.IS_CC_TEST.getVariableName(), PathMapper.NOOP).isTruthy)
         .isTrue();
 
     ConfiguredTarget binaryTarget = getConfiguredTarget("//x:foo");
@@ -494,8 +492,7 @@ public class LinkBuildVariablesTest extends LinkBuildVariablesTestCase {
 
     assertThat(
             binaryVariables
-                .getVariable(LinkBuildVariables.IS_CC_TEST.getVariableName(), PathMapper.NOOP)
-                .isTruthy())
+                .getVariable(LinkBuildVariables.IS_CC_TEST.getVariableName(), PathMapper.NOOP).isTruthy)
         .isFalse();
   }
 
@@ -672,7 +669,7 @@ public class LinkBuildVariablesTest extends LinkBuildVariablesTestCase {
             .getFieldValue(
                 LinkBuildVariables.LIBRARIES_TO_LINK.getVariableName(), "is_whole_archive");
     assertThat(aWholeArchiveValue).isNotNull();
-    assertThat(aWholeArchiveValue.isTruthy()).isFalse();
+    assertThat(aWholeArchiveValue.isTruthy).isFalse();
 
     // :b should be whole archive
     VariableValue bWholeArchiveValue =
@@ -681,6 +678,6 @@ public class LinkBuildVariablesTest extends LinkBuildVariablesTestCase {
             .getFieldValue(
                 LinkBuildVariables.LIBRARIES_TO_LINK.getVariableName(), "is_whole_archive");
     assertThat(bWholeArchiveValue).isNotNull();
-    assertThat(bWholeArchiveValue.isTruthy()).isTrue();
+    assertThat(bWholeArchiveValue.isTruthy).isTrue();
   }
 }

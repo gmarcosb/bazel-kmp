@@ -11,237 +11,241 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.worker
 
-package com.google.devtools.build.lib.worker;
+import com.google.devtools.build.lib.sandbox.LinuxSandboxCommandLineBuilder.NetworkNamespace.NETNS
 
-import static com.google.devtools.build.lib.sandbox.LinuxSandboxCommandLineBuilder.NetworkNamespace.NETNS;
+/** A [SingleplexWorker] that runs inside a sandboxed execution root.  */
+internal class SandboxedWorker(
+    workerKey: WorkerKey?,
+    workerId: Int,
+    workDir: com.google.devtools.build.lib.vfs.Path?,
+    logFile: com.google.devtools.build.lib.vfs.Path?,
+    workerOptions: WorkerOptions?,
+    hardenedSandboxOptions: WorkerSandboxOptions?,
+    treeDeleter: TreeDeleter?,
+    useInMemoryTracking: Boolean,
+    cgroupFactory: VirtualCgroupFactory?
+) : SingleplexWorker(workerKey, workerId, workDir, logFile, workerOptions, cgroupFactory) {
+    // Need to have this data class because we can't depend on SandboxOptions in here.
+    internal class WorkerSandboxOptions(
+        sandboxBinary: com.google.devtools.build.lib.vfs.Path?,
+        fakeHostname: Boolean,
+        fakeUsername: Boolean,
+        debugMode: Boolean,
+        tmpfsPath: com.google.common.collect.ImmutableSet<PathFragment?>?,
+        writablePaths: com.google.common.collect.ImmutableSet<String?>?,
+        memoryLimit: Int,
+        inaccessiblePaths: com.google.common.collect.ImmutableSet<com.google.devtools.build.lib.vfs.Path>?,
+        additionalMountPaths: com.google.common.collect.ImmutableMap<String?, String?>?
+    ) {
+        val sandboxBinary: com.google.devtools.build.lib.vfs.Path?
+        val fakeHostname: Boolean
+        val fakeUsername: Boolean
+        val debugMode: Boolean
+        val tmpfsPath: com.google.common.collect.ImmutableSet<PathFragment?>?
+        val writablePaths: com.google.common.collect.ImmutableSet<String?>?
+        val memoryLimit: Int
+        val inaccessiblePaths: com.google.common.collect.ImmutableSet<com.google.devtools.build.lib.vfs.Path>?
+        val additionalMountPaths: com.google.common.collect.ImmutableMap<String?, String?>?
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Maps;
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.actions.UserExecException;
-import com.google.devtools.build.lib.exec.TreeDeleter;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.sandbox.CgroupsInfo;
-import com.google.devtools.build.lib.sandbox.LinuxSandboxCommandLineBuilder;
-import com.google.devtools.build.lib.sandbox.LinuxSandboxUtil;
-import com.google.devtools.build.lib.sandbox.SandboxHelpers;
-import com.google.devtools.build.lib.sandbox.SandboxHelpers.SandboxInputs;
-import com.google.devtools.build.lib.sandbox.SandboxHelpers.SandboxOutputs;
-import com.google.devtools.build.lib.sandbox.cgroups.VirtualCgroupFactory;
-import com.google.devtools.build.lib.shell.Subprocess;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Symlinks;
-import java.io.IOException;
-import java.util.Set;
-import java.util.SortedMap;
-import javax.annotation.Nullable;
-
-/** A {@link SingleplexWorker} that runs inside a sandboxed execution root. */
-final class SandboxedWorker extends SingleplexWorker {
-
-  // Need to have this data class because we can't depend on SandboxOptions in here.
-  record WorkerSandboxOptions(
-      Path sandboxBinary,
-      boolean fakeHostname,
-      boolean fakeUsername,
-      boolean debugMode,
-      ImmutableSet<PathFragment> tmpfsPath,
-      ImmutableSet<String> writablePaths,
-      int memoryLimit,
-      ImmutableSet<Path> inaccessiblePaths,
-      ImmutableMap<String, String> additionalMountPaths) {}
-
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
-  private final WorkerExecRoot workerExecRoot;
-
-  /** Options specific to hardened sandbox, null if not using that. */
-  @Nullable private final WorkerSandboxOptions hardenedSandboxOptions;
-
-  private Path inaccessibleHelperDir;
-  private Path inaccessibleHelperFile;
-  private final TreeDeleter treeDeleter;
-
-  SandboxedWorker(
-      WorkerKey workerKey,
-      int workerId,
-      Path workDir,
-      Path logFile,
-      WorkerOptions workerOptions,
-      @Nullable WorkerSandboxOptions hardenedSandboxOptions,
-      TreeDeleter treeDeleter,
-      boolean useInMemoryTracking,
-      @Nullable VirtualCgroupFactory cgroupFactory) {
-    super(workerKey, workerId, workDir, logFile, workerOptions, cgroupFactory);
-    Path tmpDirPath = SandboxHelpers.getTmpDirPath(workDir);
-    this.workerExecRoot =
-        new WorkerExecRoot(
-            workDir,
-            hardenedSandboxOptions != null
-                ? ImmutableList.of(PathFragment.create(tmpDirPath.getPathString()))
-                : ImmutableList.of(),
-            useInMemoryTracking);
-    this.hardenedSandboxOptions = hardenedSandboxOptions;
-    this.treeDeleter = treeDeleter;
-  }
-
-  @Override
-  public boolean isSandboxed() {
-    return true;
-  }
-
-  @VisibleForTesting
-  ImmutableSet<Path> getWritableDirs(Path sandboxExecRoot) throws IOException {
-    ImmutableSet.Builder<Path> writableDirs = ImmutableSet.<Path>builder().add(sandboxExecRoot);
-
-    FileSystem fs = sandboxExecRoot.getFileSystem();
-    for (String writablePath : hardenedSandboxOptions.writablePaths()) {
-      Path path = fs.getPath(writablePath);
-      writableDirs.add(path);
-      if (path.isSymbolicLink()) {
-        writableDirs.add(path.resolveSymbolicLinks());
-      }
+        init {
+            this.sandboxBinary = sandboxBinary
+            this.fakeHostname = fakeHostname
+            this.fakeUsername = fakeUsername
+            this.debugMode = debugMode
+            this.tmpfsPath = tmpfsPath
+            this.writablePaths = writablePaths
+            this.memoryLimit = memoryLimit
+            this.inaccessiblePaths = inaccessiblePaths
+            this.additionalMountPaths = additionalMountPaths
+        }
     }
 
-    Path devShm = fs.getPath("/dev/shm");
-    if (devShm.exists()) {
-      writableDirs.add(devShm.resolveSymbolicLinks());
-    }
-    writableDirs.add(fs.getPath("/tmp"));
-    return writableDirs.build();
-  }
+    private val workerExecRoot: WorkerExecRoot
 
-  private SortedMap<Path, Path> getBindMounts(Path sandboxExecRoot, @Nullable Path sandboxTmp)
-      throws UserExecException, IOException {
-    FileSystem fs = sandboxExecRoot.getFileSystem();
-    Path tmpPath = fs.getPath("/tmp");
-    final SortedMap<Path, Path> bindMounts = Maps.newTreeMap();
-    bindMounts.put(tmpPath, sandboxTmp);
-    SandboxHelpers.mountAdditionalPaths(
-        hardenedSandboxOptions.additionalMountPaths(), sandboxExecRoot, bindMounts);
+    /** Options specific to hardened sandbox, null if not using that.  */
+    private val hardenedSandboxOptions: WorkerSandboxOptions?
 
-    inaccessibleHelperFile = LinuxSandboxUtil.getInaccessibleHelperFile(sandboxExecRoot);
-    inaccessibleHelperDir = LinuxSandboxUtil.getInaccessibleHelperDir(sandboxExecRoot);
-    for (Path inaccessiblePath : hardenedSandboxOptions.inaccessiblePaths()) {
-      if (inaccessiblePath.isDirectory(Symlinks.NOFOLLOW)) {
-        bindMounts.put(inaccessiblePath, inaccessibleHelperDir);
-      } else {
-        bindMounts.put(inaccessiblePath, inaccessibleHelperFile);
-      }
-    }
-    // TODO(larsrc): Handle hermetic tmp
-    LinuxSandboxUtil.validateBindMounts(bindMounts);
-    return bindMounts;
-  }
+    private var inaccessibleHelperDir: com.google.devtools.build.lib.vfs.Path? = null
+    private var inaccessibleHelperFile: com.google.devtools.build.lib.vfs.Path? = null
+    private val treeDeleter: TreeDeleter?
 
-  @Override
-  protected Subprocess createProcess(ImmutableMap<String, String> clientEnv)
-      throws IOException, UserExecException {
-    ImmutableList<String> args = makeExecPathAbsolute(workerKey.getArgs());
-
-    // We put the sandbox inside a unique subdirectory using the worker's ID.
-    if (cgroupFactory != null) {
-      cgroup = cgroupFactory.create(workerId, ImmutableMap.of());
-    } else if (options.getUseCgroupsOnLinux() || hardenedSandboxOptions != null) {
-      // In the event that the memory limit is 0, we defer to using Blaze's WorkerLifecycleManager
-      // to kill workers rather than cgroup's OOM killer.
-      cgroup =
-          CgroupsInfo.getBlazeSpawnsCgroup()
-              .createIndividualSpawnCgroup(
-                  "worker_sandbox_" + workerId,
-                  hardenedSandboxOptions != null ? hardenedSandboxOptions.memoryLimit() : 0);
+    init {
+        val tmpDirPath: com.google.devtools.build.lib.vfs.Path = SandboxHelpers.getTmpDirPath(workDir)
+        this.workerExecRoot =
+            WorkerExecRoot(
+                workDir,
+                if (hardenedSandboxOptions != null)
+                    com.google.common.collect.ImmutableList.of<PathFragment?>(PathFragment.Companion.create(tmpDirPath.getPathString()))
+                else
+                    com.google.common.collect.ImmutableList.of<PathFragment?>(),
+                useInMemoryTracking
+            )
+        this.hardenedSandboxOptions = hardenedSandboxOptions
+        this.treeDeleter = treeDeleter
     }
 
-    // TODO(larsrc): Check that execRoot and outputBase are not under /tmp
-    if (hardenedSandboxOptions != null) {
-      Path sandboxTmp = SandboxHelpers.getTmpDirPath(workDir);
-      sandboxTmp.createDirectoryAndParents();
+    val isSandboxed: Boolean
+        get() = true
 
-      // Mostly tests require network, and some blaze run commands, but no workers.
-      LinuxSandboxCommandLineBuilder commandLineBuilder =
-          LinuxSandboxCommandLineBuilder.commandLineBuilder(
-                  this.hardenedSandboxOptions.sandboxBinary())
-              .setWritableFilesAndDirectories(getWritableDirs(workDir))
-              .setTmpfsDirectories(hardenedSandboxOptions.tmpfsPath())
-              .setPersistentProcess(true)
-              .setBindMounts(getBindMounts(workDir, sandboxTmp))
-              .setUseFakeHostname(hardenedSandboxOptions.fakeHostname())
-              .setCreateNetworkNamespace(NETNS);
+    @com.google.common.annotations.VisibleForTesting
+    @Throws(IOException::class)
+    fun getWritableDirs(sandboxExecRoot: com.google.devtools.build.lib.vfs.Path?): com.google.common.collect.ImmutableSet<com.google.devtools.build.lib.vfs.Path?> {
+        val writableDirs: com.google.common.collect.ImmutableSet.Builder<com.google.devtools.build.lib.vfs.Path?> =
+            com.google.common.collect.ImmutableSet.builder<com.google.devtools.build.lib.vfs.Path?>()
+                .add(sandboxExecRoot)
 
-      if (cgroup != null && cgroup.exists()) {
-        commandLineBuilder.setCgroupsDirs(cgroup.paths());
-      }
+        val fs: com.google.devtools.build.lib.vfs.FileSystem = sandboxExecRoot.getFileSystem()
+        for (writablePath in hardenedSandboxOptions!!.writablePaths) {
+            val path: com.google.devtools.build.lib.vfs.Path = fs.getPath(writablePath)
+            writableDirs.add(path)
+            if (path.isSymbolicLink()) {
+                writableDirs.add(path.resolveSymbolicLinks())
+            }
+        }
 
-      if (this.hardenedSandboxOptions.fakeUsername()) {
-        commandLineBuilder.setUseFakeUsername(true);
-      }
-
-      args = commandLineBuilder.buildForCommand(args);
+        val devShm: com.google.devtools.build.lib.vfs.Path = fs.getPath("/dev/shm")
+        if (devShm.exists()) {
+            writableDirs.add(devShm.resolveSymbolicLinks())
+        }
+        writableDirs.add(fs.getPath("/tmp"))
+        return writableDirs.build()
     }
 
-    Subprocess process = createProcessBuilder(args, clientEnv).start();
+    @Throws(UserExecException::class, IOException::class)
+    private fun getBindMounts(
+        sandboxExecRoot: com.google.devtools.build.lib.vfs.Path,
+        sandboxTmp: com.google.devtools.build.lib.vfs.Path?
+    ): SortedMap<com.google.devtools.build.lib.vfs.Path?, com.google.devtools.build.lib.vfs.Path?> {
+        val fs: com.google.devtools.build.lib.vfs.FileSystem = sandboxExecRoot.getFileSystem()
+        val tmpPath: com.google.devtools.build.lib.vfs.Path = fs.getPath("/tmp")
+        val bindMounts: SortedMap<com.google.devtools.build.lib.vfs.Path?, com.google.devtools.build.lib.vfs.Path?> =
+            com.google.common.collect.Maps.newTreeMap<com.google.devtools.build.lib.vfs.Path?, com.google.devtools.build.lib.vfs.Path?>()
+        bindMounts.put(tmpPath, sandboxTmp)
+        SandboxHelpers.mountAdditionalPaths(
+            hardenedSandboxOptions!!.additionalMountPaths, sandboxExecRoot, bindMounts
+        )
 
-    // If using hardened sandbox (aka linux-sandbox), the linux-sandbox parent process moves the
-    // sandboxed children processes (pid 1, 2) into the cgroup. But we still need to move the
-    // linux-sandbox process into the worker cgroup. On the other hand, without linux-sandbox, Blaze
-    // needs to do this itself for the spawned worker process.
-    if (cgroup != null && cgroup.exists()) {
-      cgroup.addProcess(process.getProcessId());
+        inaccessibleHelperFile = LinuxSandboxUtil.getInaccessibleHelperFile(sandboxExecRoot)
+        inaccessibleHelperDir = LinuxSandboxUtil.getInaccessibleHelperDir(sandboxExecRoot)
+        for (inaccessiblePath in hardenedSandboxOptions.inaccessiblePaths) {
+            if (inaccessiblePath.isDirectory(Symlinks.NOFOLLOW)) {
+                bindMounts.put(inaccessiblePath, inaccessibleHelperDir)
+            } else {
+                bindMounts.put(inaccessiblePath, inaccessibleHelperFile)
+            }
+        }
+        // TODO(larsrc): Handle hermetic tmp
+        LinuxSandboxUtil.validateBindMounts(bindMounts)
+        return bindMounts
     }
-    return process;
-  }
 
-  @Override
-  public void prepareExecution(
-      SandboxInputs inputFiles,
-      SandboxOutputs outputs,
-      Set<PathFragment> workerFiles,
-      ImmutableMap<String, String> clientEnv)
-      throws IOException, InterruptedException, UserExecException {
-    try (SilentCloseable c = Profiler.instance().profile("workerExecRoot.createFileSystem")) {
-      workerExecRoot.createFileSystem(workerFiles, inputFiles, outputs, treeDeleter);
+    @Throws(IOException::class, UserExecException::class)
+    override fun createProcess(clientEnv: com.google.common.collect.ImmutableMap<String?, String?>?): Subprocess {
+        var args: com.google.common.collect.ImmutableList<String?>? = makeExecPathAbsolute(workerKey.getArgs())
+
+        // We put the sandbox inside a unique subdirectory using the worker's ID.
+        if (cgroupFactory != null) {
+            cgroup = cgroupFactory.create(workerId, com.google.common.collect.ImmutableMap.of<K?, V?>())
+        } else if (options.getUseCgroupsOnLinux() || hardenedSandboxOptions != null) {
+            // In the event that the memory limit is 0, we defer to using Blaze's WorkerLifecycleManager
+            // to kill workers rather than cgroup's OOM killer.
+            cgroup =
+                CgroupsInfo.getBlazeSpawnsCgroup()
+                    .createIndividualSpawnCgroup(
+                        "worker_sandbox_" + workerId,
+                        if (hardenedSandboxOptions != null) hardenedSandboxOptions.memoryLimit else 0
+                    )
+        }
+
+        // TODO(larsrc): Check that execRoot and outputBase are not under /tmp
+        if (hardenedSandboxOptions != null) {
+            val sandboxTmp: com.google.devtools.build.lib.vfs.Path = SandboxHelpers.getTmpDirPath(workDir)
+            sandboxTmp.createDirectoryAndParents()
+
+            // Mostly tests require network, and some blaze run commands, but no workers.
+            val commandLineBuilder: LinuxSandboxCommandLineBuilder =
+                LinuxSandboxCommandLineBuilder.commandLineBuilder(
+                    this.hardenedSandboxOptions.sandboxBinary
+                )
+                    .setWritableFilesAndDirectories(getWritableDirs(workDir))
+                    .setTmpfsDirectories(hardenedSandboxOptions.tmpfsPath)
+                    .setPersistentProcess(true)
+                    .setBindMounts(getBindMounts(workDir, sandboxTmp))
+                    .setUseFakeHostname(hardenedSandboxOptions.fakeHostname)
+                    .setCreateNetworkNamespace(NETNS)
+
+            if (cgroup != null && cgroup.exists()) {
+                commandLineBuilder.setCgroupsDirs(cgroup.paths())
+            }
+
+            if (this.hardenedSandboxOptions.fakeUsername) {
+                commandLineBuilder.setUseFakeUsername(true)
+            }
+
+            args = commandLineBuilder.buildForCommand(args)
+        }
+
+        val process: Subprocess = createProcessBuilder(args, clientEnv).start()
+
+        // If using hardened sandbox (aka linux-sandbox), the linux-sandbox parent process moves the
+        // sandboxed children processes (pid 1, 2) into the cgroup. But we still need to move the
+        // linux-sandbox process into the worker cgroup. On the other hand, without linux-sandbox, Blaze
+        // needs to do this itself for the spawned worker process.
+        if (cgroup != null && cgroup.exists()) {
+            cgroup.addProcess(process.processId)
+        }
+        return process
     }
 
-    super.prepareExecution(inputFiles, outputs, workerFiles, clientEnv);
-  }
-
-  @Override
-  public void finishExecution(Path execRoot, SandboxOutputs outputs)
-      throws IOException, InterruptedException {
-    super.finishExecution(execRoot, outputs);
-    if (cgroup != null && cgroup.exists()) {
-      // This is only to not leave too much behind in the cgroups tree, can ignore errors.
-      cgroup.destroy();
+    @Throws(IOException::class, java.lang.InterruptedException::class, UserExecException::class)
+    override fun prepareExecution(
+        inputFiles: SandboxInputs,
+        outputs: SandboxOutputs?,
+        workerFiles: MutableSet<PathFragment?>?,
+        clientEnv: com.google.common.collect.ImmutableMap<String?, String?>?
+    ) {
+        com.google.devtools.build.lib.profiler.Profiler.instance().profile("workerExecRoot.createFileSystem").use { c ->
+            workerExecRoot.createFileSystem(workerFiles, inputFiles, outputs, treeDeleter)
+        }
+        super.prepareExecution(inputFiles, outputs, workerFiles, clientEnv)
     }
-    workerExecRoot.copyOutputs(execRoot, outputs);
-  }
 
-  @Override
-  synchronized void destroy() {
-    super.destroy();
-    try {
-      if (inaccessibleHelperFile != null) {
-        inaccessibleHelperFile.delete();
-      }
-      if (inaccessibleHelperDir != null) {
-        inaccessibleHelperDir.delete();
-      }
-      if (cgroup != null && cgroup.exists()) {
-        // This is only to not leave too much behind in the cgroups tree, can ignore errors.
-        cgroup.destroy();
-      }
-      workDir.deleteTree();
-      if (hardenedSandboxOptions != null) {
-        SandboxHelpers.getTmpDirPath(workDir).deleteTree();
-      }
-    } catch (IOException e) {
-      logger.atWarning().withCause(e).log("Caught IOException while deleting workdir.");
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    override fun finishExecution(execRoot: com.google.devtools.build.lib.vfs.Path?, outputs: SandboxOutputs?) {
+        super.finishExecution(execRoot, outputs)
+        if (cgroup != null && cgroup.exists()) {
+            // This is only to not leave too much behind in the cgroups tree, can ignore errors.
+            cgroup.destroy()
+        }
+        workerExecRoot.copyOutputs(execRoot, outputs)
     }
-  }
+
+    @kotlin.jvm.Synchronized
+    override fun destroy() {
+        super.destroy()
+        try {
+            if (inaccessibleHelperFile != null) {
+                inaccessibleHelperFile.delete()
+            }
+            if (inaccessibleHelperDir != null) {
+                inaccessibleHelperDir.delete()
+            }
+            if (cgroup != null && cgroup.exists()) {
+                // This is only to not leave too much behind in the cgroups tree, can ignore errors.
+                cgroup.destroy()
+            }
+            workDir.deleteTree()
+            if (hardenedSandboxOptions != null) {
+                SandboxHelpers.getTmpDirPath(workDir).deleteTree()
+            }
+        } catch (e: IOException) {
+            logger.atWarning().withCause(e).log("Caught IOException while deleting workdir.")
+        }
+    }
+
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+    }
 }

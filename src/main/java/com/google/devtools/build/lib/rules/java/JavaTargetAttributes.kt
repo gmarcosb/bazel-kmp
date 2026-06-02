@@ -11,433 +11,419 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.java;
+package com.google.devtools.build.lib.rules.java
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.config.CoreOptionConverters.StrictDepsMode;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.packages.RuleClass.ConfiguredTargetFactory.RuleErrorException;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import javax.annotation.Nullable;
+import com.google.common.annotations.VisibleForTesting
+import com.google.common.base.Preconditions
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableSet
+import com.google.devtools.build.lib.actions.Artifact
+import com.google.errorprone.annotations.CanIgnoreReturnValue
+import kotlin.collections.ArrayList
+import kotlin.collections.Iterable
+import kotlin.collections.MutableCollection
+import kotlin.collections.MutableList
+import kotlin.collections.MutableMap
 
 /**
  * An object that captures the temporary state we need to pass around while the initialization hook
  * for a java rule is running.
  */
-public class JavaTargetAttributes {
+class JavaTargetAttributes private constructor(
+    sourceFiles: ImmutableSet<Artifact?>?,
+    compileTimeClassPath: NestedSet<Artifact?>?,
+    bootClassPath: BootClassPathInfo?,
+    sourcePath: ImmutableList<Artifact?>?,
+    plugins: JavaPluginInfo?,
+    resources: ImmutableMap<PathFragment?, Artifact?>?,
+    resourceJars: NestedSet<Artifact?>?,
+    sourceJars: ImmutableList<Artifact?>?,
+    classPathResources: ImmutableList<Artifact?>?,
+    additionalOutputs: ImmutableSet<Artifact?>?,
+    directJars: NestedSet<Artifact?>?,
+    headerCompilationDirectJars: NestedSet<Artifact?>?,
+    compileTimeDependencyArtifacts: NestedSet<Artifact?>?,
+    targetLabel: Label?,
+    injectingRuleKind: String?,
+    strictJavaDeps: StrictDepsMode?
+) {
+    /** A builder class for JavaTargetAttributes.  */
+    class Builder {
+        // The order of source files is important, and there must not be duplicates.
+        // Unfortunately, there is no interface in Java that represents a collection
+        // without duplicates that has a stable and deterministic iteration order,
+        // but is not sorted according to a property of the elements. Thus we are
+        // stuck with Set.
+        private val sourceFiles: MutableList<Artifact?> = ArrayList<Artifact?>()
 
-  /** A builder class for JavaTargetAttributes. */
-  public static class Builder {
+        private val compileTimeClassPathBuilder: NestedSetBuilder<Artifact?> = NestedSetBuilder.naiveLinkOrder()
 
-    // The order of source files is important, and there must not be duplicates.
-    // Unfortunately, there is no interface in Java that represents a collection
-    // without duplicates that has a stable and deterministic iteration order,
-    // but is not sorted according to a property of the elements. Thus we are
-    // stuck with Set.
-    private final List<Artifact> sourceFiles = new ArrayList<>();
+        private var bootClassPath: BootClassPathInfo = BootClassPathInfo.Companion.empty()
+        private var sourcePath: ImmutableList<Artifact?> = ImmutableList.of<Artifact?>()
 
-    private final NestedSetBuilder<Artifact> compileTimeClassPathBuilder =
-        NestedSetBuilder.naiveLinkOrder();
+        private var plugins: JavaPluginInfo = JavaPluginInfo.Companion.empty(JavaPluginInfo.Companion.PROVIDER)
 
-    private BootClassPathInfo bootClassPath = BootClassPathInfo.empty();
-    private ImmutableList<Artifact> sourcePath = ImmutableList.of();
+        private val resources: MutableMap<PathFragment?, Artifact?> = LinkedHashMap<PathFragment?, Artifact?>()
+        private val resourceJars: NestedSetBuilder<Artifact?> = NestedSetBuilder.stableOrder()
+        private val sourceJars: MutableList<Artifact?> = ArrayList<Artifact?>()
 
-    private JavaPluginInfo plugins = JavaPluginInfo.empty(JavaPluginInfo.PROVIDER);
+        private val classPathResources: ImmutableList.Builder<Artifact?> = ImmutableList.builder<Artifact?>()
 
-    private final Map<PathFragment, Artifact> resources = new LinkedHashMap<>();
-    private final NestedSetBuilder<Artifact> resourceJars = NestedSetBuilder.stableOrder();
-    private final List<Artifact> sourceJars = new ArrayList<>();
+        private val additionalOutputs: ImmutableSet.Builder<Artifact?> = ImmutableSet.builder<Artifact?>()
 
-    private final ImmutableList.Builder<Artifact> classPathResources = ImmutableList.builder();
+        /** @see {@link .setStrictJavaDeps}.
+         */
+        private var strictJavaDeps: StrictDepsMode? = StrictDepsMode.ERROR
 
-    private final ImmutableSet.Builder<Artifact> additionalOutputs = ImmutableSet.builder();
+        private val directJarsBuilder: NestedSetBuilder<Artifact?> = NestedSetBuilder.naiveLinkOrder()
+        private val headerCompilationDirectJarsBuilder: NestedSetBuilder<Artifact?> = NestedSetBuilder.naiveLinkOrder()
+        private val compileTimeDependencyArtifacts: NestedSetBuilder<Artifact?> = NestedSetBuilder.stableOrder()
+        private var targetLabel: Label? = null
+        private var injectingRuleKind: String? = null
 
-    /** @see {@link #setStrictJavaDeps}. */
-    private StrictDepsMode strictJavaDeps = StrictDepsMode.ERROR;
+        private var prependDirectJars = true
 
-    private final NestedSetBuilder<Artifact> directJarsBuilder = NestedSetBuilder.naiveLinkOrder();
-    private final NestedSetBuilder<Artifact> headerCompilationDirectJarsBuilder =
-        NestedSetBuilder.naiveLinkOrder();
-    private final NestedSetBuilder<Artifact> compileTimeDependencyArtifacts =
-        NestedSetBuilder.stableOrder();
-    private Label targetLabel;
-    @Nullable private String injectingRuleKind;
+        private var built = false
 
-    private boolean prependDirectJars = true;
-
-    private boolean built = false;
-
-    public Builder() {}
-
-    @CanIgnoreReturnValue
-    public Builder addSourceFiles(Iterable<Artifact> sourceFiles) {
-      Preconditions.checkArgument(!built);
-      for (Artifact artifact : sourceFiles) {
-        if (JavaSemantics.JAVA_SOURCE.matches(artifact.getFilename())) {
-          this.sourceFiles.add(artifact);
+        @CanIgnoreReturnValue
+        fun addSourceFiles(sourceFiles: Iterable<Artifact>): Builder {
+            Preconditions.checkArgument(!built)
+            for (artifact in sourceFiles) {
+                if (JavaSemantics.Companion.JAVA_SOURCE.matches(artifact.getFilename())) {
+                    this.sourceFiles.add(artifact)
+                }
+            }
+            return this
         }
-      }
-      return this;
+
+        @CanIgnoreReturnValue
+        fun addSourceJars(sourceJars: MutableCollection<Artifact?>?): Builder {
+            Preconditions.checkArgument(!built)
+            this.sourceJars.addAll(sourceJars)
+            return this
+        }
+
+        @CanIgnoreReturnValue
+        @VisibleForTesting
+        fun addCompileTimeClassPathEntries(entries: NestedSet<Artifact?>?): Builder {
+            Preconditions.checkArgument(!built)
+            compileTimeClassPathBuilder.addTransitive(entries)
+            return this
+        }
+
+        /**
+         * Avoids prepending the direct jars to the compile-time classpath when building the attributes,
+         * assuming that they have already been prepended. This avoids creating a new [NestedSet]
+         * instance.
+         * 
+         * 
+         * After this method is called, [.addDirectJars] will throw an exception.
+         */
+        @CanIgnoreReturnValue
+        fun setCompileTimeClassPathEntriesWithPrependedDirectJars(
+            entries: NestedSet<Artifact?>?
+        ): Builder {
+            Preconditions.checkArgument(!built)
+            Preconditions.checkArgument(compileTimeClassPathBuilder.isEmpty())
+            prependDirectJars = false
+            compileTimeClassPathBuilder.addTransitive(entries)
+            return this
+        }
+
+        @CanIgnoreReturnValue
+        fun setTargetLabel(targetLabel: Label?): Builder {
+            Preconditions.checkArgument(!built)
+            this.targetLabel = targetLabel
+            return this
+        }
+
+        @CanIgnoreReturnValue
+        fun setInjectingRuleKind(injectingRuleKind: String?): Builder {
+            Preconditions.checkArgument(!built)
+            this.injectingRuleKind = injectingRuleKind
+            return this
+        }
+
+        /**
+         * Sets the bootclasspath to be passed to the Java compiler.
+         * 
+         * 
+         * If this method is called, then the bootclasspath specified in this JavaTargetAttributes
+         * instance overrides the default bootclasspath.
+         */
+        @CanIgnoreReturnValue
+        @Throws(RuleErrorException::class)
+        fun setBootClassPath(bootClassPath: BootClassPathInfo): Builder {
+            Preconditions.checkArgument(!built)
+            Preconditions.checkArgument(!bootClassPath.isEmpty())
+            Preconditions.checkState(this.bootClassPath.isEmpty())
+            this.bootClassPath = bootClassPath
+            return this
+        }
+
+        /** Sets the sourcepath to be passed to the Java compiler.  */
+        @CanIgnoreReturnValue
+        fun setSourcePath(artifacts: ImmutableList<Artifact?>): Builder {
+            Preconditions.checkArgument(!built)
+            Preconditions.checkArgument(sourcePath.isEmpty())
+            this.sourcePath = artifacts
+            return this
+        }
+
+        /**
+         * Controls how strict the javac compiler will be in checking correct use of direct
+         * dependencies.
+         * 
+         * 
+         * Defaults to [StrictDepsMode.ERROR].
+         * 
+         * @param strictDeps one of WARN, ERROR or OFF
+         */
+        @CanIgnoreReturnValue
+        fun setStrictJavaDeps(strictDeps: StrictDepsMode?): Builder {
+            Preconditions.checkArgument(!built)
+            strictJavaDeps = strictDeps
+            return this
+        }
+
+        /**
+         * In tandem with strictJavaDeps, directJars represents a subset of the compile-time classpath
+         * jars that were provided by direct dependencies. When strictJavaDeps is OFF, there is no need
+         * to provide directJars, and no extra information is passed to javac. When strictJavaDeps is
+         * set to WARN or ERROR, the compiler command line will include extra flags to indicate the
+         * warning/error policy and to map the classpath jars to direct or transitive dependencies,
+         * using the information in directJars. The compiler command line will include an extra flag to
+         * indicate which classpath jars are direct dependencies.
+         */
+        @CanIgnoreReturnValue
+        fun addDirectJars(directJars: NestedSet<Artifact?>?): Builder {
+            Preconditions.checkArgument(!built)
+            Preconditions.checkArgument(prependDirectJars)
+            this.directJarsBuilder.addTransitive(directJars)
+            return this
+        }
+
+        @CanIgnoreReturnValue
+        fun addHeaderCompilationDirectJars(headerCompilationDirectJars: NestedSet<Artifact?>?): Builder {
+            Preconditions.checkArgument(!built)
+            this.headerCompilationDirectJarsBuilder.addTransitive(headerCompilationDirectJars)
+            return this
+        }
+
+        @CanIgnoreReturnValue
+        fun addCompileTimeDependencyArtifacts(dependencyArtifacts: NestedSet<Artifact?>?): Builder {
+            Preconditions.checkArgument(!built)
+            compileTimeDependencyArtifacts.addTransitive(dependencyArtifacts)
+            return this
+        }
+
+        @CanIgnoreReturnValue
+        fun addResource(execPath: PathFragment?, resource: Artifact?): Builder {
+            Preconditions.checkArgument(!built)
+            this.resources.put(execPath, resource)
+            return this
+        }
+
+        @CanIgnoreReturnValue
+        fun addResourceJars(resourceJars: NestedSet<Artifact?>?): Builder {
+            Preconditions.checkArgument(!built)
+            this.resourceJars.addTransitive(resourceJars)
+            return this
+        }
+
+        @CanIgnoreReturnValue
+        fun addPlugin(plugins: JavaPluginInfo?): Builder {
+            Preconditions.checkArgument(!built)
+            this.plugins = JavaPluginInfo.Companion.mergeWithoutJavaOutputs(this.plugins, plugins)
+            return this
+        }
+
+        @CanIgnoreReturnValue
+        fun addClassPathResources(classPathResources: MutableList<Artifact?>): Builder {
+            Preconditions.checkArgument(!built)
+            this.classPathResources.addAll(classPathResources)
+            return this
+        }
+
+        /** Adds additional outputs to this target's compile action.  */
+        @CanIgnoreReturnValue
+        fun addAdditionalOutputs(outputs: Iterable<Artifact?>): Builder {
+            Preconditions.checkArgument(!built)
+            additionalOutputs.addAll(outputs)
+            return this
+        }
+
+        fun build(): JavaTargetAttributes {
+            built = true
+            val directJars: NestedSet<Artifact?>? = directJarsBuilder.build()
+            val headerCompilationDirectJars: NestedSet<Artifact?>? = headerCompilationDirectJarsBuilder.build()
+            val compileTimeClassPath: NestedSet<Artifact?>? =
+                if (prependDirectJars)
+                    NestedSetBuilder.< Artifact > naiveLinkOrder < Artifact ? > ()
+                        .addTransitive(directJars)
+                        .addTransitive(compileTimeClassPathBuilder.build())
+                        .build()
+                else
+                    compileTimeClassPathBuilder.build()
+            return JavaTargetAttributes(
+                ImmutableSet.copyOf<Artifact?>(sourceFiles),
+                compileTimeClassPath,
+                bootClassPath,
+                sourcePath,
+                plugins,
+                ImmutableMap.copyOf<PathFragment?, Artifact?>(resources),
+                resourceJars.build(),
+                ImmutableList.copyOf<Artifact?>(sourceJars),
+                classPathResources.build(),
+                additionalOutputs.build(),
+                directJars,  /* headerCompilationDirectJars= */
+                headerCompilationDirectJars,
+                compileTimeDependencyArtifacts.build(),
+                targetLabel,
+                injectingRuleKind,
+                strictJavaDeps
+            )
+        }
+
+        // TODO(bazel-team): delete the following method - users should use the built
+        // JavaTargetAttributes instead of accessing mutable state in the Builder.
+
+        @Deprecated("prefer {@link JavaTargetAttributes#getSourceFiles} ")
+        fun hasSourceFiles(): Boolean {
+            return !sourceFiles.isEmpty()
+        }
     }
 
-    @CanIgnoreReturnValue
-    public Builder addSourceJars(Collection<Artifact> sourceJars) {
-      Preconditions.checkArgument(!built);
-      this.sourceJars.addAll(sourceJars);
-      return this;
+    //
+    // -------------------------- END OF BUILDER CLASS -------------------------
+    //
+    private val sourceFiles: ImmutableSet<Artifact?>?
+
+    private val compileTimeClassPath: NestedSet<Artifact?>?
+
+    val bootClassPath: BootClassPathInfo?
+    private val sourcePath: ImmutableList<Artifact?>?
+
+    private val plugins: JavaPluginInfo?
+
+    private val resources: ImmutableMap<PathFragment?, Artifact?>?
+    private val resourceJars: NestedSet<Artifact?>?
+
+    private val sourceJars: ImmutableList<Artifact?>?
+
+    private val classPathResources: ImmutableList<Artifact?>?
+
+    private val additionalOutputs: ImmutableSet<Artifact?>?
+
+    private val directJars: NestedSet<Artifact?>?
+    private val headerCompilationDirectJars: NestedSet<Artifact?>?
+    private val compileTimeDependencyArtifacts: NestedSet<Artifact?>?
+    private val targetLabel: Label?
+    val injectingRuleKind: String?
+
+    private val strictJavaDeps: StrictDepsMode?
+
+    /** Constructor of JavaTargetAttributes.  */
+    init {
+        this.sourceFiles = sourceFiles
+        this.directJars = directJars
+        this.headerCompilationDirectJars = headerCompilationDirectJars
+        this.compileTimeClassPath = compileTimeClassPath
+        this.bootClassPath = bootClassPath
+        this.sourcePath = sourcePath
+        this.plugins = plugins
+        this.resources = resources
+        this.resourceJars = resourceJars
+        this.sourceJars = sourceJars
+        this.classPathResources = classPathResources
+        this.additionalOutputs = additionalOutputs
+        this.compileTimeDependencyArtifacts = compileTimeDependencyArtifacts
+        this.targetLabel = targetLabel
+        this.injectingRuleKind = injectingRuleKind
+        this.strictJavaDeps = strictJavaDeps
     }
 
-    @CanIgnoreReturnValue
-    @VisibleForTesting
-    public Builder addCompileTimeClassPathEntries(NestedSet<Artifact> entries) {
-      Preconditions.checkArgument(!built);
-      compileTimeClassPathBuilder.addTransitive(entries);
-      return this;
+    fun appendAdditionalTransitiveClassPathEntries(
+        additionalClassPathEntries: NestedSet<Artifact?>?
+    ): JavaTargetAttributes {
+        val compileTimeClassPath: NestedSet<Artifact?>? =
+            NestedSetBuilder.fromNestedSet(this.compileTimeClassPath)
+                .addTransitive(additionalClassPathEntries)
+                .build()
+        return JavaTargetAttributes(
+            sourceFiles,
+            compileTimeClassPath,
+            bootClassPath,
+            sourcePath,
+            plugins,
+            resources,
+            resourceJars,
+            sourceJars,
+            classPathResources,
+            additionalOutputs,
+            directJars,  /* headerCompilationDirectJars= */
+            headerCompilationDirectJars,
+            compileTimeDependencyArtifacts,
+            targetLabel,
+            injectingRuleKind,
+            strictJavaDeps
+        )
     }
 
-    /**
-     * Avoids prepending the direct jars to the compile-time classpath when building the attributes,
-     * assuming that they have already been prepended. This avoids creating a new {@link NestedSet}
-     * instance.
-     *
-     * <p>After this method is called, {@link #addDirectJars(NestedSet)} will throw an exception.
-     */
-    @CanIgnoreReturnValue
-    public Builder setCompileTimeClassPathEntriesWithPrependedDirectJars(
-        NestedSet<Artifact> entries) {
-      Preconditions.checkArgument(!built);
-      Preconditions.checkArgument(compileTimeClassPathBuilder.isEmpty());
-      prependDirectJars = false;
-      compileTimeClassPathBuilder.addTransitive(entries);
-      return this;
+    fun getDirectJars(): NestedSet<Artifact?>? {
+        return directJars
     }
 
-    @CanIgnoreReturnValue
-    public Builder setTargetLabel(Label targetLabel) {
-      Preconditions.checkArgument(!built);
-      this.targetLabel = targetLabel;
-      return this;
+    fun getHeaderCompilationDirectJars(): NestedSet<Artifact?>? {
+        return headerCompilationDirectJars
     }
 
-    @CanIgnoreReturnValue
-    public Builder setInjectingRuleKind(@Nullable String injectingRuleKind) {
-      Preconditions.checkArgument(!built);
-      this.injectingRuleKind = injectingRuleKind;
-      return this;
+    fun getCompileTimeDependencyArtifacts(): NestedSet<Artifact?>? {
+        return compileTimeDependencyArtifacts
     }
 
-    /**
-     * Sets the bootclasspath to be passed to the Java compiler.
-     *
-     * <p>If this method is called, then the bootclasspath specified in this JavaTargetAttributes
-     * instance overrides the default bootclasspath.
-     */
-    @CanIgnoreReturnValue
-    public Builder setBootClassPath(BootClassPathInfo bootClassPath) throws RuleErrorException {
-      Preconditions.checkArgument(!built);
-      Preconditions.checkArgument(!bootClassPath.isEmpty());
-      Preconditions.checkState(this.bootClassPath.isEmpty());
-      this.bootClassPath = bootClassPath;
-      return this;
+    fun getSourceJars(): ImmutableList<Artifact?>? {
+        return sourceJars
     }
 
-    /** Sets the sourcepath to be passed to the Java compiler. */
-    @CanIgnoreReturnValue
-    public Builder setSourcePath(ImmutableList<Artifact> artifacts) {
-      Preconditions.checkArgument(!built);
-      Preconditions.checkArgument(sourcePath.isEmpty());
-      this.sourcePath = artifacts;
-      return this;
+    fun getResources(): MutableMap<PathFragment?, Artifact?>? {
+        return resources
     }
 
-    /**
-     * Controls how strict the javac compiler will be in checking correct use of direct
-     * dependencies.
-     *
-     * <p>Defaults to {@link StrictDepsMode#ERROR}.
-     *
-     * @param strictDeps one of WARN, ERROR or OFF
-     */
-    @CanIgnoreReturnValue
-    public Builder setStrictJavaDeps(StrictDepsMode strictDeps) {
-      Preconditions.checkArgument(!built);
-      strictJavaDeps = strictDeps;
-      return this;
+    fun getResourceJars(): NestedSet<Artifact?>? {
+        return resourceJars
     }
 
-    /**
-     * In tandem with strictJavaDeps, directJars represents a subset of the compile-time classpath
-     * jars that were provided by direct dependencies. When strictJavaDeps is OFF, there is no need
-     * to provide directJars, and no extra information is passed to javac. When strictJavaDeps is
-     * set to WARN or ERROR, the compiler command line will include extra flags to indicate the
-     * warning/error policy and to map the classpath jars to direct or transitive dependencies,
-     * using the information in directJars. The compiler command line will include an extra flag to
-     * indicate which classpath jars are direct dependencies.
-     */
-    @CanIgnoreReturnValue
-    public Builder addDirectJars(NestedSet<Artifact> directJars) {
-      Preconditions.checkArgument(!built);
-      Preconditions.checkArgument(prependDirectJars);
-      this.directJarsBuilder.addTransitive(directJars);
-      return this;
+    fun getClassPathResources(): ImmutableList<Artifact?>? {
+        return classPathResources
     }
 
-    @CanIgnoreReturnValue
-    public Builder addHeaderCompilationDirectJars(NestedSet<Artifact> headerCompilationDirectJars) {
-      Preconditions.checkArgument(!built);
-      this.headerCompilationDirectJarsBuilder.addTransitive(headerCompilationDirectJars);
-      return this;
+    fun getAdditionalOutputs(): ImmutableSet<Artifact?>? {
+        return additionalOutputs
     }
 
-    @CanIgnoreReturnValue
-    public Builder addCompileTimeDependencyArtifacts(NestedSet<Artifact> dependencyArtifacts) {
-      Preconditions.checkArgument(!built);
-      compileTimeDependencyArtifacts.addTransitive(dependencyArtifacts);
-      return this;
+    fun getCompileTimeClassPath(): NestedSet<Artifact?>? {
+        return compileTimeClassPath
     }
 
-    @CanIgnoreReturnValue
-    public Builder addResource(PathFragment execPath, Artifact resource) {
-      Preconditions.checkArgument(!built);
-      this.resources.put(execPath, resource);
-      return this;
+    fun getSourcePath(): ImmutableList<Artifact?>? {
+        return sourcePath
     }
 
-    @CanIgnoreReturnValue
-    public Builder addResourceJars(NestedSet<Artifact> resourceJars) {
-      Preconditions.checkArgument(!built);
-      this.resourceJars.addTransitive(resourceJars);
-      return this;
+    fun plugins(): JavaPluginInfo? {
+        return plugins
     }
 
-    @CanIgnoreReturnValue
-    public Builder addPlugin(JavaPluginInfo plugins) {
-      Preconditions.checkArgument(!built);
-      this.plugins = JavaPluginInfo.mergeWithoutJavaOutputs(this.plugins, plugins);
-      return this;
+    fun getSourceFiles(): ImmutableSet<Artifact?>? {
+        return sourceFiles
     }
 
-    @CanIgnoreReturnValue
-    public Builder addClassPathResources(List<Artifact> classPathResources) {
-      Preconditions.checkArgument(!built);
-      this.classPathResources.addAll(classPathResources);
-      return this;
+    fun getTargetLabel(): Label? {
+        return targetLabel
     }
 
-    /** Adds additional outputs to this target's compile action. */
-    @CanIgnoreReturnValue
-    public Builder addAdditionalOutputs(Iterable<Artifact> outputs) {
-      Preconditions.checkArgument(!built);
-      additionalOutputs.addAll(outputs);
-      return this;
+    fun getStrictJavaDeps(): StrictDepsMode? {
+        return strictJavaDeps
     }
-
-    public JavaTargetAttributes build() {
-      built = true;
-      NestedSet<Artifact> directJars = directJarsBuilder.build();
-      NestedSet<Artifact> headerCompilationDirectJars = headerCompilationDirectJarsBuilder.build();
-      NestedSet<Artifact> compileTimeClassPath =
-          prependDirectJars
-              ? NestedSetBuilder.<Artifact>naiveLinkOrder()
-                  .addTransitive(directJars)
-                  .addTransitive(compileTimeClassPathBuilder.build())
-                  .build()
-              : compileTimeClassPathBuilder.build();
-      return new JavaTargetAttributes(
-          ImmutableSet.copyOf(sourceFiles),
-          compileTimeClassPath,
-          bootClassPath,
-          sourcePath,
-          plugins,
-          ImmutableMap.copyOf(resources),
-          resourceJars.build(),
-          ImmutableList.copyOf(sourceJars),
-          classPathResources.build(),
-          additionalOutputs.build(),
-          directJars,
-          /* headerCompilationDirectJars= */ headerCompilationDirectJars,
-          compileTimeDependencyArtifacts.build(),
-          targetLabel,
-          injectingRuleKind,
-          strictJavaDeps);
-    }
-
-    // TODO(bazel-team): delete the following method - users should use the built
-    // JavaTargetAttributes instead of accessing mutable state in the Builder.
-
-    /** @deprecated prefer {@link JavaTargetAttributes#getSourceFiles} */
-    @Deprecated
-    public boolean hasSourceFiles() {
-      return !sourceFiles.isEmpty();
-    }
-  }
-
-  //
-  // -------------------------- END OF BUILDER CLASS -------------------------
-  //
-
-  private final ImmutableSet<Artifact> sourceFiles;
-
-  private final NestedSet<Artifact> compileTimeClassPath;
-
-  private final BootClassPathInfo bootClassPath;
-  private final ImmutableList<Artifact> sourcePath;
-
-  private final JavaPluginInfo plugins;
-
-  private final ImmutableMap<PathFragment, Artifact> resources;
-  private final NestedSet<Artifact> resourceJars;
-
-  private final ImmutableList<Artifact> sourceJars;
-
-  private final ImmutableList<Artifact> classPathResources;
-
-  private final ImmutableSet<Artifact> additionalOutputs;
-
-  private final NestedSet<Artifact> directJars;
-  private final NestedSet<Artifact> headerCompilationDirectJars;
-  private final NestedSet<Artifact> compileTimeDependencyArtifacts;
-  private final Label targetLabel;
-  @Nullable private final String injectingRuleKind;
-
-  private final StrictDepsMode strictJavaDeps;
-
-  /** Constructor of JavaTargetAttributes. */
-  private JavaTargetAttributes(
-      ImmutableSet<Artifact> sourceFiles,
-      NestedSet<Artifact> compileTimeClassPath,
-      BootClassPathInfo bootClassPath,
-      ImmutableList<Artifact> sourcePath,
-      JavaPluginInfo plugins,
-      ImmutableMap<PathFragment, Artifact> resources,
-      NestedSet<Artifact> resourceJars,
-      ImmutableList<Artifact> sourceJars,
-      ImmutableList<Artifact> classPathResources,
-      ImmutableSet<Artifact> additionalOutputs,
-      NestedSet<Artifact> directJars,
-      NestedSet<Artifact> headerCompilationDirectJars,
-      NestedSet<Artifact> compileTimeDependencyArtifacts,
-      Label targetLabel,
-      @Nullable String injectingRuleKind,
-      StrictDepsMode strictJavaDeps) {
-    this.sourceFiles = sourceFiles;
-    this.directJars = directJars;
-    this.headerCompilationDirectJars = headerCompilationDirectJars;
-    this.compileTimeClassPath = compileTimeClassPath;
-    this.bootClassPath = bootClassPath;
-    this.sourcePath = sourcePath;
-    this.plugins = plugins;
-    this.resources = resources;
-    this.resourceJars = resourceJars;
-    this.sourceJars = sourceJars;
-    this.classPathResources = classPathResources;
-    this.additionalOutputs = additionalOutputs;
-    this.compileTimeDependencyArtifacts = compileTimeDependencyArtifacts;
-    this.targetLabel = targetLabel;
-    this.injectingRuleKind = injectingRuleKind;
-    this.strictJavaDeps = strictJavaDeps;
-  }
-
-  JavaTargetAttributes appendAdditionalTransitiveClassPathEntries(
-      NestedSet<Artifact> additionalClassPathEntries) {
-    NestedSet<Artifact> compileTimeClassPath =
-        NestedSetBuilder.fromNestedSet(this.compileTimeClassPath)
-            .addTransitive(additionalClassPathEntries)
-            .build();
-    return new JavaTargetAttributes(
-        sourceFiles,
-        compileTimeClassPath,
-        bootClassPath,
-        sourcePath,
-        plugins,
-        resources,
-        resourceJars,
-        sourceJars,
-        classPathResources,
-        additionalOutputs,
-        directJars,
-        /* headerCompilationDirectJars= */ headerCompilationDirectJars,
-        compileTimeDependencyArtifacts,
-        targetLabel,
-        injectingRuleKind,
-        strictJavaDeps);
-  }
-
-  public NestedSet<Artifact> getDirectJars() {
-    return directJars;
-  }
-
-  public NestedSet<Artifact> getHeaderCompilationDirectJars() {
-    return headerCompilationDirectJars;
-  }
-
-  public NestedSet<Artifact> getCompileTimeDependencyArtifacts() {
-    return compileTimeDependencyArtifacts;
-  }
-
-  public ImmutableList<Artifact> getSourceJars() {
-    return sourceJars;
-  }
-
-  public Map<PathFragment, Artifact> getResources() {
-    return resources;
-  }
-
-  public NestedSet<Artifact> getResourceJars() {
-    return resourceJars;
-  }
-
-  public ImmutableList<Artifact> getClassPathResources() {
-    return classPathResources;
-  }
-
-  public ImmutableSet<Artifact> getAdditionalOutputs() {
-    return additionalOutputs;
-  }
-
-  public NestedSet<Artifact> getCompileTimeClassPath() {
-    return compileTimeClassPath;
-  }
-
-  public BootClassPathInfo getBootClassPath() {
-    return bootClassPath;
-  }
-
-  public ImmutableList<Artifact> getSourcePath() {
-    return sourcePath;
-  }
-
-  public JavaPluginInfo plugins() {
-    return plugins;
-  }
-
-  public ImmutableSet<Artifact> getSourceFiles() {
-    return sourceFiles;
-  }
-
-  public Label getTargetLabel() {
-    return targetLabel;
-  }
-
-  @Nullable
-  public String getInjectingRuleKind() {
-    return injectingRuleKind;
-  }
-
-  public StrictDepsMode getStrictJavaDeps() {
-    return strictJavaDeps;
-  }
 }

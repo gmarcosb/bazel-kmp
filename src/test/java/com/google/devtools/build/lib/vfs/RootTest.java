@@ -77,7 +77,7 @@ public class RootTest {
     Root root2 = Root.toFileSystem(root, fs2);
     assertThat(root2.asPath().getFileSystem()).isSameInstanceAs(fs2);
     assertThat(root2.asPath().asFragment()).isEqualTo(PathFragment.create("/foo"));
-    assertThat(root.isAbsolute()).isFalse();
+    assertThat(root.isAbsolute).isFalse();
   }
 
   @Test

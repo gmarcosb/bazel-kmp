@@ -11,18 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.java
 
-package com.google.devtools.build.lib.starlarkbuildapi.java;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.starlarkbuildapi.FileApi;
-import javax.annotation.Nullable;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.StarlarkValue;
+import com.google.devtools.build.docgen.annot.DocCategory
+import com.google.devtools.build.lib.collect.nestedset.Depset
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
+import net.starlark.java.eval.EvalException
+import net.starlark.java.eval.StarlarkValue
 
 /**
  * Interface for an info object containing information about jars that are a result of annotation
@@ -31,62 +27,72 @@ import net.starlark.java.eval.StarlarkValue;
 @StarlarkBuiltin(
     name = "java_annotation_processing",
     category = DocCategory.BUILTIN,
-    doc = "Information about jars that are a result of annotation processing for a Java rule.")
-public interface JavaAnnotationProcessingApi<FileTypeT extends FileApi> extends StarlarkValue {
+    doc = "Information about jars that are a result of annotation processing for a Java rule."
+)
+interface JavaAnnotationProcessingApi<FileTypeT : FileApi?> : StarlarkValue {
+    @StarlarkMethod(
+        name = "enabled",
+        structField = true,
+        doc = "Deprecated. Returns true if annotation processing was applied on this target."
+    )
+    @Throws(
+        EvalException::class
+    )
+    fun usesAnnotationProcessing(): Boolean
 
-  @StarlarkMethod(
-      name = "enabled",
-      structField = true,
-      doc = "Deprecated. Returns true if annotation processing was applied on this target.")
-  boolean usesAnnotationProcessing() throws EvalException;
+    @kotlin.jvm.JvmField
+    @get:Throws(EvalException::class)
+    @get:StarlarkMethod(
+        name = "class_jar",
+        structField = true,
+        allowReturnNones = true,
+        doc = "Deprecated: Please use <code>JavaInfo.java_outputs.generated_class_jar</code> instead."
+    )
+    val genClassJar: FileTypeT?
 
-  @StarlarkMethod(
-      name = "class_jar",
-      structField = true,
-      allowReturnNones = true,
-      doc =
-          "Deprecated: Please use <code>JavaInfo.java_outputs.generated_class_jar</code> instead.")
-  @Nullable
-  FileTypeT getGenClassJar() throws EvalException;
+    @kotlin.jvm.JvmField
+    @get:Throws(EvalException::class)
+    @get:StarlarkMethod(
+        name = "source_jar",
+        structField = true,
+        allowReturnNones = true,
+        doc = "Deprecated: Please use <code>JavaInfo.java_outputs.generated_source_jar</code> instead."
+    )
+    val genSourceJar: FileTypeT?
 
-  @StarlarkMethod(
-      name = "source_jar",
-      structField = true,
-      allowReturnNones = true,
-      doc =
-          "Deprecated: Please use <code>JavaInfo.java_outputs.generated_source_jar</code> instead.")
-  @Nullable
-  FileTypeT getGenSourceJar() throws EvalException;
+    @get:Throws(EvalException::class)
+    @get:StarlarkMethod(
+        name = "transitive_class_jars",
+        structField = true,
+        doc = ("Deprecated. Returns a transitive set of class file jars resulting from annotation "
+                + "processing of this rule and its dependencies.")
+    )
+    val transitiveGenClassJarsForStarlark: Depset?
 
-  @StarlarkMethod(
-      name = "transitive_class_jars",
-      structField = true,
-      doc =
-          "Deprecated. Returns a transitive set of class file jars resulting from annotation "
-              + "processing of this rule and its dependencies.")
-  Depset /*<FileTypeT>*/ getTransitiveGenClassJarsForStarlark() throws EvalException;
+    @get:Throws(EvalException::class)
+    @get:StarlarkMethod(
+        name = "transitive_source_jars",
+        structField = true,
+        doc = ("Deprecated. Returns a transitive set of source archives resulting from annotation "
+                + "processing of this rule and its dependencies.")
+    )
+    val transitiveGenSourceJarsForStarlark: Depset?
 
-  @StarlarkMethod(
-      name = "transitive_source_jars",
-      structField = true,
-      doc =
-          "Deprecated. Returns a transitive set of source archives resulting from annotation "
-              + "processing of this rule and its dependencies.")
-  Depset /*<FileTypeT>*/ getTransitiveGenSourceJarsForStarlark() throws EvalException;
+    @get:Throws(EvalException::class)
+    @get:StarlarkMethod(
+        name = "processor_classpath",
+        structField = true,
+        doc = ("Deprecated: Please use <code>JavaInfo.plugins</code> instead. Returns a classpath of"
+                + " annotation processors applied to this rule.")
+    )
+    val processorClasspathForStarlark: Depset?
 
-  @StarlarkMethod(
-      name = "processor_classpath",
-      structField = true,
-      doc =
-          "Deprecated: Please use <code>JavaInfo.plugins</code> instead. Returns a classpath of"
-              + " annotation processors applied to this rule.")
-  Depset /*<FileTypeT>*/ getProcessorClasspathForStarlark() throws EvalException;
-
-  @StarlarkMethod(
-      name = "processor_classnames",
-      structField = true,
-      doc =
-          "Deprecated: Please use <code>JavaInfo.plugins</code> instead. Returns class names of"
-              + " annotation processors applied to this rule.")
-  ImmutableList<String> getProcessorClassNamesList() throws EvalException;
+    @get:Throws(EvalException::class)
+    @get:StarlarkMethod(
+        name = "processor_classnames",
+        structField = true,
+        doc = ("Deprecated: Please use <code>JavaInfo.plugins</code> instead. Returns class names of"
+                + " annotation processors applied to this rule.")
+    )
+    val processorClassNamesList: ImmutableList<String?>?
 }

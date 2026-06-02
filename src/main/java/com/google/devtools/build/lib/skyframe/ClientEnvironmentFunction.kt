@@ -11,66 +11,65 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
+import com.google.devtools.build.lib.skyframe.EnvironmentVariableValue
+import com.google.devtools.build.lib.skyframe.SkyFunctions
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
+import com.google.devtools.build.skyframe.AbstractSkyKey
+import com.google.devtools.build.skyframe.SkyFunction
+import com.google.devtools.build.skyframe.SkyFunctionName
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyKey.SkyKeyInterner
+import com.google.devtools.build.skyframe.SkyValue
+import java.util.concurrent.atomic.AtomicReference
 
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.AbstractSkyKey;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
-import javax.annotation.Nullable;
+/** The Skyframe function that generates values for variables of the client environment.  */
+class ClientEnvironmentFunction(clientEnv: AtomicReference<MutableMap<String?, String?>?>) : SkyFunction {
+    /** The Skyframe key for the client environment function.  */
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    @AutoCodec
+    class Key private constructor(arg: String?) : AbstractSkyKey<String?>(arg) {
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.CLIENT_ENVIRONMENT_VARIABLE
+        }
 
-/** The Skyframe function that generates values for variables of the client environment. */
-public final class ClientEnvironmentFunction implements SkyFunction {
-  public static Key key(String keyString) {
-    return ClientEnvironmentFunction.Key.create(keyString);
-  }
+        val skyKeyInterner: SkyKeyInterner<Key?>
+            get() = com.google.devtools.build.lib.skyframe.ClientEnvironmentFunction.Key.Companion.interner
 
-  /** The Skyframe key for the client environment function. */
-  @VisibleForSerialization
-  @AutoCodec
-  public static class Key extends AbstractSkyKey<String> {
-    private static final SkyKeyInterner<Key> interner = SkyKey.newInterner();
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
 
-    private Key(String arg) {
-      super(arg);
+            private fun create(arg: String?): Key {
+                return com.google.devtools.build.lib.skyframe.ClientEnvironmentFunction.Key.Companion.interner.intern(
+                    com.google.devtools.build.lib.skyframe.ClientEnvironmentFunction.Key(arg)
+                )
+            }
+
+            @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+            @AutoCodec.Interner
+            fun intern(key: Key?): Key {
+                return com.google.devtools.build.lib.skyframe.ClientEnvironmentFunction.Key.Companion.interner.intern(
+                    key
+                )
+            }
+        }
     }
 
-    private static Key create(String arg) {
-      return interner.intern(new Key(arg));
+    private val clientEnv: AtomicReference<MutableMap<String?, String?>?>
+
+    init {
+        this.clientEnv = clientEnv
     }
 
-    @VisibleForSerialization
-    @AutoCodec.Interner
-    static Key intern(Key key) {
-      return interner.intern(key);
+    override fun compute(key: SkyKey, env: SkyFunction.Environment?): SkyValue? {
+        return EnvironmentVariableValue(clientEnv.get().get(key.argument() as String?))
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.CLIENT_ENVIRONMENT_VARIABLE;
+    companion object {
+        @kotlin.jvm.JvmStatic
+        fun key(keyString: String?): Key {
+            return com.google.devtools.build.lib.skyframe.ClientEnvironmentFunction.Key.Companion.create(keyString)
+        }
     }
-
-    @Override
-    public SkyKeyInterner<Key> getSkyKeyInterner() {
-      return interner;
-    }
-  }
-
-  private final AtomicReference<Map<String, String>> clientEnv;
-
-  public ClientEnvironmentFunction(AtomicReference<Map<String, String>> clientEnv) {
-    this.clientEnv = clientEnv;
-  }
-
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey key, Environment env) {
-    return new EnvironmentVariableValue(clientEnv.get().get((String) key.argument()));
-  }
 }

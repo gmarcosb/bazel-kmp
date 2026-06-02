@@ -11,92 +11,74 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.skyframe.serialization;
-
-import com.google.common.base.Preconditions;
-import com.google.common.util.concurrent.ListenableFuture;
-import javax.annotation.Nullable;
+package com.google.devtools.build.lib.skyframe.serialization
 
 /**
- * A container class that holds an {@link #object} of type {@link T} and a possibly null {@link
- * ListenableFuture}. If the {@link ListenableFuture} returned by {@link #getFutureToBlockWritesOn}
- * is non-null, then, if {@link #object} is the serialized representation of some Bazel object, then
- * it should not be written anywhere until the {@link ListenableFuture} in {@link
- * #getFutureToBlockWritesOn} completes successfully.
- *
- * @param <T> Some serialized representation of an object, for instance a {@code byte[]} or a {@link
- *     com.google.protobuf.ByteString}.
- */
-public abstract class SerializationResult<T> {
-  private final T object;
+ * A container class that holds an [.object] of type [T] and a possibly null [ ]. If the [ListenableFuture] returned by [.getFutureToBlockWritesOn]
+ * is non-null, then, if [.object] is the serialized representation of some Bazel object, then
+ * it should not be written anywhere until the [ListenableFuture] in [ ][.getFutureToBlockWritesOn] completes successfully.
+ * 
+ * @param <T> Some serialized representation of an object, for instance a `byte[]` or a [     ].
+</T> */
+abstract class SerializationResult<T> private constructor(@kotlin.jvm.JvmField private val `object`: T?) {
+    /**
+     * Returns a new [SerializationResult] with the same future (if any) and `newObj`
+     * replacing the current [.getObject].
+     */
+    abstract fun <S> with(newObj: S?): SerializationResult<S?>?
 
-  private SerializationResult(T object) {
-    this.object = object;
-  }
+    /**
+     * Returns a [ListenableFuture] that, if not null, must complete successfully before [ ][.getObject] can be written remotely.
+     */
+    abstract fun getFutureToBlockWritesOn(): com.google.common.util.concurrent.ListenableFuture<*>?
 
-  /**
-   * Returns a new {@link SerializationResult} with the same future (if any) and {@code newObj}
-   * replacing the current {@link #getObject}.
-   */
-  public abstract <S> SerializationResult<S> with(S newObj);
-
-  /**
-   * Returns a {@link ListenableFuture} that, if not null, must complete successfully before {@link
-   * #getObject} can be written remotely.
-   */
-  @Nullable
-  public abstract ListenableFuture<?> getFutureToBlockWritesOn();
-
-  /** Returns the stored object that should not be written remotely before the future completes. */
-  public T getObject() {
-    return object;
-  }
-
-  public static <T> SerializationResult<T> create(
-      T object, @Nullable ListenableFuture<?> futureToBlockWritesOn) {
-    return futureToBlockWritesOn != null
-        ? new ObjectWithFuture<>(object, futureToBlockWritesOn)
-        : createWithoutFuture(object);
-  }
-
-  /** Creates a {@link SerializationResult} with a null future (no waiting necessary). */
-  public static <T> SerializationResult<T> createWithoutFuture(T object) {
-    return new ObjectWithoutFuture<>(object);
-  }
-
-  private static class ObjectWithoutFuture<T> extends SerializationResult<T> {
-    private ObjectWithoutFuture(T obj) {
-      super(obj);
+    /** Returns the stored object that should not be written remotely before the future completes.  */
+    fun getObject(): T? {
+        return `object`
     }
 
-    @Override
-    public <S> SerializationResult<S> with(S newObj) {
-      return new ObjectWithoutFuture<>(newObj);
+    private class ObjectWithoutFuture<T>(obj: T?) : SerializationResult<T?>(obj) {
+        override fun <S> with(newObj: S?): SerializationResult<S?> {
+            return ObjectWithoutFuture<S?>(newObj)
+        }
+
+        override fun getFutureToBlockWritesOn(): com.google.common.util.concurrent.ListenableFuture<*>? {
+            return null
+        }
     }
 
-    @Override
-    public ListenableFuture<?> getFutureToBlockWritesOn() {
-      return null;
-    }
-  }
+    private class ObjectWithFuture<T>(
+        obj: T?,
+        futureToBlockWritesOn: com.google.common.util.concurrent.ListenableFuture<*>?
+    ) : SerializationResult<T?>(obj) {
+        private val futureToBlockWritesOn: com.google.common.util.concurrent.ListenableFuture<*>
 
-  private static class ObjectWithFuture<T> extends SerializationResult<T> {
-    private final ListenableFuture<?> futureToBlockWritesOn;
+        init {
+            this.futureToBlockWritesOn = com.google.common.base.Preconditions.checkNotNull(futureToBlockWritesOn, obj)
+        }
 
-    private ObjectWithFuture(T obj, ListenableFuture<?> futureToBlockWritesOn) {
-      super(obj);
-      this.futureToBlockWritesOn = Preconditions.checkNotNull(futureToBlockWritesOn, obj);
+        override fun <S> with(newObj: S?): SerializationResult<S?> {
+            return ObjectWithFuture<S?>(newObj, futureToBlockWritesOn)
+        }
+
+        override fun getFutureToBlockWritesOn(): com.google.common.util.concurrent.ListenableFuture<*> {
+            return futureToBlockWritesOn
+        }
     }
 
-    @Override
-    public <S> SerializationResult<S> with(S newObj) {
-      return new ObjectWithFuture<>(newObj, futureToBlockWritesOn);
-    }
+    companion object {
+        fun <T> create(
+            `object`: T?, futureToBlockWritesOn: com.google.common.util.concurrent.ListenableFuture<*>?
+        ): SerializationResult<T?> {
+            return if (futureToBlockWritesOn != null)
+                ObjectWithFuture<T?>(`object`, futureToBlockWritesOn)
+            else
+                createWithoutFuture<T?>(`object`)
+        }
 
-    @Override
-    public ListenableFuture<?> getFutureToBlockWritesOn() {
-      return futureToBlockWritesOn;
+        /** Creates a [SerializationResult] with a null future (no waiting necessary).  */
+        fun <T> createWithoutFuture(`object`: T?): SerializationResult<T?> {
+            return ObjectWithoutFuture<T?>(`object`)
+        }
     }
-  }
 }

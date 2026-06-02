@@ -11,23 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.starlarkprofiler;
+package com.google.devtools.build.lib.starlarkprofiler
 
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.BlazeService;
-import com.google.devtools.common.options.OptionsParsingResult;
-import net.starlark.java.eval.CpuProfiler;
+import com.google.devtools.build.lib.runtime.BlazeModule
 
-/** A {@link BlazeModule} responsible for installing {@link CpuProfilerNativeSupport}. */
-public final class CpuProfilerModule extends BlazeModule {
-  @Override
-  public void globalInit(OptionsParsingResult options, Iterable<BlazeService> blazeServices) {
-    for (BlazeService blazeService : blazeServices) {
-      if (blazeService instanceof CpuProfilerService cpuProfilerService) {
-        CpuProfiler.setNativeSupport(cpuProfilerService.getCpuProfilerNativeSupport());
-        return;
-      }
+/** A [BlazeModule] responsible for installing [CpuProfilerNativeSupport].  */
+class CpuProfilerModule : BlazeModule() {
+    public override fun globalInit(
+        options: com.google.devtools.common.options.OptionsParsingResult?,
+        blazeServices: Iterable<BlazeService?>
+    ) {
+        for (blazeService in blazeServices) {
+            if (blazeService is CpuProfilerService) {
+                net.starlark.java.eval.CpuProfiler.setNativeSupport(blazeService.getCpuProfilerNativeSupport())
+                return
+            }
+        }
+        throw java.lang.IllegalStateException("expected CpuProfilerService to be available")
     }
-    throw new IllegalStateException("expected CpuProfilerService to be available");
-  }
 }

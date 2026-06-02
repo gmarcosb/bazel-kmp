@@ -41,13 +41,13 @@ public class ErrorInfoSubject extends Subject {
   }
 
   public void isTransient() {
-    if (!actual.isTransitivelyTransient()) {
+    if (!actual.isTransitivelyTransient) {
       failWithActual(simpleFact("expected to be transient"));
     }
   }
 
   public void isNotTransient() {
-    if (actual.isTransitivelyTransient()) {
+    if (actual.isTransitivelyTransient) {
       failWithActual(simpleFact("expected not to be transient"));
     }
   }

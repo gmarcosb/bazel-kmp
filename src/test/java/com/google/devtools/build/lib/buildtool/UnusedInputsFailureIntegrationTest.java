@@ -444,7 +444,7 @@ public final class UnusedInputsFailureIntegrationTest extends BuildIntegrationTe
 
   private static void assertDetailedExitCodeIsSourceIOFailure(Throwable exception) {
     assertThat(exception).isInstanceOf(DetailedException.class);
-    assertThat(((DetailedException) exception).getDetailedExitCode().getFailureDetail())
+    assertThat(((DetailedException) exception).detailedExitCode.getFailureDetail())
         .comparingExpectedFieldsOnly()
         .isEqualTo(SOURCE_IO_FAILURE);
   }

@@ -11,56 +11,48 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi
 
-package com.google.devtools.build.lib.starlarkbuildapi;
+import com.google.devtools.build.lib.starlarkbuildapi.core.ProviderApi
+import com.google.devtools.build.lib.starlarkbuildapi.core.StructApi
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.starlarkbuildapi.core.ProviderApi;
-import com.google.devtools.build.lib.starlarkbuildapi.core.StructApi;
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.EvalException;
-
-/** Provides access to make variables from the current fragments. */
-@StarlarkBuiltin(
+/** Provides access to make variables from the current fragments.  */
+@net.starlark.java.annot.StarlarkBuiltin(
     name = "TemplateVariableInfo",
-    category = DocCategory.PROVIDER,
-    doc =
-        "Encapsulates template variables, that is, variables that can be referenced by strings"
+    category = com.google.devtools.build.docgen.annot.DocCategory.PROVIDER,
+    doc = ("Encapsulates template variables, that is, variables that can be referenced by strings"
             + " like <code>$(VARIABLE)</code> in BUILD files and expanded by"
             + " <code>ctx.expand_make_variables</code> and implicitly in certain attributes of"
             + " built-in rules.</p><p><code>TemplateVariableInfo</code> can be created by calling"
             + " its eponymous constructor with a string-to-string dict as an argument that"
             + " specifies the variables provided.</p><p>Example:"
             + " <code>platform_common.TemplateVariableInfo({'FOO': 'bar'})</code></p>")
-public interface TemplateVariableInfoApi extends StructApi {
+)
+interface TemplateVariableInfoApi : StructApi {
+    @get:net.starlark.java.annot.StarlarkMethod(
+        name = "variables",
+        doc = ("Returns the make variables defined by this target as a dictionary with string keys "
+                + "and string values"),
+        structField = true
+    )
+    val variables: com.google.common.collect.ImmutableMap<String?, String?>?
 
-  /** The global provider name. */
-  String NAME = "TemplateVariableInfo";
+    /** Provider for [TemplateVariableInfoApi] objects.  */
+    @net.starlark.java.annot.StarlarkBuiltin(name = "Provider", documented = false, doc = "")
+    interface Provider : ProviderApi {
+        @net.starlark.java.annot.StarlarkMethod(
+            name = "TemplateVariableInfo",
+            doc = "The <code>TemplateVariableInfo</code> constructor.",
+            documented = false,
+            parameters = [net.starlark.java.annot.Param(name = "vars", positional = true, named = true)],
+            selfCall = true
+        )
+        @Throws(net.starlark.java.eval.EvalException::class)
+        fun templateVariableInfo(vars: net.starlark.java.eval.Dict<*, *>?): TemplateVariableInfoApi?
+    }
 
-  @StarlarkMethod(
-      name = "variables",
-      doc =
-          "Returns the make variables defined by this target as a dictionary with string keys "
-              + "and string values",
-      structField = true)
-  ImmutableMap<String, String> getVariables();
-
-  /** Provider for {@link TemplateVariableInfoApi} objects. */
-  @StarlarkBuiltin(name = "Provider", documented = false, doc = "")
-  interface Provider extends ProviderApi {
-
-    @StarlarkMethod(
-        name = "TemplateVariableInfo",
-        doc = "The <code>TemplateVariableInfo</code> constructor.",
-        documented = false,
-        parameters = {
-          @Param(name = "vars", positional = true, named = true),
-        },
-        selfCall = true)
-    TemplateVariableInfoApi templateVariableInfo(Dict<?, ?> vars) throws EvalException;
-  }
+    companion object {
+        /** The global provider name.  */
+        const val NAME: String = "TemplateVariableInfo"
+    }
 }

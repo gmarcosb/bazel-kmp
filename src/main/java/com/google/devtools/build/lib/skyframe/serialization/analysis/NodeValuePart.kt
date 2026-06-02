@@ -11,25 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import com.google.devtools.build.lib.skyframe.serialization.ProfilerLocationProvider;
+import com.google.devtools.build.lib.skyframe.serialization.ProfilerLocationProvider
 
-/** Different parts of a node entry value for profiling. */
-public enum NodeValuePart implements ProfilerLocationProvider {
-  NODE_DEPENDENCIES("[NodeDependencies]"),
-  FILE_KEYS("[FileKeys]"),
-  LISTING_KEYS("[ListingKeys]"),
-  SOURCE_FILE("[SourceFile]");
+/** Different parts of a node entry value for profiling.  */
+enum class NodeValuePart(text: String) : ProfilerLocationProvider {
+    NODE_DEPENDENCIES("[NodeDependencies]"),
+    FILE_KEYS("[FileKeys]"),
+    LISTING_KEYS("[ListingKeys]"),
+    SOURCE_FILE("[SourceFile]");
 
-  private final String text;
+    val locationText: String?
 
-  NodeValuePart(String text) {
-    this.text = text;
-  }
-
-  @Override
-  public String getLocationText() {
-    return text;
-  }
+    init {
+        this.locationText = text
+    }
 }

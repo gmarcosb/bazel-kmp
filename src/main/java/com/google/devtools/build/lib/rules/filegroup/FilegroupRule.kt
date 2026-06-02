@@ -11,26 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.filegroup;
+package com.google.devtools.build.lib.rules.filegroup
 
-import static com.google.devtools.build.lib.packages.Attribute.attr;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL_LIST;
-import static com.google.devtools.build.lib.packages.Type.STRING;
-import static com.google.devtools.build.lib.packages.Types.STRING_LIST;
+import com.google.devtools.build.lib.packages.Attribute.attr
 
-import com.google.devtools.build.lib.analysis.BaseRuleClasses;
-import com.google.devtools.build.lib.analysis.RuleDefinition;
-import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment;
-import com.google.devtools.build.lib.packages.RuleClass;
-import com.google.devtools.build.lib.util.FileTypeSet;
-
-/** Rule object implementing "filegroup". */
-public final class FilegroupRule implements RuleDefinition {
-  @Override
-  public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment env) {
-    // filegroup ignores any filtering set with setSrcsAllowedFiles.
-    return builder
-        /*<!-- #BLAZE_RULE(filegroup).ATTRIBUTE(srcs) -->
+/** Rule object implementing "filegroup".  */
+class FilegroupRule : RuleDefinition {
+    public override fun build(builder: RuleClass.Builder, env: RuleDefinitionEnvironment?): RuleClass {
+        // filegroup ignores any filtering set with setSrcsAllowedFiles.
+        return builder /*<!-- #BLAZE_RULE(filegroup).ATTRIBUTE(srcs) -->
         The list of targets that are members of the file group.
         <p>
           Targets named in the <code>srcs</code> attribute will be added to the
@@ -41,8 +30,7 @@ public final class FilegroupRule implements RuleDefinition {
           the value of the <code>srcs</code> attribute.
         </p>
         <!-- #END_BLAZE_RULE.ATTRIBUTE -->*/
-        .add(attr("srcs", LABEL_LIST).allowedFileTypes(FileTypeSet.ANY_FILE))
-        /*<!-- #BLAZE_RULE(filegroup).ATTRIBUTE(output_group) -->
+            .add(attr("srcs", LABEL_LIST).allowedFileTypes(FileTypeSet.ANY_FILE)) /*<!-- #BLAZE_RULE(filegroup).ATTRIBUTE(output_group) -->
         The output group from which to gather artifacts from sources.  If this attribute is
         specified, artifacts from the specified output group of the dependencies will be exported
         instead of the default output group.
@@ -50,8 +38,7 @@ public final class FilegroupRule implements RuleDefinition {
           rule's implementation.
         </p>
         <!-- #END_BLAZE_RULE.ATTRIBUTE -->*/
-        .add(attr("output_group", STRING))
-        /*<!-- #BLAZE_RULE(filegroup).ATTRIBUTE(data) -->
+            .add(attr("output_group", STRING)) /*<!-- #BLAZE_RULE(filegroup).ATTRIBUTE(data) -->
         The list of files needed by this rule at runtime.
         <p>
           Targets named in the <code>data</code> attribute will be added to the
@@ -63,29 +50,24 @@ public final class FilegroupRule implements RuleDefinition {
           <code>data</code></a> for more information about how to depend on and use data files.
         </p>
         <!-- #END_BLAZE_RULE.ATTRIBUTE -->*/
-        .add(attr("data", LABEL_LIST).allowedFileTypes(FileTypeSet.ANY_FILE).dontCheckConstraints())
-        .add(attr("output_licenses", STRING_LIST))
-        /*<!-- #BLAZE_RULE(filegroup).ATTRIBUTE(path) -->
+            .add(attr("data", LABEL_LIST).allowedFileTypes(FileTypeSet.ANY_FILE).dontCheckConstraints())
+            .add(attr("output_licenses", STRING_LIST)) /*<!-- #BLAZE_RULE(filegroup).ATTRIBUTE(path) -->
         An optional string to set a path to the files in the group, relative to the package path.
         <p>
           This attribute can be used internally by other rules depending on this
           <code>filegroup</code> to find the name of the directory holding the files.
         </p>
         <!-- #END_BLAZE_RULE.ATTRIBUTE -->*/
-        .build();
-  }
+            .build()
+    }
 
-  @Override
-  public Metadata getMetadata() {
-    return RuleDefinition.Metadata.builder()
-        .name("filegroup")
-        .ancestors(BaseRuleClasses.NativeBuildRule.class)
-        .factoryClass(Filegroup.class)
-        .build();
-  }
-}
-
-/*<!-- #BLAZE_RULE (NAME = filegroup, FAMILY = General)[GENERIC_RULE] -->
+    val metadata: Metadata
+        get() = RuleDefinition.Metadata.builder()
+            .name("filegroup")
+            .ancestors(BaseRuleClasses.NativeBuildRule::class.java)
+            .factoryClass(Filegroup::class.java)
+            .build()
+} /*<!-- #BLAZE_RULE (NAME = filegroup, FAMILY = General)[GENERIC_RULE] -->
 <p>
   Use <code>filegroup</code> to gather the outputs of a set of targets under a single
   label.
@@ -129,8 +111,8 @@ filegroup(
 filegroup(
     name = "exported_testdata",
     srcs = glob([
-        "testdata/*.dat",
-        "testdata/logs/**&#47;*.log",
+        "testdata/ *.dat",
+        "testdata/logs/ **&#47;*.log",
     ]),
 )
 </pre>
@@ -149,3 +131,4 @@ cc_library(
 </pre>
 
 <!-- #END_BLAZE_RULE -->*/
+

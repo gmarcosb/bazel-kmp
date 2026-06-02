@@ -11,21 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.test
 
-package com.google.devtools.build.lib.starlarkbuildapi.test;
+import com.google.devtools.build.docgen.annot.DocCategory
+import com.google.devtools.build.lib.collect.nestedset.Depset
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.starlarkbuildapi.core.StructApi;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-
-/** Contains information about instrumented files sources and instrumentation metadata. */
+/** Contains information about instrumented files sources and instrumentation metadata.  */
 @StarlarkBuiltin(
     name = "InstrumentedFilesInfo",
     category = DocCategory.PROVIDER,
-    doc =
-        "Contains information about source files and instrumentation metadata files for rule"
+    doc = ("Contains information about source files and instrumentation metadata files for rule"
             + " targets matched by <a"
             + " href=\"https://bazel.build/reference/command-line-reference#flag--instrumentation_filter\"><code>--instrumentation_filter</code></a>"
             + " for purposes of <a href=\"https://bazel.build/extending/rules#code_coverage\">code"
@@ -39,26 +36,22 @@ import net.starlark.java.annot.StarlarkMethod;
             + " is returned by an <a href=\"https://bazel.build/extending/aspects\">aspect</a>'s"
             + " implementation function, any <code>InstrumentedFilesInfo</code> from the base rule"
             + " target is ignored.")
-public interface InstrumentedFilesInfoApi extends StructApi {
+)
+interface InstrumentedFilesInfoApi : StructApi {
+    @get:StarlarkMethod(
+        name = "instrumented_files", doc = ("<a href=\"../builtins/depset.html\"><code>depset</code></a> of <a"
+                + " href=\"../builtins/File.html\"><code>File</code></a> objects representing"
+                + " instrumented source files for this target and its dependencies."), structField = true
+    )
+    val instrumentedFilesForStarlark: Depset?
 
-  @StarlarkMethod(
-      name = "instrumented_files",
-      doc =
-          "<a href=\"../builtins/depset.html\"><code>depset</code></a> of <a"
-              + " href=\"../builtins/File.html\"><code>File</code></a> objects representing"
-              + " instrumented source files for this target and its dependencies.",
-      structField = true)
-  Depset getInstrumentedFilesForStarlark();
-
-  @StarlarkMethod(
-      name = "metadata_files",
-      doc =
-          "<a href=\"../builtins/depset.html\"><code>depset</code></a> of <a"
-              + " href=\"../builtins/File.html\"><code>File</code></a> objects representing"
-              + " coverage metadata files for this target and its dependencies. These files contain"
-              + " additional information required to generate LCOV-format coverage output after the"
-              + " code is executed, e.g. the <code>.gcno</code> files generated when"
-              + " <code>gcc</code> is run with <code>-ftest-coverage</code>.",
-      structField = true)
-  Depset getInstrumentationMetadataFilesForStarlark();
+    @get:StarlarkMethod(
+        name = "metadata_files", doc = ("<a href=\"../builtins/depset.html\"><code>depset</code></a> of <a"
+                + " href=\"../builtins/File.html\"><code>File</code></a> objects representing"
+                + " coverage metadata files for this target and its dependencies. These files contain"
+                + " additional information required to generate LCOV-format coverage output after the"
+                + " code is executed, e.g. the <code>.gcno</code> files generated when"
+                + " <code>gcc</code> is run with <code>-ftest-coverage</code>."), structField = true
+    )
+    val instrumentationMetadataFilesForStarlark: Depset?
 }

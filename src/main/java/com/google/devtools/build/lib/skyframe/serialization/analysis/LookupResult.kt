@@ -11,14 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import com.google.devtools.build.lib.skyframe.serialization.analysis.proto.MissReason;
-import com.google.protobuf.ByteString;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.proto.MissReason
 
-/** The result of a remote analysis cache lookup. */
-public record LookupResult(ByteString value, MissReason missReason) {
-  public LookupResult(ByteString value) {
-    this(value, MissReason.MISS_REASON_UNSPECIFIED);
-  }
+/** The result of a remote analysis cache lookup.  */
+class LookupResult(value: ByteString?, missReason: MissReason?) {
+    constructor(value: ByteString?) : this(value, MissReason.MISS_REASON_UNSPECIFIED)
+
+    val value: ByteString?
+    val missReason: MissReason?
+
+    init {
+        this.value = value
+        this.missReason = missReason
+    }
 }

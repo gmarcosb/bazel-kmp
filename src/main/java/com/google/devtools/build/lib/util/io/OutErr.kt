@@ -11,133 +11,123 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.util.io
 
-package com.google.devtools.build.lib.util.io;
-
-import com.google.common.base.Preconditions;
-import java.io.Closeable;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.PrintStream;
-import java.io.PrintWriter;
+import java.io.IOException
+import java.io.PrintStream
+import java.io.PrintWriter
 
 /**
  * A pair of output streams to be used for redirecting the output and error streams of a subprocess.
  */
-public class OutErr implements Closeable {
+open class OutErr protected constructor(out: java.io.OutputStream?, err: java.io.OutputStream?) : java.io.Closeable {
+    private val out: java.io.OutputStream
+    private val err: java.io.OutputStream
 
-  private final OutputStream out;
-  private final OutputStream err;
-
-  public static final OutErr SYSTEM_OUT_ERR = create(System.out, System.err);
-
-  /** Creates a new OutErr instance from the specified output and error streams. */
-  public static OutErr create(OutputStream out, OutputStream err) {
-    return new OutErr(out, err);
-  }
-
-  protected OutErr(OutputStream out, OutputStream err) {
-    this.out = Preconditions.checkNotNull(out);
-    this.err = Preconditions.checkNotNull(err);
-  }
-
-  @Override
-  public void close() throws IOException {
-    // Ensure that we close both out and err even if one throws.
-    try {
-      out.close();
-    } finally {
-      if (out != err) {
-        err.close();
-      }
-    }
-  }
-
-  /** Returns a {@link SystemPatcher} that uses this instance's out and err streams. */
-  public final SystemPatcher getSystemPatcher() {
-    return new SystemPatcher(out, err);
-  }
-
-  /**
-   * Temporarily patches {@link System#out} and {@link System#err} with custom streams.
-   *
-   * <p>{@link #start} is called to signal the beginning of the scope of the patch. {@link #close}
-   * ends the scope of the patch, returning {@link System#out} and {@link System#err} to what they
-   * were when this instance was instantiated.
-   */
-  public static class SystemPatcher implements AutoCloseable {
-    private final PrintStream savedOut;
-    private final PrintStream savedErr;
-    private final SwitchingPrintStream outPatch;
-    private final SwitchingPrintStream errPatch;
-
-    private SystemPatcher(OutputStream overrideOut, OutputStream overrideErr) {
-      this.savedOut = System.out;
-      this.savedErr = System.err;
-      this.outPatch = new SwitchingPrintStream(overrideOut);
-      this.errPatch = new SwitchingPrintStream(overrideErr);
+    init {
+        this.out = com.google.common.base.Preconditions.checkNotNull<java.io.OutputStream>(out)
+        this.err = com.google.common.base.Preconditions.checkNotNull<java.io.OutputStream>(err)
     }
 
-    public void start() {
-      System.setOut(outPatch);
-      System.setErr(errPatch);
+    @Throws(IOException::class)
+    override fun close() {
+        // Ensure that we close both out and err even if one throws.
+        try {
+            out.close()
+        } finally {
+            if (out !== err) {
+                err.close()
+            }
+        }
     }
 
-    @Override
-    public void close() {
-      System.setOut(savedOut);
-      System.setErr(savedErr);
-      outPatch.switchBackTo(savedOut);
-      errPatch.switchBackTo(savedErr);
+    val systemPatcher: SystemPatcher
+        /** Returns a [SystemPatcher] that uses this instance's out and err streams.  */
+        get() = SystemPatcher(out, err)
+
+    /**
+     * Temporarily patches [System.out] and [System.err] with custom streams.
+     * 
+     * 
+     * [.start] is called to signal the beginning of the scope of the patch. [.close]
+     * ends the scope of the patch, returning [System.out] and [System.err] to what they
+     * were when this instance was instantiated.
+     */
+    class SystemPatcher private constructor(overrideOut: java.io.OutputStream, overrideErr: java.io.OutputStream) :
+        java.lang.AutoCloseable {
+        private val savedOut: PrintStream?
+        private val savedErr: PrintStream?
+        private val outPatch: SwitchingPrintStream
+        private val errPatch: SwitchingPrintStream
+
+        init {
+            this.savedOut = java.lang.System.out
+            this.savedErr = java.lang.System.err
+            this.outPatch = SwitchingPrintStream(overrideOut)
+            this.errPatch = SwitchingPrintStream(overrideErr)
+        }
+
+        fun start() {
+            java.lang.System.setOut(outPatch)
+            java.lang.System.setErr(errPatch)
+        }
+
+        override fun close() {
+            java.lang.System.setOut(savedOut)
+            java.lang.System.setErr(savedErr)
+            outPatch.switchBackTo(savedOut)
+            errPatch.switchBackTo(savedErr)
+        }
     }
-  }
 
-  /**
-   * Starts by streaming to {@code override}, then switches back to {@code saved}.
-   *
-   * <p>The switching strategy is used to guard against memory leaks. For example, if {@code
-   * override} is passed directly to {@link System#setErr}, anyone may retain a reference to it via
-   * {@link System#err}. Instead, they will get a reference to this class, which frees up {@code
-   * override} in {@link #switchBackTo}.
-   */
-  private static final class SwitchingPrintStream extends PrintStream {
-
-    private SwitchingPrintStream(OutputStream override) {
-      super(override, /*autoFlush=*/ true);
+    /**
+     * Starts by streaming to `override`, then switches back to `saved`.
+     * 
+     * 
+     * The switching strategy is used to guard against memory leaks. For example, if `override` is passed directly to [System.setErr], anyone may retain a reference to it via
+     * [System.err]. Instead, they will get a reference to this class, which frees up `override` in [.switchBackTo].
+     */
+    private class SwitchingPrintStream(override: java.io.OutputStream) : PrintStream(override,  /*autoFlush=*/true) {
+        fun switchBackTo(saved: java.io.OutputStream?) {
+            out = saved
+        }
     }
 
-    private void switchBackTo(OutputStream saved) {
-      out = saved;
+    open val outputStream: java.io.OutputStream
+        get() = out
+
+    open val errorStream: java.io.OutputStream
+        get() = err
+
+    /** Writes the specified string to the output stream, and flushes.  */
+    fun printOut(s: String?) {
+        val writer: PrintWriter = PrintWriter(out, true)
+        writer.print(s)
+        writer.flush()
     }
-  }
 
-  public OutputStream getOutputStream() {
-    return out;
-  }
+    fun printOutLn(s: String?) {
+        printOut(s + "\n")
+    }
 
-  public OutputStream getErrorStream() {
-    return err;
-  }
+    /** Writes the specified string to the error stream, and flushes.  */
+    fun printErr(s: String?) {
+        val writer: PrintWriter = PrintWriter(err, true)
+        writer.print(s)
+        writer.flush()
+    }
 
-  /** Writes the specified string to the output stream, and flushes. */
-  public void printOut(String s) {
-    PrintWriter writer = new PrintWriter(out, true);
-    writer.print(s);
-    writer.flush();
-  }
+    fun printErrLn(s: String?) {
+        printErr(s + "\n")
+    }
 
-  public void printOutLn(String s) {
-    printOut(s + "\n");
-  }
+    companion object {
+        @kotlin.jvm.JvmField
+        val SYSTEM_OUT_ERR: OutErr = create(java.lang.System.out, java.lang.System.err)
 
-  /** Writes the specified string to the error stream, and flushes. */
-  public void printErr(String s) {
-    PrintWriter writer = new PrintWriter(err, true);
-    writer.print(s);
-    writer.flush();
-  }
-
-  public void printErrLn(String s) {
-    printErr(s + "\n");
-  }
+        /** Creates a new OutErr instance from the specified output and error streams.  */
+        fun create(out: java.io.OutputStream?, err: java.io.OutputStream?): OutErr {
+            return OutErr(out, err)
+        }
+    }
 }

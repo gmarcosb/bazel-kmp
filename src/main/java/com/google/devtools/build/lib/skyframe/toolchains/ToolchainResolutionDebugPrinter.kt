@@ -11,131 +11,134 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.toolchains;
+package com.google.devtools.build.lib.skyframe.toolchains
 
-import static java.util.stream.Collectors.joining;
+import com.google.devtools.build.lib.analysis.platform.ConstraintValueInfo
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSetMultimap;
-import com.google.devtools.build.lib.analysis.platform.ConstraintValueInfo;
-import com.google.devtools.build.lib.analysis.platform.ToolchainTypeInfo;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.errorprone.annotations.FormatMethod;
-import com.google.errorprone.annotations.FormatString;
-import java.util.Map;
+/** A helper interface for printing debug messages from toolchain resolution.  */
+interface ToolchainResolutionDebugPrinter {
+    fun debugEnabled(): Boolean
 
-/** A helper interface for printing debug messages from toolchain resolution. */
-public sealed interface ToolchainResolutionDebugPrinter {
+    /** Report on which toolchains were selected.  */
+    fun reportSelectedToolchains(
+        targetPlatform: Label?,
+        executionPlatform: Label?,
+        toolchainTypeToResolved: com.google.common.collect.ImmutableSetMultimap<ToolchainTypeInfo?, Label?>?
+    )
 
-  static ToolchainResolutionDebugPrinter create(boolean debug, ExtendedEventHandler eventHandler) {
-    if (debug) {
-      return new EventHandlerImpl(eventHandler);
-    }
-    return new NoopPrinter();
-  }
+    /** Report on an execution platform that was skipped due to constraint mismatches.  */
+    fun reportRemovedExecutionPlatform(
+        label: Label?, missingConstraints: com.google.common.collect.ImmutableList<ConstraintValueInfo?>?
+    )
 
-  boolean debugEnabled();
+    fun reportRejectedExecutionPlatforms(rejectedExecutionPlatforms: com.google.common.collect.ImmutableMap<Label?, String?>?)
 
-  /** Report on which toolchains were selected. */
-  void reportSelectedToolchains(
-      Label targetPlatform,
-      Label executionPlatform,
-      ImmutableSetMultimap<ToolchainTypeInfo, Label> toolchainTypeToResolved);
-
-  /** Report on an execution platform that was skipped due to constraint mismatches. */
-  void reportRemovedExecutionPlatform(
-      Label label, ImmutableList<ConstraintValueInfo> missingConstraints);
-
-  void reportRejectedExecutionPlatforms(ImmutableMap<Label, String> rejectedExecutionPlatforms);
-
-  /** A do-nothing implementation for when debug messages are suppressed. */
-  final class NoopPrinter implements ToolchainResolutionDebugPrinter {
-
-    private NoopPrinter() {}
-
-    @Override
-    public boolean debugEnabled() {
-      return false;
-    }
-
-    @Override
-    public void reportSelectedToolchains(
-        Label targetPlatform,
-        Label executionPlatform,
-        ImmutableSetMultimap<ToolchainTypeInfo, Label> toolchainTypeToResolved) {}
-
-    @Override
-    public void reportRemovedExecutionPlatform(
-        Label label, ImmutableList<ConstraintValueInfo> missingConstraints) {}
-
-    @Override
-    public void reportRejectedExecutionPlatforms(
-        ImmutableMap<Label, String> rejectedExecutionPlatforms) {}
-  }
-
-  /** Implement debug printing using the {@link ExtendedEventHandler}. */
-  final class EventHandlerImpl implements ToolchainResolutionDebugPrinter {
-    @Override
-    public boolean debugEnabled() {
-      return true;
-    }
-
-    private final ExtendedEventHandler eventHandler;
-
-    private EventHandlerImpl(ExtendedEventHandler eventHandler) {
-      this.eventHandler = eventHandler;
-    }
-
-    @FormatMethod
-    private void debugMessage(@FormatString String template, Object... args) {
-      eventHandler.handle(Event.info(String.format(template, args)));
-    }
-
-    @Override
-    public void reportSelectedToolchains(
-        Label targetPlatform,
-        Label executionPlatform,
-        ImmutableSetMultimap<ToolchainTypeInfo, Label> toolchainTypeToResolved) {
-      String selectedToolchains =
-          toolchainTypeToResolved.entries().stream()
-              .map(
-                  e ->
-                      String.format(
-                          "type %s -> toolchain %s", e.getKey().typeLabel(), e.getValue()))
-              .collect(joining(", "));
-      debugMessage(
-          "ToolchainResolution: Target platform %s: Selected execution platform %s," + " %s",
-          targetPlatform, executionPlatform, selectedToolchains);
-    }
-
-    @Override
-    public void reportRemovedExecutionPlatform(
-        Label label, ImmutableList<ConstraintValueInfo> missingConstraints) {
-      // TODO: jcater - Make this one line listing all constraints.
-      for (ConstraintValueInfo constraint : missingConstraints) {
-        // The value for this setting is not present in the platform, or doesn't match the
-        // expected value.
-        debugMessage(
-            "ToolchainResolution: Removed execution platform %s from"
-                + " available execution platforms, it is missing constraint %s",
-            label, constraint.label());
-      }
-    }
-
-    @Override
-    public void reportRejectedExecutionPlatforms(
-        ImmutableMap<Label, String> rejectedExecutionPlatforms) {
-      if (!rejectedExecutionPlatforms.isEmpty()) {
-        for (Map.Entry<Label, String> entry : rejectedExecutionPlatforms.entrySet()) {
-          Label toolchainLabel = entry.getKey();
-          String message = entry.getValue();
-          debugMessage(
-              "ToolchainResolution: Rejected execution platform %s; %s", toolchainLabel, message);
+    /** A do-nothing implementation for when debug messages are suppressed.  */
+    class NoopPrinter private constructor() : ToolchainResolutionDebugPrinter {
+        override fun debugEnabled(): Boolean {
+            return false
         }
-      }
+
+        override fun reportSelectedToolchains(
+            targetPlatform: Label?,
+            executionPlatform: Label?,
+            toolchainTypeToResolved: com.google.common.collect.ImmutableSetMultimap<ToolchainTypeInfo?, Label?>?
+        ) {
+        }
+
+        override fun reportRemovedExecutionPlatform(
+            label: Label?, missingConstraints: com.google.common.collect.ImmutableList<ConstraintValueInfo?>?
+        ) {
+        }
+
+        override fun reportRejectedExecutionPlatforms(
+            rejectedExecutionPlatforms: com.google.common.collect.ImmutableMap<Label?, String?>?
+        ) {
+        }
     }
-  }
+
+    /** Implement debug printing using the [ExtendedEventHandler].  */
+    class EventHandlerImpl private constructor(eventHandler: ExtendedEventHandler) : ToolchainResolutionDebugPrinter {
+        override fun debugEnabled(): Boolean {
+            return true
+        }
+
+        private val eventHandler: ExtendedEventHandler
+
+        init {
+            this.eventHandler = eventHandler
+        }
+
+        @com.google.errorprone.annotations.FormatMethod
+        private fun debugMessage(@com.google.errorprone.annotations.FormatString template: String, vararg args: Any?) {
+            eventHandler.handle(
+                com.google.devtools.build.lib.events.Event.info(
+                    java.lang.String.format(
+                        template,
+                        *args
+                    )
+                )
+            )
+        }
+
+        override fun reportSelectedToolchains(
+            targetPlatform: Label?,
+            executionPlatform: Label?,
+            toolchainTypeToResolved: com.google.common.collect.ImmutableSetMultimap<ToolchainTypeInfo?, Label?>
+        ) {
+            val selectedToolchains: String? =
+                toolchainTypeToResolved.entries().stream()
+                    .map<Any?>(
+                        java.util.function.Function { e: MutableMap.MutableEntry<ToolchainTypeInfo?, Label?>? ->
+                            java.lang.String.format(
+                                "type %s -> toolchain %s", e.getKey().typeLabel(), e.getValue()
+                            )
+                        })
+                    .collect(Collectors.joining(", "))
+            debugMessage(
+                "ToolchainResolution: Target platform %s: Selected execution platform %s," + " %s",
+                targetPlatform, executionPlatform, selectedToolchains
+            )
+        }
+
+        override fun reportRemovedExecutionPlatform(
+            label: Label?, missingConstraints: com.google.common.collect.ImmutableList<ConstraintValueInfo>
+        ) {
+            // TODO: jcater - Make this one line listing all constraints.
+            for (constraint in missingConstraints) {
+                // The value for this setting is not present in the platform, or doesn't match the
+                // expected value.
+                debugMessage(
+                    "ToolchainResolution: Removed execution platform %s from"
+                            + " available execution platforms, it is missing constraint %s",
+                    label, constraint.label()
+                )
+            }
+        }
+
+        override fun reportRejectedExecutionPlatforms(
+            rejectedExecutionPlatforms: com.google.common.collect.ImmutableMap<Label?, String?>
+        ) {
+            if (!rejectedExecutionPlatforms.isEmpty()) {
+                for (entry in rejectedExecutionPlatforms.entrySet()) {
+                    val toolchainLabel: Label? = entry.getKey()
+                    val message: String? = entry.getValue()
+                    debugMessage(
+                        "ToolchainResolution: Rejected execution platform %s; %s", toolchainLabel, message
+                    )
+                }
+            }
+        }
+    }
+
+    companion object {
+        fun create(debug: Boolean, eventHandler: ExtendedEventHandler): ToolchainResolutionDebugPrinter {
+            if (debug) {
+                return com.google.devtools.build.lib.skyframe.toolchains.ToolchainResolutionDebugPrinter.EventHandlerImpl(
+                    eventHandler
+                )
+            }
+            return com.google.devtools.build.lib.skyframe.toolchains.ToolchainResolutionDebugPrinter.NoopPrinter()
+        }
+    }
 }

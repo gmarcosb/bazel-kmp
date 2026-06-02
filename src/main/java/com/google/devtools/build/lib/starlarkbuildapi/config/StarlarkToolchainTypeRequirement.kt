@@ -11,31 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.config
 
-package com.google.devtools.build.lib.starlarkbuildapi.config;
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.cmdline.Label;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkValue;
-
-/** Starlark API for accessing details of a ToolchainTypeRequirement. */
-@StarlarkBuiltin(
+/** Starlark API for accessing details of a ToolchainTypeRequirement.  */
+@net.starlark.java.annot.StarlarkBuiltin(
     name = "toolchain_type",
-    category = DocCategory.BUILTIN,
-    doc = "A data type describing a dependency on a specific toolchain type.")
-public interface StarlarkToolchainTypeRequirement extends StarlarkValue {
+    category = com.google.devtools.build.docgen.annot.DocCategory.BUILTIN,
+    doc = "A data type describing a dependency on a specific toolchain type."
+)
+interface StarlarkToolchainTypeRequirement : net.starlark.java.eval.StarlarkValue {
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "toolchain_type",
+        doc = "The toolchain type that is required.",
+        structField = true
+    )
+    fun toolchainType(): Label?
 
-  @StarlarkMethod(
-      name = "toolchain_type",
-      doc = "The toolchain type that is required.",
-      structField = true)
-  Label toolchainType();
-
-  @StarlarkMethod(
-      name = "mandatory",
-      doc = "Whether the toolchain type is mandatory or optional.",
-      structField = true)
-  boolean mandatory();
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "mandatory",
+        doc = "Whether the toolchain type is mandatory or optional.",
+        structField = true
+    )
+    fun mandatory(): Boolean
 }

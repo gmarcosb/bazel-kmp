@@ -11,62 +11,54 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
+package com.google.devtools.build.lib.util.io
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static java.nio.charset.StandardCharsets.UTF_8;
+import com.google.protobuf.Message
 
-import com.google.protobuf.Message;
-import com.google.protobuf.util.JsonFormat;
-import java.io.IOException;
-import java.io.OutputStream;
+/** Creates a MessageOutputStream from an OutputStream.  */
+class MessageOutputStreamWrapper private constructor() {
+    /** Writes the messages in length-delimited protobuf wire format.  */
+    class BinaryOutputStreamWrapper<T : Message?>
+        (stream: java.io.OutputStream?) : MessageOutputStream<T?> {
+        private val stream: java.io.OutputStream
 
-/** Creates a MessageOutputStream from an OutputStream. */
-public class MessageOutputStreamWrapper {
+        init {
+            this.stream = com.google.common.base.Preconditions.checkNotNull<java.io.OutputStream>(stream)
+        }
 
-  private MessageOutputStreamWrapper() {}
+        @Throws(IOException::class)
+        override fun write(m: T?) {
+            com.google.common.base.Preconditions.checkNotNull<T?>(m)
+            m.writeDelimitedTo(stream)
+        }
 
-  /** Writes the messages in length-delimited protobuf wire format. */
-  public static class BinaryOutputStreamWrapper<T extends Message>
-      implements MessageOutputStream<T> {
-    private final OutputStream stream;
-
-    public BinaryOutputStreamWrapper(OutputStream stream) {
-      this.stream = checkNotNull(stream);
+        @Throws(IOException::class)
+        override fun close() {
+            stream.close()
+        }
     }
 
-    @Override
-    public void write(T m) throws IOException {
-      checkNotNull(m);
-      m.writeDelimitedTo(stream);
+    /** Writes the messages in concatenated JSON text format.  */
+    class JsonOutputStreamWrapper<T : Message?>(stream: java.io.OutputStream?) : MessageOutputStream<T?> {
+        private val stream: java.io.OutputStream
+
+        init {
+            this.stream = com.google.common.base.Preconditions.checkNotNull<java.io.OutputStream>(stream)
+        }
+
+        @Throws(IOException::class)
+        override fun write(m: T?) {
+            com.google.common.base.Preconditions.checkNotNull<T?>(m)
+            stream.write(PRINTER.print(m).getBytes(java.nio.charset.StandardCharsets.UTF_8))
+        }
+
+        @Throws(IOException::class)
+        override fun close() {
+            stream.close()
+        }
+
+        companion object {
+            private val PRINTER: JsonFormat.Printer = JsonFormat.printer().alwaysPrintFieldsWithNoPresence()
+        }
     }
-
-    @Override
-    public void close() throws IOException {
-      stream.close();
-    }
-  }
-
-  /** Writes the messages in concatenated JSON text format. */
-  public static class JsonOutputStreamWrapper<T extends Message> implements MessageOutputStream<T> {
-    private static final JsonFormat.Printer PRINTER =
-        JsonFormat.printer().alwaysPrintFieldsWithNoPresence();
-
-    private final OutputStream stream;
-
-    public JsonOutputStreamWrapper(OutputStream stream) {
-      this.stream = checkNotNull(stream);
-    }
-
-    @Override
-    public void write(T m) throws IOException {
-      checkNotNull(m);
-      stream.write(PRINTER.print(m).getBytes(UTF_8));
-    }
-
-    @Override
-    public void close() throws IOException {
-      stream.close();
-    }
-  }
 }

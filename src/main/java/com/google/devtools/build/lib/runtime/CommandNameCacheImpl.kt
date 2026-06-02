@@ -11,56 +11,62 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Maps;
-import com.google.devtools.common.options.CommandNameCache;
-import java.util.ArrayDeque;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Queue;
-import java.util.Set;
+import com.google.devtools.build.lib.runtime.BlazeCommand
+import java.util.ArrayDeque
+import java.util.HashMap
+import java.util.HashSet
 
-class CommandNameCacheImpl implements CommandNameCache {
-  private final Map<String, Command> commandMap;
-  private final Map<String, ImmutableSet<String>> cache = new HashMap<>();
+internal class CommandNameCacheImpl(commandMap: MutableMap<String?, BlazeCommand?>) :
+    com.google.devtools.common.options.CommandNameCache {
+    private val commandMap: MutableMap<String?, com.google.devtools.build.lib.runtime.Command?>
+    private val cache: MutableMap<String?, com.google.common.collect.ImmutableSet<String?>?> =
+        HashMap<String?, com.google.common.collect.ImmutableSet<String?>?>()
 
-  CommandNameCacheImpl(Map<String, BlazeCommand> commandMap) {
-    // Note: it is important that this map is live, since the commandMap may be altered
-    // post-creation.
-    this.commandMap =
-        Maps.transformValues(
-            commandMap, blazeCommand -> blazeCommand.getClass().getAnnotation(Command.class));
-  }
-
-  @Override
-  public ImmutableSet<String> get(String commandName) {
-    ImmutableSet<String> cachedResult = cache.get(commandName);
-    if (cachedResult != null) {
-      return cachedResult;
+    init {
+        // Note: it is important that this map is live, since the commandMap may be altered
+        // post-creation.
+        this.commandMap =
+            com.google.common.collect.Maps.transformValues<String?, BlazeCommand?, com.google.devtools.build.lib.runtime.Command?>(
+                commandMap,
+                com.google.common.base.Function { blazeCommand: BlazeCommand? ->
+                    blazeCommand.getClass()
+                        .getAnnotation<com.google.devtools.build.lib.runtime.Command?>(com.google.devtools.build.lib.runtime.Command::class.java)
+                })
     }
-    ImmutableSet.Builder<String> builder = ImmutableSet.builder();
 
-    Command command = Preconditions.checkNotNull(commandMap.get(commandName), commandName);
-    Set<Command> visited = new HashSet<>();
-    visited.add(command);
-    Queue<Command> queue = new ArrayDeque<>();
-    queue.add(command);
-    while (!queue.isEmpty()) {
-      Command cur = queue.remove();
-      builder.add(cur.name());
-      for (Class<? extends BlazeCommand> clazz : cur.inheritsOptionsFrom()) {
-        Command parent = clazz.getAnnotation(Command.class);
-        if (visited.add(parent)) {
-          queue.add(parent);
+    override fun get(commandName: String?): com.google.common.collect.ImmutableSet<String?> {
+        var cachedResult: com.google.common.collect.ImmutableSet<String?>? = cache.get(commandName)
+        if (cachedResult != null) {
+            return cachedResult
         }
-      }
+        val builder: com.google.common.collect.ImmutableSet.Builder<String?> =
+            com.google.common.collect.ImmutableSet.builder<String?>()
+
+        val command: com.google.devtools.build.lib.runtime.Command =
+            com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.lib.runtime.Command>(
+                commandMap.get(commandName), commandName
+            )
+        val visited: MutableSet<com.google.devtools.build.lib.runtime.Command?> =
+            HashSet<com.google.devtools.build.lib.runtime.Command?>()
+        visited.add(command)
+        val queue: java.util.Queue<com.google.devtools.build.lib.runtime.Command> =
+            ArrayDeque<com.google.devtools.build.lib.runtime.Command>()
+        queue.add(command)
+        while (!queue.isEmpty()) {
+            val cur: com.google.devtools.build.lib.runtime.Command = queue.remove()
+            builder.add(cur.name)
+            for (clazz in cur.inheritsOptionsFrom) {
+                val parent: com.google.devtools.build.lib.runtime.Command? =
+                    clazz.getAnnotation<com.google.devtools.build.lib.runtime.Command?>(com.google.devtools.build.lib.runtime.Command::class.java)
+                if (visited.add(parent)) {
+                    queue.add(parent)
+                }
+            }
+        }
+        cachedResult = builder.build()
+        cache.put(commandName, cachedResult)
+        return cachedResult
     }
-    cachedResult = builder.build();
-    cache.put(commandName, cachedResult);
-    return cachedResult;
-  }
 }

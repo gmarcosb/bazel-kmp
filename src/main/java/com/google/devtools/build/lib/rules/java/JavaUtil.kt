@@ -11,22 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.java
 
-package com.google.devtools.build.lib.rules.java;
+import com.google.common.base.Predicate
+import com.google.common.collect.ImmutableSet
+import com.google.common.collect.Iterables
+import com.google.devtools.build.lib.vfs.PathFragment
 
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import javax.annotation.Nullable;
-
-/** Utility methods for use by Java-related parts of the build system. */
-public final class JavaUtil {
-
-  private JavaUtil() {}
-
-  // ---------- Java related methods
-
-  /*
+/** Utility methods for use by Java-related parts of the build system.  */
+object JavaUtil {
+    // ---------- Java related methods
+    /*
    * TODO(bazel-team): (2009)
    *
    * This way of figuring out Java source roots is basically
@@ -50,80 +45,84 @@ public final class JavaUtil {
    * - for experimental, some legacy support that basically has some
    * arbitrary padding before the Java sourceroot.
    */
+    /** Java source roots, used to relativize resource paths and infer main_class values.  */
+    val KNOWN_SOURCE_ROOTS: ImmutableSet<String?> = ImmutableSet.of<String?>("java", "javatests", "src", "testsrc")
 
-  /** Java source roots, used to relativize resource paths and infer main_class values. */
-  public static final ImmutableSet<String> KNOWN_SOURCE_ROOTS =
-      ImmutableSet.of("java", "javatests", "src", "testsrc");
-
-  /**
-   * Finds the index of the segment in a Java path fragment that precedes the source root. Starts
-   * from the first "java" or "javatests" or "src" or "testsrc" segment. If the found item was
-   * "src", check if this is followed by "main" or "test" and then "java" or "resources" (maven
-   * layout). If the found item was "src", or "java"/"javatests" at the first segment, check for a
-   * nested root directory (src, java or javatests). A nested root must be followed by
-   * (com|net|org), or matching maven structure for nested "src", to be accepted, to avoid false
-   * positives.
-   *
-   * @param path a Java source dir or file path
-   * @return the index of the java segment or -1 iff no java segment was found.
-   */
-  private static int javaSegmentIndex(PathFragment path) {
-    if (path.isAbsolute()) {
-      throw new IllegalArgumentException("path must not be absolute: '" + path + "'");
-    }
-    int rootIndex = Iterables.indexOf(path.segments(), KNOWN_SOURCE_ROOTS::contains);
-    if (rootIndex == -1) {
-      return -1;
-    }
-    final boolean isSrc = "src".equals(path.getSegment(rootIndex));
-    int checkMavenIndex = isSrc ? rootIndex : -1;
-    if (rootIndex == 0 || isSrc) {
-      // Check for a nested root directory.
-      for (int i = rootIndex + 1, max = path.segmentCount() - 2; i <= max; i++) {
-        String segment = path.getSegment(i);
-        if ("src".equals(segment)
-            || (isSrc && ("javatests".equals(segment) || "java".equals(segment)))) {
-          String next = path.getSegment(i + 1);
-          if ("com".equals(next) || "org".equals(next) || "net".equals(next)) {
-            // Check for common first element of java package, to avoid false positives.
-            rootIndex = i;
-          } else if ("src".equals(segment)) {
-            // Also accept maven style src/(main|test)/(java|resources).
-            checkMavenIndex = i;
-          }
-          break;
+    /**
+     * Finds the index of the segment in a Java path fragment that precedes the source root. Starts
+     * from the first "java" or "javatests" or "src" or "testsrc" segment. If the found item was
+     * "src", check if this is followed by "main" or "test" and then "java" or "resources" (maven
+     * layout). If the found item was "src", or "java"/"javatests" at the first segment, check for a
+     * nested root directory (src, java or javatests). A nested root must be followed by
+     * (com|net|org), or matching maven structure for nested "src", to be accepted, to avoid false
+     * positives.
+     * 
+     * @param path a Java source dir or file path
+     * @return the index of the java segment or -1 iff no java segment was found.
+     */
+    private fun javaSegmentIndex(path: PathFragment): Int {
+        require(!path.isAbsolute()) { "path must not be absolute: '" + path + "'" }
+        var rootIndex = Iterables.indexOf<String?>(
+            path.segments(),
+            Predicate { `object`: String? -> KNOWN_SOURCE_ROOTS.contains(`object`) })
+        if (rootIndex == -1) {
+            return -1
         }
-      }
-    }
-    // Check for (main|test)/(java|resources) after /src/.
-    if (checkMavenIndex >= 0 && checkMavenIndex + 2 < path.segmentCount()) {
-      String next = path.getSegment(checkMavenIndex + 1);
-      if ("main".equals(next) || "test".equals(next)) {
-        next = path.getSegment(checkMavenIndex + 2);
-        if ("java".equals(next) || "resources".equals(next)) {
-          rootIndex = checkMavenIndex + 2;
+        val isSrc = "src" == path.getSegment(rootIndex)
+        var checkMavenIndex = if (isSrc) rootIndex else -1
+        if (rootIndex == 0 || isSrc) {
+            // Check for a nested root directory.
+            var i = rootIndex + 1
+            val max = path.segmentCount() - 2
+            while (i <= max) {
+                val segment = path.getSegment(i)
+                if ("src" == segment
+                    || (isSrc && ("javatests" == segment || "java" == segment))
+                ) {
+                    val next = path.getSegment(i + 1)
+                    if ("com" == next || "org" == next || "net" == next) {
+                        // Check for common first element of java package, to avoid false positives.
+                        rootIndex = i
+                    } else if ("src" == segment) {
+                        // Also accept maven style src/(main|test)/(java|resources).
+                        checkMavenIndex = i
+                    }
+                    break
+                }
+                i++
+            }
         }
-      }
+        // Check for (main|test)/(java|resources) after /src/.
+        if (checkMavenIndex >= 0 && checkMavenIndex + 2 < path.segmentCount()) {
+            var next = path.getSegment(checkMavenIndex + 1)
+            if ("main" == next || "test" == next) {
+                next = path.getSegment(checkMavenIndex + 2)
+                if ("java" == next || "resources" == next) {
+                    rootIndex = checkMavenIndex + 2
+                }
+            }
+        }
+        return rootIndex
     }
-    return rootIndex;
-  }
 
-  /**
-   * Given the PathFragment of a Java source file, returns the Java root relative path or 'null' if
-   * no java root can be determined.
-   *
-   * <p>For example, "{workspace}/java/foo/bar/wiz" and "{workspace}/javatests/foo/bar/wiz" both
-   * result in "foo/bar/wiz".
-   *
-   * <p>TODO(bazel-team): (2011) We need to have a more robust way to determine the Java root of a
-   * relative path rather than simply trying to find the "java" or "javatests" directory.
-   */
-  @Nullable
-  public static PathFragment getJavaPath(PathFragment path) {
-    int index = javaSegmentIndex(path);
-    if (index >= 0) {
-      return path.subFragment(index + 1);
+    /**
+     * Given the PathFragment of a Java source file, returns the Java root relative path or 'null' if
+     * no java root can be determined.
+     * 
+     * 
+     * For example, "{workspace}/java/foo/bar/wiz" and "{workspace}/javatests/foo/bar/wiz" both
+     * result in "foo/bar/wiz".
+     * 
+     * 
+     * TODO(bazel-team): (2011) We need to have a more robust way to determine the Java root of a
+     * relative path rather than simply trying to find the "java" or "javatests" directory.
+     */
+    @kotlin.jvm.JvmStatic
+    fun getJavaPath(path: PathFragment): PathFragment? {
+        val index = javaSegmentIndex(path)
+        if (index >= 0) {
+            return path.subFragment(index + 1)
+        }
+        return null
     }
-    return null;
-  }
 }

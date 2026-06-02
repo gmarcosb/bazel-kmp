@@ -11,137 +11,117 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License
+package com.google.devtools.build.lib.rules.config
 
-package com.google.devtools.build.lib.rules.config;
-
-import static com.google.devtools.build.lib.packages.BuildType.LABEL_KEYED_STRING_DICT;
-import static com.google.devtools.build.lib.packages.BuildType.NODEP_LABEL_LIST;
-
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.common.collect.Ordering;
-import com.google.devtools.build.lib.analysis.AliasProvider;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.BuildOptionsView;
-import com.google.devtools.build.lib.analysis.config.CoreOptions;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.analysis.config.transitions.NoTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.PatchTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.TransitionFactory;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.packages.NonconfiguredAttributeMapper;
-import com.google.devtools.build.lib.packages.RuleClass;
-import com.google.devtools.build.lib.packages.RuleTransitionData;
+import com.google.devtools.build.lib.packages.BuildType.LABEL_KEYED_STRING_DICT
 
 /**
  * A transition factory for trimming feature flags manually via an attribute which specifies the
  * feature flags used by transitive dependencies.
  */
-public class ConfigFeatureFlagTaggedTrimmingTransitionFactory
-    implements TransitionFactory<RuleTransitionData> {
+class ConfigFeatureFlagTaggedTrimmingTransitionFactory
+    (private val attributeName: String?) : TransitionFactory<RuleTransitionData?> {
+    /** Applies manual trimming to the given set of flags.  */
+    class ConfigFeatureFlagTaggedTrimmingTransition internal constructor(flags: com.google.common.collect.ImmutableSortedSet<Label?>) :
+        PatchTransition {
+        private val flags: com.google.common.collect.ImmutableSortedSet<Label?>
+        private val cachedHashCode: Int
 
-  /** Applies manual trimming to the given set of flags. */
-  public static final class ConfigFeatureFlagTaggedTrimmingTransition implements PatchTransition {
-    public static final ConfigFeatureFlagTaggedTrimmingTransition EMPTY =
-        new ConfigFeatureFlagTaggedTrimmingTransition(ImmutableSortedSet.of());
-
-    private final ImmutableSortedSet<Label> flags;
-    private final int cachedHashCode;
-
-    ConfigFeatureFlagTaggedTrimmingTransition(ImmutableSortedSet<Label> flags) {
-      this.flags = flags;
-      this.cachedHashCode = this.flags.hashCode();
-    }
-
-    @Override
-    public ImmutableSet<Class<? extends FragmentOptions>> requiresOptionFragments() {
-      return ImmutableSet.of(ConfigFeatureFlagOptions.class, CoreOptions.class);
-    }
-
-    @Override
-    public BuildOptions patch(BuildOptionsView options, EventHandler eventHandler) {
-      var configFeatureFlagOptions = options.get(ConfigFeatureFlagOptions.class);
-      if (configFeatureFlagOptions == null
-          || !configFeatureFlagOptions.getEnforceTransitiveConfigsForConfigFeatureFlag()) {
-        return options.underlying();
-      }
-      return FeatureFlagValue.trimFlagValues(options.underlying(), flags);
-    }
-
-    @Override
-    public boolean equals(Object other) {
-      return other
-              instanceof
-              ConfigFeatureFlagTaggedTrimmingTransition configFeatureFlagTaggedTrimmingTransition
-          && this.flags.equals(configFeatureFlagTaggedTrimmingTransition.flags);
-    }
-
-    @Override
-    public int hashCode() {
-      return cachedHashCode;
-    }
-
-    @Override
-    public String toString() {
-      return String.format("ConfigFeatureFlagTaggedTrimmingTransition{flags=%s}", flags);
-    }
-  }
-
-  private final String attributeName;
-
-  public ConfigFeatureFlagTaggedTrimmingTransitionFactory(String attributeName) {
-    this.attributeName = attributeName;
-  }
-
-  @Override
-  public PatchTransition create(RuleTransitionData ruleData) {
-    NonconfiguredAttributeMapper attrs = NonconfiguredAttributeMapper.of(ruleData.rule());
-    RuleClass ruleClass = ruleData.rule().getRuleClassObject();
-
-    if (AliasProvider.mayBeAlias(ruleData.rule())) {
-      // As a convenience, do not require transitive_config to be set for alias rule.
-      return NoTransition.INSTANCE;
-    }
-
-    if (ruleClass.getName().equals(ConfigRuleClasses.ConfigFeatureFlagRule.RULE_NAME)) {
-      return new ConfigFeatureFlagTaggedTrimmingTransition(
-          ImmutableSortedSet.of(ruleData.rule().getLabel()));
-    }
-
-    ImmutableSortedSet.Builder<Label> requiredLabelsBuilder =
-        new ImmutableSortedSet.Builder<>(Ordering.natural());
-    if (attrs.isAttributeValueExplicitlySpecified(attributeName)
-        && !attrs.get(attributeName, NODEP_LABEL_LIST).isEmpty()) {
-      // Entries starting with //command_line_option[:/] represent native options and are not
-      // relevant for this transition. Non-existent flags already do not error so this skipping
-      // is done out of an abundance of caution and as a statement of intent for the future.
-      for (Label entry : attrs.get(attributeName, NODEP_LABEL_LIST)) {
-        String packageName = entry.getPackageName();
-        if (packageName.equals("command_line_option")
-            || packageName.startsWith("command_line_option/")) {
-          continue;
+        init {
+            this.flags = flags
+            this.cachedHashCode = this.flags.hashCode()
         }
-        requiredLabelsBuilder.add(entry);
-      }
-    }
-    if (ruleClass.getTransitionFactory() instanceof ConfigFeatureFlagTransitionFactory cfft) {
-      String settingAttribute = cfft.getAttributeName();
-      // Because the process of setting a flag also creates a dependency on that flag, we need to
-      // include all the set flags, even if they aren't actually declared as used by this rule.
-      requiredLabelsBuilder.addAll(attrs.get(settingAttribute, LABEL_KEYED_STRING_DICT).keySet());
+
+        public override fun requiresOptionFragments(): com.google.common.collect.ImmutableSet<java.lang.Class<out FragmentOptions?>?> {
+            return com.google.common.collect.ImmutableSet.of<E?>(
+                ConfigFeatureFlagOptions::class.java,
+                CoreOptions::class.java
+            )
+        }
+
+        public override fun patch(
+            options: BuildOptionsView,
+            eventHandler: com.google.devtools.build.lib.events.EventHandler?
+        ): BuildOptions? {
+            val configFeatureFlagOptions: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                options.get(ConfigFeatureFlagOptions::class.java)
+            if (configFeatureFlagOptions == null
+                || !configFeatureFlagOptions.getEnforceTransitiveConfigsForConfigFeatureFlag()
+            ) {
+                return options.underlying()
+            }
+            return FeatureFlagValue.Companion.trimFlagValues(options.underlying(), flags)
+        }
+
+        override fun equals(other: Any?): Boolean {
+            return other
+            is ConfigFeatureFlagTaggedTrimmingTransition
+                    && this.flags == other.flags
+        }
+
+        override fun hashCode(): Int {
+            return cachedHashCode
+        }
+
+        override fun toString(): String {
+            return String.format("ConfigFeatureFlagTaggedTrimmingTransition{flags=%s}", flags)
+        }
+
+        companion object {
+            val EMPTY: ConfigFeatureFlagTaggedTrimmingTransition =
+                ConfigFeatureFlagTaggedTrimmingTransition(com.google.common.collect.ImmutableSortedSet.of<Label?>())
+        }
     }
 
-    ImmutableSortedSet<Label> requiredLabels = requiredLabelsBuilder.build();
-    if (requiredLabels.isEmpty()) {
-      return ConfigFeatureFlagTaggedTrimmingTransition.EMPTY;
+    public override fun create(ruleData: RuleTransitionData): PatchTransition? {
+        val attrs: NonconfiguredAttributeMapper = NonconfiguredAttributeMapper.of(ruleData.rule())
+        val ruleClass: RuleClass = ruleData.rule().getRuleClassObject()
+
+        if (AliasProvider.mayBeAlias(ruleData.rule())) {
+            // As a convenience, do not require transitive_config to be set for alias rule.
+            return NoTransition.INSTANCE
+        }
+
+        if (ruleClass.getName().equals(ConfigFeatureFlagRule.Companion.RULE_NAME)) {
+            return ConfigFeatureFlagTaggedTrimmingTransition(
+                com.google.common.collect.ImmutableSortedSet.of(ruleData.rule().getLabel())
+            )
+        }
+
+        val requiredLabelsBuilder: com.google.common.collect.ImmutableSortedSet.Builder<Label?> =
+            com.google.common.collect.ImmutableSortedSet.Builder<Label?>(com.google.common.collect.Ordering.natural<Comparable<*>?>())
+        if (attrs.isAttributeValueExplicitlySpecified(attributeName)
+            && !attrs.get(attributeName, NODEP_LABEL_LIST).isEmpty()
+        ) {
+            // Entries starting with //command_line_option[:/] represent native options and are not
+            // relevant for this transition. Non-existent flags already do not error so this skipping
+            // is done out of an abundance of caution and as a statement of intent for the future.
+            for (entry in attrs.get(attributeName, NODEP_LABEL_LIST)) {
+                val packageName: String = entry.getPackageName()
+                if (packageName == "command_line_option"
+                    || packageName.startsWith("command_line_option/")
+                ) {
+                    continue
+                }
+                requiredLabelsBuilder.add(entry)
+            }
+        }
+        if (ruleClass.getTransitionFactory() is ConfigFeatureFlagTransitionFactory) {
+            val settingAttribute: String? = cfft.getAttributeName()
+            // Because the process of setting a flag also creates a dependency on that flag, we need to
+            // include all the set flags, even if they aren't actually declared as used by this rule.
+            requiredLabelsBuilder.addAll(attrs.get(settingAttribute, LABEL_KEYED_STRING_DICT).keySet())
+        }
+
+        val requiredLabels: com.google.common.collect.ImmutableSortedSet<Label?> = requiredLabelsBuilder.build()
+        if (requiredLabels.isEmpty()) {
+            return ConfigFeatureFlagTaggedTrimmingTransition.Companion.EMPTY
+        }
+
+        return ConfigFeatureFlagTaggedTrimmingTransition(requiredLabels)
     }
 
-    return new ConfigFeatureFlagTaggedTrimmingTransition(requiredLabels);
-  }
-
-  @Override
-  public TransitionType transitionType() {
-    return TransitionType.RULE;
-  }
+    public override fun transitionType(): TransitionType {
+        return TransitionType.RULE
+    }
 }

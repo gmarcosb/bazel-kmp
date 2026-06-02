@@ -11,46 +11,42 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.util
 
-package com.google.devtools.build.lib.util;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-
-/** Utility class to escape strings for use in param files for windows lld-link. */
-public final class WindowsParamFileEscaper {
-  private WindowsParamFileEscaper() {}
-
-  /**
-   * Escapes the @argument to be suitable for lld-link. Existing double-quotes are escaped, and
-   * arguments that contain whitespace are surrounded in unescaped double-quotes.
-   *
-   * @see <a
-   *     href="https://github.com/llvm/llvm-project/blob/4bc3b3501ff994fb3504ed2b973342821a9c8cea/llvm/lib/Support/CommandLine.cpp#L916">LLVM
-   *     Parser Implementation</a>
-   */
-  public static String escapeString(String argument) {
-    boolean needsSurroundingQuotes = containsWhitespace(argument);
-    StringBuilder out = new StringBuilder();
-    if (needsSurroundingQuotes) {
-      out.append("\"");
+/** Utility class to escape strings for use in param files for windows lld-link.  */
+object WindowsParamFileEscaper {
+    /**
+     * Escapes the @argument to be suitable for lld-link. Existing double-quotes are escaped, and
+     * arguments that contain whitespace are surrounded in unescaped double-quotes.
+     * 
+     * @see [LLVM
+     * Parser Implementation](https://github.com/llvm/llvm-project/blob/4bc3b3501ff994fb3504ed2b973342821a9c8cea/llvm/lib/Support/CommandLine.cpp.L916)
+     */
+    @kotlin.jvm.JvmStatic
+    fun escapeString(argument: String): String {
+        val needsSurroundingQuotes = containsWhitespace(argument)
+        val out: java.lang.StringBuilder = java.lang.StringBuilder()
+        if (needsSurroundingQuotes) {
+            out.append("\"")
+        }
+        out.append(argument.replace("\"", "\\\""))
+        if (needsSurroundingQuotes) {
+            out.append("\"")
+        }
+        return out.toString()
     }
-    out.append(argument.replace("\"", "\\\""));
-    if (needsSurroundingQuotes) {
-      out.append("\"");
+
+    private val WHITESPACE_CHARACTERS: com.google.common.collect.ImmutableList<CharSequence?> =
+        com.google.common.collect.ImmutableList.of<CharSequence?>(" ", "\t", "\n", "\r")
+
+    private fun containsWhitespace(argument: String): Boolean {
+        return WHITESPACE_CHARACTERS.stream().anyMatch { s: CharSequence? -> argument.contains(s) }
     }
-    return out.toString();
-  }
 
-  private static final ImmutableList<CharSequence> WHITESPACE_CHARACTERS =
-      ImmutableList.of(" ", "\t", "\n", "\r");
-
-  private static boolean containsWhitespace(String argument) {
-    return WHITESPACE_CHARACTERS.stream().anyMatch(argument::contains);
-  }
-
-  /** Escapes each argument in @unescaped using WindowsParamFileEscaper::escapeString. */
-  public static Iterable<String> escapeAll(Iterable<? extends String> unescaped) {
-    return Iterables.transform(unescaped, WindowsParamFileEscaper::escapeString);
-  }
+    /** Escapes each argument in @unescaped using WindowsParamFileEscaper::escapeString.  */
+    fun escapeAll(unescaped: Iterable<out String?>): Iterable<String?> {
+        return com.google.common.collect.Iterables.transform(
+            unescaped,
+            { obj: WindowsParamFileEscaper?, argument: String -> escapeString(argument) })
+    }
 }

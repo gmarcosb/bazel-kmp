@@ -11,55 +11,50 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
-
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import java.util.List;
+import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryFunction.name
 
 /**
  * Options that will be evaluated by the blaze client startup code only.
- *
- * <p>The only reason we have this interface is that we'd like to print a nice help page for the
+ * 
+ * 
+ * The only reason we have this interface is that we'd like to print a nice help page for the
  * client startup options. These options do not affect the server's behavior in any way.
  */
-@OptionsClass
-public abstract class HostJvmStartupOptions extends OptionsBase {
+@com.google.devtools.common.options.OptionsClass
+abstract class HostJvmStartupOptions : com.google.devtools.common.options.OptionsBase() {
+    @get:com.google.devtools.common.options.Option(
+        name = "server_javabase",
+        defaultValue = "",
+        valueHelp = "<jvm path>",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = "Path to the JVM used to execute Bazel itself."
+    )
+    abstract val serverJavabase: String?
 
-  @Option(
-      name = "server_javabase",
-      defaultValue = "", // NOTE: purely decorative! See BlazeServerStartupOptions.
-      valueHelp = "<jvm path>",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "Path to the JVM used to execute Bazel itself.")
-  public abstract String getServerJavabase();
+    @get:com.google.devtools.common.options.Option(
+        name = "host_jvm_args",
+        defaultValue = "null",
+        allowMultiple = true,
+        valueHelp = "<jvm_arg>",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = "Flags to pass to the JVM executing Blaze."
+    )
+    abstract val hostJvmArgs: MutableList<String?>?
 
-  @Option(
-      name = "host_jvm_args",
-      defaultValue = "null", // NOTE: purely decorative!  See BlazeServerStartupOptions.
-      allowMultiple = true,
-      valueHelp = "<jvm_arg>",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "Flags to pass to the JVM executing Blaze.")
-  public abstract List<String> getHostJvmArgs();
-
-  @Option(
-      name = "host_jvm_debug",
-      defaultValue = "null", // NOTE: purely decorative!  See BlazeServerStartupOptions.
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "Convenience option to add some additional JVM startup flags, which cause "
-              + "the JVM to wait during startup until you connect from a JDWP-compliant debugger "
-              + "(like Eclipse) to port 5005.",
-      expansion = {
-        "--host_jvm_args=-agentlib:jdwp=transport=dt_socket,server=y,address=5005",
-      })
-  public abstract Void getHostJvmDebug();
+    @get:com.google.devtools.common.options.Option(
+        name = "host_jvm_debug",
+        defaultValue = "null",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+        help = ("Convenience option to add some additional JVM startup flags, which cause "
+                + "the JVM to wait during startup until you connect from a JDWP-compliant debugger "
+                + "(like Eclipse) to port 5005."),
+        expansion = ["--host_jvm_args=-agentlib:jdwp=transport=dt_socket,server=y,address=5005"
+        ]
+    )
+    abstract val hostJvmDebug: java.lang.Void?
 }

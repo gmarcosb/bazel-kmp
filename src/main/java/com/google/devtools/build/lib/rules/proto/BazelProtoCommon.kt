@@ -11,56 +11,53 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.proto
 
-package com.google.devtools.build.lib.rules.proto;
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.packages.BuiltinRestriction
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
+import net.starlark.java.eval.EvalException
+import net.starlark.java.eval.StarlarkList
+import net.starlark.java.eval.StarlarkThread
+import net.starlark.java.eval.StarlarkValue
+import net.starlark.java.syntax.Location
+import java.util.function.Function
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
+/** Protocol buffers support for Starlark.  */
+@StarlarkBuiltin(name = "proto_common", doc = "Private utilities for protocol buffers. Do not use.", documented = false)
+class BazelProtoCommon protected constructor() : StarlarkValue {
+    @StarlarkMethod(
+        name = "incompatible_enable_proto_toolchain_resolution",
+        useStarlarkThread = true,
+        documented = false
+    )
+    @Throws(EvalException::class)
+    fun getDefineProtoToolchains(thread: StarlarkThread): Boolean {
+        BuiltinRestriction.failIfCalledOutsideBuiltins(thread)
+        return thread
+            .getSemantics()
+            .getBool(BuildLanguageOptions.INCOMPATIBLE_ENABLE_PROTO_TOOLCHAIN_RESOLUTION)
+    }
 
-import com.google.devtools.build.lib.packages.BuiltinRestriction;
-import com.google.devtools.build.lib.packages.StarlarkProvider;
-import com.google.devtools.build.lib.packages.semantics.BuildLanguageOptions;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.StarlarkList;
-import net.starlark.java.eval.StarlarkThread;
-import net.starlark.java.eval.StarlarkValue;
-import net.starlark.java.syntax.Location;
+    @StarlarkMethod(name = "external_proto_infos", useStarlarkThread = true, documented = false)
+    @Throws(EvalException::class)
+    fun getExternalProtoInfos(thread: StarlarkThread?): StarlarkList<StarlarkProvider?>? {
+        BuiltinRestriction.failIfCalledOutsideBuiltins(thread)
+        return externalProtoInfos
+    }
 
-/** Protocol buffers support for Starlark. */
-@StarlarkBuiltin(
-    name = "proto_common",
-    doc = "Private utilities for protocol buffers. Do not use.",
-    documented = false)
-public class BazelProtoCommon implements StarlarkValue {
-  public static final BazelProtoCommon INSTANCE = new BazelProtoCommon();
+    companion object {
+        val INSTANCE: BazelProtoCommon = BazelProtoCommon()
 
-  protected BazelProtoCommon() {}
-
-  @StarlarkMethod(
-      name = "incompatible_enable_proto_toolchain_resolution",
-      useStarlarkThread = true,
-      documented = false)
-  public boolean getDefineProtoToolchains(StarlarkThread thread) throws EvalException {
-    BuiltinRestriction.failIfCalledOutsideBuiltins(thread);
-    return thread
-        .getSemantics()
-        .getBool(BuildLanguageOptions.INCOMPATIBLE_ENABLE_PROTO_TOOLCHAIN_RESOLUTION);
-  }
-
-  @StarlarkMethod(name = "external_proto_infos", useStarlarkThread = true, documented = false)
-  public StarlarkList<StarlarkProvider> getExternalProtoInfos(StarlarkThread thread)
-      throws EvalException {
-    BuiltinRestriction.failIfCalledOutsideBuiltins(thread);
-    return externalProtoInfos;
-  }
-
-  private static final StarlarkList<StarlarkProvider> externalProtoInfos =
-      StarlarkList.immutableCopyOf(
-          ProtoConstants.EXTERNAL_PROTO_INFO_KEYS.stream()
-              .map(
-                  key ->
-                      StarlarkProvider.builder(Location.BUILTIN)
-                          .buildExported(new StarlarkProvider.Key(key, "ProtoInfo")))
-              .collect(toImmutableList()));
+        private val externalProtoInfos: StarlarkList<StarlarkProvider?>? = StarlarkList.immutableCopyOf<T?>(
+            ProtoConstants.EXTERNAL_PROTO_INFO_KEYS.stream()
+                .map<Any?>(
+                    Function { key: BzlLoadValue.Key? ->
+                        StarlarkProvider.builder(Location.BUILTIN)
+                            .buildExported(Key(key, "ProtoInfo"))
+                    })
+                .collect(ImmutableList.toImmutableList<Any?>())
+        )
+    }
 }

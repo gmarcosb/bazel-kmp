@@ -11,33 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.devtools.build.lib.concurrent.ErrorClassifier;
+import com.google.devtools.build.lib.concurrent.ErrorClassifier
 
-/** An {@link ErrorClassifier} implementation for {@link ParallelEvaluator}. */
-public final class ParallelEvaluatorErrorClassifier extends ErrorClassifier {
-  private static final ParallelEvaluatorErrorClassifier INSTANCE =
-      new ParallelEvaluatorErrorClassifier();
-
-  public static ParallelEvaluatorErrorClassifier instance() {
-    return INSTANCE;
-  }
-
-  private ParallelEvaluatorErrorClassifier() {}
-
-  @Override
-  protected ErrorClassification classifyException(Exception e) {
-    if (e instanceof SchedulerException) {
-      return ErrorClassification.CRITICAL;
+/** An [ErrorClassifier] implementation for [ParallelEvaluator].  */
+class ParallelEvaluatorErrorClassifier private constructor() : ErrorClassifier() {
+    protected override fun classifyException(e: java.lang.Exception?): ErrorClassification {
+        if (e is SchedulerException) {
+            return ErrorClassification.CRITICAL
+        }
+        if (e is java.lang.RuntimeException) {
+            // We treat non-SchedulerException RuntimeExceptions as more severe than
+            // SchedulerExceptions so that AbstractQueueVisitor will propagate instances of the
+            // former. They indicate actual Blaze bugs, rather than normal Skyframe evaluation
+            // control flow.
+            return ErrorClassification.CRITICAL_AND_LOG
+        }
+        return ErrorClassification.NOT_CRITICAL
     }
-    if (e instanceof RuntimeException) {
-      // We treat non-SchedulerException RuntimeExceptions as more severe than
-      // SchedulerExceptions so that AbstractQueueVisitor will propagate instances of the
-      // former. They indicate actual Blaze bugs, rather than normal Skyframe evaluation
-      // control flow.
-      return ErrorClassification.CRITICAL_AND_LOG;
+
+    companion object {
+        private val INSTANCE = ParallelEvaluatorErrorClassifier()
+
+        @kotlin.jvm.JvmStatic
+        fun instance(): ParallelEvaluatorErrorClassifier {
+            return INSTANCE
+        }
     }
-    return ErrorClassification.NOT_CRITICAL;
-  }
 }

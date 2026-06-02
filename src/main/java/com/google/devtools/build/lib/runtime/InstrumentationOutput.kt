@@ -11,25 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import com.google.devtools.build.lib.buildtool.BuildResult.BuildToolLogCollection;
-import java.io.IOException;
-import java.io.OutputStream;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.buildtool.BuildResult.BuildToolLogCollection
 
-/** Stores and publishes the instrumentation output information. */
-public interface InstrumentationOutput {
+/** Stores and publishes the instrumentation output information.  */
+interface InstrumentationOutput {
+    /** Creates the [OutputStream] for instrumentation output writes.  */
+    @Throws(IOException::class)
+    fun createOutputStream(): java.io.OutputStream?
 
-  /** Creates the {@link OutputStream} for instrumentation output writes. */
-  OutputStream createOutputStream() throws IOException;
+    /** Publishes instrumentation output information to the [BuildToolLogCollection].  */
+    fun publish(buildToolLogCollection: BuildToolLogCollection?)
 
-  /** Publishes instrumentation output information to the {@link BuildToolLogCollection}. */
-  void publish(BuildToolLogCollection buildToolLogCollection);
-
-  /** Returns the string of output path. */
-  @Nullable
-  default String getPathString() {
-    return null;
-  }
+    val pathString: String?
+        /** Returns the string of output path.  */
+        get() = null
 }

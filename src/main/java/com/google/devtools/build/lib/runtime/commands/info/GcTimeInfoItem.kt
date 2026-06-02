@@ -11,31 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime.commands.info
 
-package com.google.devtools.build.lib.runtime.commands.info;
+import com.google.common.base.Supplier
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue
+import java.lang.management.ManagementFactory
 
-import com.google.common.base.Supplier;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.InfoItem;
-import java.lang.management.GarbageCollectorMXBean;
-import java.lang.management.ManagementFactory;
-
-/** Info item for the gc-time */
-public final class GcTimeInfoItem extends InfoItem {
-  public GcTimeInfoItem() {
-    super("gc-time", "The approximate accumulated time spend on garbage collection.", false);
-  }
-
-  @Override
-  public byte[] get(
-      Supplier<BuildConfigurationValue> configurationSupplier, CommandEnvironment env) {
-    // The documentation is not very clear on what it means to have more than
-    // one GC MXBean, so we just sum them up.
-    long gcTime = 0;
-    for (GarbageCollectorMXBean gcBean : ManagementFactory.getGarbageCollectorMXBeans()) {
-      gcTime += gcBean.getCollectionTime();
+/** Info item for the gc-time  */
+class GcTimeInfoItem : InfoItem("gc-time", "The approximate accumulated time spend on garbage collection.", false) {
+    public override fun get(
+        configurationSupplier: Supplier<BuildConfigurationValue?>?, env: CommandEnvironment?
+    ): ByteArray {
+        // The documentation is not very clear on what it means to have more than
+        // one GC MXBean, so we just sum them up.
+        var gcTime: Long = 0
+        for (gcBean in ManagementFactory.getGarbageCollectorMXBeans()) {
+            gcTime += gcBean.getCollectionTime()
+        }
+        return print(gcTime.toString() + "ms")
     }
-    return print(gcTime + "ms");
-  }
 }

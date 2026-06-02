@@ -11,55 +11,50 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import static java.nio.charset.StandardCharsets.UTF_8;
+import java.security.MessageDigest
 
-import java.io.ByteArrayOutputStream;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+/** A [MessageDigest] for GitSha1.  */
+class GitSha1MessageDigest : MessageDigest("GITSHA1") {
+    private val sha1: MessageDigest
+    private val stream: java.io.ByteArrayOutputStream
 
-/** A {@link MessageDigest} for GitSha1. */
-public final class GitSha1MessageDigest extends MessageDigest {
-  private static final byte[] header = {'b', 'l', 'o', 'b', ' '};
-  private final MessageDigest sha1;
-  private final ByteArrayOutputStream stream;
+    init {
+        sha1 = MessageDigest.getInstance("SHA-1")
+        stream = java.io.ByteArrayOutputStream()
+    }
 
-  public GitSha1MessageDigest() throws NoSuchAlgorithmException {
-    super("GITSHA1");
-    sha1 = MessageDigest.getInstance("SHA-1");
-    stream = new ByteArrayOutputStream();
-  }
+    public override fun engineUpdate(data: ByteArray?, offset: Int, length: Int) {
+        stream.write(data, offset, length)
+    }
 
-  @Override
-  public void engineUpdate(byte[] data, int offset, int length) {
-    stream.write(data, offset, length);
-  }
+    public override fun engineUpdate(b: Byte) {
+        stream.write(b.toInt())
+    }
 
-  @Override
-  public void engineUpdate(byte b) {
-    stream.write(b);
-  }
+    override fun engineReset() {
+        internalReset()
+    }
 
-  @Override
-  protected void engineReset() {
-    internalReset();
-  }
+    override fun engineDigest(): ByteArray? {
+        val size: Int = stream.size()
+        sha1.update(header)
+        sha1.update(java.lang.Integer.toString(size).getBytes(java.nio.charset.StandardCharsets.UTF_8))
+        sha1.update(0.toByte())
+        sha1.update(stream.toByteArray())
+        val digest: ByteArray? = sha1.digest()
+        internalReset()
+        return digest
+    }
 
-  @Override
-  protected byte[] engineDigest() {
-    int size = stream.size();
-    sha1.update(header);
-    sha1.update(Integer.toString(size).getBytes(UTF_8));
-    sha1.update((byte) 0);
-    sha1.update(stream.toByteArray());
-    byte[] digest = sha1.digest();
-    internalReset();
-    return digest;
-  }
+    private fun internalReset() {
+        sha1.reset()
+        stream.reset()
+    }
 
-  private void internalReset() {
-    sha1.reset();
-    stream.reset();
-  }
+    companion object {
+        private val header =
+            byteArrayOf('b'.code.toByte(), 'l'.code.toByte(), 'o'.code.toByte(), 'b'.code.toByte(), ' '.code.toByte())
+    }
 }

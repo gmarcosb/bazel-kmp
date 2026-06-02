@@ -11,67 +11,64 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.base.Utf8;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.packages.semantics.BuildLanguageOptions;
-import com.google.devtools.build.lib.packages.semantics.BuildLanguageOptions.Utf8EnforcementMode;
-import net.starlark.java.syntax.Location;
-import net.starlark.java.syntax.ParserInput;
+import com.google.devtools.build.lib.events.Event
 
-/** Helper functions for Bazel's use of Starlark. */
-public final class StarlarkUtil {
+/** Helper functions for Bazel's use of Starlark.  */
+object StarlarkUtil {
+    val INVALID_UTF_8_MESSAGE: String = ("not a valid UTF-8 encoded file; this can lead to inconsistent behavior and"
+            + " will be disallowed in a future version of Bazel")
 
-  public static final String INVALID_UTF_8_MESSAGE =
-      "not a valid UTF-8 encoded file; this can lead to inconsistent behavior and"
-          + " will be disallowed in a future version of Bazel";
+    /**
+     * Produces a [ParserInput] from the raw bytes of a file while optionally enforcing that the
+     * contents are valid UTF-8.
+     * 
+     * 
+     * **Warnings and errors are reported to the [EventHandler].**
+     * 
+     * @throws InvalidUtf8Exception if the bytes are not valid UTF-8 and the enforcement mode is
+     * [Utf8EnforcementMode.ERROR].
+     */
+    // This method is the only one that is supposed to use the deprecated ParserInput.fromLatin1
+    // method.
+    @Suppress("deprecation") // See https://github.com/bazelbuild/bazel/issues/374
+    @Throws(InvalidUtf8Exception::class)
+    fun createParserInput(
+        bytes: ByteArray, file: String?, utf8EnforcementMode: Utf8EnforcementMode, reporter: EventHandler
+    ): net.starlark.java.syntax.ParserInput {
+        when (utf8EnforcementMode) {
+            Utf8EnforcementMode.OFF -> {}
+            Utf8EnforcementMode.WARNING -> {
+                if (!com.google.common.base.Utf8.isWellFormed(bytes)) {
+                    reporter.handle(
+                        Event.warn(
+                            net.starlark.java.syntax.Location.fromFile(file),
+                            com.google.devtools.build.lib.skyframe.StarlarkUtil.INVALID_UTF_8_MESSAGE
+                        )
+                    )
+                }
+            }
 
-  /**
-   * Produces a {@link ParserInput} from the raw bytes of a file while optionally enforcing that the
-   * contents are valid UTF-8.
-   *
-   * <p><b>Warnings and errors are reported to the {@link EventHandler}.</b>
-   *
-   * @throws InvalidUtf8Exception if the bytes are not valid UTF-8 and the enforcement mode is
-   *     {@link Utf8EnforcementMode#ERROR}.
-   */
-  // This method is the only one that is supposed to use the deprecated ParserInput.fromLatin1
-  // method.
-  @SuppressWarnings("deprecation") // See https://github.com/bazelbuild/bazel/issues/374
-  public static ParserInput createParserInput(
-      byte[] bytes, String file, Utf8EnforcementMode utf8EnforcementMode, EventHandler reporter)
-      throws InvalidUtf8Exception {
-    switch (utf8EnforcementMode) {
-      case OFF -> {}
-      case WARNING -> {
-        if (!Utf8.isWellFormed(bytes)) {
-          reporter.handle(Event.warn(Location.fromFile(file), INVALID_UTF_8_MESSAGE));
+            Utf8EnforcementMode.ERROR -> {
+                if (!com.google.common.base.Utf8.isWellFormed(bytes)) {
+                    reporter.handle(
+                        Event.error(
+                            net.starlark.java.syntax.Location.fromFile(file),
+                            java.lang.String.format(
+                                "%s. For a temporary workaround, see the --%s flag.",
+                                com.google.devtools.build.lib.skyframe.StarlarkUtil.INVALID_UTF_8_MESSAGE,
+                                BuildLanguageOptions.INCOMPATIBLE_ENFORCE_STARLARK_UTF8
+                            )
+                        )
+                    )
+                    throw InvalidUtf8Exception(file + ": " + com.google.devtools.build.lib.skyframe.StarlarkUtil.INVALID_UTF_8_MESSAGE)
+                }
+            }
         }
-      }
-      case ERROR -> {
-        if (!Utf8.isWellFormed(bytes)) {
-          reporter.handle(
-              Event.error(
-                  Location.fromFile(file),
-                  String.format(
-                      "%s. For a temporary workaround, see the --%s flag.",
-                      INVALID_UTF_8_MESSAGE,
-                      BuildLanguageOptions.INCOMPATIBLE_ENFORCE_STARLARK_UTF8)));
-          throw new InvalidUtf8Exception(file + ": " + INVALID_UTF_8_MESSAGE);
-        }
-      }
+        return net.starlark.java.syntax.ParserInput.fromLatin1(bytes, file)
     }
-    return ParserInput.fromLatin1(bytes, file);
-  }
 
-  /** Exception thrown when a Starlark file is not valid UTF-8. */
-  public static final class InvalidUtf8Exception extends Exception {
-    public InvalidUtf8Exception(String message) {
-      super(message);
-    }
-  }
-
-  private StarlarkUtil() {}
+    /** Exception thrown when a Starlark file is not valid UTF-8.  */
+    class InvalidUtf8Exception(message: String?) : java.lang.Exception(message)
 }

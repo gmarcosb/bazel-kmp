@@ -11,47 +11,44 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.jni.JniLoader;
-import java.util.concurrent.CountDownLatch;
+import com.google.devtools.build.lib.skyframe.FsEventsNativeDepsService
+import java.util.concurrent.CountDownLatch
 
-/** Implementation of {@link FsEventsNativeDepsService}. */
-public class FsEventsNativeDepsServiceImpl implements FsEventsNativeDepsService {
+/** Implementation of [FsEventsNativeDepsService].  */
+class FsEventsNativeDepsServiceImpl : FsEventsNativeDepsService {
+    // Keep a pointer to a native structure in the JNI code (the FsEvents callback needs that
+    // structure).
+    private val nativePointer: Long = 0
 
-  static {
-    JniLoader.loadJni();
-  }
+    override fun createFsEvents(paths: Array<ByteArray?>?, excludedPaths: Array<ByteArray?>?, latency: Double) {
+        create(paths, excludedPaths, latency)
+    }
 
-  // Keep a pointer to a native structure in the JNI code (the FsEvents callback needs that
-  // structure).
-  private long nativePointer;
+    override fun runFsEvents(listening: CountDownLatch?) {
+        run(listening)
+    }
 
-  @Override
-  public void createFsEvents(byte[][] paths, byte[][] excludedPaths, double latency) {
-    create(paths, excludedPaths, latency);
-  }
+    override fun doCloseFsEvents() {
+        doClose()
+    }
 
-  @Override
-  public void runFsEvents(CountDownLatch listening) {
-    run(listening);
-  }
+    override fun pollFsEvents(): Array<ByteArray?>? {
+        return poll()
+    }
 
-  @Override
-  public void doCloseFsEvents() {
-    doClose();
-  }
+    private external fun create(paths: Array<ByteArray?>?, excludedPaths: Array<ByteArray?>?, latency: Double)
 
-  @Override
-  public byte[][] pollFsEvents() {
-    return poll();
-  }
+    private external fun run(listening: CountDownLatch?)
 
-  private native void create(byte[][] paths, byte[][] excludedPaths, double latency);
+    private external fun doClose()
 
-  private native void run(CountDownLatch listening);
+    private external fun poll(): Array<ByteArray?>?
 
-  private native void doClose();
-
-  private native byte[][] poll();
+    companion object {
+        init {
+            com.google.devtools.build.lib.jni.JniLoader.loadJni()
+        }
+    }
 }

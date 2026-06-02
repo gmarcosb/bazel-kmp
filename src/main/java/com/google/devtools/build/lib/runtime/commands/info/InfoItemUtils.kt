@@ -11,20 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime.commands.info
 
-package com.google.devtools.build.lib.runtime.commands.info;
+import java.lang.management.ManagementFactory
 
-import com.google.devtools.build.lib.runtime.InfoItem;
-import java.lang.management.ManagementFactory;
-import java.lang.management.MemoryMXBean;
-import java.lang.management.MemoryUsage;
-
-/** Utils for {@link InfoItem}s. */
-class InfoItemUtils {
-  private InfoItemUtils() {}
-
-  static MemoryUsage getMemoryUsage() {
-    MemoryMXBean memBean = ManagementFactory.getMemoryMXBean();
-    return memBean.getHeapMemoryUsage();
-  }
+/** Utils for [InfoItem]s.  */
+internal object InfoItemUtils {
+    val memoryUsage: MemoryUsage?
+        get() {
+            val memBean = ManagementFactory.getMemoryMXBean()
+            return memBean.getHeapMemoryUsage()
+        }
 }

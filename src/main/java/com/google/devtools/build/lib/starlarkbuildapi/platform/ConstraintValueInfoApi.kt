@@ -11,42 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.platform
 
-package com.google.devtools.build.lib.starlarkbuildapi.platform;
-
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.semantics.BuildLanguageOptions;
-import com.google.devtools.build.lib.starlarkbuildapi.core.StructApi;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
+import com.google.devtools.build.docgen.annot.DocCategory
+import com.google.devtools.build.lib.cmdline.Label
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
 
 /**
  * Info object representing a value for a constraint setting that can be used to define a platform.
  */
 @StarlarkBuiltin(
-    name = "ConstraintValueInfo",
-    doc =
-        "A value for a constraint setting that can be used to define a platform. See "
-            + "<a href='${link platforms#constraints-platforms}'>Defining "
+    name = "ConstraintValueInfo", doc = ("A value for a constraint setting that can be used to define a platform. See "
+            + "<a href='\${link platforms#constraints-platforms}'>Defining "
             + "Constraints and Platforms</a> for more information."
-            + PlatformInfoApi.EXPERIMENTAL_WARNING,
-    category = DocCategory.PROVIDER)
-public interface ConstraintValueInfoApi extends StructApi {
+            + PlatformInfoApi.Companion.EXPERIMENTAL_WARNING), category = DocCategory.PROVIDER
+)
+interface ConstraintValueInfoApi : StructApi {
+    @StarlarkMethod(
+        name = "constraint",
+        doc = ("The <a href=\"ConstraintSettingInfo\">ConstraintSettingInfo</a> this value can be "
+                + "applied to."),
+        structField = true,
+        enableOnlyWithFlag = BuildLanguageOptions.EXPERIMENTAL_PLATFORMS_API
+    )
+    fun constraint(): ConstraintSettingInfoApi?
 
-  @StarlarkMethod(
-      name = "constraint",
-      doc =
-          "The <a href=\"ConstraintSettingInfo\">ConstraintSettingInfo</a> this value can be "
-              + "applied to.",
-      structField = true,
-      enableOnlyWithFlag = BuildLanguageOptions.EXPERIMENTAL_PLATFORMS_API)
-  ConstraintSettingInfoApi constraint();
-
-  @StarlarkMethod(
-      name = "label",
-      doc = "The label of the target that created this constraint value.",
-      structField = true,
-      enableOnlyWithFlag = BuildLanguageOptions.EXPERIMENTAL_PLATFORMS_API)
-  Label label();
+    @StarlarkMethod(
+        name = "label",
+        doc = "The label of the target that created this constraint value.",
+        structField = true,
+        enableOnlyWithFlag = BuildLanguageOptions.EXPERIMENTAL_PLATFORMS_API
+    )
+    fun label(): Label?
 }

@@ -11,56 +11,42 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.core;
+package com.google.devtools.build.lib.rules.core
 
-import com.google.devtools.build.lib.actions.ActionConflictException;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.ConfiguredAspect;
-import com.google.devtools.build.lib.analysis.ConfiguredAspectFactory;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.OutputGroupInfo;
-import com.google.devtools.build.lib.analysis.RuleContext;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.packages.AspectDefinition;
-import com.google.devtools.build.lib.packages.AspectParameters;
-import com.google.devtools.build.lib.packages.NativeAspectClass;
+import com.google.devtools.build.lib.actions.ActionConflictException
 
 /**
- * Non-recursive aspect that promotes {@link OutputGroupInfo#VALIDATION} outputs to {@link
- * OutputGroupInfo#VALIDATION_TOP_LEVEL}. By requesting the latter but not the former output group,
- * validations avoid blocking test execution. (Using {@link OutputGroupInfo#DEFAULT} would
- * accomplish that as well but would be overrideable with {@code --output_groups} flag.)
- *
- * <p>Name is chosen to make for semi-sensible "ValidateTarget" aspect events.
+ * Non-recursive aspect that promotes [OutputGroupInfo.VALIDATION] outputs to [ ][OutputGroupInfo.VALIDATION_TOP_LEVEL]. By requesting the latter but not the former output group,
+ * validations avoid blocking test execution. (Using [OutputGroupInfo.DEFAULT] would
+ * accomplish that as well but would be overrideable with `--output_groups` flag.)
+ * 
+ * 
+ * Name is chosen to make for semi-sensible "ValidateTarget" aspect events.
  */
-class ValidateTarget extends NativeAspectClass implements ConfiguredAspectFactory {
-
-  @Override
-  public AspectDefinition getDefinition(AspectParameters aspectParameters) {
-    return AspectDefinition.builder(this)
-        .applyToFiles(true) // to grab validation outputs from file targets
-        .build();
-  }
-
-  @Override
-  public ConfiguredAspect create(
-      Label targetLabel,
-      ConfiguredTarget ct,
-      RuleContext context,
-      AspectParameters parameters,
-      RepositoryName toolsRepository)
-      throws ActionConflictException, InterruptedException {
-    OutputGroupInfo outputGroupInfo = OutputGroupInfo.get(ct);
-    if (outputGroupInfo != null) {
-      NestedSet<Artifact> validations = outputGroupInfo.getOutputGroup(OutputGroupInfo.VALIDATION);
-      if (!validations.isEmpty()) {
-        return ConfiguredAspect.builder(context)
-            .addOutputGroup(OutputGroupInfo.VALIDATION_TOP_LEVEL, validations)
-            .build();
-      }
+internal class ValidateTarget : NativeAspectClass(), ConfiguredAspectFactory {
+    public override fun getDefinition(aspectParameters: AspectParameters?): AspectDefinition {
+        return AspectDefinition.builder(this)
+            .applyToFiles(true) // to grab validation outputs from file targets
+            .build()
     }
-    return ConfiguredAspect.NonApplicableAspect.INSTANCE;
-  }
+
+    @Throws(ActionConflictException::class, InterruptedException::class)
+    public override fun create(
+        targetLabel: Label?,
+        ct: ConfiguredTarget?,
+        context: RuleContext?,
+        parameters: AspectParameters?,
+        toolsRepository: RepositoryName?
+    ): ConfiguredAspect {
+        val outputGroupInfo: OutputGroupInfo? = OutputGroupInfo.get(ct)
+        if (outputGroupInfo != null) {
+            val validations: NestedSet<Artifact?> = outputGroupInfo.getOutputGroup(OutputGroupInfo.VALIDATION)
+            if (!validations.isEmpty()) {
+                return ConfiguredAspect.builder(context)
+                    .addOutputGroup(OutputGroupInfo.VALIDATION_TOP_LEVEL, validations)
+                    .build()
+            }
+        }
+        return ConfiguredAspect.NonApplicableAspect.INSTANCE
+    }
 }

@@ -11,41 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.skyframe
 
-package com.google.devtools.build.skyframe;
+import com.google.devtools.build.skyframe.proto.GraphInconsistency.Inconsistency
 
-import static com.google.common.base.Preconditions.checkNotNull;
+/** [GraphInconsistencyReceiver] that forwards all operations to a delegate.  */
+class DelegatingGraphInconsistencyReceiver(delegate: GraphInconsistencyReceiver?) : GraphInconsistencyReceiver {
+    private var delegate: GraphInconsistencyReceiver
 
-import com.google.devtools.build.skyframe.proto.GraphInconsistency.Inconsistency;
-import com.google.devtools.build.skyframe.proto.GraphInconsistency.InconsistencyStats;
-import java.util.Collection;
-import javax.annotation.Nullable;
+    init {
+        this.delegate = com.google.common.base.Preconditions.checkNotNull<GraphInconsistencyReceiver>(delegate)
+    }
 
-/** {@link GraphInconsistencyReceiver} that forwards all operations to a delegate. */
-public final class DelegatingGraphInconsistencyReceiver implements GraphInconsistencyReceiver {
-  private GraphInconsistencyReceiver delegate;
+    fun setDelegate(delegate: GraphInconsistencyReceiver?) {
+        this.delegate = com.google.common.base.Preconditions.checkNotNull<GraphInconsistencyReceiver>(delegate)
+    }
 
-  public DelegatingGraphInconsistencyReceiver(GraphInconsistencyReceiver delegate) {
-    this.delegate = checkNotNull(delegate);
-  }
+    override fun noteInconsistencyAndMaybeThrow(
+        key: SkyKey?, otherKeys: MutableCollection<SkyKey?>?, inconsistency: Inconsistency?
+    ) {
+        delegate.noteInconsistencyAndMaybeThrow(key, otherKeys, inconsistency)
+    }
 
-  public void setDelegate(GraphInconsistencyReceiver delegate) {
-    this.delegate = checkNotNull(delegate);
-  }
+    val inconsistencyStats: InconsistencyStats?
+        get() = delegate.getInconsistencyStats()
 
-  @Override
-  public void noteInconsistencyAndMaybeThrow(
-      SkyKey key, @Nullable Collection<SkyKey> otherKeys, Inconsistency inconsistency) {
-    delegate.noteInconsistencyAndMaybeThrow(key, otherKeys, inconsistency);
-  }
-
-  @Override
-  public InconsistencyStats getInconsistencyStats() {
-    return delegate.getInconsistencyStats();
-  }
-
-  @Override
-  public void reset() {
-    delegate.reset();
-  }
+    override fun reset() {
+        delegate.reset()
+    }
 }

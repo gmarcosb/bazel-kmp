@@ -1074,7 +1074,7 @@ public class BzlLoadFunctionTest extends BuildViewTestCase {
     assertThatEvaluationResult(result).hasNoError();
     var bzlLoadValue = result.get(skyKey);
     assertThat(bzlLoadValue.getModule().getGlobals()).containsEntry("hoho", StarlarkInt.of(5));
-    assertThat(bzlLoadValue.getRecordedRepoMappings().cellSet())
+    assertThat(bzlLoadValue.recordedRepoMappings.cellSet())
         .containsExactly(
             Tables.immutableCell(
                 RepositoryName.create("foo+"), "bar_alias", RepositoryName.create("bar+")),

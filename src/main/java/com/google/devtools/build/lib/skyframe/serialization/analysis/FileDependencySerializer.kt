@@ -11,1173 +11,1190 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.util.concurrent.Futures.immediateFailedFuture;
-import static com.google.common.util.concurrent.Futures.immediateVoidFuture;
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
-import static com.google.devtools.build.lib.actions.FileStateType.SYMLINK;
-import static com.google.devtools.build.lib.skyframe.serialization.WriteStatuses.sparselyAggregateWriteStatuses;
-import static com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencyKeySupport.DIRECTORY_KEY_DELIMITER;
-import static com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencyKeySupport.FILE_KEY_DELIMITER;
-import static com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencyKeySupport.MAX_KEY_LENGTH;
-import static com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencyKeySupport.computeCacheKey;
-import static com.google.devtools.build.lib.skyframe.serialization.analysis.InvalidationDataInfoOrFuture.ConstantFileData.CONSTANT_FILE;
-import static com.google.devtools.build.lib.skyframe.serialization.analysis.InvalidationDataInfoOrFuture.ConstantListingData.CONSTANT_LISTING;
-import static com.google.devtools.build.lib.skyframe.serialization.analysis.InvalidationDataInfoOrFuture.ConstantNodeData.CONSTANT_NODE;
-import static com.google.devtools.build.lib.util.TestType.isInTest;
-import static com.google.devtools.build.lib.vfs.RootedPath.toRootedPath;
-import static java.lang.Math.max;
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-import com.github.luben.zstd.RecyclingBufferPool;
-import com.github.luben.zstd.ZstdOutputStream;
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Function;
-import com.google.common.collect.ImmutableList;
-import com.google.common.util.concurrent.AsyncFunction;
-import com.google.common.util.concurrent.FutureCallback;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.actions.FileStateValue;
-import com.google.devtools.build.lib.actions.FileValue;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider.BundledFileSystem;
-import com.google.devtools.build.lib.profiler.CounterSeriesCollector;
-import com.google.devtools.build.lib.profiler.CounterSeriesTask;
-import com.google.devtools.build.lib.profiler.CounterSeriesTask.Color;
-import com.google.devtools.build.lib.skyframe.AbstractNestedFileOpNodes;
-import com.google.devtools.build.lib.skyframe.AbstractNestedFileOpNodes.NestedFileOpNodes;
-import com.google.devtools.build.lib.skyframe.AbstractNestedFileOpNodes.NestedFileOpNodesWithSource;
-import com.google.devtools.build.lib.skyframe.DirectoryListingKey;
-import com.google.devtools.build.lib.skyframe.FileKey;
-import com.google.devtools.build.lib.skyframe.FileOpNodeOrFuture.FileOpNode;
-import com.google.devtools.build.lib.skyframe.serialization.EntryPart;
-import com.google.devtools.build.lib.skyframe.serialization.KeyBytesProvider;
-import com.google.devtools.build.lib.skyframe.serialization.KeyValueWriter;
-import com.google.devtools.build.lib.skyframe.serialization.PackedFingerprint;
-import com.google.devtools.build.lib.skyframe.serialization.ProfileCollector;
-import com.google.devtools.build.lib.skyframe.serialization.ProfileRecorder;
-import com.google.devtools.build.lib.skyframe.serialization.StringKey;
-import com.google.devtools.build.lib.skyframe.serialization.WriteStatuses.SparseAggregateWriteStatusBuilder;
-import com.google.devtools.build.lib.skyframe.serialization.WriteStatuses.WriteStatus;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.InvalidationDataInfoOrFuture.FileDataInfo;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.InvalidationDataInfoOrFuture.FileDataInfoOrFuture;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.InvalidationDataInfoOrFuture.FileInvalidationDataInfo;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.InvalidationDataInfoOrFuture.FutureFileDataInfo;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.InvalidationDataInfoOrFuture.FutureListingDataInfo;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.InvalidationDataInfoOrFuture.FutureNodeDataInfo;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.InvalidationDataInfoOrFuture.ListingDataInfo;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.InvalidationDataInfoOrFuture.ListingDataInfoOrFuture;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.InvalidationDataInfoOrFuture.ListingInvalidationDataInfo;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.InvalidationDataInfoOrFuture.NodeDataInfo;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.InvalidationDataInfoOrFuture.NodeDataInfoOrFuture;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.InvalidationDataInfoOrFuture.NodeInvalidationDataInfo;
-import com.google.devtools.build.lib.skyframe.serialization.proto.DirectoryListingInvalidationData;
-import com.google.devtools.build.lib.skyframe.serialization.proto.FileInvalidationData;
-import com.google.devtools.build.lib.skyframe.serialization.proto.Symlink;
-import com.google.devtools.build.lib.versioning.LongVersionGetter;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.skyframe.InMemoryGraph;
-import com.google.devtools.build.skyframe.InMemoryNodeEntry;
-import com.google.protobuf.CodedOutputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.FileStateType.SYMLINK
 
 /**
- * Records {@link FileKey}, {@link DirectoryListingKey} or {@link AbstractNestedFileOpNodes}
- * invalidation to a remote {@link KeyValueWriter}.
+ * Records [FileKey], [DirectoryListingKey] or [AbstractNestedFileOpNodes]
+ * invalidation to a remote [KeyValueWriter].
  */
-final class FileDependencySerializer {
-  /**
-   * Counters for the progress of serialization.
-   *
-   * <p>Logged in the trace profile.
-   */
-  static class Counters implements CounterSeriesCollector {
-    @VisibleForTesting final AtomicLong nodesWaitingForDeps = new AtomicLong();
-    @VisibleForTesting final AtomicLong nodesWaitingForUpload = new AtomicLong();
-    @VisibleForTesting final AtomicLong nodesUploaded = new AtomicLong();
-    @VisibleForTesting final AtomicLong nodesWithProcessingErrors = new AtomicLong();
-    @VisibleForTesting final AtomicLong keyBytesWaitingForUpload = new AtomicLong();
-    @VisibleForTesting final AtomicLong valueBytesWaitingForUpload = new AtomicLong();
-    @VisibleForTesting final AtomicLong keyBytesUploaded = new AtomicLong();
-    @VisibleForTesting final AtomicLong valueBytesUploaded = new AtomicLong();
+internal class FileDependencySerializer(
+    versionGetter: LongVersionGetter,
+    graph: InMemoryGraph,
+    writer: KeyValueWriter,
+    executor: java.util.concurrent.Executor,
+    profileCollector: ProfileCollector?
+) {
+    /**
+     * Counters for the progress of serialization.
+     * 
+     * 
+     * Logged in the trace profile.
+     */
+    internal class Counters : CounterSeriesCollector {
+        @kotlin.jvm.JvmField
+        @com.google.common.annotations.VisibleForTesting
+        val nodesWaitingForDeps: AtomicLong = AtomicLong()
 
-    private static final CounterSeriesTask NODES_WAITING_FOR_DEPS =
-        new CounterSeriesTask(
-            "Skycache: Invalidation: Nodes: Pending", "Waiting for deps", Color.RAIL_LOAD);
-    private static final CounterSeriesTask NODES_WAITING_FOR_UPLOAD =
-        new CounterSeriesTask(
-            "Skycache: Invalidation: Nodes: Pending", "Waiting for upload", Color.RAIL_LOAD);
-    private static final CounterSeriesTask NODES_UPLOADED =
-        new CounterSeriesTask(
-            "Skycache: Invalidation: Nodes: Uploaded", "Uploaded", Color.RAIL_RESPONSE);
-    private static final CounterSeriesTask NODES_WITH_PROCESSING_ERRORS =
-        new CounterSeriesTask(
-            "Skycache: Invalidation: Nodes: Processing Errors",
-            "Processing Errors",
-            Color.RAIL_RESPONSE);
+        @com.google.common.annotations.VisibleForTesting
+        val nodesWaitingForUpload: AtomicLong = AtomicLong()
 
-    private static final CounterSeriesTask KEY_BYTES_WAITING_FOR_UPLOAD =
-        new CounterSeriesTask("Skycache: Invalidation: Bytes: Pending", "Key", Color.RAIL_LOAD);
-    private static final CounterSeriesTask VALUE_BYTES_WAITING_FOR_UPLOAD =
-        new CounterSeriesTask("Skycache: Invalidation: Bytes: Pending", "Value", Color.RAIL_LOAD);
-    private static final CounterSeriesTask KEY_BYTES_UPLOADED =
-        new CounterSeriesTask(
-            "Skycache: Invalidation: Bytes: Uploaded", "Key", Color.RAIL_RESPONSE);
-    private static final CounterSeriesTask VALUE_BYTES_UPLOADED =
-        new CounterSeriesTask(
-            "Skycache: Invalidation: Bytes: Uploaded", "Value", Color.RAIL_RESPONSE);
+        @com.google.common.annotations.VisibleForTesting
+        val nodesUploaded: AtomicLong = AtomicLong()
 
-    @Override
-    public void collect(double deltaNanos, BiConsumer<CounterSeriesTask, Double> consumer) {
-      consumer.accept(NODES_WAITING_FOR_DEPS, (double) nodesWaitingForDeps.get());
-      consumer.accept(NODES_WAITING_FOR_UPLOAD, (double) nodesWaitingForUpload.get());
-      consumer.accept(NODES_UPLOADED, (double) nodesUploaded.get());
-      consumer.accept(NODES_WITH_PROCESSING_ERRORS, (double) nodesWithProcessingErrors.get());
-      consumer.accept(KEY_BYTES_WAITING_FOR_UPLOAD, (double) keyBytesWaitingForUpload.get());
-      consumer.accept(VALUE_BYTES_WAITING_FOR_UPLOAD, (double) valueBytesWaitingForUpload.get());
-      consumer.accept(KEY_BYTES_UPLOADED, (double) keyBytesUploaded.get());
-      consumer.accept(VALUE_BYTES_UPLOADED, (double) valueBytesUploaded.get());
-    }
-  }
+        @kotlin.jvm.JvmField
+        @com.google.common.annotations.VisibleForTesting
+        val nodesWithProcessingErrors: AtomicLong = AtomicLong()
 
-  @VisibleForTesting public static final int COMPRESSION_NUM_BYTES_THRESHOLD = 580;
-  private final LongVersionGetter versionGetter;
-  private final InMemoryGraph graph;
-  private final KeyValueWriter writer;
-  private final Executor executor;
-  private final Counters counters;
-  @Nullable private final ProfileCollector profileCollector;
+        @com.google.common.annotations.VisibleForTesting
+        val keyBytesWaitingForUpload: AtomicLong = AtomicLong()
 
-  private final ValueOrFutureMap<FileKey, FileDataInfoOrFuture, FileDataInfo, FutureFileDataInfo>
-      fileDataInfo =
-          new ValueOrFutureMap<>(
-              new ConcurrentHashMap<>(),
-              FutureFileDataInfo::new,
-              this::populateFutureFileDataInfo,
-              FutureFileDataInfo.class);
+        @com.google.common.annotations.VisibleForTesting
+        val valueBytesWaitingForUpload: AtomicLong = AtomicLong()
 
-  private final ValueOrFutureMap<
-          DirectoryListingKey, ListingDataInfoOrFuture, ListingDataInfo, FutureListingDataInfo>
-      listingDataInfo =
-          new ValueOrFutureMap<>(
-              new ConcurrentHashMap<>(),
-              FutureListingDataInfo::new,
-              this::populateFutureListingDataInfo,
-              FutureListingDataInfo.class);
+        @com.google.common.annotations.VisibleForTesting
+        val keyBytesUploaded: AtomicLong = AtomicLong()
 
-  FileDependencySerializer(
-      LongVersionGetter versionGetter,
-      InMemoryGraph graph,
-      KeyValueWriter writer,
-      Executor executor,
-      @Nullable ProfileCollector profileCollector) {
-    this.versionGetter = versionGetter;
-    this.graph = graph;
-    this.writer = writer;
-    this.executor = executor;
-    this.counters = new Counters();
-    this.profileCollector = profileCollector;
-  }
+        @com.google.common.annotations.VisibleForTesting
+        val valueBytesUploaded: AtomicLong = AtomicLong()
 
-  Counters getCounters() {
-    return counters;
-  }
+        public override fun collect(
+            deltaNanos: Double,
+            consumer: java.util.function.BiConsumer<CounterSeriesTask?, Double?>
+        ) {
+            consumer.accept(
+                com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencySerializer.Counters.Companion.NODES_WAITING_FOR_DEPS,
+                nodesWaitingForDeps.get().toDouble()
+            )
+            consumer.accept(
+                com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencySerializer.Counters.Companion.NODES_WAITING_FOR_UPLOAD,
+                nodesWaitingForUpload.get().toDouble()
+            )
+            consumer.accept(
+                com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencySerializer.Counters.Companion.NODES_UPLOADED,
+                nodesUploaded.get().toDouble()
+            )
+            consumer.accept(
+                com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencySerializer.Counters.Companion.NODES_WITH_PROCESSING_ERRORS,
+                nodesWithProcessingErrors.get().toDouble()
+            )
+            consumer.accept(
+                com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencySerializer.Counters.Companion.KEY_BYTES_WAITING_FOR_UPLOAD,
+                keyBytesWaitingForUpload.get().toDouble()
+            )
+            consumer.accept(
+                com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencySerializer.Counters.Companion.VALUE_BYTES_WAITING_FOR_UPLOAD,
+                valueBytesWaitingForUpload.get().toDouble()
+            )
+            consumer.accept(
+                com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencySerializer.Counters.Companion.KEY_BYTES_UPLOADED,
+                keyBytesUploaded.get().toDouble()
+            )
+            consumer.accept(
+                com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencySerializer.Counters.Companion.VALUE_BYTES_UPLOADED,
+                valueBytesUploaded.get().toDouble()
+            )
+        }
 
-  /**
-   * Stores data about a {@code node} and its transitive dependencies in {@link #writer} to be used
-   * for invalidation.
-   *
-   * <p>The resulting data can be embedded in reverse deps of {@code node} and used to invalidate
-   * them by checking against a list of changed files and directory listings.
-   *
-   * <p>See comments at {@link FileInvalidationData} and {@link DirectoryListingInvalidationData}
-   * for more details about the data being persisted.
-   */
-  InvalidationDataInfoOrFuture registerDependency(FileOpNode node) {
-    switch (node) {
-      case FileKey file:
-        return registerDependency(file);
-      case DirectoryListingKey listing:
-        return registerDependency(listing);
-      case AbstractNestedFileOpNodes nested:
-        return registerDependency(nested);
-    }
-  }
+        companion object {
+            private val NODES_WAITING_FOR_DEPS: CounterSeriesTask = CounterSeriesTask(
+                "Skycache: Invalidation: Nodes: Pending", "Waiting for deps", Color.RAIL_LOAD
+            )
+            private val NODES_WAITING_FOR_UPLOAD: CounterSeriesTask = CounterSeriesTask(
+                "Skycache: Invalidation: Nodes: Pending", "Waiting for upload", Color.RAIL_LOAD
+            )
+            private val NODES_UPLOADED: CounterSeriesTask = CounterSeriesTask(
+                "Skycache: Invalidation: Nodes: Uploaded", "Uploaded", Color.RAIL_RESPONSE
+            )
+            private val NODES_WITH_PROCESSING_ERRORS: CounterSeriesTask = CounterSeriesTask(
+                "Skycache: Invalidation: Nodes: Processing Errors",
+                "Processing Errors",
+                Color.RAIL_RESPONSE
+            )
 
-  FileDataInfoOrFuture registerDependency(FileKey key) {
-    return fileDataInfo.getValueOrFuture(key);
-  }
-
-  ListingDataInfoOrFuture registerDependency(DirectoryListingKey key) {
-    return listingDataInfo.getValueOrFuture(key);
-  }
-
-  /**
-   * Registers a dependency on the set of transitive dependencies represented by {@code node}.
-   *
-   * <p>Uploads the result to the {@link #writer}.
-   */
-  NodeDataInfoOrFuture registerDependency(AbstractNestedFileOpNodes node) {
-    var reference = (NodeDataInfoOrFuture) node.getSerializationScratch();
-    if (reference != null) {
-      return reference;
+            private val KEY_BYTES_WAITING_FOR_UPLOAD: CounterSeriesTask =
+                CounterSeriesTask("Skycache: Invalidation: Bytes: Pending", "Key", Color.RAIL_LOAD)
+            private val VALUE_BYTES_WAITING_FOR_UPLOAD: CounterSeriesTask =
+                CounterSeriesTask("Skycache: Invalidation: Bytes: Pending", "Value", Color.RAIL_LOAD)
+            private val KEY_BYTES_UPLOADED: CounterSeriesTask = CounterSeriesTask(
+                "Skycache: Invalidation: Bytes: Uploaded", "Key", Color.RAIL_RESPONSE
+            )
+            private val VALUE_BYTES_UPLOADED: CounterSeriesTask = CounterSeriesTask(
+                "Skycache: Invalidation: Bytes: Uploaded", "Value", Color.RAIL_RESPONSE
+            )
+        }
     }
 
-    FutureNodeDataInfo future;
-    synchronized (node) {
-      reference = (NodeDataInfoOrFuture) node.getSerializationScratch();
-      if (reference != null) {
-        return reference;
-      }
+    private val versionGetter: LongVersionGetter
+    private val graph: InMemoryGraph
+    private val writer: KeyValueWriter
+    private val executor: java.util.concurrent.Executor
+    @kotlin.jvm.JvmField
+    val counters: Counters
+    private val profileCollector: ProfileCollector?
 
-      future = new FutureNodeDataInfo(node);
-      node.setSerializationScratch(future);
-    }
+    private val fileDataInfo: ValueOrFutureMap<com.google.devtools.build.lib.skyframe.FileKey?, FileDataInfoOrFuture?, FileDataInfo?, FutureFileDataInfo?> =
+        ValueOrFutureMap<KeyT?, ValueOrFutureT?, ValueT?, FutureT?>(
+            ConcurrentHashMap<Any?, Any?>(),
+            java.util.function.BiFunction { key: KeyT?, consumer: java.util.function.BiConsumer<KeyT?, ValueT?>? ->
+                FutureFileDataInfo(
+                    key,
+                    consumer
+                )
+            },
+            java.util.function.Function { future: FutureT? -> this.populateFutureFileDataInfo(future) },
+            FutureFileDataInfo::class.java
+        )
 
-    // If this is reached, this thread owns `future` and must set its value.
-    try {
-      return populateFutureNodeDataInfo(future);
-    } finally {
-      future.verifyComplete();
-    }
-  }
+    private val listingDataInfo: ValueOrFutureMap<DirectoryListingKey?, ListingDataInfoOrFuture?, ListingDataInfo?, FutureListingDataInfo?> =
+        ValueOrFutureMap<KeyT?, ValueOrFutureT?, ValueT?, FutureT?>(
+            ConcurrentHashMap<Any?, Any?>(),
+            java.util.function.BiFunction { key: KeyT?, consumer: java.util.function.BiConsumer<KeyT?, ValueT?>? ->
+                FutureListingDataInfo(
+                    key,
+                    consumer
+                )
+            },
+            java.util.function.Function { future: FutureT? -> this.populateFutureListingDataInfo(future) },
+            FutureListingDataInfo::class.java
+        )
 
-  /**
-   * Populates the {@link FileDataInfoOrFuture} for the given {@link FutureFileDataInfo}.
-   *
-   * <p>This method is responsible for resolving the {@link FileKey} and its dependencies, and
-   * uploading the resulting {@link FileInvalidationData} to the {@link #writer}.
-   *
-   * @param future The {@link FutureFileDataInfo} to populate.
-   * @return The populated {@link FileDataInfoOrFuture}.
-   */
-  FileDataInfoOrFuture populateFutureFileDataInfo(FutureFileDataInfo future) {
-    counters.nodesWaitingForDeps.incrementAndGet();
-
-    FileKey key = future.key();
-    RootedPath rootedPath = key.argument();
-    RootedPath parentRootedPath;
-    // Builtin files don't change.
-    if ((rootedPath.getRoot().getFileSystem() instanceof BundledFileSystem)
-        // Assumes that the root folder doesn't change.
-        || (parentRootedPath = rootedPath.getParentDirectory()) == null) {
-      counters.nodesWaitingForDeps.decrementAndGet();
-      return future.completeWith(CONSTANT_FILE);
-    }
-
-    InMemoryNodeEntry nodeEntry = graph.getIfPresent(key);
-    if (nodeEntry == null) {
-      counters.nodesWaitingForDeps.decrementAndGet();
-      counters.nodesWithProcessingErrors.incrementAndGet();
-      return future.failWith(new MissingSkyframeEntryException(key));
-    }
-    var value = (FileValue) nodeEntry.getValue();
-    RootedPath realRootedPath = value.realRootedPath(rootedPath);
-
-    long initialMtsv;
-    if (value.isDirectory()) {
-      // Matches the behavior of PathVersionGetter.getVersionForExistingPathInternal.
-      initialMtsv = LongVersionGetter.MINIMAL;
-    } else {
-      try {
-        initialMtsv = getVersion(realRootedPath, value.exists());
-      } catch (IOException e) {
-        counters.nodesWaitingForDeps.decrementAndGet();
-        counters.nodesWithProcessingErrors.incrementAndGet();
-        return future.failWith(e);
-      }
-    }
-    var uploader =
-        new FileInvalidationDataUploader(
-            /* rootedPath= */ rootedPath,
-            /* parentRootedPath= */ parentRootedPath,
-            /* realRootedPath= */ realRootedPath,
-            value.exists(),
-            initialMtsv);
-    // The following steps are performed to ensure that ancestors and ancestor symlinks are resolved
-    // to compute the correct MTSV:
-    // 1. Call fullyResolvePath to register all the parents of the current rootedPath as
-    //    dependencies first.
-    // 2. The transform() method takes the output of the first parameter (a future) and passes it to
-    //    the second parameter (a function).
-    // 3. The output of fullyResolvePath is Void, so the transform method is only being used as a
-    //    stop to not trigger the upload of the current rootedPath till its parents have been
-    //    registered.
-    // 4. The uploader itself is a Function that directly returns a FileDataInfo but gets wrapped as
-    //    a future by the transform method.
-    // 5. The upload happens through the put() operation in the writer inside the uploader.
-    ListenableFuture<Void> resolutionFuture =
-        fullyResolvePath(value.isSymlink() ? value.getUnresolvedLinkTarget() : null, uploader);
-
-    Futures.addCallback(
-        resolutionFuture,
-        new FutureCallback<Void>() {
-          @Override
-          public void onSuccess(Void result) {
-            // If resolution is successful, `uploader` completes the process via
-            // `Futures.transform`. The counters will be handled in the `uploader` later.
-          }
-
-          @Override
-          public void onFailure(Throwable t) {
-            counters.nodesWaitingForDeps.decrementAndGet();
-            counters.nodesWithProcessingErrors.incrementAndGet();
-          }
-        },
-        directExecutor());
-
-    return future.completeWith(Futures.transform(resolutionFuture, uploader, directExecutor()));
-  }
-
-  /**
-   * Performs the upload of the {@link FileInvalidationData} once resolution is complete in the
-   * {@link #apply} callback.
-   */
-  private final class FileInvalidationDataUploader
-      implements Function<Void, FileInvalidationDataInfo> {
-    private final RootedPath rootedPath;
-    private final RootedPath parentRootedPath;
-    private final RootedPath realRootedPath;
-    private final boolean exists;
-
-    private final FileInvalidationData.Builder data = FileInvalidationData.newBuilder();
-    private final ArrayList<WriteStatus> writeStatuses = new ArrayList<>();
-    private long mtsv;
-
-    private FileInvalidationDataUploader(
-        RootedPath rootedPath,
-        RootedPath parentRootedPath,
-        RootedPath realRootedPath,
-        boolean exists,
-        long initialMtsv) {
-      this.rootedPath = rootedPath;
-      this.parentRootedPath = parentRootedPath;
-      this.realRootedPath = realRootedPath;
-      this.exists = exists;
-      this.mtsv = initialMtsv;
-    }
-
-    @Override
-    public FileInvalidationDataInfo apply(Void unused) {
-      String cacheKey = computeCacheKey(rootedPath.getRootRelativePath(), mtsv, FILE_KEY_DELIMITER);
-      KeyBytesProvider keyBytes = getKeyBytes(cacheKey, data::setOverflowKey);
-      byte[] dataBytes = data.build().toByteArray();
-      long keyByteCount = keyBytes.toBytes().length;
-      long valueByteCount = dataBytes.length; // Don't hold on to the bytes any longer than needed
-
-      counters.nodesWaitingForDeps.decrementAndGet();
-      counters.nodesWaitingForUpload.incrementAndGet();
-      counters.keyBytesWaitingForUpload.addAndGet(keyByteCount);
-      counters.valueBytesWaitingForUpload.addAndGet(valueByteCount);
-
-      WriteStatus writeStatus = writer.put(keyBytes, dataBytes);
-      writeStatus.addListener(
-          () -> {
-            counters.nodesWaitingForUpload.decrementAndGet();
-            counters.nodesUploaded.incrementAndGet();
-            counters.keyBytesWaitingForUpload.addAndGet(-keyByteCount);
-            counters.valueBytesWaitingForUpload.addAndGet(-valueByteCount);
-            counters.keyBytesUploaded.addAndGet(keyByteCount);
-            counters.valueBytesUploaded.addAndGet(valueByteCount);
-          },
-          directExecutor());
-      if (profileCollector != null) {
-        recordInvalidationProfile(
-            profileCollector,
-            InvalidationEntryType.FILE,
-            keyByteCount,
-            valueByteCount,
-            writeStatus);
-      }
-      writeStatuses.add(writeStatus);
-      return new FileInvalidationDataInfo(
-          cacheKey, sparselyAggregateWriteStatuses(writeStatuses), exists, mtsv, realRootedPath);
+    init {
+        this.versionGetter = versionGetter
+        this.graph = graph
+        this.writer = writer
+        this.executor = executor
+        this.counters =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencySerializer.Counters()
+        this.profileCollector = profileCollector
     }
 
     /**
-     * Adds information about the invalidation data of {@link #parentRootedPath}.
-     *
-     * <p>This is called at most once but might not be called at all if {@link #parentRootedPath}
-     * refers to a constant path.
+     * Stores data about a `node` and its transitive dependencies in [.writer] to be used
+     * for invalidation.
+     * 
+     * 
+     * The resulting data can be embedded in reverse deps of `node` and used to invalidate
+     * them by checking against a list of changed files and directory listings.
+     * 
+     * 
+     * See comments at [FileInvalidationData] and [DirectoryListingInvalidationData]
+     * for more details about the data being persisted.
      */
-    private void addParent(FileInvalidationDataInfo parent) {
-      long parentMtsv = parent.mtsv();
-      if (parentMtsv != LongVersionGetter.MINIMAL) {
-        data.setParentMtsv(parentMtsv);
-      }
-      updateMtsvIfGreater(parentMtsv);
-      writeStatuses.add(parent.writeStatus());
+    fun registerDependency(node: FileOpNode): InvalidationDataInfoOrFuture? {
+        when (node) {
+            -> return registerDependency(file)
+            -> return registerDependency(listing)
+            -> return registerDependency(nested)
+        }
+    }
+
+    fun registerDependency(key: com.google.devtools.build.lib.skyframe.FileKey?): FileDataInfoOrFuture? {
+        return fileDataInfo.getValueOrFuture(key)
+    }
+
+    fun registerDependency(key: DirectoryListingKey?): ListingDataInfoOrFuture? {
+        return listingDataInfo.getValueOrFuture(key)
     }
 
     /**
-     * Incorporates information about a symlink parent.
-     *
-     * <p>If a symlink is present, it's possible that combining the symlink with {@link
-     * #parentRootedPath} points to a file who's parent directory hasn't been resolved. Resolution
-     * of that parent directory results in {@code parentInfo}.
-     *
-     * <p>If the symlink points to a symlink, it's possible for that symlink to point to a file
-     * having a yet another parent directory that has to be resolved again. In that case this method
-     * would be called again.
+     * Registers a dependency on the set of transitive dependencies represented by `node`.
+     * 
+     * 
+     * Uploads the result to the [.writer].
      */
-    private void addSymlinkParentInfo(FileInvalidationDataInfo parentInfo) {
-      updateMtsvIfGreater(parentInfo.mtsv());
-      writeStatuses.add(parentInfo.writeStatus());
-    }
+    fun registerDependency(node: AbstractNestedFileOpNodes): NodeDataInfoOrFuture? {
+        var reference: NodeDataInfoOrFuture? = node.getSerializationScratch() as NodeDataInfoOrFuture?
+        if (reference != null) {
+            return reference
+        }
 
-    private void updateMtsvIfGreater(long version) {
-      if (version > mtsv) {
-        mtsv = version;
-      }
-    }
-
-    private Symlink.Builder addSymlinksBuilder() {
-      return data.addSymlinksBuilder();
-    }
-  }
-
-  /** Resolves the parent then resolves symlinks if {@code unresolvedLinkTarget} is non-null. */
-  private ListenableFuture<Void> fullyResolvePath(
-      @Nullable PathFragment unresolvedLinkTarget, FileInvalidationDataUploader uploader) {
-    var pathResolver = new PathResolver(unresolvedLinkTarget, uploader);
-    switch (registerDependency(FileValue.key(uploader.parentRootedPath))) {
-      case FileDataInfo parentData:
-        return pathResolver.apply(parentData);
-      case FutureFileDataInfo futureParentData:
-        return Futures.transformAsync(futureParentData, pathResolver, directExecutor());
-    }
-  }
-
-  /**
-   * Waits for {@link FileInvalidationDataUploader#parentRootedPath} to be resolved (signalled
-   * through the {@link #apply} callback) and starts symlink resolution if there is a symlink.
-   */
-  class PathResolver implements AsyncFunction<FileDataInfo, Void> {
-    /** Symlink's target path. */
-    @Nullable // non-null if there is a symlink
-    private final PathFragment unresolvedLinkTarget;
-
-    private final FileInvalidationDataUploader uploader;
-
-    private PathResolver(
-        @Nullable PathFragment unresolvedLinkTarget, FileInvalidationDataUploader uploader) {
-      this.unresolvedLinkTarget = unresolvedLinkTarget;
-      this.uploader = uploader;
-    }
-
-    @Override
-    public ListenableFuture<Void> apply(FileDataInfo parentData) {
-      RootedPath realParentPath;
-      switch (parentData) {
-        case CONSTANT_FILE:
-          // Assumes that BundledFileSystem does not symlink outside of BundledFileSystem.
-          realParentPath = uploader.parentRootedPath;
-          break;
-        case FileInvalidationDataInfo parentReference:
-          uploader.addParent(parentReference);
-          // If the parent folder doesn't exist, unresolvedLinkTarget will be null.
-          realParentPath = parentReference.realPath();
-          break;
-      }
-
-      if (unresolvedLinkTarget == null) {
-        return immediateVoidFuture(); // No symlink processing needed.
-      }
-
-      Path linkPath; // Real path to the symlink.
-      if (realParentPath.equals(uploader.parentRootedPath)) {
-        linkPath = uploader.rootedPath.asPath();
-      } else {
-        linkPath =
-            realParentPath
-                .asPath()
-                .getRelative(uploader.rootedPath.getRootRelativePath().getBaseName());
-      }
-      return processSymlinks(realParentPath, linkPath, unresolvedLinkTarget, uploader);
-    }
-  }
-
-  /**
-   * Recursively processes symlinks.
-   *
-   * <p>Requires that there are no symlink cycles (though ancestor references are benign). This is
-   * assumed to hold for builds that succeed.
-   *
-   * @param parentRootedPath the real parent of the symlink
-   * @param linkPath the real path to the symlink
-   * @param link the target path contents of the symlink
-   * @param uploader original uploader instance for the path resolution encountering this symlink
-   */
-  private ListenableFuture<Void> processSymlinks(
-      RootedPath parentRootedPath,
-      Path linkPath,
-      PathFragment link,
-      FileInvalidationDataUploader uploader) {
-    if (link.isAbsolute()) {
-      if (isInTest()) {
-        // Test environments may use absolute symlinks, which aren't allowed in production
-        // environments with analysis caching. Skips further dependency resolution for those.
-        return immediateVoidFuture();
-      }
-      throw new IllegalStateException(
-          String.format("Absolute symlink not permitted: %s contained %s", linkPath, link));
-    }
-    Symlink.Builder symlinkData = uploader.addSymlinksBuilder().setContents(link.getPathString());
-    PathFragment linkParent = parentRootedPath.getRootRelativePath();
-    PathFragment unresolvedTarget = linkParent.getRelative(link);
-
-    // Assumes that there are no external symlinks, e.g. ones that go above root.
-    checkArgument(
-        !unresolvedTarget.containsUplevelReferences(),
-        "symlink link above root for %s : %s = (%s) + (%s)",
-        parentRootedPath,
-        unresolvedTarget,
-        linkParent,
-        link);
-
-    try {
-      // Includes the version of the link itself in the MTSV.
-      uploader.updateMtsvIfGreater(getVersion(linkPath, /* exists= */ true));
-    } catch (IOException e) {
-      return immediateFailedFuture(e);
-    }
-
-    if (unresolvedTarget.isEmpty()) {
-      // It was a symlink to root. It's unclear how this ever useful, but it's not illegal. No
-      // resolution required.
-      return immediateVoidFuture();
-    }
-
-    PathFragment unresolvedTargetParent = unresolvedTarget.getParentDirectory();
-
-    if (linkParent.startsWith(unresolvedTargetParent)) {
-      // Any ancestor directories of the fully resolved `linkParent` are already resolved so
-      // there's no further ancestor resolution here.
-      return processSymlinkTarget(
-          toRootedPath(parentRootedPath.getRoot(), unresolvedTarget), uploader);
-    }
-
-    var parentProcessor = new SymlinkParentProcessor(parentRootedPath, link, uploader, symlinkData);
-
-    // The parent path was changed by the link so it needs to be newly resolved.
-    switch (checkNotNull(
-        registerDependency(
-            FileValue.key(toRootedPath(parentRootedPath.getRoot(), unresolvedTargetParent))),
-        unresolvedTargetParent)) {
-      case FileDataInfo data:
-        return parentProcessor.apply(data);
-      case FutureFileDataInfo future:
-        return Futures.transformAsync(future, parentProcessor, directExecutor());
-    }
-  }
-
-  private ListenableFuture<Void> processSymlinkTarget(
-      RootedPath resolvedSymlinkPath, FileInvalidationDataUploader uploader) {
-    InMemoryNodeEntry nodeEntry = graph.getIfPresent(resolvedSymlinkPath);
-    if (nodeEntry == null) {
-      return immediateFailedFuture(new MissingSkyframeEntryException(resolvedSymlinkPath));
-    }
-    var symlinkValue = (FileStateValue) nodeEntry.getValue();
-    if (!symlinkValue.getType().equals(SYMLINK)) {
-      // We've come full circle back to the initial, fully resolved, FileValue. So there's no
-      // additional bookkeeping needed.
-      return immediateVoidFuture();
-    }
-    return processSymlinks(
-        resolvedSymlinkPath.getParentDirectory(),
-        resolvedSymlinkPath.asPath(),
-        symlinkValue.getSymlinkTarget(),
-        uploader);
-  }
-
-  /**
-   * Waits for information about a symlink's real parent, signalled through the {@link #apply}
-   * callback.
-   *
-   * <p>Once the real parent is known, syntactically combines it with the symlink target path. Then,
-   * continues resolving the new path, potentially triggering recursion if the target is another
-   * symlink.
-   */
-  private final class SymlinkParentProcessor implements AsyncFunction<FileDataInfo, Void> {
-    private final RootedPath parentPath;
-    private final PathFragment link;
-    private final FileInvalidationDataUploader uploader;
-    private final Symlink.Builder symlinkData;
-
-    private SymlinkParentProcessor(
-        RootedPath parentPath,
-        PathFragment link,
-        FileInvalidationDataUploader uploader,
-        Symlink.Builder symlinkData) {
-      this.parentPath = parentPath;
-      this.link = link;
-      this.uploader = uploader;
-      this.symlinkData = symlinkData;
-    }
-
-    @Override
-    public ListenableFuture<Void> apply(FileDataInfo realParentData) {
-      RootedPath resolvedParentRootedPath;
-      switch (realParentData) {
-        case CONSTANT_FILE:
-          // Assumes that symlinks in BundledFileSystem do not escape.
-          resolvedParentRootedPath = parentPath;
-          break;
-        case FileInvalidationDataInfo parentReference:
-          uploader.addSymlinkParentInfo(parentReference);
-          long parentMtsv = parentReference.mtsv();
-          if (parentMtsv != LongVersionGetter.MINIMAL) {
-            symlinkData.setParentMtsv(parentMtsv);
-          }
-          if (!parentReference.exists()) {
-            // The parent folder doesn't exist so further resolution of the symlink is moot.
-            return immediateVoidFuture();
-          }
-          resolvedParentRootedPath = parentReference.realPath();
-          break;
-      }
-      return processSymlinkTarget(
-          toRootedPath(
-              resolvedParentRootedPath.getRoot(),
-              resolvedParentRootedPath.getRootRelativePath().getRelative(link.getBaseName())),
-          uploader);
-    }
-  }
-
-  private ListingDataInfoOrFuture populateFutureListingDataInfo(FutureListingDataInfo future) {
-    counters.nodesWaitingForDeps.incrementAndGet();
-
-    RootedPath rootedPath = future.key().argument();
-    if (rootedPath.getRoot().getFileSystem() instanceof BundledFileSystem) {
-      counters.nodesWaitingForDeps.decrementAndGet();
-      return future.completeWith(CONSTANT_LISTING); // This listing doesn't change.
-    }
-    var handler = new ListingFileHandler(rootedPath);
-    switch (registerDependency(FileValue.key(rootedPath))) {
-      case FileDataInfo info:
-        return future.completeWith(handler.apply(info));
-      case FutureFileDataInfo futureInfo:
-        return future.completeWith(Futures.transformAsync(futureInfo, handler, directExecutor()));
-    }
-  }
-
-  private class ListingFileHandler implements AsyncFunction<FileDataInfo, ListingDataInfo> {
-    private final RootedPath rootedPath;
-
-    private ListingFileHandler(RootedPath rootedPath) {
-      this.rootedPath = rootedPath;
-    }
-
-    /**
-     * Incorporates information from the file associated with the directory.
-     *
-     * <p>This code assumes that the directory exists, as does {@link
-     * com.google.devtools.build.lib.skyframe.DirectoryListingValue#key}.
-     */
-    @Override
-    public ListenableFuture<ListingDataInfo> apply(FileDataInfo info) {
-      DirectoryListingInvalidationData.Builder data = DirectoryListingInvalidationData.newBuilder();
-      var writeStatuses = new ArrayList<WriteStatus>();
-      long fileMtsv;
-      RootedPath realPath;
-      switch (info) {
-        case CONSTANT_FILE: // reached only for the root directory
-          realPath = rootedPath;
-          fileMtsv = LongVersionGetter.MINIMAL;
-          break;
-        case FileInvalidationDataInfo fileInfo:
-          writeStatuses.add(fileInfo.writeStatus());
-          fileMtsv = fileInfo.mtsv();
-          if (fileMtsv != LongVersionGetter.MINIMAL) {
-            data.setFileMtsv(fileMtsv);
-          }
-          realPath = fileInfo.realPath();
-          break;
-      }
-
-      ListenableFuture<Long> dirMtsvFuture =
-          Futures.submit(
-              (Callable<Long>)
-                  () -> {
-                    return versionGetter.getDirectoryListingVersion(realPath.asPath());
-                  },
-              executor);
-
-      return Futures.transform(
-          dirMtsvFuture,
-          dirMtsv -> {
-            long mtsv = max(dirMtsv, fileMtsv);
-
-            String cacheKey =
-                computeCacheKey(rootedPath.getRootRelativePath(), mtsv, DIRECTORY_KEY_DELIMITER);
-            KeyBytesProvider keyBytes = getKeyBytes(cacheKey, data::setOverflowKey);
-            byte[] dataBytes = data.build().toByteArray();
-
-            long keyByteCount = keyBytes.toBytes().length;
-            long valueByteCount = dataBytes.length; // Do not hold on to the bytes
-
-            counters.nodesWaitingForDeps.decrementAndGet();
-            counters.nodesWaitingForUpload.incrementAndGet();
-            counters.keyBytesWaitingForUpload.addAndGet(keyByteCount);
-            counters.valueBytesWaitingForUpload.addAndGet(valueByteCount);
-
-            WriteStatus writeStatus = writer.put(keyBytes, dataBytes);
-            writeStatus.addListener(
-                () -> {
-                  counters.nodesWaitingForUpload.decrementAndGet();
-                  counters.nodesUploaded.incrementAndGet();
-                  counters.keyBytesWaitingForUpload.addAndGet(-keyByteCount);
-                  counters.valueBytesWaitingForUpload.addAndGet(-valueByteCount);
-                  counters.keyBytesUploaded.addAndGet(keyByteCount);
-                  counters.valueBytesUploaded.addAndGet(valueByteCount);
-                },
-                directExecutor());
-            if (profileCollector != null) {
-              recordInvalidationProfile(
-                  profileCollector,
-                  InvalidationEntryType.LISTING,
-                  keyByteCount,
-                  valueByteCount,
-                  writeStatus);
+        val future: FutureNodeDataInfo?
+        synchronized(node) {
+            reference = node.getSerializationScratch() as NodeDataInfoOrFuture?
+            if (reference != null) {
+                return reference
             }
-            writeStatuses.add(writeStatus);
-            return new ListingInvalidationDataInfo(
-                cacheKey, sparselyAggregateWriteStatuses(writeStatuses));
-          },
-          directExecutor());
-    }
-  }
 
-  NodeDataInfoOrFuture populateFutureNodeDataInfo(FutureNodeDataInfo future) {
-    counters.nodesWaitingForDeps.incrementAndGet();
-
-    AbstractNestedFileOpNodes node = future.key();
-    var dependencyHandler = new NodeDependencyHandler();
-
-    // Loops through all node dependencies, registering them with the dependencyHandler. The
-    // dependencyHandler triggers recursive registration, keeping track of immediate results and
-    // any futures.
-    for (int i = 0; i < node.analysisDependenciesCount(); i++) {
-      switch (node.getAnalysisDependency(i)) {
-        case FileKey fileKey:
-          dependencyHandler.addFileKey(fileKey);
-          break;
-        case DirectoryListingKey listingKey:
-          dependencyHandler.addListingKey(listingKey);
-          break;
-        case AbstractNestedFileOpNodes nestedKeys:
-          dependencyHandler.addNodeKey(nestedKeys);
-          break;
-      }
-    }
-
-    switch (node) {
-      case NestedFileOpNodes plainNodes:
-        break;
-      case NestedFileOpNodesWithSource withSource:
-        dependencyHandler.setSourceFile(withSource.source());
-        break;
-    }
-
-    var allFutures = dependencyHandler.getCombinedFutures();
-    if (allFutures.isEmpty()) {
-      NodeDataInfo result;
-      try {
-        result = dependencyHandler.call();
-      } catch (ExecutionException | IOException e) {
-        // Only thrown when calling Future.get, but none should be present if this is reached.
-        throw new IllegalStateException("unexpected failure", e);
-      }
-      return future.completeWith(result);
-    }
-    return future.completeWith(
-        Futures.whenAllComplete(allFutures).call(dependencyHandler, executor));
-  }
-
-  static OutputStream getCompressedOutputStream(OutputStream outputStream) throws IOException {
-    // The default level and the fastest level (-7) results in 35% and 19% wall time overhead when
-    // not using a threshold to compress, the default level provided a 2x better compression. Since
-    // we do use a threshold and there is no wall time regression, we favor the better compression
-    // ratio.
-    return new ZstdOutputStream(outputStream, RecyclingBufferPool.INSTANCE);
-  }
-
-  /**
-   * Accepts all the dependencies associated with a node, registers their serialization and waits
-   * for processing to complete, signalled through the {@link #call} callback.
-   *
-   * <p>Once processing is complete and all keys are known, uploads the node value. {@link
-   * #computeNodeBytes} defines the wire format of nodes.
-   */
-  class NodeDependencyHandler implements Callable<NodeDataInfo> {
-    private final ArrayList<String> fileKeys = new ArrayList<>();
-    private final ArrayList<String> listingKeys = new ArrayList<>();
-    private final ArrayList<NodeInvalidationDataInfo> nodeDependencies = new ArrayList<>();
-    @Nullable private FileDataInfoOrFuture sourceFileOrFuture;
-
-    private final SparseAggregateWriteStatusBuilder writeStatusBuilder =
-        new SparseAggregateWriteStatusBuilder();
-
-    private final ArrayList<FutureFileDataInfo> futureFileDataInfo = new ArrayList<>();
-    private final ArrayList<FutureListingDataInfo> futureListingDataInfo = new ArrayList<>();
-    private final ArrayList<FutureNodeDataInfo> futureNodeDataInfo = new ArrayList<>();
-
-    @Override
-    public NodeDataInfo call() throws ExecutionException, IOException {
-      for (FutureFileDataInfo futureInfo : futureFileDataInfo) {
-        addFileInfo(Futures.getDone(futureInfo));
-      }
-      for (FutureListingDataInfo futureInfo : futureListingDataInfo) {
-        addListingInfo(Futures.getDone(futureInfo));
-      }
-      for (FutureNodeDataInfo futureInfo : futureNodeDataInfo) {
-        addNodeInfo(Futures.getDone(futureInfo));
-      }
-      @Nullable String sourceFileKey = getSourceFileKey();
-
-      if (fileKeys.isEmpty() && listingKeys.isEmpty() && sourceFileKey == null) {
-        if (nodeDependencies.isEmpty()) {
-          return CONSTANT_NODE; // None of the dependencies are relevant to invalidation.
+            future = FutureNodeDataInfo(node)
+            node.setSerializationScratch(future)
         }
-        // There are multiple ways that result could become unary here, even if `node` always has at
-        // least 2 children. The following may reduce child count.
-        // 1. Deduplication.
-        // 2. Constant references.
-        // 3. NestedFileOpNodes with the same fingerprints.
-        if (nodeDependencies.size() == 1) {
-          // It ended up as a node wrapping another node. Discards the wrapper.
-          //
-          // TODO: b/364831651 - consider additional special casing for unary file or listing
-          // dependencies.
-          return nodeDependencies.get(0);
+
+        // If this is reached, this thread owns `future` and must set its value.
+        try {
+            return populateFutureNodeDataInfo(future)
+        } finally {
+            future.verifyComplete()
         }
-      }
+    }
 
-      // We need to deduplicate and sort these entries so that serialization is deterministic
-      // and compact.
-      var sortedFileKeys = fileKeys.stream().sorted().distinct().toList();
-      var sortedListingKeys = listingKeys.stream().sorted().distinct().toList();
-      var sortedNodeDependencies =
-          nodeDependencies.stream()
-              .map(NodeInvalidationDataInfo::cacheKey)
-              .sorted()
-              .distinct()
-              .toList();
+    /**
+     * Populates the [FileDataInfoOrFuture] for the given [FutureFileDataInfo].
+     * 
+     * 
+     * This method is responsible for resolving the [FileKey] and its dependencies, and
+     * uploading the resulting [FileInvalidationData] to the [.writer].
+     * 
+     * @param future The [FutureFileDataInfo] to populate.
+     * @return The populated [FileDataInfoOrFuture].
+     */
+    fun populateFutureFileDataInfo(future: FutureFileDataInfo): FileDataInfoOrFuture {
+        counters.nodesWaitingForDeps.incrementAndGet()
 
-      ProfileRecorder recorder =
-          profileCollector == null ? null : new ProfileRecorder(profileCollector);
-      if (recorder != null) {
-        recorder.pushLocation(InvalidationEntryType.NODE);
-        // We'll record the full entry size (including key) later once we have the key.
-      }
-
-      byte[] nodeBytes =
-          computeNodeBytes(
-              sortedNodeDependencies, sortedFileKeys, sortedListingKeys, sourceFileKey, recorder);
-      byte[] maybeCompressedBytes = nodeBytes;
-      if (maybeCompressedBytes.length >= COMPRESSION_NUM_BYTES_THRESHOLD) {
-        maybeCompressedBytes = compressBytes(maybeCompressedBytes);
-      }
-      PackedFingerprint key = writer.fingerprint(maybeCompressedBytes);
-
-      long keyByteCount = key.toBytes().length;
-      long valueByteCount =
-          maybeCompressedBytes.length; // Don't hold on to the bytes any longer than needed
-
-      counters.nodesWaitingForDeps.decrementAndGet();
-      counters.nodesWaitingForUpload.incrementAndGet();
-      counters.keyBytesWaitingForUpload.addAndGet(keyByteCount);
-      counters.valueBytesWaitingForUpload.addAndGet(valueByteCount);
-
-      WriteStatus writeStatus = writer.put(key, maybeCompressedBytes);
-      writeStatus.addListener(
-          () -> {
-            counters.nodesWaitingForUpload.decrementAndGet();
-            counters.nodesUploaded.incrementAndGet();
-            counters.keyBytesWaitingForUpload.addAndGet(-keyByteCount);
-            counters.valueBytesWaitingForUpload.addAndGet(-valueByteCount);
-            counters.keyBytesUploaded.addAndGet(keyByteCount);
-            counters.valueBytesUploaded.addAndGet(valueByteCount);
-          },
-          directExecutor());
-
-      if (recorder != null) {
-        if (maybeCompressedBytes.length != nodeBytes.length) {
-          recorder.setByteScale((double) maybeCompressedBytes.length / (double) nodeBytes.length);
+        val key: com.google.devtools.build.lib.skyframe.FileKey = future.key()
+        val rootedPath: RootedPath = key.argument()
+        val parentRootedPath: RootedPath?
+        // Builtin files don't change.
+        if ((rootedPath.getRoot().getFileSystem() is BundledFileSystem) // Assumes that the root folder doesn't change.
+            || (rootedPath.getParentDirectory().also { parentRootedPath = it }) == null
+        ) {
+            counters.nodesWaitingForDeps.decrementAndGet()
+            return future.completeWith(ConstantFileData.CONSTANT_FILE)
         }
-        recordKeyAndRegisterStatus(recorder, keyByteCount, valueByteCount, writeStatus);
-      }
 
-      writeStatusBuilder.add(writeStatus);
-      return new NodeInvalidationDataInfo(key, writeStatusBuilder.build());
-    }
-
-    private void addFileKey(FileKey fileKey) {
-      switch (registerDependency(fileKey)) {
-        case FileDataInfo info:
-          addFileInfo(info);
-          break;
-        case FutureFileDataInfo futureInfo:
-          futureFileDataInfo.add(futureInfo);
-          break;
-      }
-    }
-
-    private void addFileInfo(FileDataInfo info) {
-      switch (info) {
-        case CONSTANT_FILE:
-          break;
-        case FileInvalidationDataInfo fileInfo:
-          fileKeys.add(fileInfo.cacheKey());
-          writeStatusBuilder.add(fileInfo.writeStatus());
-          break;
-      }
-    }
-
-    private void addListingKey(DirectoryListingKey listingKey) {
-      switch (registerDependency(listingKey)) {
-        case ListingDataInfo info:
-          addListingInfo(info);
-          break;
-        case FutureListingDataInfo futureInfo:
-          futureListingDataInfo.add(futureInfo);
-          break;
-      }
-    }
-
-    private void addListingInfo(ListingDataInfo info) {
-      switch (info) {
-        case CONSTANT_LISTING:
-          break;
-        case ListingInvalidationDataInfo listingInfo:
-          listingKeys.add(listingInfo.cacheKey());
-          writeStatusBuilder.add(listingInfo.writeStatus());
-          break;
-      }
-    }
-
-    private void addNodeKey(AbstractNestedFileOpNodes nestedKeys) {
-      switch (registerDependency(nestedKeys)) {
-        case NodeDataInfo info:
-          addNodeInfo(info);
-          break;
-        case FutureNodeDataInfo futureInfo:
-          futureNodeDataInfo.add(futureInfo);
-          break;
-      }
-    }
-
-    private void addNodeInfo(NodeDataInfo info) {
-      switch (info) {
-        case CONSTANT_NODE:
-          break;
-        case NodeInvalidationDataInfo nodeInfo:
-          nodeDependencies.add(nodeInfo);
-          writeStatusBuilder.add(nodeInfo.writeStatus());
-          break;
-      }
-    }
-
-    private void setSourceFile(FileKey sourceFile) {
-      checkState(
-          sourceFileOrFuture == null,
-          "Attempting to set source file to %s, but it was already set to %s",
-          sourceFile,
-          sourceFileOrFuture);
-      this.sourceFileOrFuture = registerDependency(sourceFile);
-    }
-
-    private ImmutableList<ListenableFuture<?>> getCombinedFutures() {
-      var combined =
-          ImmutableList.<ListenableFuture<?>>builder()
-              .addAll(futureFileDataInfo)
-              .addAll(futureListingDataInfo)
-              .addAll(futureNodeDataInfo);
-      switch (sourceFileOrFuture) {
-        case null -> {}
-        case FileDataInfo unusedSource -> {}
-        case FutureFileDataInfo futureSource -> combined.add(futureSource);
-      }
-      return combined.build();
-    }
-
-    private byte[] compressBytes(byte[] nodeBytes) throws IOException {
-      ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-      MagicBytes.writeMagicBytes(outputStream);
-      try (OutputStream compressedBytesStream =
-          FileDependencySerializer.getCompressedOutputStream(outputStream)) {
-        compressedBytesStream.write(nodeBytes);
-      }
-      return outputStream.toByteArray();
-    }
-
-    @Nullable
-    private String getSourceFileKey() throws ExecutionException {
-      if (sourceFileOrFuture == null) {
-        return null;
-      }
-      return switch (switch (sourceFileOrFuture) {
-        case FileDataInfo sourceInfo -> sourceInfo;
-        case FutureFileDataInfo futureSourceInfo -> Futures.getDone(futureSourceInfo);
-      }) {
-        case CONSTANT_FILE -> null;
-        case FileInvalidationDataInfo fileInfo -> {
-          writeStatusBuilder.add(fileInfo.writeStatus());
-          yield fileInfo.cacheKey();
+        val nodeEntry: InMemoryNodeEntry? = graph.getIfPresent(key)
+        if (nodeEntry == null) {
+            counters.nodesWaitingForDeps.decrementAndGet()
+            counters.nodesWithProcessingErrors.incrementAndGet()
+            return future.failWith(MissingSkyframeEntryException(key))
         }
-      };
-    }
-  }
+        val value: FileValue? = nodeEntry.getValue() as FileValue?
+        val realRootedPath: RootedPath? = value.realRootedPath(rootedPath)
 
-  /**
-   * Computes a canonical byte representation of the node.
-   *
-   * <p>Logically, a node is a set of string file or listing keys, as described at {@link
-   * FileInvalidationData} and {@link DirectoryListingInvalidationData}, respectively, and a set of
-   * {@link NestedFileOpNodes} fingerprints. Its byte representation is specified as follows.
-   *
-   * <ol>
-   *   <li>The count of nested nodes, as a proto-encoded int.
-   *   <li>The count of file keys, as a proto-encoded int.
-   *   <li>The count of listing keys, as a proto-encoded int.
-   *   <li>A proto-encoded boolean, true if a source file key is present and false otherwise.
-   *   <li>Sorted and deduplicated, fingerprints of the {@link NestedFileOpNodes} byte
-   *       representations.
-   *   <li>Sorted and deduplicated, proto-encoded strings of the file keys.
-   *   <li>Sorted and deduplicated, proto-encoded strings of the listing keys.
-   *   <li>Proto-encoded string of the source file key, if applicable.
-   * </ol>
-   *
-   * <p>More compact formats are possible, but this reduces the complexity of the deserializer.
-   */
-  @VisibleForTesting
-  static byte[] computeNodeBytes(
-      Collection<PackedFingerprint> nodeDependencyFingerprints,
-      Collection<String> fileKeys,
-      Collection<String> listingKeys,
-      @Nullable String sourceFileKey,
-      @Nullable ProfileRecorder recorder) {
-    try {
-      var bytesOut = new ByteArrayOutputStream();
-      var codedOut = CodedOutputStream.newInstance(bytesOut);
-
-      if (recorder != null) {
-        recorder.pushLocation(EntryPart.VALUE);
-      }
-      int startValueBytes = codedOut.getTotalBytesWritten();
-
-      codedOut.writeInt32NoTag(nodeDependencyFingerprints.size());
-      codedOut.writeInt32NoTag(fileKeys.size());
-      codedOut.writeInt32NoTag(listingKeys.size());
-      codedOut.writeBoolNoTag(sourceFileKey != null);
-
-      int startNodeDependencyBytes = codedOut.getTotalBytesWritten();
-      for (PackedFingerprint fp : nodeDependencyFingerprints) {
-        fp.writeTo(codedOut);
-      }
-      if (recorder != null) {
-        recorder.pushLocation(NodeValuePart.NODE_DEPENDENCIES);
-        recorder.recordBytesAndPopLocation(startNodeDependencyBytes, codedOut);
-      }
-
-      int startFileKeyBytes = codedOut.getTotalBytesWritten();
-      for (String key : fileKeys) {
-        codedOut.writeStringNoTag(key);
-      }
-      if (recorder != null) {
-        recorder.pushLocation(NodeValuePart.FILE_KEYS);
-        recorder.recordBytesAndPopLocation(startFileKeyBytes, codedOut);
-      }
-
-      int startListingKeyBytes = codedOut.getTotalBytesWritten();
-      for (String key : listingKeys) {
-        codedOut.writeStringNoTag(key);
-      }
-      if (recorder != null) {
-        recorder.pushLocation(NodeValuePart.LISTING_KEYS);
-        recorder.recordBytesAndPopLocation(startListingKeyBytes, codedOut);
-      }
-
-      if (sourceFileKey != null) {
-        int startSourceFileBytes = codedOut.getTotalBytesWritten();
-        codedOut.writeStringNoTag(sourceFileKey);
-        if (recorder != null) {
-          recorder.pushLocation(NodeValuePart.SOURCE_FILE);
-          recorder.recordBytesAndPopLocation(startSourceFileBytes, codedOut);
+        val initialMtsv: Long
+        if (value.isDirectory()) {
+            // Matches the behavior of PathVersionGetter.getVersionForExistingPathInternal.
+            initialMtsv = LongVersionGetter.MINIMAL
+        } else {
+            try {
+                initialMtsv = getVersion(realRootedPath, value.exists())
+            } catch (e: IOException) {
+                counters.nodesWaitingForDeps.decrementAndGet()
+                counters.nodesWithProcessingErrors.incrementAndGet()
+                return future.failWith(e)
+            }
         }
-      }
+        val uploader =
+            FileInvalidationDataUploader( /* rootedPath= */
+                rootedPath,  /* parentRootedPath= */
+                parentRootedPath,  /* realRootedPath= */
+                realRootedPath,
+                value.exists(),
+                initialMtsv
+            )
+        // The following steps are performed to ensure that ancestors and ancestor symlinks are resolved
+        // to compute the correct MTSV:
+        // 1. Call fullyResolvePath to register all the parents of the current rootedPath as
+        //    dependencies first.
+        // 2. The transform() method takes the output of the first parameter (a future) and passes it to
+        //    the second parameter (a function).
+        // 3. The output of fullyResolvePath is Void, so the transform method is only being used as a
+        //    stop to not trigger the upload of the current rootedPath till its parents have been
+        //    registered.
+        // 4. The uploader itself is a Function that directly returns a FileDataInfo but gets wrapped as
+        //    a future by the transform method.
+        // 5. The upload happens through the put() operation in the writer inside the uploader.
+        val resolutionFuture: com.google.common.util.concurrent.ListenableFuture<java.lang.Void?> =
+            fullyResolvePath(if (value.isSymlink()) value.getUnresolvedLinkTarget() else null, uploader)
 
-      codedOut.flush();
-      bytesOut.flush();
-      if (recorder != null) {
-        // Records bytes and pops the EntryPart.VALUE.
-        recorder.recordBytesAndPopLocation(startValueBytes, codedOut);
-      }
+        com.google.common.util.concurrent.Futures.addCallback<java.lang.Void?>(
+            resolutionFuture,
+            object : com.google.common.util.concurrent.FutureCallback<java.lang.Void?> {
+                override fun onSuccess(result: java.lang.Void?) {
+                    // If resolution is successful, `uploader` completes the process via
+                    // `Futures.transform`. The counters will be handled in the `uploader` later.
+                }
 
-      return bytesOut.toByteArray();
-    } catch (IOException e) {
-      throw new AssertionError("Unexpected IOException from ByteArrayOutputStream", e);
+                override fun onFailure(t: Throwable) {
+                    counters.nodesWaitingForDeps.decrementAndGet()
+                    counters.nodesWithProcessingErrors.incrementAndGet()
+                }
+            },
+            com.google.common.util.concurrent.MoreExecutors.directExecutor()
+        )
+
+        return future.completeWith(
+            com.google.common.util.concurrent.Futures.transform<I?, O?>(
+                resolutionFuture,
+                uploader,
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
+        )
     }
-  }
 
-  private long getVersion(RootedPath rootedPath, boolean exists) throws IOException {
-    return getVersion(rootedPath.asPath(), exists);
-  }
+    /**
+     * Performs the upload of the [FileInvalidationData] once resolution is complete in the
+     * [.apply] callback.
+     */
+    private inner class FileInvalidationDataUploader
+        (
+        rootedPath: RootedPath,
+        parentRootedPath: RootedPath,
+        realRootedPath: RootedPath?,
+        exists: Boolean,
+        initialMtsv: Long
+    ) : com.google.common.base.Function<java.lang.Void?, FileInvalidationDataInfo?> {
+        private val rootedPath: RootedPath
+        private val parentRootedPath: RootedPath
+        private val realRootedPath: RootedPath?
+        private val exists: Boolean
 
-  private long getVersion(Path path, boolean exists) throws IOException {
-    return exists
-        ? versionGetter.getFilePathOrSymlinkVersion(path)
-        : versionGetter.getNonexistentPathVersion(path);
-  }
+        private val data: FileInvalidationData.Builder = FileInvalidationData.newBuilder()
+        private val writeStatuses: java.util.ArrayList<WriteStatus?> = java.util.ArrayList<WriteStatus?>()
+        private var mtsv: Long
 
-  private KeyBytesProvider getKeyBytes(String cacheKey, Consumer<String> overflowConsumer) {
-    if (cacheKey.length() > MAX_KEY_LENGTH) {
-      overflowConsumer.accept(cacheKey);
-      return writer.fingerprint(cacheKey.getBytes(UTF_8));
+        init {
+            this.rootedPath = rootedPath
+            this.parentRootedPath = parentRootedPath
+            this.realRootedPath = realRootedPath
+            this.exists = exists
+            this.mtsv = initialMtsv
+        }
+
+        override fun apply(unused: java.lang.Void?): FileInvalidationDataInfo {
+            val cacheKey: String = FileDependencyKeySupport.computeCacheKey(
+                rootedPath.getRootRelativePath(),
+                mtsv,
+                FileDependencyKeySupport.FILE_KEY_DELIMITER
+            )
+            val keyBytes: KeyBytesProvider = getKeyBytes(cacheKey, data::setOverflowKey)
+            val dataBytes: ByteArray = data.build().toByteArray()
+            val keyByteCount: Long = keyBytes.toBytes().size.toLong()
+            val valueByteCount = dataBytes.size.toLong() // Don't hold on to the bytes any longer than needed
+
+            counters.nodesWaitingForDeps.decrementAndGet()
+            counters.nodesWaitingForUpload.incrementAndGet()
+            counters.keyBytesWaitingForUpload.addAndGet(keyByteCount)
+            counters.valueBytesWaitingForUpload.addAndGet(valueByteCount)
+
+            val writeStatus: WriteStatus = writer.put(keyBytes, dataBytes)
+            writeStatus.addListener(
+                java.lang.Runnable {
+                    counters.nodesWaitingForUpload.decrementAndGet()
+                    counters.nodesUploaded.incrementAndGet()
+                    counters.keyBytesWaitingForUpload.addAndGet(-keyByteCount)
+                    counters.valueBytesWaitingForUpload.addAndGet(-valueByteCount)
+                    counters.keyBytesUploaded.addAndGet(keyByteCount)
+                    counters.valueBytesUploaded.addAndGet(valueByteCount)
+                },
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
+            if (profileCollector != null) {
+                recordInvalidationProfile(
+                    profileCollector,
+                    InvalidationEntryType.FILE,
+                    keyByteCount,
+                    valueByteCount,
+                    writeStatus
+                )
+            }
+            writeStatuses.add(writeStatus)
+            return FileInvalidationDataInfo(
+                cacheKey, WriteStatuses.sparselyAggregateWriteStatuses(writeStatuses), exists, mtsv, realRootedPath
+            )
+        }
+
+        /**
+         * Adds information about the invalidation data of [.parentRootedPath].
+         * 
+         * 
+         * This is called at most once but might not be called at all if [.parentRootedPath]
+         * refers to a constant path.
+         */
+        fun addParent(parent: FileInvalidationDataInfo) {
+            val parentMtsv: Long = parent.mtsv()
+            if (parentMtsv != LongVersionGetter.MINIMAL) {
+                data.setParentMtsv(parentMtsv)
+            }
+            updateMtsvIfGreater(parentMtsv)
+            writeStatuses.add(parent.writeStatus())
+        }
+
+        /**
+         * Incorporates information about a symlink parent.
+         * 
+         * 
+         * If a symlink is present, it's possible that combining the symlink with [ ][.parentRootedPath] points to a file who's parent directory hasn't been resolved. Resolution
+         * of that parent directory results in `parentInfo`.
+         * 
+         * 
+         * If the symlink points to a symlink, it's possible for that symlink to point to a file
+         * having a yet another parent directory that has to be resolved again. In that case this method
+         * would be called again.
+         */
+        fun addSymlinkParentInfo(parentInfo: FileInvalidationDataInfo) {
+            updateMtsvIfGreater(parentInfo.mtsv())
+            writeStatuses.add(parentInfo.writeStatus())
+        }
+
+        fun updateMtsvIfGreater(version: Long) {
+            if (version > mtsv) {
+                mtsv = version
+            }
+        }
+
+        fun addSymlinksBuilder(): Symlink.Builder {
+            return data.addSymlinksBuilder()
+        }
     }
-    return new StringKey(cacheKey);
-  }
 
-  private static void recordInvalidationProfile(
-      ProfileCollector profileCollector,
-      InvalidationEntryType type,
-      long keyByteCount,
-      long valueByteCount,
-      WriteStatus writeStatus) {
-    var recorder = new ProfileRecorder(profileCollector);
-    recorder.pushLocation(type);
-    recorder.pushLocation(EntryPart.VALUE);
-    recorder.recordBytes((int) valueByteCount);
-    recorder.popLocation();
-    recordKeyAndRegisterStatus(recorder, keyByteCount, valueByteCount, writeStatus);
-  }
+    /** Resolves the parent then resolves symlinks if `unresolvedLinkTarget` is non-null.  */
+    private fun fullyResolvePath(
+        unresolvedLinkTarget: PathFragment?, uploader: FileInvalidationDataUploader
+    ): com.google.common.util.concurrent.ListenableFuture<java.lang.Void?> {
+        val pathResolver = PathResolver(unresolvedLinkTarget, uploader)
+        when (registerDependency(FileValue.key(uploader.parentRootedPath))) {
+            -> return pathResolver.apply(parentData)
+            -> return com.google.common.util.concurrent.Futures.transformAsync<I?, O?>(
+                futureParentData,
+                pathResolver,
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
+        }
+    }
 
-  private static void recordKeyAndRegisterStatus(
-      ProfileRecorder recorder, long keyByteCount, long valueByteCount, WriteStatus writeStatus) {
-    recorder.recordBytes((int) (keyByteCount + valueByteCount));
-    recorder.pushLocation(EntryPart.KEY);
-    recorder.recordBytes((int) keyByteCount);
-    recorder.popLocation(); // Pop EntryPart.KEY.
-    // EntryPart.VALUE is recorded already (e.g. by computeNodeBytes).
-    recorder.popLocation(); // Pop InvalidationType (FILE/LISTING/NODE)
-    recorder.registerWriteStatus(writeStatus);
-  }
+    /**
+     * Waits for [FileInvalidationDataUploader.parentRootedPath] to be resolved (signalled
+     * through the [.apply] callback) and starts symlink resolution if there is a symlink.
+     */
+    internal inner class PathResolver private constructor(
+        unresolvedLinkTarget: PathFragment?,
+        uploader: FileInvalidationDataUploader
+    ) : com.google.common.util.concurrent.AsyncFunction<FileDataInfo?, java.lang.Void?> {
+        /** Symlink's target path.  */
+        // non-null if there is a symlink
+        private val unresolvedLinkTarget: PathFragment?
+
+        private val uploader: FileInvalidationDataUploader
+
+        init {
+            this.unresolvedLinkTarget = unresolvedLinkTarget
+            this.uploader = uploader
+        }
+
+        override fun apply(parentData: FileDataInfo): com.google.common.util.concurrent.ListenableFuture<java.lang.Void?> {
+            val realParentPath: RootedPath
+            when (parentData) {
+                ConstantFileData.CONSTANT_FILE ->           // Assumes that BundledFileSystem does not symlink outside of BundledFileSystem.
+                    realParentPath = uploader.parentRootedPath
+
+                -> {
+                    uploader.addParent(parentReference)
+                    // If the parent folder doesn't exist, unresolvedLinkTarget will be null.
+                    realParentPath = parentReference.realPath()
+                }
+            }
+
+            if (unresolvedLinkTarget == null) {
+                return com.google.common.util.concurrent.Futures.immediateVoidFuture() // No symlink processing needed.
+            }
+
+            val linkPath: com.google.devtools.build.lib.vfs.Path? // Real path to the symlink.
+            if (realParentPath == uploader.parentRootedPath) {
+                linkPath = uploader.rootedPath.asPath()
+            } else {
+                linkPath =
+                    realParentPath
+                        .asPath()
+                        .getRelative(uploader.rootedPath.getRootRelativePath().getBaseName())
+            }
+            return processSymlinks(realParentPath, linkPath, unresolvedLinkTarget, uploader)
+        }
+    }
+
+    /**
+     * Recursively processes symlinks.
+     * 
+     * 
+     * Requires that there are no symlink cycles (though ancestor references are benign). This is
+     * assumed to hold for builds that succeed.
+     * 
+     * @param parentRootedPath the real parent of the symlink
+     * @param linkPath the real path to the symlink
+     * @param link the target path contents of the symlink
+     * @param uploader original uploader instance for the path resolution encountering this symlink
+     */
+    private fun processSymlinks(
+        parentRootedPath: RootedPath,
+        linkPath: com.google.devtools.build.lib.vfs.Path?,
+        link: PathFragment,
+        uploader: FileInvalidationDataUploader
+    ): com.google.common.util.concurrent.ListenableFuture<java.lang.Void?> {
+        if (link.isAbsolute()) {
+            if (TestType.isInTest()) {
+                // Test environments may use absolute symlinks, which aren't allowed in production
+                // environments with analysis caching. Skips further dependency resolution for those.
+                return com.google.common.util.concurrent.Futures.immediateVoidFuture()
+            }
+            throw java.lang.IllegalStateException(
+                java.lang.String.format("Absolute symlink not permitted: %s contained %s", linkPath, link)
+            )
+        }
+        val symlinkData: Symlink.Builder = uploader.addSymlinksBuilder().setContents(link.getPathString())
+        val linkParent: PathFragment = parentRootedPath.getRootRelativePath()
+        val unresolvedTarget: PathFragment = linkParent.getRelative(link)
+
+        // Assumes that there are no external symlinks, e.g. ones that go above root.
+        com.google.common.base.Preconditions.checkArgument(
+            !unresolvedTarget.containsUplevelReferences(),
+            "symlink link above root for %s : %s = (%s) + (%s)",
+            parentRootedPath,
+            unresolvedTarget,
+            linkParent,
+            link
+        )
+
+        try {
+            // Includes the version of the link itself in the MTSV.
+            uploader.updateMtsvIfGreater(getVersion(linkPath,  /* exists= */true))
+        } catch (e: IOException) {
+            return com.google.common.util.concurrent.Futures.immediateFailedFuture<java.lang.Void?>(e)
+        }
+
+        if (unresolvedTarget.isEmpty()) {
+            // It was a symlink to root. It's unclear how this ever useful, but it's not illegal. No
+            // resolution required.
+            return com.google.common.util.concurrent.Futures.immediateVoidFuture()
+        }
+
+        val unresolvedTargetParent: PathFragment? = unresolvedTarget.getParentDirectory()
+
+        if (linkParent.startsWith(unresolvedTargetParent)) {
+            // Any ancestor directories of the fully resolved `linkParent` are already resolved so
+            // there's no further ancestor resolution here.
+            return processSymlinkTarget(
+                RootedPath.toRootedPath(parentRootedPath.getRoot(), unresolvedTarget), uploader
+            )
+        }
+
+        val parentProcessor = SymlinkParentProcessor(parentRootedPath, link, uploader, symlinkData)
+
+        // The parent path was changed by the link so it needs to be newly resolved.
+        when (checkNotNull(
+            registerDependency(
+                FileValue.key(RootedPath.toRootedPath(parentRootedPath.getRoot(), unresolvedTargetParent))
+            ),
+            unresolvedTargetParent
+        )) {
+            -> return parentProcessor.apply(data)
+            -> return com.google.common.util.concurrent.Futures.transformAsync<I?, O?>(
+                future,
+                parentProcessor,
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
+        }
+    }
+
+    private fun processSymlinkTarget(
+        resolvedSymlinkPath: RootedPath, uploader: FileInvalidationDataUploader
+    ): com.google.common.util.concurrent.ListenableFuture<java.lang.Void?> {
+        val nodeEntry: InMemoryNodeEntry? = graph.getIfPresent(resolvedSymlinkPath)
+        if (nodeEntry == null) {
+            return com.google.common.util.concurrent.Futures.immediateFailedFuture<java.lang.Void?>(
+                MissingSkyframeEntryException(resolvedSymlinkPath)
+            )
+        }
+        val symlinkValue: FileStateValue? = nodeEntry.getValue() as FileStateValue?
+        if (!symlinkValue.getType().equals(SYMLINK)) {
+            // We've come full circle back to the initial, fully resolved, FileValue. So there's no
+            // additional bookkeeping needed.
+            return com.google.common.util.concurrent.Futures.immediateVoidFuture()
+        }
+        return processSymlinks(
+            resolvedSymlinkPath.getParentDirectory(),
+            resolvedSymlinkPath.asPath(),
+            symlinkValue.getSymlinkTarget(),
+            uploader
+        )
+    }
+
+    /**
+     * Waits for information about a symlink's real parent, signalled through the [.apply]
+     * callback.
+     * 
+     * 
+     * Once the real parent is known, syntactically combines it with the symlink target path. Then,
+     * continues resolving the new path, potentially triggering recursion if the target is another
+     * symlink.
+     */
+    private inner class SymlinkParentProcessor(
+        parentPath: RootedPath,
+        link: PathFragment,
+        uploader: FileInvalidationDataUploader,
+        symlinkData: Symlink.Builder
+    ) : com.google.common.util.concurrent.AsyncFunction<FileDataInfo?, java.lang.Void?> {
+        private val parentPath: RootedPath
+        private val link: PathFragment
+        private val uploader: FileInvalidationDataUploader
+        private val symlinkData: Symlink.Builder
+
+        init {
+            this.parentPath = parentPath
+            this.link = link
+            this.uploader = uploader
+            this.symlinkData = symlinkData
+        }
+
+        override fun apply(realParentData: FileDataInfo): com.google.common.util.concurrent.ListenableFuture<java.lang.Void?> {
+            val resolvedParentRootedPath: RootedPath
+            when (realParentData) {
+                ConstantFileData.CONSTANT_FILE ->           // Assumes that symlinks in BundledFileSystem do not escape.
+                    resolvedParentRootedPath = parentPath
+
+                -> {
+                    uploader.addSymlinkParentInfo(parentReference)
+                    val parentMtsv: Long = parentReference.mtsv()
+                    if (parentMtsv != LongVersionGetter.MINIMAL) {
+                        symlinkData.setParentMtsv(parentMtsv)
+                    }
+                    if (!parentReference.exists()) {
+                        // The parent folder doesn't exist so further resolution of the symlink is moot.
+                        return com.google.common.util.concurrent.Futures.immediateVoidFuture()
+                    }
+                    resolvedParentRootedPath = parentReference.realPath()
+                }
+            }
+            return processSymlinkTarget(
+                RootedPath.toRootedPath(
+                    resolvedParentRootedPath.getRoot(),
+                    resolvedParentRootedPath.getRootRelativePath().getRelative(link.getBaseName())
+                ),
+                uploader
+            )
+        }
+    }
+
+    private fun populateFutureListingDataInfo(future: FutureListingDataInfo): ListingDataInfoOrFuture {
+        counters.nodesWaitingForDeps.incrementAndGet()
+
+        val rootedPath: RootedPath = future.key().argument()
+        if (rootedPath.getRoot().getFileSystem() is BundledFileSystem) {
+            counters.nodesWaitingForDeps.decrementAndGet()
+            return future.completeWith(ConstantListingData.CONSTANT_LISTING) // This listing doesn't change.
+        }
+        val handler = ListingFileHandler(rootedPath)
+        when (registerDependency(FileValue.key(rootedPath))) {
+            -> return future.completeWith(handler.apply(info))
+            -> return future.completeWith(
+                com.google.common.util.concurrent.Futures.transformAsync<I?, O?>(
+                    futureInfo,
+                    handler,
+                    com.google.common.util.concurrent.MoreExecutors.directExecutor()
+                )
+            )
+        }
+    }
+
+    private inner class ListingFileHandler(rootedPath: RootedPath) :
+        com.google.common.util.concurrent.AsyncFunction<FileDataInfo?, ListingDataInfo?> {
+        private val rootedPath: RootedPath
+
+        init {
+            this.rootedPath = rootedPath
+        }
+
+        /**
+         * Incorporates information from the file associated with the directory.
+         * 
+         * 
+         * This code assumes that the directory exists, as does [ ][com.google.devtools.build.lib.skyframe.DirectoryListingValue.key].
+         */
+        override fun apply(info: FileDataInfo): com.google.common.util.concurrent.ListenableFuture<ListingDataInfo?> {
+            val data: DirectoryListingInvalidationData.Builder = DirectoryListingInvalidationData.newBuilder()
+            val writeStatuses: java.util.ArrayList<WriteStatus?> = java.util.ArrayList<WriteStatus?>()
+            val fileMtsv: Long
+            val realPath: RootedPath
+            when (info) {
+                ConstantFileData.CONSTANT_FILE -> {
+                    realPath = rootedPath
+                    fileMtsv = LongVersionGetter.MINIMAL
+                }
+
+                -> {
+                    writeStatuses.add(fileInfo.writeStatus())
+                    fileMtsv = fileInfo.mtsv()
+                    if (fileMtsv != LongVersionGetter.MINIMAL) {
+                        data.setFileMtsv(fileMtsv)
+                    }
+                    realPath = fileInfo.realPath()
+                }
+            }
+
+            val dirMtsvFuture: com.google.common.util.concurrent.ListenableFuture<Long?> =
+                com.google.common.util.concurrent.Futures.submit<Long?>(
+                    java.util.concurrent.Callable { versionGetter.getDirectoryListingVersion(realPath.asPath()) } as java.util.concurrent.Callable<Long?>,
+                    executor)
+
+            return com.google.common.util.concurrent.Futures.transform<Long?, ListingDataInfo?>(
+                dirMtsvFuture,
+                com.google.common.base.Function { dirMtsv: Long? ->
+                    val mtsv: Long = java.lang.Math.max(dirMtsv, fileMtsv)
+                    val cacheKey: String =
+                        FileDependencyKeySupport.computeCacheKey(
+                            rootedPath.getRootRelativePath(),
+                            mtsv,
+                            FileDependencyKeySupport.DIRECTORY_KEY_DELIMITER
+                        )
+                    val keyBytes: KeyBytesProvider = getKeyBytes(cacheKey, data::setOverflowKey)
+                    val dataBytes: ByteArray = data.build().toByteArray()
+
+                    val keyByteCount: Long = keyBytes.toBytes().size.toLong()
+                    val valueByteCount = dataBytes.size.toLong() // Do not hold on to the bytes
+
+                    counters.nodesWaitingForDeps.decrementAndGet()
+                    counters.nodesWaitingForUpload.incrementAndGet()
+                    counters.keyBytesWaitingForUpload.addAndGet(keyByteCount)
+                    counters.valueBytesWaitingForUpload.addAndGet(valueByteCount)
+
+                    val writeStatus: WriteStatus = writer.put(keyBytes, dataBytes)
+                    writeStatus.addListener(
+                        java.lang.Runnable {
+                            counters.nodesWaitingForUpload.decrementAndGet()
+                            counters.nodesUploaded.incrementAndGet()
+                            counters.keyBytesWaitingForUpload.addAndGet(-keyByteCount)
+                            counters.valueBytesWaitingForUpload.addAndGet(-valueByteCount)
+                            counters.keyBytesUploaded.addAndGet(keyByteCount)
+                            counters.valueBytesUploaded.addAndGet(valueByteCount)
+                        },
+                        com.google.common.util.concurrent.MoreExecutors.directExecutor()
+                    )
+                    if (profileCollector != null) {
+                        recordInvalidationProfile(
+                            profileCollector,
+                            InvalidationEntryType.LISTING,
+                            keyByteCount,
+                            valueByteCount,
+                            writeStatus
+                        )
+                    }
+                    writeStatuses.add(writeStatus)
+                    ListingInvalidationDataInfo(
+                        cacheKey, WriteStatuses.sparselyAggregateWriteStatuses(writeStatuses)
+                    )
+                },
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
+        }
+    }
+
+    fun populateFutureNodeDataInfo(future: FutureNodeDataInfo): NodeDataInfoOrFuture {
+        counters.nodesWaitingForDeps.incrementAndGet()
+
+        val node: AbstractNestedFileOpNodes = future.key()
+        val dependencyHandler = NodeDependencyHandler()
+
+        // Loops through all node dependencies, registering them with the dependencyHandler. The
+        // dependencyHandler triggers recursive registration, keeping track of immediate results and
+        // any futures.
+        for (i in 0..<node.analysisDependenciesCount()) {
+            when (node.getAnalysisDependency(i)) {
+                -> dependencyHandler.addFileKey(fileKey)
+                -> dependencyHandler.addListingKey(listingKey)
+                -> dependencyHandler.addNodeKey(nestedKeys)
+            }
+        }
+
+        when (node) {
+            -> {}
+            -> dependencyHandler.setSourceFile(withSource.source())
+        }
+
+        val allFutures: com.google.common.collect.ImmutableList<com.google.common.util.concurrent.ListenableFuture<*>?> =
+            dependencyHandler.combinedFutures
+        if (allFutures.isEmpty()) {
+            val result: NodeDataInfo?
+            try {
+                result = dependencyHandler.call()
+            } catch (e: ExecutionException) {
+                // Only thrown when calling Future.get, but none should be present if this is reached.
+                throw java.lang.IllegalStateException("unexpected failure", e)
+            } catch (e: IOException) {
+                throw java.lang.IllegalStateException("unexpected failure", e)
+            }
+            return future.completeWith(result)
+        }
+        return future.completeWith(
+            com.google.common.util.concurrent.Futures.whenAllComplete<Any?>(allFutures)
+                .call<C?>(dependencyHandler, executor)
+        )
+    }
+
+    /**
+     * Accepts all the dependencies associated with a node, registers their serialization and waits
+     * for processing to complete, signalled through the [.call] callback.
+     * 
+     * 
+     * Once processing is complete and all keys are known, uploads the node value. [ ][.computeNodeBytes] defines the wire format of nodes.
+     */
+    internal inner class NodeDependencyHandler : java.util.concurrent.Callable<NodeDataInfo?> {
+        private val fileKeys: java.util.ArrayList<String?> = java.util.ArrayList<String?>()
+        private val listingKeys: java.util.ArrayList<String?> = java.util.ArrayList<String?>()
+        private val nodeDependencies: java.util.ArrayList<NodeInvalidationDataInfo?> =
+            java.util.ArrayList<NodeInvalidationDataInfo?>()
+        private var sourceFileOrFuture: FileDataInfoOrFuture? = null
+
+        private val writeStatusBuilder: SparseAggregateWriteStatusBuilder = SparseAggregateWriteStatusBuilder()
+
+        private val futureFileDataInfo: java.util.ArrayList<FutureFileDataInfo> =
+            java.util.ArrayList<FutureFileDataInfo>()
+        private val futureListingDataInfo: java.util.ArrayList<FutureListingDataInfo> =
+            java.util.ArrayList<FutureListingDataInfo>()
+        private val futureNodeDataInfo: java.util.ArrayList<FutureNodeDataInfo> =
+            java.util.ArrayList<FutureNodeDataInfo>()
+
+        @Throws(ExecutionException::class, IOException::class)
+        override fun call(): NodeDataInfo? {
+            for (futureInfo in futureFileDataInfo) {
+                addFileInfo(com.google.common.util.concurrent.Futures.getDone<V?>(futureInfo))
+            }
+            for (futureInfo in futureListingDataInfo) {
+                addListingInfo(com.google.common.util.concurrent.Futures.getDone<V?>(futureInfo))
+            }
+            for (futureInfo in futureNodeDataInfo) {
+                addNodeInfo(com.google.common.util.concurrent.Futures.getDone<V?>(futureInfo))
+            }
+            val sourceFileKey = this.sourceFileKey
+
+            if (fileKeys.isEmpty() && listingKeys.isEmpty() && sourceFileKey == null) {
+                if (nodeDependencies.isEmpty()) {
+                    return ConstantNodeData.CONSTANT_NODE // None of the dependencies are relevant to invalidation.
+                }
+                // There are multiple ways that result could become unary here, even if `node` always has at
+                // least 2 children. The following may reduce child count.
+                // 1. Deduplication.
+                // 2. Constant references.
+                // 3. NestedFileOpNodes with the same fingerprints.
+                if (nodeDependencies.size() == 1) {
+                    // It ended up as a node wrapping another node. Discards the wrapper.
+                    //
+                    // TODO: b/364831651 - consider additional special casing for unary file or listing
+                    // dependencies.
+                    return nodeDependencies.get(0)
+                }
+            }
+
+            // We need to deduplicate and sort these entries so that serialization is deterministic
+            // and compact.
+            val sortedFileKeys: MutableList<String?> = fileKeys.stream().sorted().distinct().toList()
+            val sortedListingKeys: MutableList<String?> = listingKeys.stream().sorted().distinct().toList()
+            val sortedNodeDependencies: MutableList<PackedFingerprint> =
+                nodeDependencies.stream()
+                    .map<PackedFingerprint?>(java.util.function.Function { obj: NodeInvalidationDataInfo? -> obj.cacheKey() })
+                    .sorted()
+                    .distinct()
+                    .toList()
+
+            val recorder: ProfileRecorder? =
+                if (profileCollector == null) null else ProfileRecorder(profileCollector)
+            if (recorder != null) {
+                recorder.pushLocation(InvalidationEntryType.NODE)
+                // We'll record the full entry size (including key) later once we have the key.
+            }
+
+            val nodeBytes =
+                computeNodeBytes(
+                    sortedNodeDependencies, sortedFileKeys, sortedListingKeys, sourceFileKey, recorder
+                )
+            var maybeCompressedBytes = nodeBytes
+            if (maybeCompressedBytes.size >= COMPRESSION_NUM_BYTES_THRESHOLD) {
+                maybeCompressedBytes = compressBytes(maybeCompressedBytes)
+            }
+            val key: PackedFingerprint = writer.fingerprint(maybeCompressedBytes)
+
+            val keyByteCount: Long = key.toBytes().size.toLong()
+            val valueByteCount =
+                maybeCompressedBytes.size.toLong() // Don't hold on to the bytes any longer than needed
+
+            counters.nodesWaitingForDeps.decrementAndGet()
+            counters.nodesWaitingForUpload.incrementAndGet()
+            counters.keyBytesWaitingForUpload.addAndGet(keyByteCount)
+            counters.valueBytesWaitingForUpload.addAndGet(valueByteCount)
+
+            val writeStatus: WriteStatus = writer.put(key, maybeCompressedBytes)
+            writeStatus.addListener(
+                java.lang.Runnable {
+                    counters.nodesWaitingForUpload.decrementAndGet()
+                    counters.nodesUploaded.incrementAndGet()
+                    counters.keyBytesWaitingForUpload.addAndGet(-keyByteCount)
+                    counters.valueBytesWaitingForUpload.addAndGet(-valueByteCount)
+                    counters.keyBytesUploaded.addAndGet(keyByteCount)
+                    counters.valueBytesUploaded.addAndGet(valueByteCount)
+                },
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
+
+            if (recorder != null) {
+                if (maybeCompressedBytes.size != nodeBytes.size) {
+                    recorder.setByteScale(maybeCompressedBytes.size.toDouble() / nodeBytes.size.toDouble())
+                }
+                recordKeyAndRegisterStatus(recorder, keyByteCount, valueByteCount, writeStatus)
+            }
+
+            writeStatusBuilder.add(writeStatus)
+            return NodeInvalidationDataInfo(key, writeStatusBuilder.build())
+        }
+
+        private fun addFileKey(fileKey: com.google.devtools.build.lib.skyframe.FileKey?) {
+            when (registerDependency(fileKey)) {
+                -> addFileInfo(info)
+                -> futureFileDataInfo.add(futureInfo)
+            }
+        }
+
+        private fun addFileInfo(info: FileDataInfo) {
+            when (info) {
+                ConstantFileData.CONSTANT_FILE -> {}
+                -> {
+                    fileKeys.add(fileInfo.cacheKey())
+                    writeStatusBuilder.add(fileInfo.writeStatus())
+                }
+            }
+        }
+
+        private fun addListingKey(listingKey: DirectoryListingKey?) {
+            when (registerDependency(listingKey)) {
+                -> addListingInfo(info)
+                -> futureListingDataInfo.add(futureInfo)
+            }
+        }
+
+        private fun addListingInfo(info: ListingDataInfo) {
+            when (info) {
+                ConstantListingData.CONSTANT_LISTING -> {}
+                -> {
+                    listingKeys.add(listingInfo.cacheKey())
+                    writeStatusBuilder.add(listingInfo.writeStatus())
+                }
+            }
+        }
+
+        private fun addNodeKey(nestedKeys: AbstractNestedFileOpNodes) {
+            when (registerDependency(nestedKeys)) {
+                -> addNodeInfo(info)
+                -> futureNodeDataInfo.add(futureInfo)
+            }
+        }
+
+        private fun addNodeInfo(info: NodeDataInfo) {
+            when (info) {
+                ConstantNodeData.CONSTANT_NODE -> {}
+                -> {
+                    nodeDependencies.add(nodeInfo)
+                    writeStatusBuilder.add(nodeInfo.writeStatus())
+                }
+            }
+        }
+
+        private fun setSourceFile(sourceFile: com.google.devtools.build.lib.skyframe.FileKey?) {
+            com.google.common.base.Preconditions.checkState(
+                sourceFileOrFuture == null,
+                "Attempting to set source file to %s, but it was already set to %s",
+                sourceFile,
+                sourceFileOrFuture
+            )
+            this.sourceFileOrFuture = registerDependency(sourceFile)
+        }
+
+        private val combinedFutures: com.google.common.collect.ImmutableList<com.google.common.util.concurrent.ListenableFuture<*>?>
+            get() {
+                val combined: com.google.common.collect.ImmutableList.Builder<com.google.common.util.concurrent.ListenableFuture<*>?> =
+                    com.google.common.collect.ImmutableList.builder<com.google.common.util.concurrent.ListenableFuture<*>?>()
+                        .addAll(futureFileDataInfo)
+                        .addAll(futureListingDataInfo)
+                        .addAll(futureNodeDataInfo)
+                when (sourceFileOrFuture) {
+                    null -> {}
+                    -> {}
+                    -> combined.add(futureSource)
+                }
+                return combined.build()
+            }
+
+        @Throws(IOException::class)
+        private fun compressBytes(nodeBytes: ByteArray?): ByteArray {
+            val outputStream: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+            MagicBytes.writeMagicBytes(outputStream)
+            getCompressedOutputStream(outputStream).use { compressedBytesStream ->
+                compressedBytesStream.write(nodeBytes)
+            }
+            return outputStream.toByteArray()
+        }
+
+        @get:Throws(ExecutionException::class)
+        private val sourceFileKey: String?
+            get() {
+                if (sourceFileOrFuture == null) {
+                    return null
+                }
+                return when (when (sourceFileOrFuture) {
+                    -> sourceInfo
+                    -> com.google.common.util.concurrent.Futures.getDone<V?>(futureSourceInfo)
+                }) {
+                    ConstantFileData.CONSTANT_FILE -> null
+                    -> {
+                        writeStatusBuilder.add(fileInfo.writeStatus())
+                        fileInfo.cacheKey()
+                    }
+                }
+            }
+    }
+
+    @Throws(IOException::class)
+    private fun getVersion(rootedPath: RootedPath, exists: Boolean): Long {
+        return getVersion(rootedPath.asPath(), exists)
+    }
+
+    @Throws(IOException::class)
+    private fun getVersion(path: com.google.devtools.build.lib.vfs.Path?, exists: Boolean): Long {
+        return if (exists)
+            versionGetter.getFilePathOrSymlinkVersion(path)
+        else
+            versionGetter.getNonexistentPathVersion(path)
+    }
+
+    private fun getKeyBytes(
+        cacheKey: String,
+        overflowConsumer: java.util.function.Consumer<String?>
+    ): KeyBytesProvider {
+        if (cacheKey.length() > FileDependencyKeySupport.MAX_KEY_LENGTH) {
+            overflowConsumer.accept(cacheKey)
+            return writer.fingerprint(cacheKey.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+        }
+        return com.google.devtools.build.lib.skyframe.serialization.StringKey(cacheKey)
+    }
+
+    companion object {
+        @com.google.common.annotations.VisibleForTesting
+        const val COMPRESSION_NUM_BYTES_THRESHOLD: Int = 580
+
+        @Throws(IOException::class)
+        fun getCompressedOutputStream(outputStream: java.io.OutputStream?): java.io.OutputStream {
+            // The default level and the fastest level (-7) results in 35% and 19% wall time overhead when
+            // not using a threshold to compress, the default level provided a 2x better compression. Since
+            // we do use a threshold and there is no wall time regression, we favor the better compression
+            // ratio.
+            return ZstdOutputStream(outputStream, RecyclingBufferPool.INSTANCE)
+        }
+
+        /**
+         * Computes a canonical byte representation of the node.
+         * 
+         * 
+         * Logically, a node is a set of string file or listing keys, as described at [ ] and [DirectoryListingInvalidationData], respectively, and a set of
+         * [NestedFileOpNodes] fingerprints. Its byte representation is specified as follows.
+         * 
+         * 
+         *  1. The count of nested nodes, as a proto-encoded int.
+         *  1. The count of file keys, as a proto-encoded int.
+         *  1. The count of listing keys, as a proto-encoded int.
+         *  1. A proto-encoded boolean, true if a source file key is present and false otherwise.
+         *  1. Sorted and deduplicated, fingerprints of the [NestedFileOpNodes] byte
+         * representations.
+         *  1. Sorted and deduplicated, proto-encoded strings of the file keys.
+         *  1. Sorted and deduplicated, proto-encoded strings of the listing keys.
+         *  1. Proto-encoded string of the source file key, if applicable.
+         * 
+         * 
+         * 
+         * More compact formats are possible, but this reduces the complexity of the deserializer.
+         */
+        @com.google.common.annotations.VisibleForTesting
+        fun computeNodeBytes(
+            nodeDependencyFingerprints: MutableCollection<PackedFingerprint>,
+            fileKeys: MutableCollection<String?>,
+            listingKeys: MutableCollection<String?>,
+            sourceFileKey: String?,
+            recorder: ProfileRecorder?
+        ): ByteArray {
+            try {
+                val bytesOut: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+                val codedOut: CodedOutputStream = CodedOutputStream.newInstance(bytesOut)
+
+                if (recorder != null) {
+                    recorder.pushLocation(EntryPart.VALUE)
+                }
+                val startValueBytes: Int = codedOut.getTotalBytesWritten()
+
+                codedOut.writeInt32NoTag(nodeDependencyFingerprints.size())
+                codedOut.writeInt32NoTag(fileKeys.size())
+                codedOut.writeInt32NoTag(listingKeys.size())
+                codedOut.writeBoolNoTag(sourceFileKey != null)
+
+                val startNodeDependencyBytes: Int = codedOut.getTotalBytesWritten()
+                for (fp in nodeDependencyFingerprints) {
+                    fp.writeTo(codedOut)
+                }
+                if (recorder != null) {
+                    recorder.pushLocation(NodeValuePart.NODE_DEPENDENCIES)
+                    recorder.recordBytesAndPopLocation(startNodeDependencyBytes, codedOut)
+                }
+
+                val startFileKeyBytes: Int = codedOut.getTotalBytesWritten()
+                for (key in fileKeys) {
+                    codedOut.writeStringNoTag(key)
+                }
+                if (recorder != null) {
+                    recorder.pushLocation(NodeValuePart.FILE_KEYS)
+                    recorder.recordBytesAndPopLocation(startFileKeyBytes, codedOut)
+                }
+
+                val startListingKeyBytes: Int = codedOut.getTotalBytesWritten()
+                for (key in listingKeys) {
+                    codedOut.writeStringNoTag(key)
+                }
+                if (recorder != null) {
+                    recorder.pushLocation(NodeValuePart.LISTING_KEYS)
+                    recorder.recordBytesAndPopLocation(startListingKeyBytes, codedOut)
+                }
+
+                if (sourceFileKey != null) {
+                    val startSourceFileBytes: Int = codedOut.getTotalBytesWritten()
+                    codedOut.writeStringNoTag(sourceFileKey)
+                    if (recorder != null) {
+                        recorder.pushLocation(NodeValuePart.SOURCE_FILE)
+                        recorder.recordBytesAndPopLocation(startSourceFileBytes, codedOut)
+                    }
+                }
+
+                codedOut.flush()
+                bytesOut.flush()
+                if (recorder != null) {
+                    // Records bytes and pops the EntryPart.VALUE.
+                    recorder.recordBytesAndPopLocation(startValueBytes, codedOut)
+                }
+
+                return bytesOut.toByteArray()
+            } catch (e: IOException) {
+                throw java.lang.AssertionError("Unexpected IOException from ByteArrayOutputStream", e)
+            }
+        }
+
+        private fun recordInvalidationProfile(
+            profileCollector: ProfileCollector?,
+            type: InvalidationEntryType?,
+            keyByteCount: Long,
+            valueByteCount: Long,
+            writeStatus: WriteStatus?
+        ) {
+            val recorder: ProfileRecorder = ProfileRecorder(profileCollector)
+            recorder.pushLocation(type)
+            recorder.pushLocation(EntryPart.VALUE)
+            recorder.recordBytes(valueByteCount.toInt())
+            recorder.popLocation()
+            recordKeyAndRegisterStatus(recorder, keyByteCount, valueByteCount, writeStatus)
+        }
+
+        private fun recordKeyAndRegisterStatus(
+            recorder: ProfileRecorder, keyByteCount: Long, valueByteCount: Long, writeStatus: WriteStatus?
+        ) {
+            recorder.recordBytes((keyByteCount + valueByteCount).toInt())
+            recorder.pushLocation(EntryPart.KEY)
+            recorder.recordBytes(keyByteCount.toInt())
+            recorder.popLocation() // Pop EntryPart.KEY.
+            // EntryPart.VALUE is recorded already (e.g. by computeNodeBytes).
+            recorder.popLocation() // Pop InvalidationType (FILE/LISTING/NODE)
+            recorder.registerWriteStatus(writeStatus)
+        }
+    }
 }

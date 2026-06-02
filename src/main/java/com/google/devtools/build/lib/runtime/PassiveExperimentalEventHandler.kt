@@ -11,32 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import com.google.common.eventbus.Subscribe;
-import com.google.devtools.build.lib.analysis.NoBuildEvent;
-import com.google.devtools.build.lib.analysis.NoBuildRequestFinishedEvent;
+import com.google.devtools.build.lib.analysis.NoBuildEvent
 
 /**
- * A passive version of {@link UiEventHandler}.
- *
- * <p>Given an {@link UiEventHandler}, generate a wrapper class, that only subscribes to events that
+ * A passive version of [UiEventHandler].
+ * 
+ * 
+ * Given an [UiEventHandler], generate a wrapper class, that only subscribes to events that
  * only modify its internal state, but do not produce any output.
  */
-public class PassiveExperimentalEventHandler {
-  private final UiEventHandler eventHandler;
+class PassiveExperimentalEventHandler(eventHandler: UiEventHandler) {
+    private val eventHandler: UiEventHandler
 
-  public PassiveExperimentalEventHandler(UiEventHandler eventHandler) {
-    this.eventHandler = eventHandler;
-  }
+    init {
+        this.eventHandler = eventHandler
+    }
 
-  @Subscribe
-  public void noBuild(NoBuildEvent event) {
-    eventHandler.noBuild(event);
-  }
+    @com.google.common.eventbus.Subscribe
+    fun noBuild(event: NoBuildEvent) {
+        eventHandler.noBuild(event)
+    }
 
-  @Subscribe
-  public void noBuildFinished(NoBuildRequestFinishedEvent event) {
-    eventHandler.noBuildFinished(event);
-  }
+    @com.google.common.eventbus.Subscribe
+    fun noBuildFinished(event: NoBuildRequestFinishedEvent?) {
+        eventHandler.noBuildFinished(event)
+    }
 }

@@ -11,36 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.actiongraph.v2;
+package com.google.devtools.build.lib.skyframe.actiongraph.v2
 
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2;
-import java.io.IOException;
+import com.google.devtools.build.lib.actions.Artifact
 
-/** Cache for Artifacts in the action graph. */
-public class KnownArtifacts extends BaseCache<Artifact, AnalysisProtosV2.Artifact> {
+/** Cache for Artifacts in the action graph.  */
+class KnownArtifacts internal constructor(aqueryOutputHandler: AqueryOutputHandler?) :
+    BaseCache<Artifact?, AnalysisProtosV2.Artifact?>(aqueryOutputHandler) {
+    private val knownPathFragments: KnownPathFragments
 
-  private final KnownPathFragments knownPathFragments;
+    init {
+        knownPathFragments = KnownPathFragments(aqueryOutputHandler)
+    }
 
-  KnownArtifacts(AqueryOutputHandler aqueryOutputHandler) {
-    super(aqueryOutputHandler);
-    knownPathFragments = new KnownPathFragments(aqueryOutputHandler);
-  }
+    @Throws(IOException::class, InterruptedException::class)
+    override fun createProto(artifact: Artifact, id: Int): AnalysisProtosV2.Artifact {
+        val artifactProtoBuilder: AnalysisProtosV2.Artifact.Builder =
+            AnalysisProtosV2.Artifact.newBuilder()
+                .setId(id)
+                .setIsTreeArtifact(artifact.isTreeArtifact())
 
-  @Override
-  AnalysisProtosV2.Artifact createProto(Artifact artifact, int id)
-      throws IOException, InterruptedException {
-    AnalysisProtosV2.Artifact.Builder artifactProtoBuilder =
-        AnalysisProtosV2.Artifact.newBuilder()
-            .setId(id)
-            .setIsTreeArtifact(artifact.isTreeArtifact());
+        val pathFragmentId = knownPathFragments.dataToIdAndStreamOutputProto(artifact.getExecPath())
+        return artifactProtoBuilder.setPathFragmentId(pathFragmentId).build()
+    }
 
-    int pathFragmentId = knownPathFragments.dataToIdAndStreamOutputProto(artifact.getExecPath());
-    return artifactProtoBuilder.setPathFragmentId(pathFragmentId).build();
-  }
-
-  @Override
-  void toOutput(AnalysisProtosV2.Artifact artifactProto) throws IOException {
-    aqueryOutputHandler.outputArtifact(artifactProto);
-  }
+    @Throws(IOException::class)
+    override fun toOutput(artifactProto: AnalysisProtosV2.Artifact?) {
+        aqueryOutputHandler.outputArtifact(artifactProto)
+    }
 }

@@ -11,715 +11,659 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.collect.ImmutableSet.toImmutableSet;
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.base.MoreObjects;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.common.io.BaseEncoding;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.ActionInputHelper;
-import com.google.devtools.build.lib.actions.Artifact.ArchivedTreeArtifact;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifact;
-import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.FileContentsProxy;
-import com.google.devtools.build.lib.actions.FileStateType;
-import com.google.devtools.build.lib.actions.HasDigest;
-import com.google.devtools.build.lib.actions.cache.MetadataDigestUtils;
-import com.google.devtools.build.lib.concurrent.AbstractQueueVisitor;
-import com.google.devtools.build.lib.concurrent.ErrorClassifier;
-import com.google.devtools.build.lib.concurrent.NamedForkJoinPool;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.skyframe.serialization.DeserializedSkyValue;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.util.HashCodes;
-import com.google.devtools.build.lib.vfs.Dirent;
-import com.google.devtools.build.lib.vfs.FileStatus;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Symlinks;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.concurrent.ForkJoinPool;
-import java.util.function.BiConsumer;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionInput
 
 /**
- * Value for TreeArtifacts, which contains a digest and the {@link FileArtifactValue}s of its child
- * {@link TreeFileArtifact}s.
+ * Value for TreeArtifacts, which contains a digest and the [FileArtifactValue]s of its child
+ * [TreeFileArtifact]s.
  */
-@AutoCodec(
-    deserializedInterface = DeserializedSkyValue.class,
-    // Do not auto-register; see TreeArtifactValueCodec
-    autoRegister = false)
-public class TreeArtifactValue implements HasDigest, SkyValue {
-  private static final ForkJoinPool VISITOR_POOL =
-      NamedForkJoinPool.newNamedPool(
-          "tree-artifact-visitor", Runtime.getRuntime().availableProcessors());
-
-  /**
-   * Comparator based on exec path which works on {@link ActionInput} as opposed to {@link
-   * com.google.devtools.build.lib.actions.Artifact}. This way, we can use an {@link ActionInput} to
-   * search {@link #childData}.
-   */
-  @SerializationConstant @VisibleForSerialization
-  static final Comparator<ActionInput> EXEC_PATH_COMPARATOR =
-      Comparator.comparing(ActionInput::getExecPath);
-
-  static final ImmutableSortedMap<TreeFileArtifact, FileArtifactValue> EMPTY_MAP =
-      childDataBuilder().buildOrThrow();
-
-  private static ImmutableSortedMap.Builder<TreeFileArtifact, FileArtifactValue>
-      childDataBuilder() {
-    return new ImmutableSortedMap.Builder<>(EXEC_PATH_COMPARATOR);
-  }
-
-  /** Returns an empty {@link TreeArtifactValue}. */
-  public static TreeArtifactValue empty() {
-    return EMPTY;
-  }
-
-  /**
-   * Returns a new {@link Builder} for the given parent tree artifact.
-   *
-   * <p>The returned builder only supports adding children under this parent. To build multiple tree
-   * artifacts at once, use {@link MultiBuilder}.
-   */
-  public static Builder newBuilder(SpecialArtifact parent) {
-    return new Builder(parent);
-  }
-
-  /** Builder for constructing multiple instances of {@link TreeArtifactValue} at once. */
-  public static final class MultiBuilder {
-
-    private final Map<SpecialArtifact, Builder> map = new HashMap<>();
-
-    private MultiBuilder() {}
-
-    /**
-     * Adds an empty tree artifact into this builder.
-     *
-     * @return {@code this} for convenience
-     */
-    @CanIgnoreReturnValue
-    public MultiBuilder addTree(SpecialArtifact tree) {
-      map.computeIfAbsent(tree, Builder::new);
-      return this;
-    }
-
-    /**
-     * Puts a child tree file into this builder under its {@linkplain TreeFileArtifact#getParent
-     * parent}, inserting the latter into the builder if not already present.
-     *
-     * @return {@code this} for convenience
-     */
-    @CanIgnoreReturnValue
-    public MultiBuilder putChild(TreeFileArtifact child, FileArtifactValue metadata) {
-      map.computeIfAbsent(child.getParent(), Builder::new).putChild(child, metadata);
-      return this;
-    }
-
-    /**
-     * Sets the archived representation and its metadata for the {@linkplain
-     * ArchivedTreeArtifact#getParent parent} of the provided tree artifact.
-     *
-     * <p>Setting an archived representation is only allowed once per {@linkplain SpecialArtifact
-     * tree artifact}.
-     */
-    @CanIgnoreReturnValue
-    public MultiBuilder setArchivedRepresentation(
-        ArchivedTreeArtifact archivedArtifact, FileArtifactValue metadata) {
-      map.computeIfAbsent(archivedArtifact.getParent(), Builder::new)
-          .setArchivedRepresentation(ArchivedRepresentation.create(archivedArtifact, metadata));
-      return this;
-    }
-
-    /**
-     * For each unique parent seen by this builder, passes the aggregated metadata to the specified
-     * {@link BiConsumer}.
-     */
-    public void forEach(BiConsumer<SpecialArtifact, TreeArtifactValue> consumer) {
-      map.forEach((parent, builder) -> consumer.accept(parent, builder.build()));
-    }
-  }
-
-  /** Returns a new {@link MultiBuilder}. */
-  public static MultiBuilder newMultiBuilder() {
-    return new MultiBuilder();
-  }
-
-  /**
-   * Archived representation of a tree artifact which contains a representation of the filesystem
-   * tree starting with the tree artifact directory.
-   *
-   * <p>Contains both the {@linkplain ArchivedTreeArtifact artifact} for the archived file and the
-   * metadata for it.
-   */
-  @AutoCodec
-  public record ArchivedRepresentation(
-      ArchivedTreeArtifact archivedTreeFileArtifact, FileArtifactValue archivedFileValue) {
-    public ArchivedRepresentation {
-      requireNonNull(archivedTreeFileArtifact, "archivedTreeFileArtifact");
-      requireNonNull(archivedFileValue, "archivedFileValue");
-    }
-
-    public static ArchivedRepresentation create(
-        ArchivedTreeArtifact archivedTreeFileArtifact, FileArtifactValue fileArtifactValue) {
-      return new ArchivedRepresentation(archivedTreeFileArtifact, fileArtifactValue);
-    }
-  }
-
-  // Note that this is not marked as a @SerializationConstant because we need the deserialized value
-  // to implement DeserializedSkyValue. As a result, the deserialized value must be of a different
-  // class. We make this work by using a custom codec (see TreeArtifactValueCodec).
-  private static final TreeArtifactValue EMPTY =
-      new TreeArtifactValue(
-          MetadataDigestUtils.fromMetadata(ImmutableMap.of()),
-          EMPTY_MAP,
-          0L,
-          /* archivedRepresentation= */ null,
-          /* resolvedPath= */ null,
-          /* entirelyRemote= */ false);
-
-  private final byte[] digest;
-  private final ImmutableSortedMap<TreeFileArtifact, FileArtifactValue> childData;
-  private final long totalChildSize;
-
-  /**
-   * Optional archived representation of the entire tree artifact which can be sent instead of all
-   * the items in the directory.
-   */
-  @Nullable private final ArchivedRepresentation archivedRepresentation;
-
-  /**
-   * Optional resolved path.
-   *
-   * <p>See {@link FileArtifactValue#getResolvedPath} for semantics.
-   */
-  @Nullable private final PathFragment resolvedPath;
-
-  private final boolean entirelyRemote;
-
-  /** A FileArtifactValue used to stand in for a TreeArtifactValue. */
-  private static final class TreeArtifactCompositeFileArtifactValue extends FileArtifactValue {
-    private final byte[] digest;
-    private final boolean isRemote;
-    @Nullable private final PathFragment resolvedPath;
-
-    TreeArtifactCompositeFileArtifactValue(
-        byte[] digest, boolean isRemote, @Nullable PathFragment resolvedPath) {
-      this.digest = digest;
-      this.isRemote = isRemote;
-      this.resolvedPath = resolvedPath;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (!(o instanceof TreeArtifactCompositeFileArtifactValue that)) {
-        return false;
-      }
-      return Arrays.equals(digest, that.digest) && Objects.equals(resolvedPath, that.resolvedPath);
-    }
-
-    @Override
-    public int hashCode() {
-      return HashCodes.hashObjects(Arrays.hashCode(digest), resolvedPath);
-    }
-
-    @Override
-    public FileStateType getType() {
-      return FileStateType.DIRECTORY;
-    }
-
-    @Override
-    public byte[] getDigest() {
-      return digest;
-    }
-
-    @Override
-    @Nullable
-    public FileContentsProxy getContentsProxy() {
-      return null;
-    }
-
-    @Override
-    public long getSize() {
-      return 0;
-    }
-
-    @Override
-    public boolean wasModifiedSinceDigest(Path path) {
-      return false;
-    }
-
-    @Override
-    public long getModifiedTime() {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public String toString() {
-      return MoreObjects.toStringHelper(this)
-          .add("digest", BaseEncoding.base16().lowerCase().encode(digest))
-          .add("resolvedPath", resolvedPath)
-          .toString();
-    }
-
-    @Override
-    protected boolean couldBeModifiedByMetadata(FileArtifactValue o) {
-      return false;
-    }
-
-    @Override
-    public boolean isRemote() {
-      return isRemote;
-    }
-
-    @Override
-    @Nullable
-    public PathFragment getResolvedPath() {
-      return resolvedPath;
-    }
-  }
-
-  @VisibleForSerialization
-  TreeArtifactValue(
-      byte[] digest,
-      ImmutableSortedMap<TreeFileArtifact, FileArtifactValue> childData,
-      long totalChildSize,
-      @Nullable ArchivedRepresentation archivedRepresentation,
-      @Nullable PathFragment resolvedPath,
-      boolean entirelyRemote) {
-    this.digest = digest;
-    this.childData = childData;
-    this.totalChildSize = totalChildSize;
-    this.archivedRepresentation = archivedRepresentation;
-    this.resolvedPath = resolvedPath;
-    this.entirelyRemote = entirelyRemote;
-  }
-
-  public FileArtifactValue getMetadata() {
-    return new TreeArtifactCompositeFileArtifactValue(digest, entirelyRemote, resolvedPath);
-  }
-
-  ImmutableSet<PathFragment> getChildPaths() {
-    return childData.keySet().stream()
-        .map(TreeFileArtifact::getParentRelativePath)
-        .collect(toImmutableSet());
-  }
-
-  @Override
-  public byte[] getDigest() {
-    return digest.clone();
-  }
-
-  public ImmutableSortedSet<TreeFileArtifact> getChildren() {
-    return childData.keySet();
-  }
-
-  public long getTotalChildBytes() {
-    return totalChildSize;
-  }
-
-  /** Returns the archived representation of the tree artifact, if present. */
-  public Optional<ArchivedRepresentation> getArchivedRepresentation() {
-    return Optional.ofNullable(archivedRepresentation);
-  }
-
-  /**
-   * Returns the resolved path, if present.
-   *
-   * <p>See {@link FileArtifactValue#getResolvedPath} for semantics.
-   */
-  public Optional<PathFragment> getResolvedPath() {
-    return Optional.ofNullable(resolvedPath);
-  }
-
-  @Nullable
-  public ArchivedTreeArtifact getArchivedArtifact() {
-    return archivedRepresentation != null
-        ? archivedRepresentation.archivedTreeFileArtifact()
-        : null;
-  }
-
-  public ImmutableSortedMap<TreeFileArtifact, FileArtifactValue> getChildValues() {
-    return childData;
-  }
-
-  /** Returns an entry for child with given exec path or null if no such child is present. */
-  @SuppressWarnings("unchecked")
-  @Nullable
-  public Map.Entry<TreeFileArtifact, FileArtifactValue> findChildEntryByExecPath(
-      PathFragment execPath) {
-    ActionInput searchToken = ActionInputHelper.fromPath(execPath);
-    // Not really a copy -- original map is already an ImmutableSortedMap using the same comparator.
-    ImmutableSortedMap<ActionInput, FileArtifactValue> casted =
-        ImmutableSortedMap.copyOf(childData, EXEC_PATH_COMPARATOR);
-    checkState(casted == (Object) childData, "Casting children resulted with a copy");
-    Map.Entry<? extends ActionInput, FileArtifactValue> entry = casted.floorEntry(searchToken);
-    return entry != null && entry.getKey().getExecPath().equals(execPath)
-        ? (Map.Entry<TreeFileArtifact, FileArtifactValue>) entry
-        : null;
-  }
-
-  /** Returns true if the {@link TreeFileArtifact}s are only stored remotely. */
-  public boolean isEntirelyRemote() {
-    return entirelyRemote;
-  }
-
-  @Override
-  public int hashCode() {
-    return HashCodes.hashObjects(Arrays.hashCode(digest), archivedRepresentation, resolvedPath);
-  }
-
-  @Override
-  public boolean equals(Object other) {
-    if (this == other) {
-      return true;
-    }
-
-    if (!(other instanceof TreeArtifactValue that)) {
-      return false;
-    }
-
-    return Arrays.equals(digest, that.digest)
-        && childData.equals(that.childData)
-        && Objects.equals(archivedRepresentation, that.archivedRepresentation)
-        && Objects.equals(resolvedPath, that.resolvedPath);
-  }
-
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("digest", digest)
-        .add("childData", childData)
-        .add("archivedRepresentation", archivedRepresentation)
-        .add("resolvedPath", resolvedPath)
-        .toString();
-  }
-
-  /**
-   * A TreeArtifactValue that represents a missing TreeArtifact. This is occasionally useful because
-   * Java's concurrent collections disallow null members.
-   */
-  public static final TreeArtifactValue MISSING_TREE_ARTIFACT =
-      createMarker("MISSING_TREE_ARTIFACT");
-
-  private static TreeArtifactValue createMarker(String toStringRepresentation) {
-    return new TreeArtifactValue(
-        null,
-        EMPTY_MAP,
-        0L,
-        /* archivedRepresentation= */ null,
-        /* resolvedPath= */ null,
-        /* entirelyRemote= */ false) {
-      @Override
-      public ImmutableSortedSet<TreeFileArtifact> getChildren() {
-        throw new UnsupportedOperationException(toString());
-      }
-
-      @Override
-      public ImmutableSortedMap<TreeFileArtifact, FileArtifactValue> getChildValues() {
-        throw new UnsupportedOperationException(toString());
-      }
-
-      @Override
-      public FileArtifactValue getMetadata() {
-        throw new UnsupportedOperationException(toString());
-      }
-
-      @Override
-      ImmutableSet<PathFragment> getChildPaths() {
-        throw new UnsupportedOperationException(toString());
-      }
-
-      @Nullable
-      @Override
-      public byte[] getDigest() {
-        throw new UnsupportedOperationException(toString());
-      }
-
-      @Override
-      public int hashCode() {
-        return System.identityHashCode(this);
-      }
-
-      @Override
-      public boolean equals(Object other) {
-        return this == other;
-      }
-
-      @Override
-      public String toString() {
-        return toStringRepresentation;
-      }
-    };
-  }
-
-  /** Visitor for use in {@link #visitTree}. */
-  @FunctionalInterface
-  public interface TreeArtifactVisitor {
-    /**
-     * Called for every directory entry encountered during tree traversal, in a nondeterministic
-     * order.
-     *
-     * <p>Regular files and directories are reported as {@link Dirent.Type#FILE} or {@link
-     * Dirent.Type#DIRECTORY}, respectively. Directories are traversed recursively.
-     *
-     * <p>Symlinks that resolve to an existing file or directory are followed and reported as the
-     * regular files or directories they point to, recursively for directories. Symlinks that fail
-     * to resolve to an existing path cause an {@link IOException} to be immediately thrown without
-     * invoking the visitor. Thus, the visitor is never called with a {@link Dirent.Type#SYMLINK}
-     * type.
-     *
-     * <p>Special files or files whose type could not be determined, regardless of whether they are
-     * encountered directly or indirectly through symlinks, cause an {@link IOException} to be
-     * immediately thrown without invoking the visitor. Thus, the visitor is never called with a
-     * {@link Dirent.Type#UNKNOWN} type.
-     *
-     * <p>The {@code parentRelativePath} argument is always set to the apparent path relative to the
-     * tree directory root, without resolving any intervening symlinks. The {@code traversedSymlink}
-     * argument is true if at least one symlink was traversed on the way to the entry being
-     * reported.
-     *
-     * <p>If the visitor throws {@link IOException}, traversal is immediately halted and the
-     * exception is propagated.
-     *
-     * <p>This method can be called from multiple threads in parallel during a single call of {@link
-     * TreeArtifactVisitor#visitTree(Path, TreeArtifactVisitor)}.
-     */
-    @ThreadSafe
-    void visit(PathFragment parentRelativePath, Dirent.Type type, boolean traversedSymlink)
-        throws IOException;
-  }
-
-  /** An {@link AbstractQueueVisitor} that visits every file in the tree artifact. */
-  static class Visitor extends AbstractQueueVisitor {
-    private final Path parentDir;
-    private final TreeArtifactVisitor visitor;
-
-    Visitor(Path parentDir, TreeArtifactVisitor visitor) {
-      super(
-          VISITOR_POOL,
-          ExecutorOwnership.SHARED,
-          ExceptionHandlingMode.FAIL_FAST,
-          ErrorClassifier.DEFAULT);
-      this.parentDir = checkNotNull(parentDir);
-      this.visitor = checkNotNull(visitor);
-    }
-
-    void run() throws IOException, InterruptedException {
-      execute(
-          () ->
-              visit(
-                  PathFragment.EMPTY_FRAGMENT,
-                  Dirent.Type.DIRECTORY,
-                  /* traversedSymlink= */ false));
-      try {
-        awaitQuiescence(true);
-      } catch (UncheckedIOException e) {
-        throw e.getCause();
-      }
-    }
-
-    private void visit(
-        PathFragment parentRelativePath, Dirent.Type type, boolean traversedSymlink) {
-      try {
-        Path path = parentDir.getRelative(parentRelativePath);
-
-        if (type == Dirent.Type.SYMLINK) {
-          traversedSymlink = true;
-
-          FileStatus statFollow = path.statIfFound(Symlinks.FOLLOW);
-
-          if (statFollow == null) {
-            throw new IOException(
-                String.format("child %s is a dangling symbolic link", parentRelativePath));
-          }
-
-          if (statFollow.isFile() && !statFollow.isSpecialFile()) {
-            type = Dirent.Type.FILE;
-          } else if (statFollow.isDirectory()) {
-            type = Dirent.Type.DIRECTORY;
-          } else {
-            type = Dirent.Type.UNKNOWN;
-          }
+@AutoCodec(deserializedInterface = DeserializedSkyValue::class, autoRegister = false)
+open class TreeArtifactValue @VisibleForSerialization internal constructor(
+    private val digest: ByteArray,
+    childData: com.google.common.collect.ImmutableSortedMap<TreeFileArtifact?, FileArtifactValue?>,
+    totalChildSize: Long,
+    archivedRepresentation: ArchivedRepresentation?,
+    resolvedPath: PathFragment?,
+    entirelyRemote: Boolean
+) : HasDigest, SkyValue {
+    /** Builder for constructing multiple instances of [TreeArtifactValue] at once.  */
+    class MultiBuilder private constructor() {
+        private val map: MutableMap<SpecialArtifact?, Builder?> = HashMap<SpecialArtifact?, Builder?>()
+
+        /**
+         * Adds an empty tree artifact into this builder.
+         * 
+         * @return `this` for convenience
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addTree(tree: SpecialArtifact?): MultiBuilder {
+            map.computeIfAbsent(tree) { parent: SpecialArtifact? -> Builder(parent) }
+            return this
         }
 
-        if (type == Dirent.Type.UNKNOWN) {
-          throw new IOException(
-              String.format("child %s has an unsupported type", parentRelativePath));
+        /**
+         * Puts a child tree file into this builder under its [ parent][TreeFileArtifact.getParent], inserting the latter into the builder if not already present.
+         * 
+         * @return `this` for convenience
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun putChild(child: TreeFileArtifact, metadata: FileArtifactValue?): MultiBuilder {
+            map.computeIfAbsent(child.getParent()) { parent: SpecialArtifact? -> Builder(parent) }
+                .putChild(child, metadata)
+            return this
         }
 
-        visitor.visit(parentRelativePath, type, traversedSymlink);
-
-        if (type == Dirent.Type.DIRECTORY) {
-          for (Dirent dirent : path.readdir(Symlinks.NOFOLLOW)) {
-            PathFragment childPath = parentRelativePath.getChild(dirent.getName());
-            Dirent.Type childType = dirent.getType();
-            boolean finalTraversedSymlink = traversedSymlink;
-            execute(() -> visit(childPath, childType, finalTraversedSymlink));
-          }
+        /**
+         * Sets the archived representation and its metadata for the [ ][ArchivedTreeArtifact.getParent] of the provided tree artifact.
+         * 
+         * 
+         * Setting an archived representation is only allowed once per [ tree artifact][SpecialArtifact].
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setArchivedRepresentation(
+            archivedArtifact: ArchivedTreeArtifact, metadata: FileArtifactValue?
+        ): MultiBuilder {
+            map.computeIfAbsent(archivedArtifact.getParent()) { parent: SpecialArtifact? -> Builder(parent) }
+                .setArchivedRepresentation(ArchivedRepresentation.Companion.create(archivedArtifact, metadata))
+            return this
         }
-      } catch (IOException e) {
-        // We can't throw checked exceptions here since AQV expects Runnables
-        throw new UncheckedIOException(e);
-      }
-    }
-  }
 
-  /**
-   * Recursively visits all descendants under a directory.
-   *
-   * <p>{@link TreeArtifactVisitor#visit} is invoked on {@code visitor} for each directory, file,
-   * and symlink under the given {@code parentDir}, including {@code parentDir} itself.
-   *
-   * <p>This method is intended to provide uniform semantics for constructing a tree artifact,
-   * including special logic that validates directory entries. Invalid directory entries include a
-   * symlink that traverses outside of the tree artifact and any entry of {@link
-   * Dirent.Type#UNKNOWN}, such as a named pipe.
-   *
-   * <p>The visitor will be called on multiple threads in parallel. Accordingly, it must be
-   * thread-safe.
-   *
-   * @throws IOException if there is any problem reading or validating outputs under the given tree
-   *     artifact directory, or if {@link TreeArtifactVisitor#visit} throws {@link IOException}
-   */
-  public static void visitTree(Path parentDir, TreeArtifactVisitor treeArtifactVisitor)
-      throws IOException, InterruptedException {
-    Visitor visitor = new Visitor(parentDir, treeArtifactVisitor);
-    visitor.run();
-  }
-
-  /** Builder for a {@link TreeArtifactValue}. */
-  public static final class Builder {
-    private final ImmutableSortedMap.Builder<TreeFileArtifact, FileArtifactValue> childData =
-        childDataBuilder();
-    private ArchivedRepresentation archivedRepresentation;
-    private PathFragment resolvedPath;
-    private final SpecialArtifact parent;
-
-    Builder(SpecialArtifact parent) {
-      checkArgument(parent.isTreeArtifact(), "%s is not a tree artifact", parent);
-      this.parent = parent;
+        /**
+         * For each unique parent seen by this builder, passes the aggregated metadata to the specified
+         * [BiConsumer].
+         */
+        fun forEach(consumer: java.util.function.BiConsumer<SpecialArtifact?, TreeArtifactValue?>) {
+            map.forEach { (parent: SpecialArtifact?, builder: Builder?) -> consumer.accept(parent, builder!!.build()) }
+        }
     }
 
     /**
-     * Adds a child to this builder.
-     *
-     * <p>The child's {@linkplain TreeFileArtifact#getParent parent} <em>must</em> match the parent
-     * with which this builder was initialized.
-     *
-     * <p>Children may be added in any order. The children are sorted prior to constructing the
-     * final {@link TreeArtifactValue}.
-     *
-     * @return {@code this} for convenience
+     * Archived representation of a tree artifact which contains a representation of the filesystem
+     * tree starting with the tree artifact directory.
+     * 
+     * 
+     * Contains both the [artifact][ArchivedTreeArtifact] for the archived file and the
+     * metadata for it.
      */
-    @CanIgnoreReturnValue
-    public Builder putChild(TreeFileArtifact child, FileArtifactValue metadata) {
-      checkArgument(
-          child.isChildOf(parent),
-          "While building TreeArtifactValue for %s, got %s with parent %s",
-          parent,
-          child,
-          child.getParent());
-      childData.put(child, metadata);
-      return this;
-    }
+    @AutoCodec
+    class ArchivedRepresentation(
+        archivedTreeFileArtifact: ArchivedTreeArtifact?,
+        archivedFileValue: FileArtifactValue?
+    ) {
+        val archivedTreeFileArtifact: ArchivedTreeArtifact?
+        val archivedFileValue: FileArtifactValue?
 
-    @CanIgnoreReturnValue
-    public Builder setArchivedRepresentation(
-        ArchivedTreeArtifact archivedTreeArtifact, FileArtifactValue metadata) {
-      return setArchivedRepresentation(
-          ArchivedRepresentation.create(archivedTreeArtifact, metadata));
-    }
-
-    @CanIgnoreReturnValue
-    public Builder setArchivedRepresentation(ArchivedRepresentation archivedRepresentation) {
-      checkNotNull(archivedRepresentation);
-      checkState(
-          this.archivedRepresentation == null,
-          "Tried to add 2 archived representations for: %s",
-          parent);
-      checkArgument(
-          parent.equals(archivedRepresentation.archivedTreeFileArtifact().getParent()),
-          "Cannot add archived representation: %s for a mismatching tree artifact: %s",
-          archivedRepresentation,
-          parent);
-      this.archivedRepresentation = archivedRepresentation;
-      return this;
-    }
-
-    @CanIgnoreReturnValue
-    public Builder setResolvedPath(PathFragment resolvedPath) {
-      checkArgument(resolvedPath.isAbsolute(), resolvedPath);
-      checkState(
-          this.resolvedPath == null, "Tried to set resolved path multiple times for: %s", parent);
-      this.resolvedPath = resolvedPath;
-      return this;
-    }
-
-    /** Builds the final {@link TreeArtifactValue}. */
-    public TreeArtifactValue build() {
-      ImmutableSortedMap<TreeFileArtifact, FileArtifactValue> finalChildData =
-          childData.buildOrThrow();
-      if (finalChildData.isEmpty() && archivedRepresentation == null && resolvedPath == null) {
-        return EMPTY;
-      }
-
-      Fingerprint fingerprint = new Fingerprint();
-      boolean entirelyRemote =
-          archivedRepresentation == null || archivedRepresentation.archivedFileValue().isRemote();
-
-      long totalChildSize = 0;
-      for (Map.Entry<TreeFileArtifact, FileArtifactValue> childData : finalChildData.entrySet()) {
-        // Digest will be deterministic because children are sorted.
-        fingerprint.addPath(childData.getKey().getParentRelativePath());
-        FileArtifactValue metadata = childData.getValue();
-        metadata.addTo(fingerprint);
-
-        // Tolerate a mix of local and remote children (b/152496153#comment80).
-        entirelyRemote &= metadata.isRemote();
-
-        if (metadata.getType() == FileStateType.REGULAR_FILE) {
-          totalChildSize += metadata.getSize();
+        init {
+            this.archivedFileValue = archivedFileValue
+            this.archivedTreeFileArtifact = archivedTreeFileArtifact
+            java.util.Objects.requireNonNull<Any?>(archivedTreeFileArtifact, "archivedTreeFileArtifact")
+            java.util.Objects.requireNonNull<Any?>(archivedFileValue, "archivedFileValue")
         }
-      }
 
-      if (archivedRepresentation != null) {
-        archivedRepresentation.archivedFileValue().addTo(fingerprint);
-      }
-
-      return new TreeArtifactValue(
-          fingerprint.digestAndReset(),
-          finalChildData,
-          totalChildSize,
-          archivedRepresentation,
-          resolvedPath,
-          entirelyRemote);
+        companion object {
+            fun create(
+                archivedTreeFileArtifact: ArchivedTreeArtifact?, fileArtifactValue: FileArtifactValue?
+            ): ArchivedRepresentation {
+                return ArchivedRepresentation(archivedTreeFileArtifact, fileArtifactValue)
+            }
+        }
     }
-  }
+
+    private val childData: com.google.common.collect.ImmutableSortedMap<TreeFileArtifact?, FileArtifactValue?>
+    val totalChildBytes: Long
+
+    /**
+     * Optional archived representation of the entire tree artifact which can be sent instead of all
+     * the items in the directory.
+     */
+    private val archivedRepresentation: ArchivedRepresentation?
+
+    /**
+     * Optional resolved path.
+     * 
+     * 
+     * See [FileArtifactValue.getResolvedPath] for semantics.
+     */
+    private val resolvedPath: PathFragment?
+
+    /** Returns true if the [TreeFileArtifact]s are only stored remotely.  */
+    val isEntirelyRemote: Boolean
+
+    /** A FileArtifactValue used to stand in for a TreeArtifactValue.  */
+    private class TreeArtifactCompositeFileArtifactValue(
+        val digest: ByteArray,
+        val isRemote: Boolean,
+        resolvedPath: PathFragment?
+    ) : FileArtifactValue() {
+        private val resolvedPath: PathFragment?
+
+        init {
+            this.resolvedPath = resolvedPath
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o !is TreeArtifactCompositeFileArtifactValue) {
+                return false
+            }
+            return digest.contentEquals(o.digest) && resolvedPath == o.resolvedPath
+        }
+
+        override fun hashCode(): Int {
+            return HashCodes.hashObjects(digest.contentHashCode(), resolvedPath)
+        }
+
+        val type: FileStateType
+            get() = FileStateType.DIRECTORY
+
+        val contentsProxy: FileContentsProxy?
+            get() = null
+
+        val size: Long
+            get() = 0
+
+        public override fun wasModifiedSinceDigest(path: com.google.devtools.build.lib.vfs.Path?): Boolean {
+            return false
+        }
+
+        val modifiedTime: Long
+            get() {
+                throw java.lang.UnsupportedOperationException()
+            }
+
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(this)
+                .add("digest", com.google.common.io.BaseEncoding.base16().lowerCase().encode(digest))
+                .add("resolvedPath", resolvedPath)
+                .toString()
+        }
+
+        protected override fun couldBeModifiedByMetadata(o: FileArtifactValue?): Boolean {
+            return false
+        }
+
+        public override fun getResolvedPath(): PathFragment? {
+            return resolvedPath
+        }
+    }
+
+    open val metadata: FileArtifactValue?
+        get() = TreeArtifactCompositeFileArtifactValue(digest, this.isEntirelyRemote, resolvedPath)
+
+    open val childPaths: com.google.common.collect.ImmutableSet<PathFragment?>?
+        get() = childData.keys.stream()
+            .map<Any?>(TreeFileArtifact::getParentRelativePath)
+            .collect(com.google.common.collect.ImmutableSet.toImmutableSet<Any?>())
+
+    public override fun getDigest(): ByteArray? {
+        return digest.clone()
+    }
+
+    open val children: com.google.common.collect.ImmutableSortedSet<TreeFileArtifact?>?
+        get() = childData.keys
+
+    /** Returns the archived representation of the tree artifact, if present.  */
+    fun getArchivedRepresentation(): java.util.Optional<ArchivedRepresentation?> {
+        return java.util.Optional.ofNullable<ArchivedRepresentation?>(archivedRepresentation)
+    }
+
+    /**
+     * Returns the resolved path, if present.
+     * 
+     * 
+     * See [FileArtifactValue.getResolvedPath] for semantics.
+     */
+    fun getResolvedPath(): java.util.Optional<PathFragment?> {
+        return java.util.Optional.ofNullable<PathFragment?>(resolvedPath)
+    }
+
+    val archivedArtifact: ArchivedTreeArtifact?
+        get() = if (archivedRepresentation != null)
+            archivedRepresentation.archivedTreeFileArtifact
+        else
+            null
+
+    open val childValues: com.google.common.collect.ImmutableSortedMap<TreeFileArtifact?, FileArtifactValue?>
+        get() = childData
+
+    /** Returns an entry for child with given exec path or null if no such child is present.  */
+    fun findChildEntryByExecPath(
+        execPath: PathFragment?
+    ): MutableMap.MutableEntry<TreeFileArtifact?, FileArtifactValue?>? {
+        val searchToken: ActionInput = ActionInputHelper.fromPath(execPath)
+        // Not really a copy -- original map is already an ImmutableSortedMap using the same comparator.
+        val casted: com.google.common.collect.ImmutableSortedMap<ActionInput?, FileArtifactValue?> =
+            com.google.common.collect.ImmutableSortedMap.copyOf(childData, EXEC_PATH_COMPARATOR)
+        com.google.common.base.Preconditions.checkState(
+            casted === childData as Any?,
+            "Casting children resulted with a copy"
+        )
+        val entry: MutableMap.MutableEntry<out ActionInput?, FileArtifactValue?>? = casted.floorEntry(searchToken)
+        return if (entry != null && entry.key.getExecPath().equals(execPath))
+            entry as MutableMap.MutableEntry<TreeFileArtifact?, FileArtifactValue?>
+        else
+            null
+    }
+
+    override fun hashCode(): Int {
+        return HashCodes.hashObjects(digest.contentHashCode(), archivedRepresentation, resolvedPath)
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) {
+            return true
+        }
+
+        if (other !is TreeArtifactValue) {
+            return false
+        }
+
+        return digest.contentEquals(other.digest) && childData == other.childData
+                && archivedRepresentation == other.archivedRepresentation
+                && resolvedPath == other.resolvedPath
+    }
+
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("digest", digest)
+            .add("childData", childData)
+            .add("archivedRepresentation", archivedRepresentation)
+            .add("resolvedPath", resolvedPath)
+            .toString()
+    }
+
+    init {
+        this.childData = childData
+        this.totalChildBytes = totalChildSize
+        this.archivedRepresentation = archivedRepresentation
+        this.resolvedPath = resolvedPath
+        this.isEntirelyRemote = entirelyRemote
+    }
+
+    /** Visitor for use in [.visitTree].  */
+    fun interface TreeArtifactVisitor {
+        /**
+         * Called for every directory entry encountered during tree traversal, in a nondeterministic
+         * order.
+         * 
+         * 
+         * Regular files and directories are reported as [Dirent.Type.FILE] or [ ][Dirent.Type.DIRECTORY], respectively. Directories are traversed recursively.
+         * 
+         * 
+         * Symlinks that resolve to an existing file or directory are followed and reported as the
+         * regular files or directories they point to, recursively for directories. Symlinks that fail
+         * to resolve to an existing path cause an [IOException] to be immediately thrown without
+         * invoking the visitor. Thus, the visitor is never called with a [Dirent.Type.SYMLINK]
+         * type.
+         * 
+         * 
+         * Special files or files whose type could not be determined, regardless of whether they are
+         * encountered directly or indirectly through symlinks, cause an [IOException] to be
+         * immediately thrown without invoking the visitor. Thus, the visitor is never called with a
+         * [Dirent.Type.UNKNOWN] type.
+         * 
+         * 
+         * The `parentRelativePath` argument is always set to the apparent path relative to the
+         * tree directory root, without resolving any intervening symlinks. The `traversedSymlink`
+         * argument is true if at least one symlink was traversed on the way to the entry being
+         * reported.
+         * 
+         * 
+         * If the visitor throws [IOException], traversal is immediately halted and the
+         * exception is propagated.
+         * 
+         * 
+         * This method can be called from multiple threads in parallel during a single call of [ ][TreeArtifactVisitor.visitTree].
+         */
+        @ThreadSafe
+        @Throws(IOException::class)
+        fun visit(
+            parentRelativePath: PathFragment?,
+            type: com.google.devtools.build.lib.vfs.Dirent.Type?,
+            traversedSymlink: Boolean
+        )
+    }
+
+    /** An [AbstractQueueVisitor] that visits every file in the tree artifact.  */
+    internal class Visitor(parentDir: com.google.devtools.build.lib.vfs.Path?, visitor: TreeArtifactVisitor?) :
+        AbstractQueueVisitor(
+            VISITOR_POOL,
+            ExecutorOwnership.SHARED,
+            ExceptionHandlingMode.FAIL_FAST,
+            ErrorClassifier.DEFAULT
+        ) {
+        private val parentDir: com.google.devtools.build.lib.vfs.Path
+        private val visitor: TreeArtifactVisitor
+
+        init {
+            this.parentDir =
+                com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.lib.vfs.Path>(parentDir)
+            this.visitor = com.google.common.base.Preconditions.checkNotNull<TreeArtifactVisitor>(visitor)
+        }
+
+        @Throws(IOException::class, java.lang.InterruptedException::class)
+        fun run() {
+            execute(
+                {
+                    visit(
+                        PathFragment.EMPTY_FRAGMENT,
+                        com.google.devtools.build.lib.vfs.Dirent.Type.DIRECTORY,  /* traversedSymlink= */
+                        false
+                    )
+                })
+            try {
+                awaitQuiescence(true)
+            } catch (e: UncheckedIOException) {
+                throw e.cause
+            }
+        }
+
+        private fun visit(
+            parentRelativePath: PathFragment,
+            type: com.google.devtools.build.lib.vfs.Dirent.Type?,
+            traversedSymlink: Boolean
+        ) {
+            var type: com.google.devtools.build.lib.vfs.Dirent.Type? = type
+            var traversedSymlink = traversedSymlink
+            try {
+                val path: com.google.devtools.build.lib.vfs.Path = parentDir.getRelative(parentRelativePath)
+
+                if (type == com.google.devtools.build.lib.vfs.Dirent.Type.SYMLINK) {
+                    traversedSymlink = true
+
+                    val statFollow: FileStatus = path.statIfFound(Symlinks.FOLLOW)
+
+                    if (statFollow == null) {
+                        throw IOException(
+                            String.format("child %s is a dangling symbolic link", parentRelativePath)
+                        )
+                    }
+
+                    if (statFollow.isFile() && !statFollow.isSpecialFile()) {
+                        type = com.google.devtools.build.lib.vfs.Dirent.Type.FILE
+                    } else if (statFollow.isDirectory()) {
+                        type = com.google.devtools.build.lib.vfs.Dirent.Type.DIRECTORY
+                    } else {
+                        type = com.google.devtools.build.lib.vfs.Dirent.Type.UNKNOWN
+                    }
+                }
+
+                if (type == com.google.devtools.build.lib.vfs.Dirent.Type.UNKNOWN) {
+                    throw IOException(
+                        String.format("child %s has an unsupported type", parentRelativePath)
+                    )
+                }
+
+                visitor.visit(parentRelativePath, type, traversedSymlink)
+
+                if (type == com.google.devtools.build.lib.vfs.Dirent.Type.DIRECTORY) {
+                    for (dirent in path.readdir(Symlinks.NOFOLLOW)) {
+                        val childPath: PathFragment = parentRelativePath.getChild(dirent.getName())
+                        val childType: com.google.devtools.build.lib.vfs.Dirent.Type? = dirent.getType()
+                        val finalTraversedSymlink = traversedSymlink
+                        execute({ visit(childPath, childType, finalTraversedSymlink) })
+                    }
+                }
+            } catch (e: IOException) {
+                // We can't throw checked exceptions here since AQV expects Runnables
+                throw UncheckedIOException(e)
+            }
+        }
+    }
+
+    /** Builder for a [TreeArtifactValue].  */
+    class Builder internal constructor(parent: SpecialArtifact) {
+        private val childData: com.google.common.collect.ImmutableSortedMap.Builder<TreeFileArtifact?, FileArtifactValue?> =
+            childDataBuilder()
+        private var archivedRepresentation: ArchivedRepresentation? = null
+        private var resolvedPath: PathFragment? = null
+        private val parent: SpecialArtifact
+
+        init {
+            checkArgument(parent.isTreeArtifact(), "%s is not a tree artifact", parent)
+            this.parent = parent
+        }
+
+        /**
+         * Adds a child to this builder.
+         * 
+         * 
+         * The child's [parent][TreeFileArtifact.getParent] *must* match the parent
+         * with which this builder was initialized.
+         * 
+         * 
+         * Children may be added in any order. The children are sorted prior to constructing the
+         * final [TreeArtifactValue].
+         * 
+         * @return `this` for convenience
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun putChild(child: TreeFileArtifact, metadata: FileArtifactValue?): Builder {
+            checkArgument(
+                child.isChildOf(parent),
+                "While building TreeArtifactValue for %s, got %s with parent %s",
+                parent,
+                child,
+                child.getParent()
+            )
+            childData.put(child, metadata)
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setArchivedRepresentation(
+            archivedTreeArtifact: ArchivedTreeArtifact?, metadata: FileArtifactValue?
+        ): Builder {
+            return setArchivedRepresentation(
+                ArchivedRepresentation.Companion.create(archivedTreeArtifact, metadata)
+            )
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setArchivedRepresentation(archivedRepresentation: ArchivedRepresentation?): Builder {
+            com.google.common.base.Preconditions.checkNotNull<ArchivedRepresentation?>(archivedRepresentation)
+            com.google.common.base.Preconditions.checkState(
+                this.archivedRepresentation == null,
+                "Tried to add 2 archived representations for: %s",
+                parent
+            )
+            checkArgument(
+                parent.equals(archivedRepresentation!!.archivedTreeFileArtifact.getParent()),
+                "Cannot add archived representation: %s for a mismatching tree artifact: %s",
+                archivedRepresentation,
+                parent
+            )
+            this.archivedRepresentation = archivedRepresentation
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setResolvedPath(resolvedPath: PathFragment): Builder {
+            com.google.common.base.Preconditions.checkArgument(resolvedPath.isAbsolute(), resolvedPath)
+            com.google.common.base.Preconditions.checkState(
+                this.resolvedPath == null, "Tried to set resolved path multiple times for: %s", parent
+            )
+            this.resolvedPath = resolvedPath
+            return this
+        }
+
+        /** Builds the final [TreeArtifactValue].  */
+        fun build(): TreeArtifactValue {
+            val finalChildData: com.google.common.collect.ImmutableSortedMap<TreeFileArtifact?, FileArtifactValue?> =
+                childData.buildOrThrow()
+            if (finalChildData.isEmpty() && archivedRepresentation == null && resolvedPath == null) {
+                return EMPTY
+            }
+
+            val fingerprint: Fingerprint = Fingerprint()
+            var entirelyRemote =
+                archivedRepresentation == null || archivedRepresentation!!.archivedFileValue.isRemote()
+
+            var totalChildSize: Long = 0
+            for (childData in finalChildData.entries) {
+                // Digest will be deterministic because children are sorted.
+                fingerprint.addPath(childData.key.getParentRelativePath())
+                val metadata: FileArtifactValue = childData.value
+                metadata.addTo(fingerprint)
+
+                // Tolerate a mix of local and remote children (b/152496153#comment80).
+                entirelyRemote = entirelyRemote and metadata.isRemote()
+
+                if (metadata.getType() === FileStateType.REGULAR_FILE) {
+                    totalChildSize += metadata.getSize()
+                }
+            }
+
+            if (archivedRepresentation != null) {
+                archivedRepresentation!!.archivedFileValue.addTo(fingerprint)
+            }
+
+            return TreeArtifactValue(
+                fingerprint.digestAndReset(),
+                finalChildData,
+                totalChildSize,
+                archivedRepresentation,
+                resolvedPath,
+                entirelyRemote
+            )
+        }
+    }
+
+    companion object {
+        private val VISITOR_POOL: ForkJoinPool? = NamedForkJoinPool.newNamedPool(
+            "tree-artifact-visitor", java.lang.Runtime.getRuntime().availableProcessors()
+        )
+
+        /**
+         * Comparator based on exec path which works on [ActionInput] as opposed to [ ]. This way, we can use an [ActionInput] to
+         * search [.childData].
+         */
+        @SerializationConstant
+        @VisibleForSerialization
+        val EXEC_PATH_COMPARATOR: java.util.Comparator<ActionInput?> =
+            java.util.Comparator.comparing<ActionInput?, Any?>(ActionInput::getExecPath)
+
+        val EMPTY_MAP: com.google.common.collect.ImmutableSortedMap<TreeFileArtifact?, FileArtifactValue?> =
+            childDataBuilder().buildOrThrow()
+
+        private fun childDataBuilder(): com.google.common.collect.ImmutableSortedMap.Builder<TreeFileArtifact?, FileArtifactValue?> {
+            return com.google.common.collect.ImmutableSortedMap.Builder<TreeFileArtifact?, FileArtifactValue?>(
+                EXEC_PATH_COMPARATOR
+            )
+        }
+
+        /** Returns an empty [TreeArtifactValue].  */
+        @kotlin.jvm.JvmStatic
+        fun empty(): TreeArtifactValue {
+            return EMPTY
+        }
+
+        /**
+         * Returns a new [Builder] for the given parent tree artifact.
+         * 
+         * 
+         * The returned builder only supports adding children under this parent. To build multiple tree
+         * artifacts at once, use [MultiBuilder].
+         */
+        fun newBuilder(parent: SpecialArtifact): Builder {
+            return com.google.devtools.build.lib.skyframe.TreeArtifactValue.Builder(parent)
+        }
+
+        /** Returns a new [MultiBuilder].  */
+        @kotlin.jvm.JvmStatic
+        fun newMultiBuilder(): MultiBuilder {
+            return MultiBuilder()
+        }
+
+        // Note that this is not marked as a @SerializationConstant because we need the deserialized value
+        // to implement DeserializedSkyValue. As a result, the deserialized value must be of a different
+        // class. We make this work by using a custom codec (see TreeArtifactValueCodec).
+        private val EMPTY = TreeArtifactValue(
+            MetadataDigestUtils.fromMetadata(com.google.common.collect.ImmutableMap.of<K?, V?>()),
+            EMPTY_MAP,
+            0L,  /* archivedRepresentation= */
+            null,  /* resolvedPath= */
+            null,  /* entirelyRemote= */
+            false
+        )
+
+        /**
+         * A TreeArtifactValue that represents a missing TreeArtifact. This is occasionally useful because
+         * Java's concurrent collections disallow null members.
+         */
+        val MISSING_TREE_ARTIFACT: TreeArtifactValue = createMarker("MISSING_TREE_ARTIFACT")
+
+        private fun createMarker(toStringRepresentation: String): TreeArtifactValue {
+            return object : TreeArtifactValue(
+                null,
+                EMPTY_MAP,
+                0L,  /* archivedRepresentation= */
+                null,  /* resolvedPath= */
+                null,  /* entirelyRemote= */
+                false
+            ) {
+                override fun getChildren(): com.google.common.collect.ImmutableSortedSet<TreeFileArtifact?>? {
+                    throw java.lang.UnsupportedOperationException(toString())
+                }
+
+                override fun getChildValues(): com.google.common.collect.ImmutableSortedMap<TreeFileArtifact?, FileArtifactValue?>? {
+                    throw java.lang.UnsupportedOperationException(toString())
+                }
+
+                override fun getMetadata(): FileArtifactValue? {
+                    throw java.lang.UnsupportedOperationException(toString())
+                }
+
+                override fun getChildPaths(): com.google.common.collect.ImmutableSet<PathFragment?>? {
+                    throw java.lang.UnsupportedOperationException(toString())
+                }
+
+                override fun getDigest(): ByteArray? {
+                    throw java.lang.UnsupportedOperationException(toString())
+                }
+
+                override fun hashCode(): Int {
+                    return java.lang.System.identityHashCode(this)
+                }
+
+                override fun equals(other: Any?): Boolean {
+                    return this === other
+                }
+
+                override fun toString(): String {
+                    return toStringRepresentation
+                }
+            }
+        }
+
+        /**
+         * Recursively visits all descendants under a directory.
+         * 
+         * 
+         * [TreeArtifactVisitor.visit] is invoked on `visitor` for each directory, file,
+         * and symlink under the given `parentDir`, including `parentDir` itself.
+         * 
+         * 
+         * This method is intended to provide uniform semantics for constructing a tree artifact,
+         * including special logic that validates directory entries. Invalid directory entries include a
+         * symlink that traverses outside of the tree artifact and any entry of [ ][Dirent.Type.UNKNOWN], such as a named pipe.
+         * 
+         * 
+         * The visitor will be called on multiple threads in parallel. Accordingly, it must be
+         * thread-safe.
+         * 
+         * @throws IOException if there is any problem reading or validating outputs under the given tree
+         * artifact directory, or if [TreeArtifactVisitor.visit] throws [IOException]
+         */
+        @Throws(IOException::class, java.lang.InterruptedException::class)
+        fun visitTree(parentDir: com.google.devtools.build.lib.vfs.Path?, treeArtifactVisitor: TreeArtifactVisitor?) {
+            val visitor: Visitor =
+                com.google.devtools.build.lib.skyframe.TreeArtifactValue.Visitor(parentDir, treeArtifactVisitor)
+            visitor.run()
+        }
+    }
 }

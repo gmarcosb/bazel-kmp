@@ -11,53 +11,40 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import static com.google.devtools.build.lib.skyframe.serialization.analysis.AlwaysMatch.ALWAYS_MATCH_RESULT;
-import static com.google.devtools.build.lib.skyframe.serialization.analysis.NoMatch.NO_MATCH_RESULT;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.FileSystemDependencies.FileOpDependency
 
-import com.google.devtools.build.lib.concurrent.SettableFutureKeyedValue;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileSystemDependencies.FileOpDependency;
-import java.util.function.BiConsumer;
+/** Container for [DeltaDepotValidator.matches] result types.  */
+internal class FileOpMatchResultTypes private constructor() {
+    /** [DeltaDepotValidator.matches] result type.  */
+    internal interface FileOpMatchResultOrFuture
 
-/** Container for {@link DeltaDepotValidator#matches(FileOpDependency, int)} result types. */
-final class FileOpMatchResultTypes {
+    /** An immediate result.  */
+    internal interface FileOpMatchResult : FileOpMatchResultOrFuture, MatchIndicator {
+        fun version(): Int
 
-  /** {@link DeltaDepotValidator#matches(FileOpDependency, int)} result type. */
-  sealed interface FileOpMatchResultOrFuture permits FileOpMatchResult, FutureFileOpMatchResult {}
-
-  /** An immediate result. */
-  sealed interface FileOpMatchResult extends FileOpMatchResultOrFuture, MatchIndicator
-      permits FileOpMatch, NoMatch, AlwaysMatch {
-    static FileOpMatchResult create(int version) {
-      return switch (version) {
-        case VersionedChanges.NO_MATCH -> NO_MATCH_RESULT;
-        case VersionedChanges.ALWAYS_MATCH -> ALWAYS_MATCH_RESULT;
-        default -> new FileOpMatch(version);
-      };
+        companion object {
+            fun create(version: Int): FileOpMatchResult {
+                return when (version) {
+                    VersionedChanges.Companion.NO_MATCH -> NoMatch.NO_MATCH_RESULT
+                    VersionedChanges.Companion.ALWAYS_MATCH -> AlwaysMatch.ALWAYS_MATCH_RESULT
+                    else -> FileOpMatch(version)
+                }
+            }
+        }
     }
 
-    int version();
-  }
-
-  /** A result signaling a match. */
-  record FileOpMatch(int version) implements FileOpMatchResult {
-    @Override
-    public boolean isMatch() {
-      return true;
+    /** A result signaling a match.  */
+    @kotlin.jvm.JvmRecord
+    internal data class FileOpMatch(val version: Int) : FileOpMatchResult {
+        val isMatch: Boolean
+            get() = true
     }
-  }
 
-  /** A future result. */
-  static final class FutureFileOpMatchResult
-      extends SettableFutureKeyedValue<
-          FileOpMatchResultTypes.FutureFileOpMatchResult, FileOpDependency, FileOpMatchResult>
-      implements FileOpMatchResultOrFuture {
-    FutureFileOpMatchResult(
-        FileOpDependency key, BiConsumer<FileOpDependency, FileOpMatchResult> consumer) {
-      super(key, consumer);
-    }
-  }
-
-  private FileOpMatchResultTypes() {}
+    /** A future result.  */
+    internal class FutureFileOpMatchResult
+        (key: FileOpDependency?, consumer: java.util.function.BiConsumer<FileOpDependency?, FileOpMatchResult?>?) :
+        SettableFutureKeyedValue<FutureFileOpMatchResult?, FileOpDependency?, FileOpMatchResult?>(key, consumer),
+        FileOpMatchResultOrFuture
 }

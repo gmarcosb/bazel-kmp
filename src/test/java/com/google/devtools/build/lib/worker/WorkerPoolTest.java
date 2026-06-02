@@ -102,8 +102,8 @@ public class WorkerPoolTest {
     WorkerKey workerKey = createWorkerKey(fileSystem, "mnem", false);
     Worker worker1 = workerPool.borrowWorker(workerKey);
     Worker worker2 = workerPool.borrowWorker(workerKey);
-    assertThat(worker1.getWorkerId()).isEqualTo(1);
-    assertThat(worker2.getWorkerId()).isEqualTo(2);
+    assertThat(worker1.workerId).isEqualTo(1);
+    assertThat(worker2.workerId).isEqualTo(2);
     verify(factoryMock, times(2)).create(workerKey);
   }
 
@@ -122,11 +122,11 @@ public class WorkerPoolTest {
     WorkerKey workerKey1 = createWorkerKey(fileSystem, "mnem", false);
     Worker worker1 = workerPool.borrowWorker(workerKey1);
     Worker worker1a = workerPool.borrowWorker(workerKey1);
-    assertThat(worker1.getWorkerId()).isEqualTo(1);
-    assertThat(worker1a.getWorkerId()).isEqualTo(2);
+    assertThat(worker1.workerId).isEqualTo(1);
+    assertThat(worker1a.workerId).isEqualTo(2);
     WorkerKey workerKey2 = createWorkerKey(fileSystem, "other", false);
     Worker worker2 = workerPool.borrowWorker(workerKey2);
-    assertThat(worker2.getWorkerId()).isEqualTo(3);
+    assertThat(worker2.workerId).isEqualTo(3);
     verify(factoryMock, times(2)).create(workerKey1);
     verify(factoryMock).create(workerKey2);
   }
@@ -136,11 +136,11 @@ public class WorkerPoolTest {
     WorkerKey workerKey1 = createWorkerKey(fileSystem, "mnem", false);
     Worker worker1 = workerPool.borrowWorker(workerKey1);
     Worker worker1a = workerPool.borrowWorker(workerKey1);
-    assertThat(worker1.getWorkerId()).isEqualTo(1);
-    assertThat(worker1a.getWorkerId()).isEqualTo(2);
+    assertThat(worker1.workerId).isEqualTo(1);
+    assertThat(worker1a.workerId).isEqualTo(2);
     WorkerKey workerKey2 = createWorkerKey(fileSystem, "mnem", false, "arg1");
     Worker worker2 = workerPool.borrowWorker(workerKey2);
-    assertThat(worker2.getWorkerId()).isEqualTo(3);
+    assertThat(worker2.workerId).isEqualTo(3);
     verify(factoryMock, times(2)).create(workerKey1);
     verify(factoryMock).create(workerKey2);
   }
@@ -149,7 +149,7 @@ public class WorkerPoolTest {
   public void testBorrow_separateMultiplexWorkers() throws Exception {
     WorkerKey workerKey = createWorkerKey(fileSystem, "mnem", false);
     Worker worker1 = workerPool.borrowWorker(workerKey);
-    assertThat(worker1.getWorkerId()).isEqualTo(1);
+    assertThat(worker1.workerId).isEqualTo(1);
     workerPool.returnWorker(workerKey, worker1);
 
     WorkerKey multiplexKey = createWorkerKey(fileSystem, "mnem", true);
@@ -157,9 +157,9 @@ public class WorkerPoolTest {
     Worker multiplexWorker2 = workerPool.borrowWorker(multiplexKey);
     Worker worker1a = workerPool.borrowWorker(workerKey);
 
-    assertThat(multiplexWorker1.getWorkerId()).isEqualTo(2);
-    assertThat(multiplexWorker2.getWorkerId()).isEqualTo(3);
-    assertThat(worker1a.getWorkerId()).isEqualTo(1);
+    assertThat(multiplexWorker1.workerId).isEqualTo(2);
+    assertThat(multiplexWorker2.workerId).isEqualTo(3);
+    assertThat(worker1a.workerId).isEqualTo(1);
 
     verify(factoryMock).create(workerKey);
     verify(factoryMock, times(2)).create(multiplexKey);
@@ -232,7 +232,7 @@ public class WorkerPoolTest {
             () -> {
               Worker worker = workerPool.borrowWorker(workerKey);
               // Create a new worker instead.
-              assertThat(worker.getWorkerId()).isEqualTo(3);
+              assertThat(worker.workerId).isEqualTo(3);
             });
     blockedBorrowThread.start();
 
@@ -277,8 +277,8 @@ public class WorkerPoolTest {
     workerPool.returnWorker(workerKey, worker1);
     workerPool.returnWorker(workerKey, worker2);
     ImmutableSet<Integer> evicted =
-        workerPool.evictWorkers(ImmutableSet.of(worker1.getWorkerId(), worker2.getWorkerId()));
-    assertThat(evicted).containsExactly(worker1.getWorkerId(), worker2.getWorkerId());
+        workerPool.evictWorkers(ImmutableSet.of(worker1.workerId, worker2.workerId));
+    assertThat(evicted).containsExactly(worker1.workerId, worker2.workerId);
     assertThat(workerPool.getNumActive(workerKey)).isEqualTo(0);
   }
 
@@ -289,9 +289,9 @@ public class WorkerPoolTest {
     Worker worker2 = workerPool.borrowWorker(workerKey);
     workerPool.returnWorker(workerKey, worker1);
     ImmutableSet<Integer> evicted =
-        workerPool.evictWorkers(ImmutableSet.of(worker1.getWorkerId(), worker2.getWorkerId()));
+        workerPool.evictWorkers(ImmutableSet.of(worker1.workerId, worker2.workerId));
     // Worker2 does not get evicted because it is still active.
-    assertThat(evicted).containsExactly(worker1.getWorkerId());
+    assertThat(evicted).containsExactly(worker1.workerId);
     assertThat(workerPool.getNumActive(workerKey)).isEqualTo(1);
   }
 
@@ -301,12 +301,12 @@ public class WorkerPoolTest {
     Worker worker1 = workerPool.borrowWorker(workerKey);
     Worker worker2 = workerPool.borrowWorker(workerKey);
 
-    assertThat(workerPool.getIdleWorkers()).isEmpty();
+    assertThat(workerPool.idleWorkers).isEmpty();
     workerPool.returnWorker(workerKey, worker1);
     workerPool.returnWorker(workerKey, worker2);
 
-    assertThat(workerPool.getIdleWorkers())
-        .containsExactly(worker1.getWorkerId(), worker2.getWorkerId());
+    assertThat(workerPool.idleWorkers)
+        .containsExactly(worker1.workerId, worker2.workerId);
     assertThat(workerPool.getNumActive(workerKey)).isEqualTo(0);
   }
 

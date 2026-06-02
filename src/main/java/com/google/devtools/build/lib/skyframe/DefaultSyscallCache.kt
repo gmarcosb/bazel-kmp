@@ -11,336 +11,368 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.base.MoreObjects.firstNonNull;
-
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.LoadingCache;
-import com.google.common.base.Ascii;
-import com.google.devtools.build.lib.unsafe.StringUnsafe;
-import com.google.devtools.build.lib.util.LatestObjectMetricExporter;
-import com.google.devtools.build.lib.util.Pair;
-import com.google.devtools.build.lib.vfs.Dirent;
-import com.google.devtools.build.lib.vfs.FileStatus;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.Symlinks;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.io.IOException;
-import java.util.Collection;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+import com.github.benmanes.caffeine.cache.Caffeine
+import com.google.devtools.build.lib.skyframe.CompactSortedDirents
+import com.google.devtools.build.lib.skyframe.DefaultSyscallCache
+import com.google.devtools.build.lib.skyframe.Dirents
+import com.google.devtools.build.lib.unsafe.StringUnsafe
+import com.google.devtools.build.lib.util.LatestObjectMetricExporter
+import com.google.devtools.build.lib.vfs.FileStatus
+import com.google.devtools.build.lib.vfs.Symlinks
+import com.google.devtools.build.lib.vfs.SyscallCache
+import com.google.devtools.build.lib.vfs.SyscallCache.DirentTypeWithSkip
+import java.io.IOException
 
 /**
- * A basic implementation of {@link SyscallCache} that caches stat and readdir operations, used if
- * no custom cache is set in {@link
- * com.google.devtools.build.lib.runtime.WorkspaceBuilder#setSyscallCache}.
- *
- * <p>Allows non-Skyframe operations (like non-Skyframe globbing) to share a filesystem cache with
+ * A basic implementation of [SyscallCache] that caches stat and readdir operations, used if
+ * no custom cache is set in [ ][com.google.devtools.build.lib.runtime.WorkspaceBuilder.setSyscallCache].
+ * 
+ * 
+ * Allows non-Skyframe operations (like non-Skyframe globbing) to share a filesystem cache with
  * Skyframe operations, and may be able to answer questions (like the type of a file) based on
  * existing data (like the directory listing of a parent) without filesystem access.
  */
-public final class DefaultSyscallCache implements SyscallCache {
+class DefaultSyscallCache private constructor(
+    statCacheSupplier: java.util.function.Supplier<com.github.benmanes.caffeine.cache.LoadingCache<com.google.devtools.build.lib.util.Pair<com.google.devtools.build.lib.vfs.Path?, Symlinks?>?, Any?>>,
+    readdirCacheSupplier: java.util.function.Supplier<com.github.benmanes.caffeine.cache.LoadingCache<com.google.devtools.build.lib.vfs.Path?, Any?>>,
+    statCacheMetricExporter: LatestObjectMetricExporter<com.github.benmanes.caffeine.cache.Cache<*, *>?>?,
+    readdirCacheMetricExporter: LatestObjectMetricExporter<com.github.benmanes.caffeine.cache.Cache<*, *>?>?
+) : SyscallCache {
+    private val statCacheSupplier: java.util.function.Supplier<com.github.benmanes.caffeine.cache.LoadingCache<com.google.devtools.build.lib.util.Pair<com.google.devtools.build.lib.vfs.Path?, Symlinks?>?, Any?>>
+    private val readdirCacheSupplier: java.util.function.Supplier<com.github.benmanes.caffeine.cache.LoadingCache<com.google.devtools.build.lib.vfs.Path?, Any?>>
 
-  private final Supplier<LoadingCache<Pair<Path, Symlinks>, Object>> statCacheSupplier;
-  private final Supplier<LoadingCache<Path, Object>> readdirCacheSupplier;
+    private val statCacheMetricExporter: LatestObjectMetricExporter<com.github.benmanes.caffeine.cache.Cache<*, *>?>?
 
-  @Nullable private final LatestObjectMetricExporter<Cache<?, ?>> statCacheMetricExporter;
+    private val readdirCacheMetricExporter: LatestObjectMetricExporter<com.github.benmanes.caffeine.cache.Cache<*, *>?>?
 
-  @Nullable private final LatestObjectMetricExporter<Cache<?, ?>> readdirCacheMetricExporter;
+    private var statCache: com.github.benmanes.caffeine.cache.LoadingCache<com.google.devtools.build.lib.util.Pair<com.google.devtools.build.lib.vfs.Path?, Symlinks?>?, Any?>? =
+        null
 
-  private LoadingCache<Pair<Path, Symlinks>, Object> statCache;
+    /* Caches the result of readdir(<path>, Symlinks.NOFOLLOW) calls. */
+    private var readdirCache: com.github.benmanes.caffeine.cache.LoadingCache<com.google.devtools.build.lib.vfs.Path?, Any?>? =
+        null
 
-  /* Caches the result of readdir(<path>, Symlinks.NOFOLLOW) calls. */
-  private LoadingCache<Path, Object> readdirCache;
-
-  private static final FileStatus NO_STATUS = new FakeFileStatus();
-
-  private DefaultSyscallCache(
-      Supplier<LoadingCache<Pair<Path, Symlinks>, Object>> statCacheSupplier,
-      Supplier<LoadingCache<Path, Object>> readdirCacheSupplier,
-      @Nullable LatestObjectMetricExporter<Cache<?, ?>> statCacheMetricExporter,
-      @Nullable LatestObjectMetricExporter<Cache<?, ?>> readdirCacheMetricExporter) {
-    this.statCacheSupplier = statCacheSupplier;
-    this.readdirCacheSupplier = readdirCacheSupplier;
-    this.statCacheMetricExporter = statCacheMetricExporter;
-    this.readdirCacheMetricExporter = readdirCacheMetricExporter;
-    clear();
-  }
-
-  public static Builder newBuilder() {
-    return new Builder();
-  }
-
-  /** Builder for a per-build filesystem cache. */
-  public static final class Builder {
-    private static final int UNSET = -1;
-    private int maxStats = UNSET;
-    private int maxReaddirs = UNSET;
-    private int initialCapacity = UNSET;
-    private LatestObjectMetricExporter<Cache<?, ?>> statCacheMetricExporter = null;
-    private LatestObjectMetricExporter<Cache<?, ?>> readdirCacheMetricExporter = null;
-
-    private Builder() {}
-
-    /** Sets the upper bound of the 'stat' cache. This cache is unbounded by default. */
-    @CanIgnoreReturnValue
-    public Builder setMaxStats(int maxStats) {
-      this.maxStats = maxStats;
-      return this;
+    init {
+        this.statCacheSupplier = statCacheSupplier
+        this.readdirCacheSupplier = readdirCacheSupplier
+        this.statCacheMetricExporter = statCacheMetricExporter
+        this.readdirCacheMetricExporter = readdirCacheMetricExporter
+        clear()
     }
 
-    /** Sets the upper bound of the 'readdir' cache. This cache is unbounded by default. */
-    @CanIgnoreReturnValue
-    public Builder setMaxReaddirs(int maxReaddirs) {
-      this.maxReaddirs = maxReaddirs;
-      return this;
-    }
+    /** Builder for a per-build filesystem cache.  */
+    class Builder private constructor() {
+        private var maxStats: Int = com.google.devtools.build.lib.skyframe.DefaultSyscallCache.Builder.Companion.UNSET
+        private var maxReaddirs: Int =
+            com.google.devtools.build.lib.skyframe.DefaultSyscallCache.Builder.Companion.UNSET
+        private var initialCapacity: Int =
+            com.google.devtools.build.lib.skyframe.DefaultSyscallCache.Builder.Companion.UNSET
+        private var statCacheMetricExporter: LatestObjectMetricExporter<com.github.benmanes.caffeine.cache.Cache<*, *>?>? =
+            null
+        private var readdirCacheMetricExporter: LatestObjectMetricExporter<com.github.benmanes.caffeine.cache.Cache<*, *>?>? =
+            null
 
-    /** Sets the concurrency level of the caches. */
-    @CanIgnoreReturnValue
-    public Builder setInitialCapacity(int initialCapacity) {
-      this.initialCapacity = initialCapacity;
-      return this;
-    }
-
-    /**
-     * Sets the metric exporter for the 'stat' cache.
-     *
-     * <p>No metrics are exported by default. If a non-null value is set, the 'stat' cache will
-     * record access statistics with some overhead.
-     *
-     * @deprecated If you need this, please file an issue on the Bazel GitHub tracker. It ultimately
-     *     did not work as intended internally at Google, but it can be retained if others are using
-     *     it.
-     */
-    @CanIgnoreReturnValue
-    @Deprecated
-    public Builder setStatCacheMetricExporter(
-        LatestObjectMetricExporter<Cache<?, ?>> statCacheMetricExporter) {
-      this.statCacheMetricExporter = statCacheMetricExporter;
-      return this;
-    }
-
-    /**
-     * Sets the metric exporter for the 'readdir' cache.
-     *
-     * <p>No metrics are exported by default. If a non-null value is set, the 'readdir' cache will
-     * record access statistics with some overhead.
-     *
-     * @deprecated If you need this, please file an issue on the Bazel GitHub tracker. It ultimately
-     *     did not work as intended internally at Google, but it can be retained if others are using
-     *     it.
-     */
-    @CanIgnoreReturnValue
-    @Deprecated
-    public Builder setReaddirCacheMetricExporter(
-        LatestObjectMetricExporter<Cache<?, ?>> readdirCacheMetricExporter) {
-      this.readdirCacheMetricExporter = readdirCacheMetricExporter;
-      return this;
-    }
-
-    public DefaultSyscallCache build() {
-      Caffeine<Object, Object> statCacheBuilder = Caffeine.newBuilder();
-      if (maxStats != UNSET) {
-        statCacheBuilder.maximumSize(maxStats);
-      }
-      if (statCacheMetricExporter != null) {
-        statCacheBuilder.recordStats();
-      }
-      Caffeine<Object, Object> readdirCacheBuilder = Caffeine.newBuilder();
-      if (maxReaddirs != UNSET) {
-        readdirCacheBuilder.maximumSize(maxReaddirs);
-      }
-      if (readdirCacheMetricExporter != null) {
-        readdirCacheBuilder.recordStats();
-      }
-      if (initialCapacity != UNSET) {
-        statCacheBuilder.initialCapacity(initialCapacity);
-        readdirCacheBuilder.initialCapacity(initialCapacity);
-      }
-      return new DefaultSyscallCache(
-          () -> statCacheBuilder.build(DefaultSyscallCache::statImpl),
-          () -> readdirCacheBuilder.build(DefaultSyscallCache::readdirImpl),
-          statCacheMetricExporter,
-          readdirCacheMetricExporter);
-    }
-  }
-
-  @Override
-  @SuppressWarnings("unchecked")
-  public Collection<Dirent> readdir(Path path) throws IOException {
-    Object result = readdirCache.get(path);
-    if (result instanceof IOException ioException) {
-      throw ioException;
-    }
-    return (Collection<Dirent>) result; // unchecked cast
-  }
-
-  @Nullable
-  @Override
-  public FileStatus statIfFound(Path path, Symlinks symlinks) throws IOException {
-    // Try to load a Symlinks.NOFOLLOW result first. Symlinks are rare and this enables sharing the
-    // cache for all non-symlink paths.
-    Object result = statCache.get(Pair.of(path, Symlinks.NOFOLLOW));
-    if (result instanceof IOException ioException) {
-      throw ioException;
-    }
-    FileStatus status = (FileStatus) result;
-    if (status != NO_STATUS && symlinks == Symlinks.FOLLOW && status.isSymbolicLink()) {
-      result = statCache.get(Pair.of(path, Symlinks.FOLLOW));
-      if (result instanceof IOException ioException) {
-        throw ioException;
-      }
-      status = (FileStatus) result;
-    }
-    return (status == NO_STATUS) ? null : status;
-  }
-
-  @Nullable
-  @Override
-  public DirentTypeWithSkip getType(Path path, Symlinks symlinks) throws IOException {
-    // Use a cached stat call if we have one. This is done first so that we don't need to iterate
-    // over a list of directory entries as we do for cached readdir() entries. We don't ever expect
-    // to get a cache hit if symlinks == Symlinks.NOFOLLOW and so we don't bother to check.
-    if (symlinks == Symlinks.FOLLOW) {
-      Pair<Path, Symlinks> key = Pair.of(path, symlinks);
-      Object result = statCache.getIfPresent(key);
-      if (result != null && !(result instanceof IOException)) {
-        if (result == NO_STATUS) {
-          return null;
+        /** Sets the upper bound of the 'stat' cache. This cache is unbounded by default.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setMaxStats(maxStats: Int): Builder {
+            this.maxStats = maxStats
+            return this
         }
-        return ofStat((FileStatus) result);
-      }
-    }
 
-    // If this is a root directory, we must stat, there is no parent.
-    Path parent = path.getParentDirectory();
-    if (parent == null) {
-      return ofStat(statIfFound(path, symlinks));
-    }
-
-    // Answer based on a cached readdir() call if possible. The cache might already be populated
-    // from Skyframe directory lising (DirectoryListingFunction) or by globbing via
-    // {@link UnixGlob}. We generally try to avoid following symlinks in readdir() calls as in a
-    // directory with many symlinks, these would be resolved basically using a stat anyway and they
-    // would be resolved sequentially which can be slow on high-latency file systems. If we request
-    // the type of a file with FOLLOW, and find a symlink in the directory, we fall back to doing a
-    // stat.
-    if (readdirCache.getIfPresent(parent) instanceof Dirents dirents) {
-      String baseName = path.getBaseName();
-      var dirent = dirents.maybeGetDirent(baseName);
-      if (dirent != null) {
-        if (dirent.getType() == Dirent.Type.SYMLINK && symlinks == Symlinks.FOLLOW) {
-          // See above: We don't want to follow symlinks with readdir(). Do a stat() instead.
-          return ofStat(statIfFound(path, Symlinks.FOLLOW));
+        /** Sets the upper bound of the 'readdir' cache. This cache is unbounded by default.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setMaxReaddirs(maxReaddirs: Int): Builder {
+            this.maxReaddirs = maxReaddirs
+            return this
         }
-        return DirentTypeWithSkip.of(dirent.getType());
-      }
-      if (!path.getFileSystem().mayBeCaseOrNormalizationInsensitive()) {
-        return null;
-      }
-      // The filesystem may be case-insensitive or normalization-insensitive, but it doesn't have
-      // to be and even if it is, we don't know which normalization algorithm it uses. We assume
-      // that every reasonable filesystem doesn't normalize pure ASCII path components in any
-      // way other than ASCII case insensitivity.
-      if (StringUnsafe.isAscii(baseName)) {
-        boolean mayHaveFoundMatch = false;
-        for (Dirent d : dirents) {
-          if (!StringUnsafe.isAscii(d.getName()) || Ascii.equalsIgnoreCase(baseName, d.getName())) {
-            mayHaveFoundMatch = true;
-            break;
-          }
+
+        /** Sets the concurrency level of the caches.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setInitialCapacity(initialCapacity: Int): Builder {
+            this.initialCapacity = initialCapacity
+            return this
         }
-        if (!mayHaveFoundMatch) {
-          return null;
+
+        /**
+         * Sets the metric exporter for the 'stat' cache.
+         * 
+         * 
+         * No metrics are exported by default. If a non-null value is set, the 'stat' cache will
+         * record access statistics with some overhead.
+         * 
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        @Deprecated(
+            """If you need this, please file an issue on the Bazel GitHub tracker. It ultimately
+          did not work as intended internally at Google, but it can be retained if others are using
+          it."""
+        )
+        fun setStatCacheMetricExporter(
+            statCacheMetricExporter: LatestObjectMetricExporter<com.github.benmanes.caffeine.cache.Cache<*, *>?>?
+        ): Builder {
+            this.statCacheMetricExporter = statCacheMetricExporter
+            return this
         }
-      }
-      // Fall back to stat() if we might have found a match.
+
+        /**
+         * Sets the metric exporter for the 'readdir' cache.
+         * 
+         * 
+         * No metrics are exported by default. If a non-null value is set, the 'readdir' cache will
+         * record access statistics with some overhead.
+         * 
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        @Deprecated(
+            """If you need this, please file an issue on the Bazel GitHub tracker. It ultimately
+          did not work as intended internally at Google, but it can be retained if others are using
+          it."""
+        )
+        fun setReaddirCacheMetricExporter(
+            readdirCacheMetricExporter: LatestObjectMetricExporter<com.github.benmanes.caffeine.cache.Cache<*, *>?>?
+        ): Builder {
+            this.readdirCacheMetricExporter = readdirCacheMetricExporter
+            return this
+        }
+
+        fun build(): DefaultSyscallCache {
+            val statCacheBuilder: Caffeine<Any?, Any?> = Caffeine.newBuilder()
+            if (maxStats != com.google.devtools.build.lib.skyframe.DefaultSyscallCache.Builder.Companion.UNSET) {
+                statCacheBuilder.maximumSize(maxStats.toLong())
+            }
+            if (statCacheMetricExporter != null) {
+                statCacheBuilder.recordStats()
+            }
+            val readdirCacheBuilder: Caffeine<Any?, Any?> = Caffeine.newBuilder()
+            if (maxReaddirs != com.google.devtools.build.lib.skyframe.DefaultSyscallCache.Builder.Companion.UNSET) {
+                readdirCacheBuilder.maximumSize(maxReaddirs.toLong())
+            }
+            if (readdirCacheMetricExporter != null) {
+                readdirCacheBuilder.recordStats()
+            }
+            if (initialCapacity != com.google.devtools.build.lib.skyframe.DefaultSyscallCache.Builder.Companion.UNSET) {
+                statCacheBuilder.initialCapacity(initialCapacity)
+                readdirCacheBuilder.initialCapacity(initialCapacity)
+            }
+            return DefaultSyscallCache(
+                java.util.function.Supplier {
+                    statCacheBuilder.build<com.google.devtools.build.lib.util.Pair<com.google.devtools.build.lib.vfs.Path?, Symlinks?>?, Any?>(
+                        com.github.benmanes.caffeine.cache.CacheLoader { p: com.google.devtools.build.lib.util.Pair<com.google.devtools.build.lib.vfs.Path?, Symlinks?>? ->
+                            statImpl(p)
+                        })
+                },
+                java.util.function.Supplier {
+                    readdirCacheBuilder.build<com.google.devtools.build.lib.vfs.Path?, Any?>(
+                        com.github.benmanes.caffeine.cache.CacheLoader { p: com.google.devtools.build.lib.vfs.Path? ->
+                            readdirImpl(p)
+                        })
+                },
+                statCacheMetricExporter,
+                readdirCacheMetricExporter
+            )
+        }
+
+        companion object {
+            private val UNSET = -1
+        }
     }
 
-    return ofStat(statIfFound(path, symlinks));
-  }
-
-  @Nullable
-  private static DirentTypeWithSkip ofStat(@Nullable FileStatus status) {
-    return DirentTypeWithSkip.of(SyscallCache.statusToDirentType(status));
-  }
-
-  @Override
-  public void clear() {
-    // Drop not just the memory of the FileStatus objects but the maps themselves.
-    statCache = statCacheSupplier.get();
-    readdirCache = readdirCacheSupplier.get();
-    if (statCacheMetricExporter != null) {
-      statCacheMetricExporter.setLatestInstance(statCache);
-    }
-    if (readdirCacheMetricExporter != null) {
-      readdirCacheMetricExporter.setLatestInstance(readdirCache);
-    }
-  }
-
-  // This is used because the cache implementations don't allow null.
-  private static final class FakeFileStatus implements FileStatus {
-    @Override
-    public long getLastChangeTime() {
-      throw new UnsupportedOperationException();
+    @Throws(IOException::class)
+    override fun readdir(path: com.google.devtools.build.lib.vfs.Path?): MutableCollection<com.google.devtools.build.lib.vfs.Dirent?>? {
+        val result: Any? = readdirCache.get(path)
+        if (result is IOException) {
+            throw result
+        }
+        return result as MutableCollection<com.google.devtools.build.lib.vfs.Dirent?>? // unchecked cast
     }
 
-    @Override
-    public long getNodeId() {
-      throw new UnsupportedOperationException();
+    @Throws(IOException::class)
+    override fun statIfFound(path: com.google.devtools.build.lib.vfs.Path?, symlinks: Symlinks?): FileStatus? {
+        // Try to load a Symlinks.NOFOLLOW result first. Symlinks are rare and this enables sharing the
+        // cache for all non-symlink paths.
+        var result: Any? = statCache.get(
+            com.google.devtools.build.lib.util.Pair.of<com.google.devtools.build.lib.vfs.Path?, Symlinks?>(
+                path,
+                Symlinks.NOFOLLOW
+            )
+        )
+        if (result is IOException) {
+            throw result
+        }
+        var status: FileStatus = result as FileStatus
+        if (status !== NO_STATUS && symlinks == Symlinks.FOLLOW && status.isSymbolicLink()) {
+            result = statCache.get(
+                com.google.devtools.build.lib.util.Pair.of<com.google.devtools.build.lib.vfs.Path?, Symlinks?>(
+                    path,
+                    Symlinks.FOLLOW
+                )
+            )
+            if (result is IOException) {
+                throw result
+            }
+            status = result as FileStatus
+        }
+        return if (status === NO_STATUS) null else status
     }
 
-    @Override
-    public long getLastModifiedTime() {
-      throw new UnsupportedOperationException();
+    @Throws(IOException::class)
+    override fun getType(path: com.google.devtools.build.lib.vfs.Path, symlinks: Symlinks?): DirentTypeWithSkip? {
+        // Use a cached stat call if we have one. This is done first so that we don't need to iterate
+        // over a list of directory entries as we do for cached readdir() entries. We don't ever expect
+        // to get a cache hit if symlinks == Symlinks.NOFOLLOW and so we don't bother to check.
+        if (symlinks == Symlinks.FOLLOW) {
+            val key: com.google.devtools.build.lib.util.Pair<com.google.devtools.build.lib.vfs.Path?, Symlinks?> =
+                com.google.devtools.build.lib.util.Pair.of<com.google.devtools.build.lib.vfs.Path?, Symlinks?>(
+                    path,
+                    symlinks
+                )
+            val result: Any? = statCache.getIfPresent(key)
+            if (result != null && result !is IOException) {
+                if (result === NO_STATUS) {
+                    return null
+                }
+                return ofStat(result as FileStatus)
+            }
+        }
+
+        // If this is a root directory, we must stat, there is no parent.
+        val parent: com.google.devtools.build.lib.vfs.Path? = path.getParentDirectory()
+        if (parent == null) {
+            return ofStat(statIfFound(path, symlinks))
+        }
+
+        // Answer based on a cached readdir() call if possible. The cache might already be populated
+        // from Skyframe directory lising (DirectoryListingFunction) or by globbing via
+        // {@link UnixGlob}. We generally try to avoid following symlinks in readdir() calls as in a
+        // directory with many symlinks, these would be resolved basically using a stat anyway and they
+        // would be resolved sequentially which can be slow on high-latency file systems. If we request
+        // the type of a file with FOLLOW, and find a symlink in the directory, we fall back to doing a
+        // stat.
+        if (readdirCache.getIfPresent(parent) is Dirents) {
+            val baseName: String = path.getBaseName()
+            val dirent: com.google.devtools.build.lib.vfs.Dirent? = dirents.maybeGetDirent(baseName)
+            if (dirent != null) {
+                if (dirent.getType() == com.google.devtools.build.lib.vfs.Dirent.Type.SYMLINK && symlinks == Symlinks.FOLLOW) {
+                    // See above: We don't want to follow symlinks with readdir(). Do a stat() instead.
+                    return ofStat(statIfFound(path, Symlinks.FOLLOW))
+                }
+                return DirentTypeWithSkip.of(dirent.getType())
+            }
+            if (!path.getFileSystem().mayBeCaseOrNormalizationInsensitive()) {
+                return null
+            }
+            // The filesystem may be case-insensitive or normalization-insensitive, but it doesn't have
+            // to be and even if it is, we don't know which normalization algorithm it uses. We assume
+            // that every reasonable filesystem doesn't normalize pure ASCII path components in any
+            // way other than ASCII case insensitivity.
+            if (StringUnsafe.isAscii(baseName)) {
+                var mayHaveFoundMatch = false
+                for (d in dirents) {
+                    if (!StringUnsafe.isAscii(d.getName()) || com.google.common.base.Ascii.equalsIgnoreCase(
+                            baseName,
+                            d.getName()
+                        )
+                    ) {
+                        mayHaveFoundMatch = true
+                        break
+                    }
+                }
+                if (!mayHaveFoundMatch) {
+                    return null
+                }
+            }
+            // Fall back to stat() if we might have found a match.
+        }
+
+        return ofStat(statIfFound(path, symlinks))
     }
 
-    @Override
-    public long getSize() {
-      throw new UnsupportedOperationException();
+    override fun clear() {
+        // Drop not just the memory of the FileStatus objects but the maps themselves.
+        statCache = statCacheSupplier.get()
+        readdirCache = readdirCacheSupplier.get()
+        if (statCacheMetricExporter != null) {
+            statCacheMetricExporter.setLatestInstance(statCache)
+        }
+        if (readdirCacheMetricExporter != null) {
+            readdirCacheMetricExporter.setLatestInstance(readdirCache)
+        }
     }
 
-    @Override
-    public boolean isDirectory() {
-      throw new UnsupportedOperationException();
+    // This is used because the cache implementations don't allow null.
+    private class FakeFileStatus : FileStatus {
+        val lastChangeTime: Long
+            get() {
+                throw java.lang.UnsupportedOperationException()
+            }
+
+        val nodeId: Long
+            get() {
+                throw java.lang.UnsupportedOperationException()
+            }
+
+        val lastModifiedTime: Long
+            get() {
+                throw java.lang.UnsupportedOperationException()
+            }
+
+        val size: Long
+            get() {
+                throw java.lang.UnsupportedOperationException()
+            }
+
+        val isDirectory: Boolean
+            get() {
+                throw java.lang.UnsupportedOperationException()
+            }
+
+        val isFile: Boolean
+            get() {
+                throw java.lang.UnsupportedOperationException()
+            }
+
+        val isSpecialFile: Boolean
+            get() {
+                throw java.lang.UnsupportedOperationException()
+            }
+
+        val isSymbolicLink: Boolean
+            get() {
+                throw java.lang.UnsupportedOperationException()
+            }
     }
 
-    @Override
-    public boolean isFile() {
-      throw new UnsupportedOperationException();
-    }
+    companion object {
+        private val NO_STATUS: FileStatus = FakeFileStatus()
 
-    @Override
-    public boolean isSpecialFile() {
-      throw new UnsupportedOperationException();
-    }
+        @kotlin.jvm.JvmStatic
+        fun newBuilder(): Builder {
+            return com.google.devtools.build.lib.skyframe.DefaultSyscallCache.Builder()
+        }
 
-    @Override
-    public boolean isSymbolicLink() {
-      throw new UnsupportedOperationException();
-    }
-  }
+        private fun ofStat(status: FileStatus?): DirentTypeWithSkip? {
+            return DirentTypeWithSkip.of(SyscallCache.statusToDirentType(status))
+        }
 
-  /** Returns {@link FileStatus} or {@link IOException}. */
-  private static Object statImpl(Pair<Path, Symlinks> p) {
-    try {
-      FileStatus stat = p.first.statIfFound(p.second);
-      return firstNonNull(stat, NO_STATUS);
-    } catch (IOException e) {
-      return e;
-    }
-  }
+        /** Returns [FileStatus] or [IOException].  */
+        private fun statImpl(p: com.google.devtools.build.lib.util.Pair<com.google.devtools.build.lib.vfs.Path?, Symlinks?>): Any {
+            try {
+                val stat: FileStatus? = p.first.statIfFound(p.second)
+                return com.google.common.base.MoreObjects.firstNonNull<FileStatus>(stat, NO_STATUS)
+            } catch (e: IOException) {
+                return e
+            }
+        }
 
-  /** Returns a collection of {@link Dirent} or {@link IOException}. */
-  private static Object readdirImpl(Path p) {
-    try {
-      return CompactSortedDirents.create(p.readdir(Symlinks.NOFOLLOW));
-    } catch (IOException e) {
-      return e;
+        /** Returns a collection of [Dirent] or [IOException].  */
+        private fun readdirImpl(p: com.google.devtools.build.lib.vfs.Path): Any {
+            try {
+                return CompactSortedDirents.create(p.readdir(Symlinks.NOFOLLOW))
+            } catch (e: IOException) {
+                return e
+            }
+        }
     }
-  }
 }

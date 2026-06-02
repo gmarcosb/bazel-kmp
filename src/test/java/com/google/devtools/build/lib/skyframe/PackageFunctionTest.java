@@ -209,7 +209,7 @@ public class PackageFunctionTest extends BuildViewTestCase {
     if (result.hasError()) {
       fail(result.getError(skyKey).getException().getMessage());
     }
-    Packageoid value = result.get(skyKey).getPackageoid();
+    Packageoid value = result.get(skyKey).packageoid;
     if (skyKey instanceof PackageIdentifier) {
       assertThat(value).isInstanceOf(Package.class);
       InputFile buildFile = ((Package) value).getBuildFile();
@@ -1372,7 +1372,7 @@ public class PackageFunctionTest extends BuildViewTestCase {
         SkyframeExecutorTestUtils.evaluate(
             getSkyframeExecutor(), skyKey, /* keepGoing= */ false, reporter);
     assertThatEvaluationResult(result).hasNoError();
-    assertThat(result.get(skyKey).getPackageoid().containsErrors()).isTrue();
+    assertThat(result.get(skyKey).packageoid.containsErrors()).isTrue();
     assertContainsEvent(
         "Label '//pkg/foo:sub/bar/blah' is invalid because 'pkg/foo/sub' is a subpackage; perhaps"
             + " you meant to put the colon here: '//pkg/foo/sub:bar/blah'?");
@@ -1402,7 +1402,7 @@ public class PackageFunctionTest extends BuildViewTestCase {
         SkyframeExecutorTestUtils.evaluate(
             getSkyframeExecutor(), skyKey, /* keepGoing= */ false, reporter);
     assertThatEvaluationResult(result).hasNoError();
-    assertThat(result.get(skyKey).getPackageoid().containsErrors()).isTrue();
+    assertThat(result.get(skyKey).packageoid.containsErrors()).isTrue();
 
     // Only the deepest package that crosses subpackage boundary should be displayed in the error
     // message.
@@ -1948,17 +1948,17 @@ public class PackageFunctionTest extends BuildViewTestCase {
               ImmutableSet.of(
                   GlobRequest.create("dir/*.sh", Operation.FILES),
                   GlobRequest.create("subpkg/**", Operation.SUBPACKAGES)));
-      assertThat(packageNode.getDirectDeps()).contains(globsKey);
+      assertThat(packageNode.directDeps).contains(globsKey);
 
       InMemoryNodeEntry globsNode = graph.getIfPresent(globsKey);
-      SkyValue globsValue = globsNode.getValue();
+      SkyValue globsValue = globsNode.value;
       assertThat(globsValue).isInstanceOf(GlobsValue.class);
       assertThat(((GlobsValue) globsValue).getMatches())
           .containsExactly(
               PathFragment.create("subpkg"),
               PathFragment.create("dir/bar.sh"),
               PathFragment.create("dir/baz.sh"));
-      ImmutableSet<SkyKey> globsDirectDeps = ImmutableSet.copyOf(globsNode.getDirectDeps());
+      ImmutableSet<SkyKey> globsDirectDeps = ImmutableSet.copyOf(globsNode.directDeps);
       assertThat(globsDirectDeps)
           .containsAtLeast(
               DirectoryListingValue.key(RootedPath.toRootedPath(pkgRoot, fooDirPath)),
@@ -1990,11 +1990,11 @@ public class PackageFunctionTest extends BuildViewTestCase {
               /* pattern= */ "subpkg/**",
               Operation.SUBPACKAGES,
               PathFragment.EMPTY_FRAGMENT);
-      assertThat(packageNode.getDirectDeps())
+      assertThat(packageNode.directDeps)
           .containsAtLeast(dirGlobDescriptor, subdirGlobDescriptor);
 
       ImmutableSet<SkyKey> dirGlobNodeDeps =
-          ImmutableSet.copyOf(graph.getIfPresent(dirGlobDescriptor).getDirectDeps());
+          ImmutableSet.copyOf(graph.getIfPresent(dirGlobDescriptor).directDeps);
       assertThat(dirGlobNodeDeps)
           .containsAtLeast(
               DirectoryListingValue.key(RootedPath.toRootedPath(pkgRoot, fooDirPath)),
@@ -2002,7 +2002,7 @@ public class PackageFunctionTest extends BuildViewTestCase {
               PackageLookupValue.key(PackageIdentifier.createInMainRepo("foo/dir")));
 
       ImmutableSet<SkyKey> subdirGlobNodeDeps =
-          ImmutableSet.copyOf(graph.getIfPresent(subdirGlobDescriptor).getDirectDeps());
+          ImmutableSet.copyOf(graph.getIfPresent(subdirGlobDescriptor).directDeps);
       assertThat(subdirGlobNodeDeps)
           .containsAtLeast(
               FileValue.key(RootedPath.toRootedPath(pkgRoot, fooSubpkgPath)),
@@ -2013,7 +2013,7 @@ public class PackageFunctionTest extends BuildViewTestCase {
   private static void assertDetailedExitCode(
       Exception exception, PackageLoading.Code expectedPackageLoadingCode, ExitCode exitCode) {
     assertThat(exception).isInstanceOf(DetailedException.class);
-    DetailedExitCode detailedExitCode = ((DetailedException) exception).getDetailedExitCode();
+    DetailedExitCode detailedExitCode = ((DetailedException) exception).detailedExitCode;
     assertThat(detailedExitCode.getExitCode()).isEqualTo(exitCode);
     assertThat(detailedExitCode.getFailureDetail().getPackageLoading().getCode())
         .isEqualTo(expectedPackageLoadingCode);

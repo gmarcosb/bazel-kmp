@@ -11,73 +11,70 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
+import com.google.devtools.build.lib.buildtool.BuildRequest
 
-import com.github.benmanes.caffeine.cache.stats.CacheStats;
-import com.google.common.base.Preconditions;
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.buildtool.BuildRequest;
-import com.google.devtools.build.lib.exec.ExecutionOptions;
-import com.google.devtools.build.lib.exec.ExecutorBuilder;
-import com.google.devtools.build.lib.vfs.DigestUtils;
+/** Enables the caching of file digests in [DigestUtils].  */
+class CacheFileDigestsModule : BlazeModule() {
+    /** Stats gathered at the beginning of a command, to compute deltas on completion.  */
+    private var stats: com.github.benmanes.caffeine.cache.stats.CacheStats? = null
 
-/** Enables the caching of file digests in {@link DigestUtils}. */
-public class CacheFileDigestsModule extends BlazeModule {
+    /**
+     * Last known size of the cache. Changes to this value cause the cache to be reinitialized. null
+     * if we don't know anything about the last value yet (i.e. before any command has been run).
+     */
+    private var lastKnownCacheSize: Long? = null
 
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
+    public override fun executorInit(env: CommandEnvironment?, request: BuildRequest, builder: ExecutorBuilder?) {
+        val options: ExecutionOptions = request.getOptions(ExecutionOptions::class.java)
+        if (lastKnownCacheSize == null
+            || options.cacheSizeForComputedFileDigests !== lastKnownCacheSize
+        ) {
+            logger.atInfo().log(
+                "Reconfiguring cache with size=%d", options.cacheSizeForComputedFileDigests
+            )
+            com.google.devtools.build.lib.vfs.DigestUtils.configureCache(options.cacheSizeForComputedFileDigests)
+            lastKnownCacheSize = options.cacheSizeForComputedFileDigests
+        }
 
-  /** Stats gathered at the beginning of a command, to compute deltas on completion. */
-  private CacheStats stats;
-
-  /**
-   * Last known size of the cache. Changes to this value cause the cache to be reinitialized. null
-   * if we don't know anything about the last value yet (i.e. before any command has been run).
-   */
-  private Long lastKnownCacheSize;
-
-  public CacheFileDigestsModule() {}
-
-  /**
-   * Adds a line to the log with cache statistics.
-   *
-   * @param message message to prefix to the written line
-   * @param stats the cache statistics to be logged
-   */
-  private static void logStats(String message, CacheStats stats) {
-    logger.atInfo().log(
-        "%s: hit count=%d, miss count=%d, hit rate=%g, eviction count=%d",
-        message, stats.hitCount(), stats.missCount(), stats.hitRate(), stats.evictionCount());
-  }
-
-  @Override
-  public void executorInit(CommandEnvironment env, BuildRequest request, ExecutorBuilder builder) {
-    ExecutionOptions options = request.getOptions(ExecutionOptions.class);
-    if (lastKnownCacheSize == null
-        || options.cacheSizeForComputedFileDigests != lastKnownCacheSize) {
-      logger.atInfo().log(
-          "Reconfiguring cache with size=%d", options.cacheSizeForComputedFileDigests);
-      DigestUtils.configureCache(options.cacheSizeForComputedFileDigests);
-      lastKnownCacheSize = options.cacheSizeForComputedFileDigests;
+        if (options.cacheSizeForComputedFileDigests === 0) {
+            stats = null
+            logger.atInfo().log("Disabled cache")
+        } else {
+            stats = com.google.devtools.build.lib.vfs.DigestUtils.getCacheStats()
+            logStats("Accumulated cache stats before command", stats)
+        }
     }
 
-    if (options.cacheSizeForComputedFileDigests == 0) {
-      stats = null;
-      logger.atInfo().log("Disabled cache");
-    } else {
-      stats = DigestUtils.getCacheStats();
-      logStats("Accumulated cache stats before command", stats);
+    public override fun commandComplete() {
+        if (stats != null) {
+            val newStats: com.github.benmanes.caffeine.cache.stats.CacheStats? =
+                com.google.devtools.build.lib.vfs.DigestUtils.getCacheStats()
+            com.google.common.base.Preconditions.checkNotNull<com.github.benmanes.caffeine.cache.stats.CacheStats?>(
+                newStats,
+                "The cache is enabled so we must get some stats back"
+            )
+            logStats("Accumulated cache stats after command", newStats)
+            logStats("Cache stats for finished command", newStats.minus(stats))
+            stats = null // Silence stats until next command that uses the executor.
+        }
     }
-  }
 
-  @Override
-  public void commandComplete() {
-    if (stats != null) {
-      CacheStats newStats = DigestUtils.getCacheStats();
-      Preconditions.checkNotNull(newStats, "The cache is enabled so we must get some stats back");
-      logStats("Accumulated cache stats after command", newStats);
-      logStats("Cache stats for finished command", newStats.minus(stats));
-      stats = null; // Silence stats until next command that uses the executor.
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+
+        /**
+         * Adds a line to the log with cache statistics.
+         * 
+         * @param message message to prefix to the written line
+         * @param stats the cache statistics to be logged
+         */
+        private fun logStats(message: String?, stats: com.github.benmanes.caffeine.cache.stats.CacheStats) {
+            logger.atInfo().log(
+                "%s: hit count=%d, miss count=%d, hit rate=%g, eviction count=%d",
+                message, stats.hitCount(), stats.missCount(), stats.hitRate(), stats.evictionCount()
+            )
+        }
     }
-  }
 }

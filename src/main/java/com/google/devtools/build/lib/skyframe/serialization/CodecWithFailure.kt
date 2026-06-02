@@ -11,40 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
+import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
 
 /**
  * A codec that throws an error whenever used. For usage in versions of Bazel that should never be
  * serialing the instances of the type T.
  */
-public class CodecWithFailure<T> extends LeafObjectCodec<T> {
+class CodecWithFailure<T>(clazz: java.lang.Class<*>?, message: String?) : LeafObjectCodec<T?>() {
+    private val message: String?
+    private val clazz: java.lang.Class<*>?
 
-  private final String message;
-  private final Class<?> clazz;
+    init {
+        this.clazz = clazz
+        this.message = message
+    }
 
-  public CodecWithFailure(Class<?> clazz, String message) {
-    this.clazz = clazz;
-    this.message = message;
-  }
+    val encodedClass: java.lang.Class<out T?>?
+        get() = clazz as java.lang.Class<out T?>?
 
-  @SuppressWarnings("unchecked")
-  @Override
-  public Class<? extends T> getEncodedClass() {
-    return (Class<? extends T>) clazz;
-  }
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    override fun serialize(context: LeafSerializationContext?, obj: T?, codedOut: CodedOutputStream?) {
+        throw com.google.devtools.build.lib.skyframe.serialization.SerializationException(message)
+    }
 
-  @Override
-  public void serialize(LeafSerializationContext context, T obj, CodedOutputStream codedOut)
-      throws SerializationException {
-    throw new SerializationException(message);
-  }
-
-  @Override
-  public T deserialize(LeafDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException {
-    throw new SerializationException(message);
-  }
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    override fun deserialize(context: LeafDeserializationContext?, codedIn: CodedInputStream?): T? {
+        throw com.google.devtools.build.lib.skyframe.serialization.SerializationException(message)
+    }
 }

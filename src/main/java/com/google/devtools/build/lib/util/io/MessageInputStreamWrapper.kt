@@ -11,81 +11,71 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
+package com.google.devtools.build.lib.util.io
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static java.nio.charset.StandardCharsets.UTF_8;
+import com.google.protobuf.ExtensionRegistry
 
-import com.google.protobuf.ExtensionRegistry;
-import com.google.protobuf.Message;
-import com.google.protobuf.Parser;
-import com.google.protobuf.util.JsonFormat;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.Scanner;
-import java.util.function.Supplier;
-import java.util.regex.Pattern;
-import javax.annotation.Nullable;
+/** Creates a MessageInputStream from an OutputStream.  */
+class MessageInputStreamWrapper private constructor() {
+    /** Reads the messages in length-delimited protobuf wire format.  */
+    class BinaryInputStreamWrapper<T : Message?>(stream: java.io.InputStream?, defaultInstance: T?) :
+        MessageInputStream<T?> {
+        private val stream: java.io.InputStream
+        private val parser: com.google.protobuf.Parser<T?>
 
-/** Creates a MessageInputStream from an OutputStream. */
-public class MessageInputStreamWrapper {
+        init {
+            this.stream = com.google.common.base.Preconditions.checkNotNull<java.io.InputStream>(stream)
+            this.parser = defaultInstance.getParserForType() as com.google.protobuf.Parser<T?>
+        }
 
-  private MessageInputStreamWrapper() {}
+        @Throws(IOException::class)
+        override fun read(): T? {
+            return parser.parseDelimitedFrom(stream, ExtensionRegistry.getEmptyRegistry())
+        }
 
-  /** Reads the messages in length-delimited protobuf wire format. */
-  public static class BinaryInputStreamWrapper<T extends Message> implements MessageInputStream<T> {
-    private final InputStream stream;
-    private final Parser<T> parser;
-
-    @SuppressWarnings("unchecked")
-    public BinaryInputStreamWrapper(InputStream stream, T defaultInstance) {
-      this.stream = checkNotNull(stream);
-      this.parser = (Parser<T>) defaultInstance.getParserForType();
+        @Throws(IOException::class)
+        override fun close() {
+            stream.close()
+        }
     }
 
-    @Override
-    @Nullable
-    public T read() throws IOException {
-      return parser.parseDelimitedFrom(stream, ExtensionRegistry.getEmptyRegistry());
+    /** Reads the messages in concatenated JSON text format.  */
+    class JsonInputStreamWrapper<T : Message?>(stream: java.io.InputStream?, defaultInstance: T?) :
+        MessageInputStream<T?> {
+        private val scanner: java.util.Scanner
+        private val builderSupplier: java.util.function.Supplier<Message.Builder>
+
+        init {
+            this.scanner = java.util.Scanner(
+                com.google.common.base.Preconditions.checkNotNull<java.io.InputStream?>(stream),
+                java.nio.charset.StandardCharsets.UTF_8
+            ).useDelimiter(
+                DELIMITER
+            )
+            this.builderSupplier = defaultInstance::newBuilderForType
+        }
+
+        @Throws(IOException::class)
+        override fun read(): T? {
+            if (!scanner.hasNext()) {
+                return null
+            }
+            val builder: Message.Builder = builderSupplier.get()
+            PARSER.merge(scanner.next(), builder)
+            return builder.build() as T?
+        }
+
+        @Throws(IOException::class)
+        override fun close() {
+            scanner.close()
+        }
+
+        companion object {
+            private val PARSER: JsonFormat.Parser = JsonFormat.parser().ignoringUnknownFields()
+
+            // The string `\n}{\n` is a reliable delimiter, but we must use lookbehind/lookahead to avoid
+            // consuming the braces when tokenizing.
+            private val DELIMITER: java.util.regex.Pattern = java.util.regex.Pattern.compile("(?<=\\n\\})(?=\\{\\n)")
+        }
     }
-
-    @Override
-    public void close() throws IOException {
-      stream.close();
-    }
-  }
-
-  /** Reads the messages in concatenated JSON text format. */
-  public static class JsonInputStreamWrapper<T extends Message> implements MessageInputStream<T> {
-    private static final JsonFormat.Parser PARSER = JsonFormat.parser().ignoringUnknownFields();
-
-    // The string `\n}{\n` is a reliable delimiter, but we must use lookbehind/lookahead to avoid
-    // consuming the braces when tokenizing.
-    private static final Pattern DELIMITER = Pattern.compile("(?<=\\n\\})(?=\\{\\n)");
-
-    private final Scanner scanner;
-    private final Supplier<Message.Builder> builderSupplier;
-
-    public JsonInputStreamWrapper(InputStream stream, T defaultInstance) {
-      this.scanner = new Scanner(checkNotNull(stream), UTF_8).useDelimiter(DELIMITER);
-      this.builderSupplier = defaultInstance::newBuilderForType;
-    }
-
-    @Override
-    @Nullable
-    @SuppressWarnings("unchecked")
-    public T read() throws IOException {
-      if (!scanner.hasNext()) {
-        return null;
-      }
-      Message.Builder builder = builderSupplier.get();
-      PARSER.merge(scanner.next(), builder);
-      return (T) builder.build();
-    }
-
-    @Override
-    public void close() throws IOException {
-      scanner.close();
-    }
-  }
 }

@@ -11,94 +11,75 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.standalone;
+package com.google.devtools.build.lib.standalone
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.actions.FileWriteActionContext;
-import com.google.devtools.build.lib.analysis.actions.LocalTemplateExpansionStrategy;
-import com.google.devtools.build.lib.analysis.actions.TemplateExpansionContext;
-import com.google.devtools.build.lib.analysis.test.TestActionContext;
-import com.google.devtools.build.lib.analysis.test.TestStrategy;
-import com.google.devtools.build.lib.buildtool.BuildRequest;
-import com.google.devtools.build.lib.exec.ExecutionOptions;
-import com.google.devtools.build.lib.exec.FileWriteStrategy;
-import com.google.devtools.build.lib.exec.ModuleActionContextRegistry;
-import com.google.devtools.build.lib.exec.RunfilesTreeUpdater;
-import com.google.devtools.build.lib.exec.SpawnRunner;
-import com.google.devtools.build.lib.exec.SpawnStrategyRegistry;
-import com.google.devtools.build.lib.exec.StandaloneTestStrategy;
-import com.google.devtools.build.lib.exec.local.LocalEnvProvider;
-import com.google.devtools.build.lib.exec.local.LocalExecutionOptions;
-import com.google.devtools.build.lib.exec.local.LocalSpawnRunner;
-import com.google.devtools.build.lib.rules.cpp.CppIncludeExtractionContext;
-import com.google.devtools.build.lib.rules.cpp.CppIncludeScanningContext;
-import com.google.devtools.build.lib.rules.test.ExclusiveTestStrategy;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.ProcessWrapper;
-import com.google.devtools.build.lib.runtime.TestSummaryOptions;
-import com.google.devtools.build.lib.vfs.Path;
+import com.google.common.base.Preconditions
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.analysis.actions.FileWriteActionContext
+import com.google.devtools.build.lib.vfs.Path
 
 /**
  * StandaloneModule provides pluggable functionality for blaze.
  */
-public class StandaloneModule extends BlazeModule {
+class StandaloneModule : BlazeModule() {
+    public override fun registerActionContexts(
+        registryBuilder: ModuleActionContextRegistry.Builder,
+        env: CommandEnvironment,
+        buildRequest: BuildRequest?
+    ) {
+        // TODO(ulfjack): Move this to another module.
+        registryBuilder.register(
+            CppIncludeExtractionContext::class.java, DummyCppIncludeExtractionContext(env)
+        )
+        registryBuilder.register(CppIncludeScanningContext::class.java, DummyCppIncludeScanningContext())
 
-  @Override
-  public void registerActionContexts(
-      ModuleActionContextRegistry.Builder registryBuilder,
-      CommandEnvironment env,
-      BuildRequest buildRequest) {
-    // TODO(ulfjack): Move this to another module.
-    registryBuilder.register(
-        CppIncludeExtractionContext.class, new DummyCppIncludeExtractionContext(env));
-    registryBuilder.register(CppIncludeScanningContext.class, new DummyCppIncludeScanningContext());
-
-    ExecutionOptions executionOptions = env.getOptions().getOptions(ExecutionOptions.class);
-    TestSummaryOptions testSummaryOptions = env.getOptions().getOptions(TestSummaryOptions.class);
-    if (testSummaryOptions == null) {
-      // It is possible, though unlikely, that the test summary options have not been set.
-      // This can happen if a test runner is being run without the test command having been used.
-      testSummaryOptions = TestSummaryOptions.DEFAULTS;
+        val executionOptions: ExecutionOptions? = env.getOptions().getOptions(ExecutionOptions::class.java)
+        var testSummaryOptions: TestSummaryOptions? = env.getOptions().getOptions(TestSummaryOptions::class.java)
+        if (testSummaryOptions == null) {
+            // It is possible, though unlikely, that the test summary options have not been set.
+            // This can happen if a test runner is being run without the test command having been used.
+            testSummaryOptions = TestSummaryOptions.DEFAULTS
+        }
+        val testTmpRoot: Path? =
+            TestStrategy.getTmpRoot(env.getWorkspace(), env.getExecRoot(), executionOptions)
+        val testStrategy: TestActionContext =
+            StandaloneTestStrategy(executionOptions, testSummaryOptions, testTmpRoot)
+        // Keep the standalone test strategy last so that it is the default one.
+        registryBuilder.register(
+            TestActionContext::class.java, ExclusiveTestStrategy(testStrategy), "exclusive"
+        )
+        registryBuilder.register(TestActionContext::class.java, testStrategy, "standalone")
+        registryBuilder.register(FileWriteActionContext::class.java, FileWriteStrategy(), "local")
+        registryBuilder.register(
+            TemplateExpansionContext::class.java, LocalTemplateExpansionStrategy(), "local"
+        )
     }
-    Path testTmpRoot =
-        TestStrategy.getTmpRoot(env.getWorkspace(), env.getExecRoot(), executionOptions);
-    TestActionContext testStrategy =
-        new StandaloneTestStrategy(executionOptions, testSummaryOptions, testTmpRoot);
-    // Keep the standalone test strategy last so that it is the default one.
-    registryBuilder.register(
-        TestActionContext.class, new ExclusiveTestStrategy(testStrategy), "exclusive");
-    registryBuilder.register(TestActionContext.class, testStrategy, "standalone");
-    registryBuilder.register(FileWriteActionContext.class, new FileWriteStrategy(), "local");
-    registryBuilder.register(
-        TemplateExpansionContext.class, new LocalTemplateExpansionStrategy(), "local");
-  }
 
-  @Override
-  public void registerSpawnStrategies(
-      SpawnStrategyRegistry.Builder registryBuilder, CommandEnvironment env) {
-    SpawnRunner localSpawnRunner =
-        new LocalSpawnRunner(
-            env.getExecRoot(),
-            env.getOptions().getOptions(LocalExecutionOptions.class),
-            env.getLocalResourceManager(),
-            LocalEnvProvider.forCurrentOs(env.getClientEnv()),
-            env.getBlazeWorkspace().getBinTools(),
-            ProcessWrapper.fromCommandEnvironment(env),
-            RunfilesTreeUpdater.forCommandEnvironment(env));
+    public override fun registerSpawnStrategies(
+        registryBuilder: SpawnStrategyRegistry.Builder, env: CommandEnvironment
+    ) {
+        val localSpawnRunner: SpawnRunner =
+            LocalSpawnRunner(
+                env.getExecRoot(),
+                env.getOptions().getOptions(LocalExecutionOptions::class.java),
+                env.getLocalResourceManager(),
+                LocalEnvProvider.forCurrentOs(env.getClientEnv()),
+                env.getBlazeWorkspace().getBinTools(),
+                ProcessWrapper.fromCommandEnvironment(env),
+                RunfilesTreeUpdater.forCommandEnvironment(env)
+            )
 
-    ExecutionOptions executionOptions =
-        checkNotNull(env.getOptions().getOptions(ExecutionOptions.class));
-    // Order of strategies passed to builder is significant - when there are many strategies that
-    // could potentially be used and a spawnActionContext doesn't specify which one it wants, the
-    // last one from strategies list will be used
-    registryBuilder.registerStrategy(
-        new StandaloneSpawnStrategy(localSpawnRunner, executionOptions), "standalone", "local");
+        val executionOptions: ExecutionOptions =
+            Preconditions.checkNotNull<T>(env.getOptions().getOptions(ExecutionOptions::class.java))
+        // Order of strategies passed to builder is significant - when there are many strategies that
+        // could potentially be used and a spawnActionContext doesn't specify which one it wants, the
+        // last one from strategies list will be used
+        registryBuilder.registerStrategy(
+            StandaloneSpawnStrategy(localSpawnRunner, executionOptions), "standalone", "local"
+        )
 
-    // This makes the "standalone" strategy the default Spawn strategy, unless it is overridden by a
-    // later BlazeModule.
-    registryBuilder.setDefaultStrategies(ImmutableList.of("standalone"));
-  }
+        // This makes the "standalone" strategy the default Spawn strategy, unless it is overridden by a
+        // later BlazeModule.
+        registryBuilder.setDefaultStrategies(ImmutableList.of<E?>("standalone"))
+    }
 }

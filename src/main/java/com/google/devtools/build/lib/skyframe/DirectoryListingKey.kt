@@ -11,45 +11,38 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.devtools.build.lib.skyframe.SkyFunctions.DIRECTORY_LISTING;
+import com.google.devtools.build.lib.skyframe.FileOpNodeOrFuture.FileOpNode
+import com.google.devtools.build.lib.skyframe.SkyFunctions
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
+import com.google.devtools.build.lib.vfs.RootedPath
+import com.google.devtools.build.skyframe.AbstractSkyKey
+import com.google.devtools.build.skyframe.SkyFunctionName
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyKey.SkyKeyInterner
 
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.skyframe.AbstractSkyKey;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-
-/** Key for {@link DirectoryListingFunction}. */
+/** Key for [DirectoryListingFunction].  */
 @AutoCodec
-public final class DirectoryListingKey extends AbstractSkyKey<RootedPath>
-    implements FileOpNodeOrFuture.FileOpNode {
+class DirectoryListingKey private constructor(arg: RootedPath?) : AbstractSkyKey<RootedPath?>(arg), FileOpNode {
+    override fun functionName(): SkyFunctionName {
+        return SkyFunctions.DIRECTORY_LISTING
+    }
 
-  private static final SkyKeyInterner<DirectoryListingKey> interner = SkyKey.newInterner();
+    val skyKeyInterner: SkyKeyInterner<DirectoryListingKey?>
+        get() = interner
 
-  public static DirectoryListingKey create(RootedPath arg) {
-    return interner.intern(new DirectoryListingKey(arg));
-  }
+    companion object {
+        private val interner: SkyKeyInterner<DirectoryListingKey?> = SkyKey.newInterner<DirectoryListingKey?>()
 
-  private DirectoryListingKey(RootedPath arg) {
-    super(arg);
-  }
+        fun create(arg: RootedPath?): DirectoryListingKey {
+            return interner.intern(DirectoryListingKey(arg))
+        }
 
-  @VisibleForSerialization
-  @AutoCodec.Interner
-  static DirectoryListingKey intern(DirectoryListingKey key) {
-    return interner.intern(key);
-  }
-
-  @Override
-  public SkyFunctionName functionName() {
-    return DIRECTORY_LISTING;
-  }
-
-  @Override
-  public SkyKeyInterner<DirectoryListingKey> getSkyKeyInterner() {
-    return interner;
-  }
+        @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+        @AutoCodec.Interner
+        fun intern(key: DirectoryListingKey?): DirectoryListingKey {
+            return interner.intern(key)
+        }
+    }
 }

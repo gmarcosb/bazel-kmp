@@ -11,36 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.packages;
+package com.google.devtools.build.lib.skyframe.packages
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.packages.PackageFactory;
-import com.google.devtools.build.lib.skyframe.PrecomputedValue;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import com.google.devtools.build.lib.packages.PackageFactory
 
 /**
- * A {@link PackageFactory.BuilderForTesting} that also allows specification of some skyframe
+ * A [PackageFactory.BuilderForTesting] that also allows specification of some skyframe
  * details.
  */
-public abstract class PackageFactoryBuilderWithSkyframeForTesting
-    extends PackageFactory.BuilderForTesting {
-  protected ImmutableMap<SkyFunctionName, SkyFunction> extraSkyFunctions = ImmutableMap.of();
-  protected ImmutableList<PrecomputedValue.Injected> extraPrecomputedValues = ImmutableList.of();
+abstract class PackageFactoryBuilderWithSkyframeForTesting
 
-  @CanIgnoreReturnValue
-  public PackageFactoryBuilderWithSkyframeForTesting setExtraSkyFunctions(
-      ImmutableMap<SkyFunctionName, SkyFunction> extraSkyFunctions) {
-    this.extraSkyFunctions = extraSkyFunctions;
-    return this;
-  }
+    : PackageFactory.BuilderForTesting() {
+    @kotlin.jvm.JvmField
+    protected var extraSkyFunctions: com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?>? =
+        com.google.common.collect.ImmutableMap.of<SkyFunctionName?, SkyFunction?>()
+    @kotlin.jvm.JvmField
+    protected var extraPrecomputedValues: com.google.common.collect.ImmutableList<Injected?> =
+        com.google.common.collect.ImmutableList.of<Injected?>()
 
-  @CanIgnoreReturnValue
-  public PackageFactoryBuilderWithSkyframeForTesting setExtraPrecomputeValues(
-      Iterable<PrecomputedValue.Injected> extraPrecomputedValues) {
-    this.extraPrecomputedValues = ImmutableList.copyOf(extraPrecomputedValues);
-    return this;
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setExtraSkyFunctions(
+        extraSkyFunctions: com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?>?
+    ): PackageFactoryBuilderWithSkyframeForTesting {
+        this.extraSkyFunctions = extraSkyFunctions
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setExtraPrecomputeValues(
+        extraPrecomputedValues: Iterable<Injected?>
+    ): PackageFactoryBuilderWithSkyframeForTesting {
+        this.extraPrecomputedValues = com.google.common.collect.ImmutableList.copyOf<Injected?>(extraPrecomputedValues)
+        return this
+    }
 }

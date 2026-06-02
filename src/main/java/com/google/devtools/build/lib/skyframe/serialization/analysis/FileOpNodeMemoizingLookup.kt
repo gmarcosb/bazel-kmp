@@ -11,63 +11,42 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
-import static com.google.devtools.build.lib.skyframe.FileOpNodeOrFuture.EmptyFileOpNode.EMPTY_FILE_OP_NODE;
-
-import com.google.common.util.concurrent.FutureCallback;
-import com.google.common.util.concurrent.Futures;
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.actions.Artifact.SourceArtifact;
-import com.google.devtools.build.lib.analysis.configuredtargets.InputFileConfiguredTarget;
-import com.google.devtools.build.lib.concurrent.QuiescingFuture;
-import com.google.devtools.build.lib.skyframe.AbstractNestedFileOpNodes;
-import com.google.devtools.build.lib.skyframe.FileKey;
-import com.google.devtools.build.lib.skyframe.FileOpNodeOrFuture;
-import com.google.devtools.build.lib.skyframe.FileOpNodeOrFuture.FileOpNode;
-import com.google.devtools.build.lib.skyframe.FileOpNodeOrFuture.FileOpNodeOrEmpty;
-import com.google.devtools.build.lib.skyframe.FileOpNodeOrFuture.FutureFileOpNode;
-import com.google.devtools.build.lib.skyframe.NonRuleConfiguredTargetValue;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.skyframe.InMemoryGraph;
-import com.google.devtools.build.skyframe.InMemoryNodeEntry;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionLookupKey
 
 /**
- * Computes a mapping from {@link ActionLookupKey}s to {@link FileOpNodeOrFuture}s, representing the
+ * Computes a mapping from [ActionLookupKey]s to [FileOpNodeOrFuture]s, representing the
  * complete set of file system operation dependencies required to evaluate each key.
- *
- * <p>This class tracks file dependencies for a particular build. It uses the file and source
- * partitioning in {@link AbstractNestedFileOpNodes} to provide a view of file dependencies for
+ * 
+ * 
+ * This class tracks file dependencies for a particular build. It uses the file and source
+ * partitioning in [AbstractNestedFileOpNodes] to provide a view of file dependencies for
  * configured targets and actions. For configured targets, only the analysis dependencies (BUILD,
  * .bzl files) are relevant. For actions, the source (.h, .cpp, .java) files must also be
  * considered.
- *
- * <p><b>Approximation for Efficiency:</b> To avoid the excessive overhead of storing precise file
+ * 
+ * 
+ * **Approximation for Efficiency:** To avoid the excessive overhead of storing precise file
  * dependencies per action, an over-approximation is used. This may lead to occasional spurious
  * cache misses but guarantees no false cache hits. The approximation includes all source
  * dependencies declared by the configured target that were visited during the build.
- *
- * <p>Not all actions of a configured target are executed, and include scanning may eliminate
+ * 
+ * 
+ * Not all actions of a configured target are executed, and include scanning may eliminate
  * dependencies, so the actual set of source files visited by a build may be a subset of the
  * declared ones. This will never skip an actual action file dependency of the build. While this is
  * correct, it's possible that different builds at the same version will have slightly different
  * representations of the sets of sources.
- *
- * <p><b>Why Approximation?</b> <br>
+ * 
+ * 
+ * **Why Approximation?** <br></br>
  * Storing the exact file dependencies for each action individually would be too expensive. It would
  * negate the benefits of the compact nested representation used for configured target dependencies.
  * The chosen approximation balances accuracy with performance.
- *
- * <p><b>Different Sources in Multiple Builds</b> <br>
+ * 
+ * 
+ * **Different Sources in Multiple Builds** <br></br>
  * Suppose there are multiple builds that share configured targets, but request different actions
  * from those configured targets. The configured target data is deterministic and shared, but the
  * invalidation information for source files could differ. When invalidating the configured target,
@@ -76,172 +55,169 @@ import javax.annotation.Nullable;
  * overwriting of the configured target doesn't affect correctness either because each action
  * directly references the invalidation data created by its respective build.
  */
-final class FileOpNodeMemoizingLookup {
-  private final Executor executor;
-  private final InMemoryGraph graph;
+internal class FileOpNodeMemoizingLookup(executor: java.util.concurrent.Executor, graph: InMemoryGraph) {
+    private val executor: java.util.concurrent.Executor
+    private val graph: InMemoryGraph
 
-  private final ValueOrFutureMap<SkyKey, FileOpNodeOrFuture, FileOpNodeOrEmpty, FutureFileOpNode>
-      nodes =
-          new ValueOrFutureMap<>(
-              new ConcurrentHashMap<>(),
-              FutureFileOpNode::new,
-              this::populateFutureFileOpNode,
-              FutureFileOpNode.class);
+    private val nodes: ValueOrFutureMap<SkyKey?, FileOpNodeOrFuture?, FileOpNodeOrEmpty?, FutureFileOpNode?> =
+        ValueOrFutureMap<KeyT?, ValueOrFutureT?, ValueT?, FutureT?>(
+            ConcurrentHashMap<Any?, Any?>(),
+            java.util.function.BiFunction { key: KeyT?, consumer: java.util.function.BiConsumer<KeyT?, ValueT?>? ->
+                FutureFileOpNode(
+                    key,
+                    consumer
+                )
+            },
+            java.util.function.Function { ownedFuture: FutureT? -> this.populateFutureFileOpNode(ownedFuture) },
+            FutureFileOpNode::class.java
+        )
 
-  FileOpNodeMemoizingLookup(Executor executor, InMemoryGraph graph) {
-    this.executor = executor;
-    this.graph = graph;
-  }
-
-  FileOpNodeOrFuture computeNode(ActionLookupKey key) {
-    return nodes.getValueOrFuture(key);
-  }
-
-  private FileOpNodeOrFuture populateFutureFileOpNode(FutureFileOpNode ownedFuture) {
-    var collector = new FileOpNodeCollector(executor);
-
-    accumulateTransitiveFileSystemOperations(ownedFuture.key(), collector);
-    collector.notifyAllFuturesAdded();
-
-    if (collector.isDone()) {
-      try {
-        return ownedFuture.completeWith(Futures.getDone(collector));
-      } catch (ExecutionException e) {
-        return ownedFuture.failWith(e);
-      }
-    }
-    return ownedFuture.completeWith(collector);
-  }
-
-  private void accumulateTransitiveFileSystemOperations(SkyKey key, FileOpNodeCollector collector) {
-    InMemoryNodeEntry nodeEntry = graph.getIfPresent(key);
-    if (nodeEntry == null) {
-      collector.failWith(new MissingSkyframeEntryException(key));
-      return;
+    init {
+        this.executor = executor
+        this.graph = graph
     }
 
-    if (key instanceof ActionLookupKey actionLookupKey) {
-      // If the corresponding value is an InputFileConfiguredTarget, it indicates an execution time
-      // file dependency.
-      if ((checkNotNull(nodeEntry.getValue(), actionLookupKey)
-              instanceof NonRuleConfiguredTargetValue nonRuleConfiguredTargetValue)
-          && (nonRuleConfiguredTargetValue.getConfiguredTarget()
-              instanceof InputFileConfiguredTarget inputFileConfiguredTarget)) {
-        // The source artifact's file becomes an execution time dependency of actions owned by
-        // configured targets with this InputFileConfiguredTarget as a dependency.
-        SourceArtifact source = inputFileConfiguredTarget.getArtifact();
-        var fileKey =
-            FileKey.create(RootedPath.toRootedPath(source.getRoot().getRoot(), source.getPath()));
-        if (graph.getIfPresent(fileKey) != null) {
-          // If the file value is not present in the graph, it means that no action executed
-          // actually depended on that file.
-          //
-          // TODO: b/364831651 - for greater determinism, consider performing additional Skyframe
-          // evaluations for these unused dependencies.
-          collector.setSource(fileKey);
+    fun computeNode(key: ActionLookupKey?): FileOpNodeOrFuture? {
+        return nodes.getValueOrFuture(key)
+    }
+
+    private fun populateFutureFileOpNode(ownedFuture: FutureFileOpNode): FileOpNodeOrFuture {
+        val collector = FileOpNodeCollector(executor)
+
+        accumulateTransitiveFileSystemOperations(ownedFuture.key(), collector)
+        collector.notifyAllFuturesAdded()
+
+        if (collector.isDone()) {
+            try {
+                return ownedFuture.completeWith(com.google.common.util.concurrent.Futures.getDone<V?>(collector))
+            } catch (e: ExecutionException) {
+                return ownedFuture.failWith(e)
+            }
         }
-      }
+        return ownedFuture.completeWith(collector)
     }
 
-    for (SkyKey dep : nodeEntry.getDirectDeps()) {
-      switch (dep) {
-        case FileOpNode immediateNode:
-          collector.addNode(immediateNode);
-          break;
-        default:
-          addNodeForKey(dep, collector);
-          break;
-      }
-    }
-  }
+    private fun accumulateTransitiveFileSystemOperations(key: SkyKey, collector: FileOpNodeCollector) {
+        val nodeEntry: InMemoryNodeEntry? = graph.getIfPresent(key)
+        if (nodeEntry == null) {
+            collector.failWith(MissingSkyframeEntryException(key))
+            return
+        }
 
-  private void addNodeForKey(SkyKey key, FileOpNodeCollector collector) {
-    // TODO: b/364831651 - This adds all traversed SkyKeys to `nodes`. Consider if certain types
-    // should be excluded from memoization.
-    switch (nodes.getValueOrFuture(key)) {
-      case EMPTY_FILE_OP_NODE:
-        break;
-      case FileOpNode node:
-        collector.addNode(node);
-        break;
-      case FutureFileOpNode future:
-        collector.addFuture(future);
-        break;
-    }
-  }
+        if (key is ActionLookupKey) {
+            // If the corresponding value is an InputFileConfiguredTarget, it indicates an execution time
+            // file dependency.
+            if ((com.google.common.base.Preconditions.checkNotNull<SkyValue?>(nodeEntry.getValue(), key)
+                        is NonRuleConfiguredTargetValue)
+                && (nonRuleConfiguredTargetValue.getConfiguredTarget()
+                        is InputFileConfiguredTarget)
+            ) {
+                // The source artifact's file becomes an execution time dependency of actions owned by
+                // configured targets with this InputFileConfiguredTarget as a dependency.
+                val source: SourceArtifact = inputFileConfiguredTarget.getArtifact()
+                val fileKey: com.google.devtools.build.lib.skyframe.FileKey? =
+                    com.google.devtools.build.lib.skyframe.FileKey.Companion.create(
+                        RootedPath.toRootedPath(
+                            source.getRoot().getRoot(), source.getPath()
+                        )
+                    )
+                if (graph.getIfPresent(fileKey) != null) {
+                    // If the file value is not present in the graph, it means that no action executed
+                    // actually depended on that file.
+                    //
+                    // TODO: b/364831651 - for greater determinism, consider performing additional Skyframe
+                    // evaluations for these unused dependencies.
+                    collector.setSource(fileKey)
+                }
+            }
+        }
 
-  private static final class FileOpNodeCollector extends QuiescingFuture<FileOpNodeOrEmpty>
-      implements FutureCallback<FileOpNodeOrEmpty> {
-    private final Executor executor;
-    private final Set<FileOpNode> nodes = ConcurrentHashMap.newKeySet();
-    @Nullable private FileKey sourceFile = null;
-
-    private FileOpNodeCollector(Executor executor) {
-      super(directExecutor());
-      this.executor = executor;
-    }
-
-    @Override
-    protected FileOpNodeOrEmpty getValue() {
-      return AbstractNestedFileOpNodes.from(nodes, sourceFile);
-    }
-
-    private void addNode(FileOpNode node) {
-      nodes.add(node);
+        for (dep in nodeEntry.getDirectDeps()) {
+            when (dep) {
+                -> collector.addNode(immediateNode)
+                else -> addNodeForKey(dep, collector)
+            }
+        }
     }
 
-    private void setSource(FileKey sourceFile) {
-      checkState(
-          this.sourceFile == null,
-          "Attempted to set source to %s but source already set to %s.",
-          sourceFile,
-          this.sourceFile);
-      this.sourceFile = sourceFile;
+    private fun addNodeForKey(key: SkyKey?, collector: FileOpNodeCollector) {
+        // TODO: b/364831651 - This adds all traversed SkyKeys to `nodes`. Consider if certain types
+        // should be excluded from memoization.
+        when (nodes.getValueOrFuture(key)) {
+            EmptyFileOpNode.EMPTY_FILE_OP_NODE -> {}
+            -> collector.addNode(node)
+            -> collector.addFuture(future)
+        }
     }
 
-    private void addFuture(FutureFileOpNode future) {
-      increment();
-      // There is a graph made of futures that parallels the Skyframe dependency graph. Therefore,
-      // it's a bad idea to use directExecutor() here because the amount of work that the
-      // the completion of the future unblocks can be quite large.
-      Futures.addCallback(future, (FutureCallback<FileOpNodeOrEmpty>) this, executor);
-    }
+    private class FileOpNodeCollector(executor: java.util.concurrent.Executor) :
+        QuiescingFuture<FileOpNodeOrEmpty?>(com.google.common.util.concurrent.MoreExecutors.directExecutor()),
+        com.google.common.util.concurrent.FutureCallback<FileOpNodeOrEmpty?> {
+        private val executor: java.util.concurrent.Executor
+        private val nodes: MutableSet<FileOpNode?> = ConcurrentHashMap.newKeySet<FileOpNode?>()
+        private var sourceFile: com.google.devtools.build.lib.skyframe.FileKey? = null
 
-    private void notifyAllFuturesAdded() {
-      decrement();
-    }
+        init {
+            this.executor = executor
+        }
 
-    private void failWith(MissingSkyframeEntryException e) {
-      notifyException(e);
-    }
+        val value: FileOpNodeOrEmpty?
+            get() = AbstractNestedFileOpNodes.Companion.from(nodes, sourceFile)
 
-    /**
-     * Implementation of {@link FutureCallback<FileOpNode>}.
-     *
-     * @deprecated do not call, only used for callback processing
-     */
-    @Deprecated
-    @Override
-    public void onSuccess(FileOpNodeOrEmpty nodeOrEmpty) {
-      switch (nodeOrEmpty) {
-        case EMPTY_FILE_OP_NODE:
-          break;
-        case FileOpNode node:
-          addNode(node);
-          break;
-      }
-      decrement();
-    }
+        fun addNode(node: FileOpNode?) {
+            nodes.add(node)
+        }
 
-    /**
-     * Implementation of {@link FutureCallback<FileOpNode>}.
-     *
-     * @deprecated do not call, only used for callback processing
-     */
-    @Deprecated
-    @Override
-    public void onFailure(Throwable t) {
-      notifyException(t);
+        fun setSource(sourceFile: com.google.devtools.build.lib.skyframe.FileKey?) {
+            com.google.common.base.Preconditions.checkState(
+                this.sourceFile == null,
+                "Attempted to set source to %s but source already set to %s.",
+                sourceFile,
+                this.sourceFile
+            )
+            this.sourceFile = sourceFile
+        }
+
+        fun addFuture(future: FutureFileOpNode) {
+            increment()
+            // There is a graph made of futures that parallels the Skyframe dependency graph. Therefore,
+            // it's a bad idea to use directExecutor() here because the amount of work that the
+            // the completion of the future unblocks can be quite large.
+            com.google.common.util.concurrent.Futures.addCallback<V?>(
+                future,
+                this as com.google.common.util.concurrent.FutureCallback<FileOpNodeOrEmpty?>,
+                executor
+            )
+        }
+
+        fun notifyAllFuturesAdded() {
+            decrement()
+        }
+
+        fun failWith(e: MissingSkyframeEntryException?) {
+            notifyException(e)
+        }
+
+        /**
+         * Implementation of [<].
+         * 
+         */
+        @Deprecated("do not call, only used for callback processing")
+        override fun onSuccess(nodeOrEmpty: FileOpNodeOrEmpty) {
+            when (nodeOrEmpty) {
+                EmptyFileOpNode.EMPTY_FILE_OP_NODE -> {}
+                -> addNode(node)
+            }
+            decrement()
+        }
+
+        /**
+         * Implementation of [<].
+         * 
+         */
+        @Deprecated("do not call, only used for callback processing")
+        override fun onFailure(t: Throwable) {
+            notifyException(t)
+        }
     }
-  }
 }

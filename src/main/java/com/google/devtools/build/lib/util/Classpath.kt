@@ -11,46 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import com.google.common.reflect.ClassPath;
-import com.google.common.reflect.ClassPath.ClassInfo;
-import java.io.IOException;
-import java.util.LinkedHashSet;
-import java.util.Set;
+import java.io.IOException
+import java.util.LinkedHashSet
 
 /**
  * A helper class to find all classes on the current classpath. This is used to automatically create
  * JUnit 3 and 4 test suites.
  */
-public final class Classpath {
-
-  /**
-   * Base exception for any classpath related errors.
-   */
-  public static final class ClassPathException extends Exception {
-    public ClassPathException(String format, Object... args) {
-      super(String.format(format, args));
-    }
-  }
-
-  /** Finds all classes that live in or below the given package. */
-  public static Set<Class<?>> findClasses(String packageName) throws ClassPathException {
-    Set<Class<?>> result = new LinkedHashSet<>();
-    String packagePrefix = (packageName + '.').replace('/', '.');
-    try {
-      for (ClassInfo ci : ClassPath.from(Classpath.class.getClassLoader()).getAllClasses()) {
-        if (ci.getName().startsWith(packagePrefix)) {
-          try {
-            result.add(ci.load());
-          } catch (UnsatisfiedLinkError | NoClassDefFoundError unused) {
-            // Ignore: we're most likely running on a different platform.
-          }
+object Classpath {
+    /** Finds all classes that live in or below the given package.  */
+    @kotlin.jvm.JvmStatic
+    @Throws(ClassPathException::class)
+    fun findClasses(packageName: String?): MutableSet<java.lang.Class<*>?> {
+        val result: MutableSet<java.lang.Class<*>?> = LinkedHashSet<java.lang.Class<*>?>()
+        val packagePrefix: String? = (packageName + '.').replace('/', '.')
+        try {
+            for (ci in com.google.common.reflect.ClassPath.from(Classpath::class.java.getClassLoader())
+                .getAllClasses()) {
+                if (ci.getName().startsWith(packagePrefix)) {
+                    try {
+                        result.add(ci.load())
+                    } catch (unused: java.lang.UnsatisfiedLinkError) {
+                        // Ignore: we're most likely running on a different platform.
+                    } catch (unused: java.lang.NoClassDefFoundError) {
+                    }
+                }
+            }
+        } catch (e: IOException) {
+            throw ClassPathException(e.getMessage())
         }
-      }
-    } catch (IOException e) {
-      throw new ClassPathException(e.getMessage());
+        return result
     }
-    return result;
-  }
+
+    /**
+     * Base exception for any classpath related errors.
+     */
+    class ClassPathException(format: String, vararg args: Any?) :
+        java.lang.Exception(java.lang.String.format(format, *args))
 }

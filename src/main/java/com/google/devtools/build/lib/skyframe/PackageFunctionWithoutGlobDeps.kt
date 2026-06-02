@@ -11,88 +11,68 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.actions.ThreadStateReceiver;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.packages.CachingPackageLocator;
-import com.google.devtools.build.lib.packages.Globber;
-import com.google.devtools.build.lib.packages.NonSkyframeGlobber;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.PackageFactory;
-import com.google.devtools.build.lib.packages.PackageLoadingListener.Metrics;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ThreadStateReceiver
 
 /**
- * Computes the {@link PackageValue} without performing Skyframe globbing.
- *
- * <p>{@link PackageFunctionWithoutGlobDeps} subclass is created when the globbing strategy is
- * {@link com.google.devtools.build.lib.skyframe.PackageFunction.GlobbingStrategy#NON_SKYFRAME},
+ * Computes the [PackageValue] without performing Skyframe globbing.
+ * 
+ * 
+ * [PackageFunctionWithoutGlobDeps] subclass is created when the globbing strategy is
+ * [com.google.devtools.build.lib.skyframe.PackageFunction.GlobbingStrategy.NON_SKYFRAME],
  * which is used for non-incremental evaluations with no GLOB nodes queried and stored in Skyframe.
  */
-final class PackageFunctionWithoutGlobDeps extends PackageFunction {
+internal class PackageFunctionWithoutGlobDeps(
+    packageFactory: PackageFactory?,
+    pkgLocator: CachingPackageLocator?,
+    showLoadingProgress: AtomicBoolean?,
+    numPackagesSuccessfullyLoaded: AtomicInteger?,
+    bzlLoadFunctionForInlining: BzlLoadFunction?,
+    packageProgress: PackageProgressReceiver?,
+    actionOnIOExceptionReadingBuildFile: ActionOnIOExceptionReadingBuildFile?,
+    actionOnFilesystemErrorCodeLoadingBzlFile: ActionOnFilesystemErrorCodeLoadingBzlFile?,
+    shouldUseRepoDotBazel: Boolean,
+    threadStateReceiverFactoryForMetrics: java.util.function.Function<SkyKey?, ThreadStateReceiver?>?,
+    cpuBoundSemaphore: AtomicReference<Semaphore?>?
+) : PackageFunction(
+    packageFactory,
+    pkgLocator,
+    showLoadingProgress,
+    numPackagesSuccessfullyLoaded,
+    bzlLoadFunctionForInlining,
+    packageProgress,
+    actionOnIOExceptionReadingBuildFile,
+    actionOnFilesystemErrorCodeLoadingBzlFile,
+    shouldUseRepoDotBazel,
+    threadStateReceiverFactoryForMetrics,
+    cpuBoundSemaphore
+) {
+    private class LoadedPackageWithoutDeps(builder: Package.AbstractBuilder?, metrics: Metrics?) :
+        LoadedPackage(builder, metrics)
 
-  PackageFunctionWithoutGlobDeps(
-      PackageFactory packageFactory,
-      CachingPackageLocator pkgLocator,
-      AtomicBoolean showLoadingProgress,
-      AtomicInteger numPackagesSuccessfullyLoaded,
-      @Nullable BzlLoadFunction bzlLoadFunctionForInlining,
-      @Nullable PackageProgressReceiver packageProgress,
-      ActionOnIOExceptionReadingBuildFile actionOnIOExceptionReadingBuildFile,
-      ActionOnFilesystemErrorCodeLoadingBzlFile actionOnFilesystemErrorCodeLoadingBzlFile,
-      boolean shouldUseRepoDotBazel,
-      Function<SkyKey, ThreadStateReceiver> threadStateReceiverFactoryForMetrics,
-      AtomicReference<Semaphore> cpuBoundSemaphore) {
-    super(
-        packageFactory,
-        pkgLocator,
-        showLoadingProgress,
-        numPackagesSuccessfullyLoaded,
-        bzlLoadFunctionForInlining,
-        packageProgress,
-        actionOnIOExceptionReadingBuildFile,
-        actionOnFilesystemErrorCodeLoadingBzlFile,
-        shouldUseRepoDotBazel,
-        threadStateReceiverFactoryForMetrics,
-        cpuBoundSemaphore);
-  }
-
-  private static final class LoadedPackageWithoutDeps extends LoadedPackage {
-    LoadedPackageWithoutDeps(Package.AbstractBuilder builder, Metrics metrics) {
-      super(builder, metrics);
+    override fun handleGlobDepsAndPropagateFilesystemExceptions(
+        packageIdentifier: PackageIdentifier?,
+        packageRoot: Root?,
+        loadedPackage: LoadedPackage?,
+        env: SkyFunction.Environment?,
+        packageWasInError: Boolean
+    ) {
+        // No-op for non-Skyframe globbing.
     }
-  }
 
-  @Override
-  protected void handleGlobDepsAndPropagateFilesystemExceptions(
-      PackageIdentifier packageIdentifier,
-      Root packageRoot,
-      LoadedPackage loadedPackage,
-      Environment env,
-      boolean packageWasInError) {
-    // No-op for non-Skyframe globbing.
-  }
+    override fun makeGlobber(
+        nonSkyframeGlobber: NonSkyframeGlobber?,
+        packageId: PackageIdentifier?,
+        packageRoot: Root?,
+        env: SkyFunction.Environment?
+    ): Globber? {
+        return nonSkyframeGlobber
+    }
 
-  @Override
-  protected Globber makeGlobber(
-      NonSkyframeGlobber nonSkyframeGlobber,
-      PackageIdentifier packageId,
-      Root packageRoot,
-      Environment env) {
-    return nonSkyframeGlobber;
-  }
-
-  @Override
-  protected LoadedPackage newLoadedPackage(
-      Package.AbstractBuilder packageBuilder, @Nullable Globber globber, Metrics metrics) {
-    return new LoadedPackageWithoutDeps(packageBuilder, metrics);
-  }
+    override fun newLoadedPackage(
+        packageBuilder: Package.AbstractBuilder?, globber: Globber?, metrics: Metrics?
+    ): LoadedPackage {
+        return LoadedPackageWithoutDeps(packageBuilder, metrics)
+    }
 }

@@ -11,22 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.skyframe.serialization.analysis.ClientId;
-import com.google.devtools.build.skyframe.IntVersion;
-import java.util.Optional;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.ClientId
 
-/** Information for a workspace computed at the time of collecting diff. */
-public interface WorkspaceInfoFromDiff {
+/** Information for a workspace computed at the time of collecting diff.  */
+interface WorkspaceInfoFromDiff {
+    val evaluatingVersion: IntVersion?
+        get() =// TODO: b/367284400 - handle this for external version control systems.
+            IntVersion.of(Long.Companion.MIN_VALUE)
 
-  default IntVersion getEvaluatingVersion() {
-    // TODO: b/367284400 - handle this for external version control systems.
-    return IntVersion.of(Long.MIN_VALUE);
-  }
-
-  default Optional<ClientId> getSnapshot() {
-    // TODO: b/367284400 - handle this for external version control systems.
-    return Optional.empty();
-  }
+    val snapshot: java.util.Optional<ClientId?>
+        get() =// TODO: b/367284400 - handle this for external version control systems.
+            java.util.Optional.empty<ClientId?>()
 }

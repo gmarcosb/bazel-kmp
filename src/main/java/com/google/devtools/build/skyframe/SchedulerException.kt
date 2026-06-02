@@ -11,60 +11,68 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.base.Preconditions;
-import java.util.Set;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.SkyKey
 
-/** Wrapper exception that {@link Runnable}s can throw. */
-class SchedulerException extends RuntimeException {
-  private final SkyKey failedValue;
-  private final ErrorInfo errorInfo;
-  private final Set<SkyKey> rdepsToBubbleUpTo;
+/** Wrapper exception that [Runnable]s can throw.  */
+internal class SchedulerException private constructor(
+    cause: java.lang.Exception?,
+    errorInfo: com.google.devtools.build.skyframe.ErrorInfo?,
+    failedValue: SkyKey?,
+    rdepsToBubbleUpTo: MutableSet<SkyKey?>?
+) : java.lang.RuntimeException(if (errorInfo != null) errorInfo.getException() else cause) {
+    private val failedValue: SkyKey
+    private val errorInfo: com.google.devtools.build.skyframe.ErrorInfo?
+    private val rdepsToBubbleUpTo: MutableSet<SkyKey?>?
 
-  private SchedulerException(
-      @Nullable Exception cause,
-      @Nullable ErrorInfo errorInfo,
-      SkyKey failedValue,
-      Set<SkyKey> rdepsToBubbleUpTo) {
-    super(errorInfo != null ? errorInfo.getException() : cause);
-    this.errorInfo = errorInfo;
-    this.rdepsToBubbleUpTo = rdepsToBubbleUpTo;
-    this.failedValue = Preconditions.checkNotNull(failedValue, errorInfo);
-  }
+    init {
+        this.errorInfo = errorInfo
+        this.rdepsToBubbleUpTo = rdepsToBubbleUpTo
+        this.failedValue = com.google.common.base.Preconditions.checkNotNull<SkyKey>(failedValue, errorInfo)
+    }
 
-  /**
-   * Returns a SchedulerException wrapping an expected error, e.g. an error describing an expected
-   * build failure when trying to evaluate the given value, that should cause Skyframe to produce
-   * useful error information to the user.
-   */
-  static SchedulerException ofError(
-      ErrorInfo errorInfo, SkyKey failedValue, Set<SkyKey> rdepsToBubbleUpTo) {
-    Preconditions.checkNotNull(errorInfo);
-    Preconditions.checkNotNull(rdepsToBubbleUpTo, "null rdeps: %s %s", errorInfo, failedValue);
-    return new SchedulerException(
-        errorInfo.getException(), errorInfo, failedValue, rdepsToBubbleUpTo);
-  }
+    fun getFailedValue(): SkyKey {
+        return failedValue
+    }
 
-  /**
-   * Returns a SchedulerException wrapping an InterruptedException, e.g. if the user interrupts
-   * the build, that should cause Skyframe to exit as soon as possible.
-   */
-  static SchedulerException ofInterruption(InterruptedException cause, SkyKey failedValue) {
-    return new SchedulerException(cause, null, failedValue, null);
-  }
+    fun getErrorInfo(): com.google.devtools.build.skyframe.ErrorInfo? {
+        return errorInfo
+    }
 
-  SkyKey getFailedValue() {
-    return failedValue;
-  }
+    fun getRdepsToBubbleUpTo(): MutableSet<SkyKey?>? {
+        return rdepsToBubbleUpTo
+    }
 
-  @Nullable
-  ErrorInfo getErrorInfo() {
-    return errorInfo;
-  }
+    companion object {
+        /**
+         * Returns a SchedulerException wrapping an expected error, e.g. an error describing an expected
+         * build failure when trying to evaluate the given value, that should cause Skyframe to produce
+         * useful error information to the user.
+         */
+        fun ofError(
+            errorInfo: com.google.devtools.build.skyframe.ErrorInfo?,
+            failedValue: SkyKey?,
+            rdepsToBubbleUpTo: MutableSet<SkyKey?>?
+        ): SchedulerException {
+            com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.skyframe.ErrorInfo?>(errorInfo)
+            com.google.common.base.Preconditions.checkNotNull<MutableSet<SkyKey?>?>(
+                rdepsToBubbleUpTo,
+                "null rdeps: %s %s",
+                errorInfo,
+                failedValue
+            )
+            return SchedulerException(
+                errorInfo.getException(), errorInfo, failedValue, rdepsToBubbleUpTo
+            )
+        }
 
-  Set<SkyKey> getRdepsToBubbleUpTo() {
-    return rdepsToBubbleUpTo;
-  }
+        /**
+         * Returns a SchedulerException wrapping an InterruptedException, e.g. if the user interrupts
+         * the build, that should cause Skyframe to exit as soon as possible.
+         */
+        fun ofInterruption(cause: java.lang.InterruptedException?, failedValue: SkyKey?): SchedulerException {
+            return SchedulerException(cause, null, failedValue, null)
+        }
+    }
 }

@@ -11,67 +11,52 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.platform
 
-package com.google.devtools.build.lib.rules.platform;
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.packages.Attribute.attr
 
-import static com.google.devtools.build.lib.packages.Attribute.attr;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.BaseRuleClasses;
-import com.google.devtools.build.lib.analysis.RuleDefinition;
-import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment;
-import com.google.devtools.build.lib.analysis.config.transitions.NoConfigTransition;
-import com.google.devtools.build.lib.analysis.platform.ConstraintSettingInfo;
-import com.google.devtools.build.lib.analysis.platform.ConstraintValueInfo;
-import com.google.devtools.build.lib.packages.BuildType;
-import com.google.devtools.build.lib.packages.RuleClass;
-import com.google.devtools.build.lib.packages.RuleClass.ToolchainResolutionMode;
-import com.google.devtools.build.lib.packages.Types;
-import com.google.devtools.build.lib.util.FileTypeSet;
-
-/** Rule definition for {@link ConstraintValue}. */
-public class ConstraintValueRule implements RuleDefinition {
-  public static final String RULE_NAME = "constraint_value";
-  public static final String CONSTRAINT_SETTING_ATTR = "constraint_setting";
-
-  @Override
-  public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment env) {
-    return builder
-        .advertiseStarlarkProvider(ConstraintValueInfo.PROVIDER.id())
-        .cfg(NoConfigTransition.getFactory())
-        .exemptFromConstraintChecking("this rule helps *define* a constraint")
-        .toolchainResolutionMode(ToolchainResolutionMode.DISABLED)
-        .removeAttribute(":action_listener")
-        .removeAttribute(RuleClass.APPLICABLE_METADATA_ATTR)
-        .override(
-            attr("tags", Types.STRING_LIST)
-                // No need to show up in ":all", etc. target patterns.
-                .value(ImmutableList.of("manual"))
-                .nonconfigurable("low-level attribute, used in platform configuration"))
-        /* <!-- #BLAZE_RULE(constraint_value).ATTRIBUTE(constraint_setting) -->
+/** Rule definition for [ConstraintValue].  */
+class ConstraintValueRule : RuleDefinition {
+    public override fun build(builder: RuleClass.Builder, env: RuleDefinitionEnvironment?): RuleClass {
+        return builder
+            .advertiseStarlarkProvider(ConstraintValueInfo.PROVIDER.id())
+            .cfg(NoConfigTransition.getFactory())
+            .exemptFromConstraintChecking("this rule helps *define* a constraint")
+            .toolchainResolutionMode(ToolchainResolutionMode.DISABLED)
+            .removeAttribute(":action_listener")
+            .removeAttribute(RuleClass.APPLICABLE_METADATA_ATTR)
+            .override(
+                attr("tags", Types.STRING_LIST) // No need to show up in ":all", etc. target patterns.
+                    .value(ImmutableList.of<E?>("manual"))
+                    .nonconfigurable("low-level attribute, used in platform configuration")
+            ) /* <!-- #BLAZE_RULE(constraint_value).ATTRIBUTE(constraint_setting) -->
         The <code>constraint_setting</code> for which this <code>constraint_value</code> is a
         possible choice.
         <!-- #END_BLAZE_RULE.ATTRIBUTE --> */
-        .add(
-            attr(CONSTRAINT_SETTING_ATTR, BuildType.LABEL)
-                .mandatory()
-                .allowedRuleClasses(ConstraintSettingRule.RULE_NAME)
-                .allowedFileTypes(FileTypeSet.NO_FILE)
-                .mandatoryProviders(ConstraintSettingInfo.PROVIDER.id())
-                .nonconfigurable("constants must be consistent across configurations"))
-        .build();
-  }
+            .add(
+                attr(CONSTRAINT_SETTING_ATTR, BuildType.LABEL)
+                    .mandatory()
+                    .allowedRuleClasses(ConstraintSettingRule.Companion.RULE_NAME)
+                    .allowedFileTypes(FileTypeSet.NO_FILE)
+                    .mandatoryProviders(ConstraintSettingInfo.PROVIDER.id())
+                    .nonconfigurable("constants must be consistent across configurations")
+            )
+            .build()
+    }
 
-  @Override
-  public Metadata getMetadata() {
-    return Metadata.builder()
-        .name(RULE_NAME)
-        .ancestors(BaseRuleClasses.NativeBuildRule.class)
-        .factoryClass(ConstraintValue.class)
-        .build();
-  }
-}
-/*<!-- #BLAZE_RULE (NAME = constraint_value, FAMILY = Platforms and Toolchains)[GENERIC_RULE] -->
+    val metadata: Metadata
+        get() = Metadata.builder()
+            .name(RULE_NAME)
+            .ancestors(BaseRuleClasses.NativeBuildRule::class.java)
+            .factoryClass(ConstraintValue::class.java)
+            .build()
+
+    companion object {
+        const val RULE_NAME: String = "constraint_value"
+        const val CONSTRAINT_SETTING_ATTR: String = "constraint_setting"
+    }
+} /*<!-- #BLAZE_RULE (NAME = constraint_value, FAMILY = Platforms and Toolchains)[GENERIC_RULE] -->
 
 This rule introduces a new value for a given constraint type.
 

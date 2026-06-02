@@ -11,65 +11,58 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableClassToInstanceMap;
-import com.google.protobuf.CodedInputStream;
-import java.io.IOException;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.skyframe.serialization.AutoRegistry
+import com.google.devtools.build.lib.skyframe.serialization.DeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.ObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecRegistry
+import com.google.protobuf.CodedInputStream
+import java.io.IOException
 
-/** An immutable deserialization context. */
-public final class ImmutableDeserializationContext extends DeserializationContext {
+/** An immutable deserialization context.  */
+class ImmutableDeserializationContext @com.google.common.annotations.VisibleForTesting constructor(
+    registry: ObjectCodecRegistry?,
+    dependencies: com.google.common.collect.ImmutableClassToInstanceMap<Any?>?
+) : DeserializationContext(registry, dependencies) {
+    @com.google.common.annotations.VisibleForTesting
+    constructor(dependencies: com.google.common.collect.ImmutableClassToInstanceMap<Any?>?) : this(
+        AutoRegistry.get(),
+        dependencies
+    )
 
-  @VisibleForTesting
-  public ImmutableDeserializationContext(
-      ObjectCodecRegistry registry, ImmutableClassToInstanceMap<Object> dependencies) {
-    super(registry, dependencies);
-  }
+    @com.google.common.annotations.VisibleForTesting
+    constructor() : this(com.google.common.collect.ImmutableClassToInstanceMap.of<Any?>())
 
-  @VisibleForTesting
-  public ImmutableDeserializationContext(ImmutableClassToInstanceMap<Object> dependencies) {
-    this(AutoRegistry.get(), dependencies);
-  }
-
-  @VisibleForTesting
-  public ImmutableDeserializationContext() {
-    this(ImmutableClassToInstanceMap.of());
-  }
-
-  @Override
-  public ImmutableDeserializationContext getFreshContext() {
-    return this;
-  }
-
-  @Override
-  public void registerInitialValue(Object initialValue) {}
-
-  @Override
-  Object deserializeAndMaybeMemoize(ObjectCodec<?> codec, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    return codec.deserialize(this, codedIn);
-  }
-
-  @Override
-  @Nullable
-  public <T> T deserializeLeaf(CodedInputStream codedIn, LeafObjectCodec<T> codec)
-      throws SerializationException, IOException {
-    int tag = codedIn.readSInt32();
-    if (tag == 0) {
-      return null;
+    override fun getFreshContext(): ImmutableDeserializationContext {
+        return this
     }
-    Object maybeConstant = codec.safeCast(maybeGetConstantByTag(tag));
-    if (maybeConstant != null) {
-      return codec.safeCast(maybeConstant);
-    }
-    return codec.deserialize((LeafDeserializationContext) this, codedIn);
-  }
 
-  @Override
-  Object getMemoizedBackReference(int memoIndex) {
-    throw new UnsupportedOperationException(
-        "The tag should never be less than 0 in the stateless case");
-  }
+    override fun registerInitialValue(initialValue: Any?) {}
+
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun deserializeAndMaybeMemoize(codec: ObjectCodec<*>, codedIn: CodedInputStream?): Any? {
+        return codec.deserialize(this, codedIn)
+    }
+
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun <T> deserializeLeaf(codedIn: CodedInputStream, codec: LeafObjectCodec<T?>): T? {
+        val tag: Int = codedIn.readSInt32()
+        if (tag == 0) {
+            return null
+        }
+        val maybeConstant: Any? = codec.safeCast(maybeGetConstantByTag(tag))
+        if (maybeConstant != null) {
+            return codec.safeCast(maybeConstant)
+        }
+        return codec.deserialize(this as LeafDeserializationContext, codedIn)
+    }
+
+    override fun getMemoizedBackReference(memoIndex: Int): Any? {
+        throw java.lang.UnsupportedOperationException(
+            "The tag should never be less than 0 in the stateless case"
+        )
+    }
 }

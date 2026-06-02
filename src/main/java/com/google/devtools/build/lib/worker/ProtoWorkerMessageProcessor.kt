@@ -11,44 +11,38 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.worker;
+package com.google.devtools.build.lib.worker
 
-import com.google.devtools.build.lib.worker.WorkerProtocol.WorkRequest;
-import com.google.devtools.build.lib.worker.WorkerProtocol.WorkResponse;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import com.google.devtools.build.lib.worker.WorkerProtocol.WorkRequest
 
-/** Implementation of the Worker Protocol using Proto to communicate with Bazel. */
-public final class ProtoWorkerMessageProcessor
-    implements WorkRequestHandler.WorkerMessageProcessor {
+/** Implementation of the Worker Protocol using Proto to communicate with Bazel.  */
+class ProtoWorkerMessageProcessor
+    (stdin: java.io.InputStream?, stdout: java.io.OutputStream) : WorkerMessageProcessor {
+    /** This worker's stdin.  */
+    private val stdin: java.io.InputStream?
 
-  /** This worker's stdin. */
-  private final InputStream stdin;
+    /** This worker's stdout. Only [WorkRequest]s should be written here.  */
+    private val stdout: java.io.OutputStream
 
-  /** This worker's stdout. Only {@link WorkRequest}s should be written here. */
-  private final OutputStream stdout;
-
-  /** Constructs a {@link WorkRequestHandler} that reads and writes Protocol Buffers. */
-  public ProtoWorkerMessageProcessor(InputStream stdin, OutputStream stdout) {
-    this.stdin = stdin;
-    this.stdout = stdout;
-  }
-
-  @Override
-  public WorkRequest readWorkRequest() throws IOException {
-    return WorkRequest.parseDelimitedFrom(stdin);
-  }
-
-  @Override
-  public void writeWorkResponse(WorkResponse workResponse) throws IOException {
-    try {
-      workResponse.writeDelimitedTo(stdout);
-    } finally {
-      stdout.flush();
+    /** Constructs a [WorkRequestHandler] that reads and writes Protocol Buffers.  */
+    init {
+        this.stdin = stdin
+        this.stdout = stdout
     }
-  }
 
-  @Override
-  public void close() {}
+    @Throws(IOException::class)
+    override fun readWorkRequest(): WorkRequest {
+        return WorkRequest.parseDelimitedFrom(stdin)
+    }
+
+    @Throws(IOException::class)
+    override fun writeWorkResponse(workResponse: WorkResponse) {
+        try {
+            workResponse.writeDelimitedTo(stdout)
+        } finally {
+            stdout.flush()
+        }
+    }
+
+    override fun close() {}
 }

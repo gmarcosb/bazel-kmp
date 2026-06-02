@@ -11,52 +11,50 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.devtools.build.lib.skyframe.serialization.HashMapCodec.populateMap;
-import static com.google.devtools.build.lib.skyframe.serialization.MapHelpers.serializeMapEntries;
+import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.AsyncObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.HashMapCodec
+import com.google.devtools.build.lib.skyframe.serialization.MapHelpers
+import com.google.devtools.build.lib.skyframe.serialization.SerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
+import java.util.Collections
+import java.util.HashMap
+import java.util.LinkedHashMap
 
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.Map;
-
-/** {@link ObjectCodec} for {@link java.util.Collections.UnmodifiableMap}. */
-@SuppressWarnings({"unchecked", "rawtypes", "NonApiType"})
-final class UnmodifiableMapCodec extends AsyncObjectCodec<Map> {
-  @SuppressWarnings("ConstantCaseForConstants")
-  private static final Map EMPTY = Collections.unmodifiableMap(new HashMap());
-
-  @Override
-  public Class getEncodedClass() {
-    return EMPTY.getClass();
-  }
-
-  @Override
-  public void serialize(SerializationContext context, Map obj, CodedOutputStream codedOut)
-      throws SerializationException, IOException {
-    codedOut.writeInt32NoTag(obj.size());
-    serializeMapEntries(context, obj, codedOut);
-  }
-
-  @Override
-  public Map deserializeAsync(AsyncDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    int size = codedIn.readInt32();
-    if (size == 0) {
-      return EMPTY;
+/** [ObjectCodec] for [java.util.Collections.UnmodifiableMap].  */
+internal class UnmodifiableMapCodec : AsyncObjectCodec<MutableMap<*, *>?>() {
+    override fun getEncodedClass(): java.lang.Class<*> {
+        return EMPTY.getClass()
     }
 
-    // Load factor is 0.75, so we need an initial capacity of 4/3 actual size to avoid rehashing.
-    LinkedHashMap map = new LinkedHashMap(4 * size / 3);
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun serialize(context: SerializationContext?, obj: MutableMap<*, *>, codedOut: CodedOutputStream) {
+        codedOut.writeInt32NoTag(obj.size())
+        MapHelpers.serializeMapEntries(context, obj, codedOut)
+    }
 
-    Map result = Collections.unmodifiableMap(map);
-    context.registerInitialValue(result);
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun deserializeAsync(context: AsyncDeserializationContext, codedIn: CodedInputStream): MutableMap<*, *> {
+        val size: Int = codedIn.readInt32()
+        if (size == 0) {
+            return EMPTY
+        }
 
-    populateMap(context, codedIn, map, size);
-    return result;
-  }
+        // Load factor is 0.75, so we need an initial capacity of 4/3 actual size to avoid rehashing.
+        val map: LinkedHashMap<*, *> = LinkedHashMap<Any?, Any?>(4 * size / 3)
+
+        val result: MutableMap<*, *> = Collections.unmodifiableMap<Any?, Any?>(map)
+        context.registerInitialValue(result)
+
+        HashMapCodec.Companion.populateMap(context, codedIn, map, size)
+        return result
+    }
+
+    companion object {
+        private val EMPTY: MutableMap<*, *> = Collections.unmodifiableMap<Any?, Any?>(HashMap<Any?, Any?>())
+    }
 }

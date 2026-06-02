@@ -11,59 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import com.google.devtools.build.lib.concurrent.SettableFutureKeyedValue;
-import java.util.concurrent.ConcurrentMap;
-import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
-import java.util.function.Function;
+import com.google.devtools.build.lib.concurrent.SettableFutureKeyedValue
+import com.google.devtools.build.lib.skyframe.serialization.analysis.AbstractValueOrFutureMap
+import java.util.concurrent.ConcurrentMap
 
 /**
- * Regular implementation of {@link AbstractValueOrFutureMap}.
- *
- * <p>{@link #getValueOrFuture} only requires a key parameter.
+ * Regular implementation of [AbstractValueOrFutureMap].
+ * 
+ * 
+ * [.getValueOrFuture] only requires a key parameter.
  */
-final class ValueOrFutureMap<
-        KeyT,
-        ValueOrFutureT,
-        ValueT extends ValueOrFutureT,
-        FutureT extends SettableFutureKeyedValue<FutureT, KeyT, ValueT>>
-    extends AbstractValueOrFutureMap<KeyT, ValueOrFutureT, ValueT, FutureT> {
+internal class ValueOrFutureMap<KeyT, ValueOrFutureT, ValueT : ValueOrFutureT?, FutureT : SettableFutureKeyedValue<FutureT?, KeyT?, ValueT?>?>
+    (
+    map: ConcurrentMap<KeyT?, ValueOrFutureT?>?,
+    futureOrValueFactory: java.util.function.BiFunction<KeyT?, java.util.function.BiConsumer<KeyT?, ValueT?>?, ValueOrFutureT?>?,
+    populator: java.util.function.Function<FutureT?, ValueOrFutureT?>,
+    futureType: java.lang.Class<FutureT?>?
+) : AbstractValueOrFutureMap<KeyT?, ValueOrFutureT?, ValueT?, FutureT?>(map, futureOrValueFactory, futureType) {
+    private val populator: java.util.function.Function<FutureT?, ValueOrFutureT?>
 
-  private final Function<FutureT, ValueOrFutureT> populator;
-
-  /**
-   * Constructor.
-   *
-   * @param populator function completes its provided settable {@code FutureT} instance and returns
-   *     a {@link ValueOrFutureT} instance. If {@code populator} returns an immediate {@code
-   *     ValueT}, it will also be returned immediately by {@link #getValueOrFuture} instead of the
-   *     future. However, it's fine for {@code populator} to return its {@code FutureT} input.
-   * @throws IllegalArgumentException if {@code FutureT} is not a subclass of {@link
-   *     SettableFutureKeyedValue}
-   */
-  ValueOrFutureMap(
-      ConcurrentMap<KeyT, ValueOrFutureT> map,
-      BiFunction<KeyT, BiConsumer<KeyT, ValueT>, ValueOrFutureT> futureOrValueFactory,
-      Function<FutureT, ValueOrFutureT> populator,
-      Class<FutureT> futureType) {
-    super(map, futureOrValueFactory, futureType);
-    this.populator = populator;
-  }
-
-  ValueOrFutureT getValueOrFuture(KeyT key) {
-    ValueOrFutureT result = getOrCreateValueForSubclasses(key);
-    if (futureType().isInstance(result)) {
-      FutureT future = futureType().cast(result);
-      if (future.tryTakeOwnership()) {
-        try {
-          return populator.apply(future);
-        } finally {
-          future.verifyComplete();
-        }
-      }
+    /**
+     * Constructor.
+     * 
+     * @param populator function completes its provided settable `FutureT` instance and returns
+     * a [ValueOrFutureT] instance. If `populator` returns an immediate `ValueT`, it will also be returned immediately by [.getValueOrFuture] instead of the
+     * future. However, it's fine for `populator` to return its `FutureT` input.
+     * @throws IllegalArgumentException if `FutureT` is not a subclass of [     ]
+     */
+    init {
+        this.populator = populator
     }
-    return result;
-  }
+
+    fun getValueOrFuture(key: KeyT?): ValueOrFutureT? {
+        val result: ValueOrFutureT? = getOrCreateValueForSubclasses(key)
+        if (futureType().isInstance(result)) {
+            val future: FutureT? = futureType().cast(result)
+            if (future.tryTakeOwnership()) {
+                try {
+                    return populator.apply(future)
+                } finally {
+                    future.verifyComplete()
+                }
+            }
+        }
+        return result
+    }
 }

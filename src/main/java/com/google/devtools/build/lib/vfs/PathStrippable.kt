@@ -11,20 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import com.google.devtools.build.lib.actions.CommandLineItem;
-import java.util.function.UnaryOperator;
+import com.google.devtools.build.lib.actions.CommandLineItem
 
 /**
- * A {@link CommandLineItem} that can apply the {@code stripPaths} map to optionally strip config
+ * A [CommandLineItem] that can apply the `stripPaths` map to optionally strip config
  * prefixes before returning output artifact exec paths.
  */
-public interface PathStrippable extends CommandLineItem {
-  String expand(UnaryOperator<PathFragment> stripPaths);
+interface PathStrippable : CommandLineItem {
+    fun expand(stripPaths: UnaryOperator<PathFragment?>?): String?
 
-  @Override
-  default String expandToCommandLine() {
-    return expand(UnaryOperator.identity());
-  }
+    public override fun expandToCommandLine(): String? {
+        return expand(UnaryOperator.identity<PathFragment?>())
+    }
 }

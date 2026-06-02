@@ -11,62 +11,66 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.supplier;
+package com.google.devtools.build.lib.supplier
 
-import com.google.common.base.Preconditions;
-import javax.annotation.Nullable;
+import com.google.common.base.Preconditions
 
 /**
- * An {@link InterruptibleSupplier} which should cache the instance retrieved during the first call
- * to {@link #get} and returns that value on subsequent calls to {@link #get}.
- *
- * <p>This is similar to, but not exactly the same as, what is returned by {@link
- * com.google.common.base.Suppliers#memoize}.
- *
- * <p>Implementations should be thread-safe.
- *
- * <p>Unlike that implementation, this is not serializable, and its initialized state (whether an
- * instance has been retrieved) is visible via {@link #isInitialized}.
+ * An [InterruptibleSupplier] which should cache the instance retrieved during the first call
+ * to [.get] and returns that value on subsequent calls to [.get].
+ * 
+ * 
+ * This is similar to, but not exactly the same as, what is returned by [ ][com.google.common.base.Suppliers.memoize].
+ * 
+ * 
+ * Implementations should be thread-safe.
+ * 
+ * 
+ * Unlike that implementation, this is not serializable, and its initialized state (whether an
+ * instance has been retrieved) is visible via [.isInitialized].
  */
-public interface MemoizingInterruptibleSupplier<T> extends InterruptibleSupplier<T> {
+interface MemoizingInterruptibleSupplier<T> : InterruptibleSupplier<T?> {
+    /** Returns `true` if the result of [.get] is readily available.  */
+    @kotlin.jvm.JvmField
+    val isInitialized: Boolean
 
-  /** Returns {@code true} if the result of {@link #get} is readily available. */
-  boolean isInitialized();
+    /** Memoizes the result of `delegate` after the first call to [.get].  */
+    class DelegatingMemoizingSupplier<T> private constructor(delegate: InterruptibleSupplier<T?>?) :
+        MemoizingInterruptibleSupplier<T?> {
+        private var delegate: InterruptibleSupplier<T?>?
 
-  static <T> MemoizingInterruptibleSupplier<T> of(InterruptibleSupplier<T> delegate) {
-    if (delegate instanceof MemoizingInterruptibleSupplier) {
-      return (MemoizingInterruptibleSupplier<T>) delegate;
-    }
-    return new DelegatingMemoizingSupplier<>(delegate);
-  }
+        @kotlin.concurrent.Volatile
+        private var value: T? = null
 
-  /** Memoizes the result of {@code delegate} after the first call to {@link #get}. */
-  final class DelegatingMemoizingSupplier<T> implements MemoizingInterruptibleSupplier<T> {
-
-    @Nullable private InterruptibleSupplier<T> delegate;
-    @Nullable private volatile T value = null;
-
-    private DelegatingMemoizingSupplier(InterruptibleSupplier<T> delegate) {
-      this.delegate = Preconditions.checkNotNull(delegate);
-    }
-
-    @Override
-    public T get() throws InterruptedException {
-      if (value != null) {
-        return value;
-      }
-      synchronized (this) {
-        if (value == null) {
-          value = delegate.get();
-          delegate = null; // Free up for GC.
+        init {
+            this.delegate = Preconditions.checkNotNull<InterruptibleSupplier<T?>?>(delegate)
         }
-      }
-      return value;
+
+        @Throws(InterruptedException::class)
+        override fun get(): T? {
+            if (value != null) {
+                return value
+            }
+            synchronized(this) {
+                if (value == null) {
+                    value = delegate!!.get()
+                    delegate = null // Free up for GC.
+                }
+            }
+            return value
+        }
+
+        override fun isInitialized(): Boolean {
+            return value != null
+        }
     }
 
-    @Override
-    public boolean isInitialized() {
-      return value != null;
+    companion object {
+        fun <T> of(delegate: InterruptibleSupplier<T?>): MemoizingInterruptibleSupplier<T?> {
+            if (delegate is MemoizingInterruptibleSupplier<*>) {
+                return delegate as MemoizingInterruptibleSupplier<T?>
+            }
+            return DelegatingMemoizingSupplier<T?>(delegate)
+        }
     }
-  }
 }

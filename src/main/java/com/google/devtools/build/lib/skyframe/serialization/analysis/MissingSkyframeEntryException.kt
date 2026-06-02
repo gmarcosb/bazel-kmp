@@ -11,24 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import com.google.devtools.build.skyframe.SkyKey;
+import com.google.devtools.build.skyframe.SkyKey
 
 /**
  * Exception thrown when an expected value is missing from Skyframe.
- *
- * <p>This occurs when the Bazel build completes but writing is still underway.
+ * 
+ * 
+ * This occurs when the Bazel build completes but writing is still underway.
  */
-final class MissingSkyframeEntryException extends Exception {
-  private final SkyKey key;
+internal class MissingSkyframeEntryException(key: SkyKey) :
+    java.lang.Exception(key.getCanonicalName() + " was missing") {
+    private val key: SkyKey
 
-  MissingSkyframeEntryException(SkyKey key) {
-    super(key.getCanonicalName() + " was missing");
-    this.key = key;
-  }
+    init {
+        this.key = key
+    }
 
-  SkyKey key() {
-    return key;
-  }
+    fun key(): SkyKey {
+        return key
+    }
 }

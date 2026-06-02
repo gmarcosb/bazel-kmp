@@ -11,36 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.cpp
 
-package com.google.devtools.build.lib.starlarkbuildapi.cpp;
+import com.google.devtools.build.docgen.annot.DocCategory
+import com.google.devtools.build.lib.collect.nestedset.Depset
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
+import net.starlark.java.eval.EvalException
+import net.starlark.java.eval.StarlarkThread
+import net.starlark.java.eval.StarlarkValue
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.StarlarkThread;
-import net.starlark.java.eval.StarlarkValue;
-
-/** Wrapper for every C++ linking provider. */
+/** Wrapper for every C++ linking provider.  */
 @StarlarkBuiltin(
     name = "LinkingContext",
     category = DocCategory.BUILTIN,
-    doc =
-        "Immutable store of information needed for C++ linking that is aggregated across "
+    doc = ("Immutable store of information needed for C++ linking that is aggregated across "
             + "dependencies.")
-public interface CcLinkingContextApi extends StarlarkValue {
-  @StarlarkMethod(
-      name = "linker_inputs",
-      doc = "Returns the depset of linker inputs.",
-      structField = true)
-  public default Depset getStarlarkLinkerInputs() {
-    throw new UnsupportedOperationException();
-  }
+)
+interface CcLinkingContextApi : StarlarkValue {
+    @get:StarlarkMethod(
+        name = "linker_inputs",
+        doc = "Returns the depset of linker inputs.",
+        structField = true
+    )
+    val starlarkLinkerInputs: Depset?
+        get() {
+            throw UnsupportedOperationException()
+        }
 
-  @StarlarkMethod(name = "extra_link_time_libraries", documented = false, useStarlarkThread = true)
-  public default Object getExtraLinkTimeLibrariesForStarlark(StarlarkThread thread)
-      throws EvalException {
-    throw new UnsupportedOperationException();
-  }
+    @StarlarkMethod(name = "extra_link_time_libraries", documented = false, useStarlarkThread = true)
+    @Throws(EvalException::class)
+    fun getExtraLinkTimeLibrariesForStarlark(thread: StarlarkThread?): Any? {
+        throw UnsupportedOperationException()
+    }
 }

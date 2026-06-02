@@ -11,70 +11,75 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.devtools.build.lib.skyframe.BzlLoadValue.bzlLoadKeyCodec;
-
-import com.google.devtools.build.lib.cmdline.BazelModuleContext;
-import com.google.devtools.build.lib.skyframe.BzlLoadValue;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import net.starlark.java.eval.Module;
+import com.google.devtools.build.lib.skyframe.BzlLoadValue.bzlLoadKeyCodec
 
 /**
- * Codec for {@link Module}.
- *
- * <p>Serializes using the module's associated {@link BzlLoadValue.Key}.
+ * Codec for [Module].
+ * 
+ * 
+ * Serializes using the module's associated [BzlLoadValue.Key].
  */
-public final class ModuleCodec extends DeferredObjectCodec<Module> {
-  private static final ModuleCodec INSTANCE = new ModuleCodec();
+class ModuleCodec private constructor() : DeferredObjectCodec<net.starlark.java.eval.Module?>() {
+    val encodedClass: java.lang.Class<net.starlark.java.eval.Module?>
+        get() = net.starlark.java.eval.Module::class.java
 
-  public static ModuleCodec moduleCodec() {
-    return INSTANCE;
-  }
-
-  @Override
-  public Class<Module> getEncodedClass() {
-    return Module.class;
-  }
-
-  @Override
-  public boolean autoRegister() {
-    // Unit tests that bypass Skyframe for Module loading cannot use this codec.
-    return false;
-  }
-
-  @Override
-  public void serialize(SerializationContext context, Module obj, CodedOutputStream codedOut)
-      throws IOException, SerializationException {
-    var moduleContext = checkNotNull(BazelModuleContext.of(obj), "module %s missing context", obj);
-    context.serializeLeaf((BzlLoadValue.Key) moduleContext.key(), bzlLoadKeyCodec(), codedOut);
-  }
-
-  @Override
-  public DeferredValue<Module> deserializeDeferred(
-      AsyncDeserializationContext context, CodedInputStream codedIn)
-      throws IOException, SerializationException {
-    BzlLoadValue.Key bzlLoadKey = context.deserializeLeaf(codedIn, bzlLoadKeyCodec());
-    var builder = new DeserializationBuilder();
-    context.getSkyValue(bzlLoadKey, builder, DeserializationBuilder::setBzlLoadValue);
-    return builder;
-  }
-
-  private static final class DeserializationBuilder implements DeferredValue<Module> {
-    private BzlLoadValue loadValue;
-
-    @Override
-    public Module call() {
-      return checkNotNull(loadValue, "Skyframe lookup value not set").getModule();
+    override fun autoRegister(): Boolean {
+        // Unit tests that bypass Skyframe for Module loading cannot use this codec.
+        return false
     }
 
-    private static void setBzlLoadValue(DeserializationBuilder builder, Object value) {
-      builder.loadValue = (BzlLoadValue) value;
+    @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    override fun serialize(
+        context: SerializationContext,
+        obj: net.starlark.java.eval.Module?,
+        codedOut: CodedOutputStream?
+    ) {
+        val moduleContext: Any = checkNotNull(BazelModuleContext.of(obj), "module %s missing context", obj)
+        context.serializeLeaf<T?>(moduleContext.key() as BzlLoadValue.Key?, bzlLoadKeyCodec(), codedOut)
     }
-  }
 
-  private ModuleCodec() {}
+    @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    override fun deserializeDeferred(
+        context: AsyncDeserializationContext, codedIn: CodedInputStream?
+    ): DeferredValue<net.starlark.java.eval.Module?> {
+        val bzlLoadKey: BzlLoadValue.Key? = context.deserializeLeaf<T?>(codedIn, bzlLoadKeyCodec())
+        val builder: DeserializationBuilder =
+            com.google.devtools.build.lib.skyframe.serialization.ModuleCodec.DeserializationBuilder()
+        context.getSkyValue<T?>(
+            bzlLoadKey,
+            builder,
+            com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext.FieldSetter { builder: T?, value: Any? ->
+                com.google.devtools.build.lib.skyframe.serialization.ModuleCodec.DeserializationBuilder.Companion.setBzlLoadValue(
+                    builder,
+                    value
+                )
+            })
+        return builder
+    }
+
+    private class DeserializationBuilder : DeferredValue<net.starlark.java.eval.Module?> {
+        private var loadValue: BzlLoadValue? = null
+
+        override fun call(): net.starlark.java.eval.Module {
+            return com.google.common.base.Preconditions.checkNotNull<Any?>(loadValue, "Skyframe lookup value not set")
+                .getModule()
+        }
+
+        companion object {
+            private fun setBzlLoadValue(builder: DeserializationBuilder, value: Any?) {
+                builder.loadValue = value as BzlLoadValue?
+            }
+        }
+    }
+
+    companion object {
+        private val INSTANCE = ModuleCodec()
+
+        @kotlin.jvm.JvmStatic
+        fun moduleCodec(): ModuleCodec {
+            return INSTANCE
+        }
+    }
 }

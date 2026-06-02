@@ -11,104 +11,83 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
-
-import static java.util.Objects.requireNonNull;
-
-import com.google.devtools.build.lib.actions.ActionLookupData;
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.serialization.DependOnFutureShim.DefaultDependOnFutureShim;
-import com.google.devtools.build.lib.skyframe.serialization.DeserializedSkyValue;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.devtools.build.lib.skyframe.serialization.SkyValueRetriever;
-import com.google.devtools.build.lib.skyframe.serialization.SkyValueRetriever.NoCachedData;
-import com.google.devtools.build.lib.skyframe.serialization.SkyValueRetriever.Restart;
-import com.google.devtools.build.lib.skyframe.serialization.SkyValueRetriever.RetrievalContext;
-import com.google.devtools.build.lib.skyframe.serialization.SkyValueRetriever.RetrievalResult;
-import com.google.devtools.build.lib.skyframe.serialization.SkyValueRetriever.RetrievedValue;
-import com.google.devtools.build.lib.skyframe.serialization.SkyValueRetriever.SerializableSkyKeyComputeState;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCacheReaderDepsProvider;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.proto.MissReason;
-import com.google.devtools.build.skyframe.SkyFunction.Environment;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.function.Supplier;
+package com.google.devtools.build.lib.skyframe
 
 /**
- * A wrapper around {@link SkyValueRetriever} to handle Bazel-on-Skyframe specific logic, metrics
+ * A wrapper around [SkyValueRetriever] to handle Bazel-on-Skyframe specific logic, metrics
  * gathering, and error handling.
  */
-public final class SkyValueRetrieverUtils {
+object SkyValueRetrieverUtils {
+    @Throws(java.lang.InterruptedException::class)
+    fun retrieveRemoteSkyValue(
+        key: SkyKey?,
+        env: SkyFunction.Environment,
+        analysisCachingDeps: RemoteAnalysisCacheReaderDepsProvider,
+        stateSupplier: java.util.function.Supplier<out SerializableSkyKeyComputeState?>?
+    ): RetrievalResult? {
+        if (env.inErrorBubbling()) {
+            // Remote retrieval during error bubbling causes incorrect error propagation. See b/449016469.
+            return NoCachedData(MissReason.MISS_REASON_NOT_ATTEMPTED)
+        }
 
-  public static RetrievalResult retrieveRemoteSkyValue(
-      SkyKey key,
-      Environment env,
-      RemoteAnalysisCacheReaderDepsProvider analysisCachingDeps,
-      Supplier<? extends SerializableSkyKeyComputeState> stateSupplier)
-      throws InterruptedException {
-    if (env.inErrorBubbling()) {
-      // Remote retrieval during error bubbling causes incorrect error propagation. See b/449016469.
-      return new NoCachedData(MissReason.MISS_REASON_NOT_ATTEMPTED);
+        if (analysisCachingDeps.shouldBailOutOnMissingFingerprint()) {
+            return NoCachedData(MissReason.MISS_REASON_NOT_ATTEMPTED)
+        }
+
+        val label: Label? =
+            when (key) {
+                -> alk.getLabel()
+                -> ald.getLabel()
+                -> artifact.getOwnerLabel()
+                else -> throw java.lang.IllegalStateException("unexpected key: " + key.getCanonicalName())
+            }
+
+        if (label == null) {
+            // If there's no label, there's no cached data.
+            return NoCachedData(MissReason.MISS_REASON_NOT_ATTEMPTED)
+        }
+
+        var retrievalResult: RetrievalResult? = null
+        val state: RetrievalContext = env.getState<T?>(stateSupplier).getRetrievalContext()
+        try {
+            retrievalResult =
+                SkyValueRetriever.tryRetrieve(
+                    env,
+                    DefaultDependOnFutureShim(env),
+                    analysisCachingDeps.objectCodecs,
+                    analysisCachingDeps.fingerprintValueService,
+                    java.util.Objects.requireNonNull<T?>(analysisCachingDeps.analysisCacheClient),
+                    key,
+                    state,  /* frontierNodeVersion= */
+                    analysisCachingDeps.skyValueVersion
+                )
+            analysisCachingDeps.recordRetrievalResult(retrievalResult, key)
+        } catch (e: SerializationException) {
+            // TODO: b/445242928 - also log this in BEP
+            //
+            // Don't crash the build if deserialization failed. Gracefully fallback to local evaluation.
+            analysisCachingDeps.recordSerializationException(e, key)
+            retrievalResult = NoCachedData(e.getReason())
+        } catch (e: java.lang.RuntimeException) {
+            throw e
+        } catch (e: java.lang.InterruptedException) {
+            throw e
+        } finally {
+            if (retrievalResult === Restart.RESTART) {
+                state.addRestart()
+            }
+        }
+
+        check(
+            !(retrievalResult is
+                    && v !is DeserializedSkyValue
+        )) {
+            ("deserialized SkyValue of type "
+                    + v.getClass().getCanonicalName()
+                    + " does not implement DeserializedSkyValue. Try using"
+                    + " @AutoCodec(deserializedInterface = DeserializedSkyValue.class)")
+        }
+
+        return retrievalResult
     }
-
-    if (analysisCachingDeps.shouldBailOutOnMissingFingerprint()) {
-      return new NoCachedData(MissReason.MISS_REASON_NOT_ATTEMPTED);
-    }
-
-    Label label =
-        switch (key) {
-          case ActionLookupKey alk -> alk.getLabel();
-          case ActionLookupData ald -> ald.getLabel();
-          case Artifact artifact -> artifact.getOwnerLabel();
-          default -> throw new IllegalStateException("unexpected key: " + key.getCanonicalName());
-        };
-
-    if (label == null) {
-      // If there's no label, there's no cached data.
-      return new NoCachedData(MissReason.MISS_REASON_NOT_ATTEMPTED);
-    }
-
-    RetrievalResult retrievalResult = null;
-    RetrievalContext state = env.getState(stateSupplier).getRetrievalContext();
-    try {
-      retrievalResult =
-          SkyValueRetriever.tryRetrieve(
-              env,
-              new DefaultDependOnFutureShim(env),
-              analysisCachingDeps.getObjectCodecs(),
-              analysisCachingDeps.getFingerprintValueService(),
-              requireNonNull(analysisCachingDeps.getAnalysisCacheClient()),
-              key,
-              state,
-              /* frontierNodeVersion= */ analysisCachingDeps.getSkyValueVersion());
-      analysisCachingDeps.recordRetrievalResult(retrievalResult, key);
-    } catch (SerializationException e) {
-      // TODO: b/445242928 - also log this in BEP
-      //
-      // Don't crash the build if deserialization failed. Gracefully fallback to local evaluation.
-      analysisCachingDeps.recordSerializationException(e, key);
-      retrievalResult = new NoCachedData(e.getReason());
-    } catch (RuntimeException | InterruptedException e) {
-      throw e;
-    } finally {
-      if (retrievalResult == Restart.RESTART) {
-        state.addRestart();
-      }
-    }
-
-    if (retrievalResult instanceof RetrievedValue(SkyValue v)
-        && !(v instanceof DeserializedSkyValue)) {
-      throw new IllegalStateException(
-          "deserialized SkyValue of type "
-              + v.getClass().getCanonicalName()
-              + " does not implement DeserializedSkyValue. Try using"
-              + " @AutoCodec(deserializedInterface = DeserializedSkyValue.class)");
-    }
-
-    return retrievalResult;
-  }
-
-  private SkyValueRetrieverUtils() {}
 }

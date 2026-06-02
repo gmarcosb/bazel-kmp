@@ -348,7 +348,7 @@ for example 'bench_int.star:bench_add32'.
 
       this.cpu0 = threadMX.getCurrentThreadCpuTime();
       this.alloc0 = threadMX.getThreadAllocatedBytes(Thread.currentThread().getId());
-      this.steps0 = thread.getExecutedSteps();
+      this.steps0 = thread.executedSteps;
       this.time0 = System.nanoTime();
     }
 
@@ -358,7 +358,7 @@ for example 'bench_int.star:bench_add32'.
         throw Starlark.errorf("timer already stopped");
       }
       long time1 = System.nanoTime();
-      long steps1 = thread.getExecutedSteps();
+      long steps1 = thread.executedSteps;
       long alloc1 = threadMX.getThreadAllocatedBytes(Thread.currentThread().getId());
       long cpu1 = threadMX.getCurrentThreadCpuTime();
 

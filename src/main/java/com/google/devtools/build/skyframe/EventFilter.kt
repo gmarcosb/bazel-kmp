@@ -11,49 +11,49 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-/** Filters out events which should not be stored during evaluation in {@link ParallelEvaluator}. */
-public interface EventFilter {
+import com.google.devtools.build.skyframe.SkyKey
 
-  /**
-   * Returns true if any {@linkplain com.google.devtools.build.lib.events.Reportable events} should
-   * be stored in skyframe nodes. Otherwise, optimizations may be made to avoid doing unnecessary
-   * work when evaluating node entries.
-   */
-  boolean storeEvents();
+/** Filters out events which should not be stored during evaluation in [ParallelEvaluator].  */
+interface EventFilter {
+    /**
+     * Returns true if any [events][com.google.devtools.build.lib.events.Reportable] should
+     * be stored in skyframe nodes. Otherwise, optimizations may be made to avoid doing unnecessary
+     * work when evaluating node entries.
+     */
+    fun storeEvents(): Boolean
 
-  /**
-   * Determines whether stored {@linkplain com.google.devtools.build.lib.events.Reportable events}
-   * should propagate from {@code depKey} to {@code primaryKey}.
-   *
-   * <p>Only relevant if {@link #storeEvents} returns {@code true}.
-   */
-  boolean shouldPropagate(SkyKey depKey, SkyKey primaryKey);
+    /**
+     * Determines whether stored [events][com.google.devtools.build.lib.events.Reportable]
+     * should propagate from `depKey` to `primaryKey`.
+     * 
+     * 
+     * Only relevant if [.storeEvents] returns `true`.
+     */
+    fun shouldPropagate(depKey: SkyKey?, primaryKey: SkyKey?): Boolean
 
-  EventFilter FULL_STORAGE =
-      new EventFilter() {
-        @Override
-        public boolean storeEvents() {
-          return true;
+    companion object {
+        @kotlin.jvm.JvmField
+        val FULL_STORAGE: EventFilter = object : EventFilter {
+            override fun storeEvents(): Boolean {
+                return true
+            }
+
+            override fun shouldPropagate(depKey: SkyKey?, primaryKey: SkyKey?): Boolean {
+                return true
+            }
         }
 
-        @Override
-        public boolean shouldPropagate(SkyKey depKey, SkyKey primaryKey) {
-          return true;
-        }
-      };
+        @kotlin.jvm.JvmField
+        val NO_STORAGE: EventFilter = object : EventFilter {
+            override fun storeEvents(): Boolean {
+                return false
+            }
 
-  EventFilter NO_STORAGE =
-      new EventFilter() {
-        @Override
-        public boolean storeEvents() {
-          return false;
+            override fun shouldPropagate(depKey: SkyKey?, primaryKey: SkyKey?): Boolean {
+                throw java.lang.UnsupportedOperationException()
+            }
         }
-
-        @Override
-        public boolean shouldPropagate(SkyKey depKey, SkyKey primaryKey) {
-          throw new UnsupportedOperationException();
-        }
-      };
+    }
 }

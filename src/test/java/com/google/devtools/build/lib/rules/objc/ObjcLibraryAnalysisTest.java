@@ -49,8 +49,8 @@ public final class ObjcLibraryAnalysisTest extends AnalysisTestCase {
             Pair.of("action removed", "['a.m']"));
 
     for (Pair<String, String> build : builds) {
-      String context = build.getFirst();
-      String srcs = build.getSecond();
+      String context = build.first;
+      String srcs = build.second;
 
       scratch.overwriteFile(
           "foo/BUILD",

@@ -11,50 +11,55 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
+import com.google.auto.value.AutoBuilder
 
-import com.google.auto.value.AutoBuilder;
-import com.google.common.annotations.VisibleForTesting;
-import java.time.Duration;
+/** A memory pressure event.  */
+class MemoryPressureEvent(
+    val wasManualGc: Boolean,
+    val wasGcLockerInitiatedGc: Boolean,
+    @kotlin.jvm.JvmField val wasFullGc: Boolean,
+    @kotlin.jvm.JvmField val tenuredSpaceUsedBytes: Long,
+    @kotlin.jvm.JvmField val tenuredSpaceMaxBytes: Long,
+    duration: java.time.Duration?
+) {
+    fun percentTenuredSpaceUsed(): Int {
+        return ((this.tenuredSpaceUsedBytes * 100L) / this.tenuredSpaceMaxBytes).toInt()
+    }
 
-/** A memory pressure event. */
-public record MemoryPressureEvent(
-    boolean wasManualGc,
-    boolean wasGcLockerInitiatedGc,
-    boolean wasFullGc,
-    long tenuredSpaceUsedBytes,
-    long tenuredSpaceMaxBytes,
-    Duration duration) {
+    /** A memory pressure event builder.  */
+    @com.google.common.annotations.VisibleForTesting
+    @AutoBuilder
+    abstract class Builder {
+        abstract fun setWasManualGc(value: Boolean): Builder?
 
-  public final int percentTenuredSpaceUsed() {
-    return (int) ((tenuredSpaceUsedBytes() * 100L) / tenuredSpaceMaxBytes());
-  }
+        abstract fun setWasGcLockerInitiatedGc(value: Boolean): Builder?
 
-  @VisibleForTesting
-  public static Builder newBuilder() {
-    return new AutoBuilder_MemoryPressureEvent_Builder()
-        .setWasManualGc(false)
-        .setWasGcLockerInitiatedGc(false)
-        .setWasFullGc(false);
-  }
+        abstract fun setWasFullGc(value: Boolean): Builder?
 
-  /** A memory pressure event builder. */
-  @VisibleForTesting
-  @AutoBuilder
-  public abstract static class Builder {
-    public abstract Builder setWasManualGc(boolean value);
+        abstract fun setTenuredSpaceUsedBytes(value: Long): Builder?
 
-    public abstract Builder setWasGcLockerInitiatedGc(boolean value);
+        abstract fun setTenuredSpaceMaxBytes(value: Long): Builder?
 
-    public abstract Builder setWasFullGc(boolean value);
+        abstract fun setDuration(duration: java.time.Duration?): Builder?
 
-    public abstract Builder setTenuredSpaceUsedBytes(long value);
+        abstract fun build(): MemoryPressureEvent?
+    }
 
-    public abstract Builder setTenuredSpaceMaxBytes(long value);
+    val duration: java.time.Duration?
 
-    public abstract Builder setDuration(Duration duration);
+    init {
+        this.duration = duration
+    }
 
-    public abstract MemoryPressureEvent build();
-  }
+    companion object {
+        @com.google.common.annotations.VisibleForTesting
+        fun newBuilder(): Builder {
+            return AutoBuilder_MemoryPressureEvent_Builder()
+                .setWasManualGc(false)
+                .setWasGcLockerInitiatedGc(false)
+                .setWasFullGc(false)
+        }
+    }
 }

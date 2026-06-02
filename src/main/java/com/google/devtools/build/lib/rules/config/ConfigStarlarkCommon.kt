@@ -11,55 +11,42 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License
+package com.google.devtools.build.lib.rules.config
 
-package com.google.devtools.build.lib.rules.config;
+import com.google.devtools.build.lib.analysis.config.ToolchainTypeRequirement
 
-import com.google.devtools.build.lib.analysis.config.ToolchainTypeRequirement;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.packages.LabelConverter;
-import com.google.devtools.build.lib.packages.Provider;
-import com.google.devtools.build.lib.starlarkbuildapi.config.ConfigStarlarkCommonApi;
-import com.google.devtools.build.lib.starlarkbuildapi.config.ConfigurationTransitionApi;
-import com.google.devtools.build.lib.starlarkbuildapi.config.StarlarkToolchainTypeRequirement;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkThread;
+/** Starlark namespace used to interact with Blaze's configurability APIs.  */
+class ConfigStarlarkCommon : ConfigStarlarkCommonApi {
+    val configFeatureFlagProviderConstructor: Provider?
+        get() = ConfigFeatureFlagProvider.Companion.STARLARK_CONSTRUCTOR
 
-/** Starlark namespace used to interact with Blaze's configurability APIs. */
-public class ConfigStarlarkCommon implements ConfigStarlarkCommonApi {
-
-  @Override
-  public Provider getConfigFeatureFlagProviderConstructor() {
-    return ConfigFeatureFlagProvider.STARLARK_CONSTRUCTOR;
-  }
-
-  @Override
-  public ConfigurationTransitionApi createConfigFeatureFlagTransitionFactory(String attribute) {
-    return new ConfigFeatureFlagTransitionFactory(attribute);
-  }
-
-  @Override
-  public StarlarkToolchainTypeRequirement toolchainType(
-      Object name, boolean mandatory, StarlarkThread thread) throws EvalException {
-
-    Label label;
-    if (name instanceof Label nameLabel) {
-      label = nameLabel;
-    } else if (name instanceof String) {
-      LabelConverter converter = LabelConverter.forBzlEvaluatingThread(thread);
-      try {
-        label = converter.convert((String) name);
-      } catch (LabelSyntaxException e) {
-        throw Starlark.errorf(
-            "Unable to parse toolchain_type label '%s': %s", name, e.getMessage());
-      }
-    } else {
-      throw Starlark.errorf(
-          "config_common.toolchain_type() takes a Label or String, and instead got a %s",
-          name.getClass().getSimpleName());
+    override fun createConfigFeatureFlagTransitionFactory(attribute: String?): ConfigurationTransitionApi {
+        return ConfigFeatureFlagTransitionFactory(attribute)
     }
 
-    return ToolchainTypeRequirement.builder(label).mandatory(mandatory).build();
-  }
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun toolchainType(
+        name: Any, mandatory: Boolean, thread: net.starlark.java.eval.StarlarkThread?
+    ): StarlarkToolchainTypeRequirement {
+        val label: Label?
+        if (name is Label) {
+            label = name
+        } else if (name is String) {
+            val converter: LabelConverter = LabelConverter.forBzlEvaluatingThread(thread)
+            try {
+                label = converter.convert(name)
+            } catch (e: LabelSyntaxException) {
+                throw net.starlark.java.eval.Starlark.errorf(
+                    "Unable to parse toolchain_type label '%s': %s", name, e.getMessage()
+                )
+            }
+        } else {
+            throw net.starlark.java.eval.Starlark.errorf(
+                "config_common.toolchain_type() takes a Label or String, and instead got a %s",
+                name.javaClass.getSimpleName()
+            )
+        }
+
+        return ToolchainTypeRequirement.builder(label).mandatory(mandatory).build()
+    }
 }

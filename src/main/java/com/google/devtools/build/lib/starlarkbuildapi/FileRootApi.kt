@@ -11,28 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.starlarkbuildapi;
-
-import com.google.devtools.build.docgen.annot.DocCategory;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkValue;
+package com.google.devtools.build.lib.starlarkbuildapi
 
 /**
  * A root for a file. The roots are the directories containing files, and they are mapped together
  * into a single directory tree to form the execution environment.
  */
-@StarlarkBuiltin(
+@net.starlark.java.annot.StarlarkBuiltin(
     name = "root",
-    category = DocCategory.BUILTIN,
-    doc =
-        "A root for files. The roots are the directories containing files, and they are mapped "
+    category = com.google.devtools.build.docgen.annot.DocCategory.BUILTIN,
+    doc = ("A root for files. The roots are the directories containing files, and they are mapped "
             + "together into a single directory tree to form the execution environment.")
-public interface FileRootApi extends StarlarkValue {
-  @StarlarkMethod(
-      name = "path",
-      structField = true,
-      doc = "Returns the relative path from the exec root to the actual root.")
-  String getExecPathString();
+)
+interface FileRootApi : net.starlark.java.eval.StarlarkValue {
+    @kotlin.jvm.JvmField
+    @get:net.starlark.java.annot.StarlarkMethod(
+        name = "path",
+        structField = true,
+        doc = "Returns the relative path from the exec root to the actual root."
+    )
+    val execPathString: String?
 }

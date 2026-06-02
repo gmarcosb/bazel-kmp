@@ -11,177 +11,167 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.java
 
-package com.google.devtools.build.lib.starlarkbuildapi.java;
+import com.google.devtools.build.docgen.annot.DocCategory
+import com.google.devtools.build.lib.collect.nestedset.Depset
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.packages.semantics.BuildLanguageOptions;
-import com.google.devtools.build.lib.starlarkbuildapi.FileApi;
-import com.google.devtools.build.lib.starlarkbuildapi.core.StructApi;
-import com.google.devtools.build.lib.starlarkbuildapi.cpp.CcInfoApi;
-import com.google.devtools.build.lib.starlarkbuildapi.java.JavaPluginInfoApi.JavaPluginDataApi;
-import javax.annotation.Nullable;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.Sequence;
-
-/** Info object encapsulating all information by java rules. */
+/** Info object encapsulating all information by java rules.  */
 @StarlarkBuiltin(
     name = "JavaInfo",
     doc = "A provider encapsulating information about Java and Java-like targets.",
-    category = DocCategory.PROVIDER)
-public interface JavaInfoApi<
-        FileT extends FileApi,
-        JavaOutputT extends JavaOutputApi<FileT>,
-        JavaPluginDataT extends JavaPluginDataApi>
-    extends StructApi, JavaPluginInfoApi<FileT, JavaPluginDataT, JavaOutputT> {
+    category = DocCategory.PROVIDER
+)
+interface JavaInfoApi<FileT : FileApi?, JavaOutputT : JavaOutputApi<FileT?>?, JavaPluginDataT : JavaPluginDataApi?>
+    : StructApi, JavaPluginInfoApi<FileT?, JavaPluginDataT?, JavaOutputT?> {
+    @get:StarlarkMethod(
+        name = "_neverlink",
+        doc = "Whether this library should be used only for compilation and not at runtime.",
+        structField = true
+    )
+    val isNeverlink: Boolean
 
-  @StarlarkMethod(
-      name = "_neverlink",
-      doc = "Whether this library should be used only for compilation and not at runtime.",
-      structField = true)
-  boolean isNeverlink();
-
-  @StarlarkMethod(
-      name = "transitive_runtime_jars",
-      doc =
-"""
+    @get:StarlarkMethod(
+        name = "transitive_runtime_jars", doc = """
 Returns a transitive set of Jars required on the target's runtime classpath.
 <p/>Note: for binary targets (such as java_binary and java_test), this is empty, since such targets
 are not intended to be dependencies of other Java targets.
-""",
-      structField = true)
-  Depset getTransitiveRuntimeJars();
 
-  @StarlarkMethod(
-      name = "transitive_compile_time_jars",
-      doc =
-"""
+""".trimIndent(), structField = true
+    )
+    val transitiveRuntimeJars: Depset?
+
+    @get:StarlarkMethod(
+        name = "transitive_compile_time_jars", doc = """
 Returns the transitive set of Jars required to build the target.
 <p/>Note: for binary targets (such as java_binary and java_test), this is empty, since such targets
 are not intended to be dependencies of other Java targets.
-""",
-      structField = true)
-  Depset getTransitiveCompileTimeJars();
 
-  @StarlarkMethod(
-      name = "compile_jars",
-      doc =
-          "Returns the Jars required by this target directly at compile time. They can be"
-              + " interface jars (ijar or hjar), regular jars or both, depending on whether rule"
-              + " implementations chose to create interface jars or not.",
-      structField = true)
-  Depset getCompileTimeJars();
+""".trimIndent(), structField = true
+    )
+    val transitiveCompileTimeJars: Depset?
 
-  @StarlarkMethod(
-      name = "full_compile_jars",
-      doc =
-          "Returns the regular, full compile time Jars required by this target directly. They can"
-              + " be <ul><li> the corresponding regular Jars of the interface Jars returned by"
-              + " <code><a class=\"anchor\""
-              + " href=\"#compile_jars\">JavaInfo.compile_jars</a></code></li><li>"
-              + " the regular (full) Jars returned by <code><a class=\"anchor\""
-              + " href=\"#compile_jars\">JavaInfo.compile_jars</a></code></li></ul>"
-              + "<p>Note: <code><a class=\"anchor\""
-              + " href=\"#compile_jars\">JavaInfo.compile_jars</a></code> can return"
-              + " a mix of interface Jars and regular Jars.<p>Only use this method if interface"
-              + " Jars don't work with your rule set(s) (e.g. some Scala targets) If you're"
-              + " working with Java-only targets it's preferable to use interface Jars via"
-              + " <code><a class=\"anchor\""
-              + " href=\"#compile_jars\">JavaInfo.compile_jars</a></code></li>",
-      structField = true)
-  Depset getFullCompileTimeJars();
+    @get:StarlarkMethod(
+        name = "compile_jars", doc = ("Returns the Jars required by this target directly at compile time. They can be"
+                + " interface jars (ijar or hjar), regular jars or both, depending on whether rule"
+                + " implementations chose to create interface jars or not."), structField = true
+    )
+    val compileTimeJars: Depset?
 
-  @StarlarkMethod(
-      name = "header_compilation_direct_deps",
-      doc = "Returns the direct dependencies of the header compilation action.",
-      structField = true)
-  Depset headerCompilationDirectDeps();
+    @get:StarlarkMethod(
+        name = "full_compile_jars",
+        doc = ("Returns the regular, full compile time Jars required by this target directly. They can"
+                + " be <ul><li> the corresponding regular Jars of the interface Jars returned by"
+                + " <code><a class=\"anchor\""
+                + " href=\"#compile_jars\">JavaInfo.compile_jars</a></code></li><li>"
+                + " the regular (full) Jars returned by <code><a class=\"anchor\""
+                + " href=\"#compile_jars\">JavaInfo.compile_jars</a></code></li></ul>"
+                + "<p>Note: <code><a class=\"anchor\""
+                + " href=\"#compile_jars\">JavaInfo.compile_jars</a></code> can return"
+                + " a mix of interface Jars and regular Jars.<p>Only use this method if interface"
+                + " Jars don't work with your rule set(s) (e.g. some Scala targets) If you're"
+                + " working with Java-only targets it's preferable to use interface Jars via"
+                + " <code><a class=\"anchor\""
+                + " href=\"#compile_jars\">JavaInfo.compile_jars</a></code></li>"),
+        structField = true
+    )
+    val fullCompileTimeJars: Depset?
 
-  @StarlarkMethod(
-      name = "source_jars",
-      doc =
-          "Returns a list of Jars with all the source files (including those generated by"
-              + " annotations) of the target  itself, i.e. NOT including the sources of the"
-              + " transitive dependencies.",
-      structField = true)
-  Sequence<FileT> getSourceJars();
+    @StarlarkMethod(
+        name = "header_compilation_direct_deps",
+        doc = "Returns the direct dependencies of the header compilation action.",
+        structField = true
+    )
+    fun headerCompilationDirectDeps(): Depset?
 
-  @StarlarkMethod(
-      name = "outputs",
-      doc =
-          "Returns information about outputs of this Java/Java-like target. Deprecated: use"
-              + " java_outputs.",
-      structField = true,
-      allowReturnNones = true)
-  @Nullable
-  @Deprecated
-  JavaRuleOutputJarsProviderApi<?> getOutputJars();
+    @get:StarlarkMethod(
+        name = "source_jars", doc = ("Returns a list of Jars with all the source files (including those generated by"
+                + " annotations) of the target  itself, i.e. NOT including the sources of the"
+                + " transitive dependencies."), structField = true
+    )
+    val sourceJars: Sequence<FileT?>?
 
-  @StarlarkMethod(
-      name = "annotation_processing",
-      structField = true,
-      allowReturnNones = true,
-      doc =
-          "Returns information about annotation processors applied on this Java/Java-like target."
-              + "<p>Deprecated: Please use <code>plugins</code> instead (which returns information "
-              + "about annotation processors to be applied by consuming targets).")
-  @Nullable
-  JavaAnnotationProcessingApi<?> getGenJarsProvider();
+    @get:Deprecated("")
+    @get:StarlarkMethod(
+        name = "outputs", doc = ("Returns information about outputs of this Java/Java-like target. Deprecated: use"
+                + " java_outputs."), structField = true, allowReturnNones = true
+    )
+    val outputJars: JavaRuleOutputJarsProviderApi<*>?
 
-  @StarlarkMethod(
-      name = "compilation_info",
-      structField = true,
-      allowReturnNones = true,
-      doc = "Returns compilation information for this Java/Java-like target.")
-  @Nullable
-  JavaCompilationInfoProviderApi<?> getCompilationInfoProvider();
+    @get:StarlarkMethod(
+        name = "annotation_processing",
+        structField = true,
+        allowReturnNones = true,
+        doc = ("Returns information about annotation processors applied on this Java/Java-like target."
+                + "<p>Deprecated: Please use <code>plugins</code> instead (which returns information "
+                + "about annotation processors to be applied by consuming targets).")
+    )
+    val genJarsProvider: JavaAnnotationProcessingApi<*>?
 
-  @StarlarkMethod(
-      name = "runtime_output_jars",
-      doc = "Returns a list of runtime Jars created by this Java/Java-like target.",
-      structField = true)
-  Sequence<FileT> getRuntimeOutputJars();
+    @get:StarlarkMethod(
+        name = "compilation_info",
+        structField = true,
+        allowReturnNones = true,
+        doc = "Returns compilation information for this Java/Java-like target."
+    )
+    val compilationInfoProvider: JavaCompilationInfoProviderApi<*>?
 
-  @StarlarkMethod(
-      name = "transitive_source_jars",
-      doc =
-          "Returns the Jars containing source files of the current target and all of its"
-              + " transitive dependencies.",
-      structField = true)
-  Depset /*<FileT>*/ getTransitiveSourceJars();
+    @get:StarlarkMethod(
+        name = "runtime_output_jars",
+        doc = "Returns a list of runtime Jars created by this Java/Java-like target.",
+        structField = true
+    )
+    val runtimeOutputJars: Sequence<FileT?>?
 
-  @StarlarkMethod(
-      name = "transitive_native_libraries",
-      structField = true,
-      doc = "Returns the transitive set of CC native libraries required by the target.")
-  Depset /*<LibraryToLink>*/ getTransitiveNativeLibrariesForStarlark();
+    @get:StarlarkMethod(
+        name = "transitive_source_jars",
+        doc = ("Returns the Jars containing source files of the current target and all of its"
+                + " transitive dependencies."),
+        structField = true
+    )
+    val transitiveSourceJars: Depset?
 
-  @StarlarkMethod(
-      name = "cc_link_params_info",
-      structField = true,
-      enableOnlyWithFlag = BuildLanguageOptions.EXPERIMENTAL_GOOGLE_LEGACY_API,
-      doc = "Deprecated, do not use. C++ libraries to be linked into Java targets.")
-  default CcInfoApi<FileT> getCcLinkParamInfo() {
-    throw new UnsupportedOperationException();
-  }
+    @get:StarlarkMethod(
+        name = "transitive_native_libraries",
+        structField = true,
+        doc = "Returns the transitive set of CC native libraries required by the target."
+    )
+    val transitiveNativeLibrariesForStarlark: Depset?
 
-  @StarlarkMethod(
-      name = "module_flags_info",
-      doc = "Returns the Java module flag configuration.",
-      structField = true)
-  JavaModuleFlagsProviderApi getJavaModuleFlagsInfo();
+    @get:StarlarkMethod(
+        name = "cc_link_params_info",
+        structField = true,
+        enableOnlyWithFlag = BuildLanguageOptions.EXPERIMENTAL_GOOGLE_LEGACY_API,
+        doc = "Deprecated, do not use. C++ libraries to be linked into Java targets."
+    )
+    val ccLinkParamInfo: CcInfoApi<FileT?>?
+        get() {
+            throw UnsupportedOperationException()
+        }
 
-  @StarlarkMethod(
-      name = "_transitive_full_compile_time_jars",
-      documented = false,
-      structField = true)
-  Depset getTransitiveFullCompileJars();
+    @get:StarlarkMethod(
+        name = "module_flags_info",
+        doc = "Returns the Java module flag configuration.",
+        structField = true
+    )
+    val javaModuleFlagsInfo: JavaModuleFlagsProviderApi?
 
-  @StarlarkMethod(name = "_compile_time_java_dependencies", documented = false, structField = true)
-  Depset getCompileTimeJavaDependencies();
+    @get:StarlarkMethod(
+        name = "_transitive_full_compile_time_jars",
+        documented = false,
+        structField = true
+    )
+    val transitiveFullCompileJars: Depset?
 
-  @StarlarkMethod(name = "_constraints", documented = false, structField = true)
-  Sequence<String> getJavaConstraintsStarlark();
+    @get:StarlarkMethod(
+        name = "_compile_time_java_dependencies",
+        documented = false,
+        structField = true
+    )
+    val compileTimeJavaDependencies: Depset?
+
+    @get:StarlarkMethod(name = "_constraints", documented = false, structField = true)
+    val javaConstraintsStarlark: Sequence<String?>?
 }

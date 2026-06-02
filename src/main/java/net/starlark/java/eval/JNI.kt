@@ -11,20 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.eval
 
-package net.starlark.java.eval;
-
-final class JNI {
-  private JNI() {} // uninstantiable
-
-  static void load() {
-    try {
-      System.loadLibrary("cpu_profiler");
-    } catch (UnsatisfiedLinkError ex) {
-      // Ignore, deferring the error until a C function is called, if ever.
-      // Without this hack //src/test/shell/bazel:bazel_bootstrap_distfile_test
-      // fails with an utterly uninformative error.
-      // TODO(adonovan): remove try/catch once that test is fixed.
+internal object JNI {
+    fun load() {
+        try {
+            java.lang.System.loadLibrary("cpu_profiler")
+        } catch (ex: java.lang.UnsatisfiedLinkError) {
+            // Ignore, deferring the error until a C function is called, if ever.
+            // Without this hack //src/test/shell/bazel:bazel_bootstrap_distfile_test
+            // fails with an utterly uninformative error.
+            // TODO(adonovan): remove try/catch once that test is fixed.
+        }
     }
-  }
 }

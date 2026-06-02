@@ -11,23 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.platform
 
-package com.google.devtools.build.lib.starlarkbuildapi.platform;
+import com.google.common.collect.ImmutableMap
+import com.google.devtools.build.lib.starlarkbuildapi.core.Bootstrap
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.starlarkbuildapi.core.Bootstrap;
-
-/** {@link Bootstrap} for Starlark objects related to platforms. */
-public class PlatformBootstrap implements Bootstrap {
-
-  private final PlatformCommonApi platformCommon;
-
-  public PlatformBootstrap(PlatformCommonApi platformCommon) {
-    this.platformCommon = platformCommon;
-  }
-
-  @Override
-  public void addBindingsToBuilder(ImmutableMap.Builder<String, Object> builder) {
-    builder.put("platform_common", platformCommon);
-  }
+/** [Bootstrap] for Starlark objects related to platforms.  */
+class PlatformBootstrap(private val platformCommon: PlatformCommonApi?) : Bootstrap {
+    override fun addBindingsToBuilder(builder: ImmutableMap.Builder<String?, Any?>) {
+        builder.put("platform_common", platformCommon)
+    }
 }

@@ -11,22 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.repository;
+package com.google.devtools.build.lib.repository
 
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
 /**
  * Event requesting that additional information, in particular the place of definition, be shown for
  * a given external repository.
  */
-public class RequestRepositoryInformationEvent implements Postable {
-  private final String name;
-
-  public RequestRepositoryInformationEvent(String name) {
-    this.name = name;
-  }
-
-  public String getName() {
-    return name;
-  }
-}
+class RequestRepositoryInformationEvent(val name: String?) : Postable

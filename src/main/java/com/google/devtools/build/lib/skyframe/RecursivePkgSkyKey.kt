@@ -11,36 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
+import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories
 
-import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.skyframe.SkyKey;
+/** Common parent class of SkyKeys that wrap a [RecursivePkgKey].  */
+abstract class RecursivePkgSkyKey(
+    repositoryName: RepositoryName?,
+    rootedPath: RootedPath,
+    excludedPaths: IgnoredSubdirectories
+) : RecursivePkgKey(repositoryName, rootedPath, excludedPaths), SkyKey {
+    override fun toString(): String {
+        return functionName().toString() + " " + super.toString()
+    }
 
-/** Common parent class of SkyKeys that wrap a {@link RecursivePkgKey}. */
-public abstract class RecursivePkgSkyKey extends RecursivePkgKey implements SkyKey {
-  public RecursivePkgSkyKey(
-      RepositoryName repositoryName, RootedPath rootedPath, IgnoredSubdirectories excludedPaths) {
-    super(repositoryName, rootedPath, excludedPaths);
-  }
+    override fun equals(o: Any?): Boolean {
+        return super.equals(o)
+                && o is RecursivePkgSkyKey
+                && o.functionName() == functionName()
+    }
 
-  @Override
-  public String toString() {
-    return functionName() + " " + super.toString();
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    return super.equals(o)
-        && o instanceof RecursivePkgSkyKey recursivePkgSkyKey
-        && recursivePkgSkyKey.functionName().equals(functionName());
-  }
-
-  /** Don't bother to memoize hashCode because {@link RecursivePkgKey#hashCode} is cheap enough. */
-  @Override
-  public int hashCode() {
-    return 37 * super.hashCode() + functionName().hashCode();
-  }
+    /** Don't bother to memoize hashCode because [RecursivePkgKey.hashCode] is cheap enough.  */
+    override fun hashCode(): Int {
+        return 37 * super.hashCode() + functionName().hashCode()
+    }
 }

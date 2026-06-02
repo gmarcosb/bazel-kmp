@@ -11,7 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-/** An empty interface used to annotate if a SkyKey is part of the conceptual Execution phase. */
-public interface ExecutionPhaseSkyKey extends SkyKey {}
+import com.google.devtools.build.skyframe.SkyKey
+
+/** An empty interface used to annotate if a SkyKey is part of the conceptual Execution phase.  */
+interface ExecutionPhaseSkyKey : SkyKey

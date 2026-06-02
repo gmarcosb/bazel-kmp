@@ -1902,42 +1902,42 @@ public final class FilesystemValueCheckerTest {
 
       @Override
       public boolean isFile() {
-        return stat.isFile();
+        return stat.isFile;
       }
 
       @Override
       public boolean isSpecialFile() {
-        return stat.isSpecialFile();
+        return stat.isSpecialFile;
       }
 
       @Override
       public boolean isDirectory() {
-        return stat.isDirectory();
+        return stat.isDirectory;
       }
 
       @Override
       public boolean isSymbolicLink() {
-        return stat.isSymbolicLink();
+        return stat.isSymbolicLink;
       }
 
       @Override
       public long getSize() throws IOException {
-        return stat.getSize();
+        return stat.size;
       }
 
       @Override
       public long getLastModifiedTime() throws IOException {
-        return stat.getLastModifiedTime();
+        return stat.lastModifiedTime;
       }
 
       @Override
       public long getLastChangeTime() throws IOException {
-        return stat.getLastChangeTime();
+        return stat.lastChangeTime;
       }
 
       @Override
       public long getNodeId() throws IOException {
-        return stat.getNodeId();
+        return stat.nodeId;
       }
     };
   }

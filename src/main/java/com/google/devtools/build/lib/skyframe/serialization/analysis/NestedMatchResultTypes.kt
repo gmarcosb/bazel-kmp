@@ -11,93 +11,89 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.devtools.build.lib.skyframe.serialization.analysis.NoMatch.NO_MATCH_RESULT;
+import com.google.devtools.build.lib.concurrent.SettableFutureKeyedValue
+import com.google.devtools.build.lib.skyframe.serialization.analysis.MatchIndicator
+import com.google.devtools.build.lib.skyframe.serialization.analysis.NoMatch
+import com.google.devtools.build.lib.skyframe.serialization.analysis.VersionedChanges
 
-import com.google.devtools.build.lib.concurrent.SettableFutureKeyedValue;
-import java.util.function.BiConsumer;
-
-/** Container for {@link DeltaDepotValidator#matches(NestedDependencies, int)} result types. */
-final class NestedMatchResultTypes {
-  /** {@link DeltaDepotValidator#matches(NestedDependencies, int)} result type. */
-  sealed interface NestedMatchResultOrFuture permits NestedMatchResult, FutureNestedMatchResult {}
-
-  /** An immediate match result. */
-  sealed interface NestedMatchResult extends NestedMatchResultOrFuture
-      permits AnalysisMatch, SourceMatch, AnalysisAndSourceMatch, NoMatch, AlwaysMatch {}
-
-  static NestedMatchResult createNestedMatchResult(int analysisVersion, int sourceVersion) {
-    if (analysisVersion <= sourceVersion) {
-      // When checking for an analysis match, the source version is irrelevant. When checking for an
-      // execution match, the analysis version is included. If the analysis version is less than the
-      // source match, then it dominates. In both cases, the source version can be ignored.
-      return analysisVersion == VersionedChanges.NO_MATCH
-          ? NO_MATCH_RESULT
-          : new AnalysisMatch(analysisVersion);
-    }
-    return analysisVersion == VersionedChanges.NO_MATCH
-        ? new SourceMatch(sourceVersion)
-        : new AnalysisAndSourceMatch(analysisVersion, sourceVersion);
-  }
-
-  /**
-   * The delta matched the set of dependencies, meaning a <b>cache miss</b>.
-   *
-   * @param version the minimum version where the analysis match was observed
-   */
-  static record AnalysisMatch(int version) implements NestedMatchResult, MatchIndicator {
-    @Override
-    public boolean isMatch() {
-      return true;
-    }
-  }
-
-  /**
-   * The delta didn't match analysis dependencies, but matched source dependencies, indicating a
-   * <b>cache miss</b>.
-   *
-   * @param sourceVersion the minimum version where the match was observed.
-   */
-  static record SourceMatch(int sourceVersion) implements NestedMatchResult {}
-
-  /**
-   * The delta matched both (analysis) dependencies and source dependencies.
-   *
-   * <p>{@code sourceVersion} must be <b>less than</b> {@code analysisVersion} for this to apply. An
-   * analysis match would already invalidate the corresponding execution value, so if it matches
-   * analysis first, the source match is irrelevant.
-   *
-   * @param analysisVersion the minimum version where an analysis match was observed
-   * @param sourceVersion the minimum version where the source match was observed.
-   */
-  record AnalysisAndSourceMatch(int analysisVersion, int sourceVersion)
-      implements NestedMatchResult, MatchIndicator {
-    public AnalysisAndSourceMatch {
-      checkArgument(
-          sourceVersion < analysisVersion,
-          "sourceVersion=%s must be less than analysisVersion=%s",
-          sourceVersion,
-          analysisVersion);
+/** Container for [DeltaDepotValidator.matches] result types.  */
+internal object NestedMatchResultTypes {
+    @kotlin.jvm.JvmStatic
+    fun createNestedMatchResult(analysisVersion: Int, sourceVersion: Int): NestedMatchResult {
+        if (analysisVersion <= sourceVersion) {
+            // When checking for an analysis match, the source version is irrelevant. When checking for an
+            // execution match, the analysis version is included. If the analysis version is less than the
+            // source match, then it dominates. In both cases, the source version can be ignored.
+            return if (analysisVersion == VersionedChanges.Companion.NO_MATCH)
+                NoMatch.NO_MATCH_RESULT
+            else
+                AnalysisMatch(analysisVersion)
+        }
+        return if (analysisVersion == VersionedChanges.Companion.NO_MATCH)
+            SourceMatch(sourceVersion)
+        else
+            AnalysisAndSourceMatch(analysisVersion, sourceVersion)
     }
 
-    @Override
-    public boolean isMatch() {
-      return true;
-    }
-  }
+    /** [DeltaDepotValidator.matches] result type.  */
+    internal interface NestedMatchResultOrFuture
 
-  /** A future match result. */
-  static final class FutureNestedMatchResult
-      extends SettableFutureKeyedValue<
-          FutureNestedMatchResult, NestedDependencies, NestedMatchResult>
-      implements NestedMatchResultOrFuture {
-    FutureNestedMatchResult(
-        NestedDependencies key, BiConsumer<NestedDependencies, NestedMatchResult> consumer) {
-      super(key, consumer);
-    }
-  }
+    /** An immediate match result.  */
+    internal interface NestedMatchResult : NestedMatchResultOrFuture
 
-  private NestedMatchResultTypes() {}
+
+    /**
+     * The delta matched the set of dependencies, meaning a **cache miss**.
+     * 
+     * @param version the minimum version where the analysis match was observed
+     */
+    @kotlin.jvm.JvmRecord
+    internal data class AnalysisMatch(val version: Int) : NestedMatchResult, MatchIndicator {
+        val isMatch: Boolean
+            get() = true
+    }
+
+    /**
+     * The delta didn't match analysis dependencies, but matched source dependencies, indicating a
+     * **cache miss**.
+     * 
+     * @param sourceVersion the minimum version where the match was observed.
+     */
+    @kotlin.jvm.JvmRecord
+    internal data class SourceMatch(val sourceVersion: Int) : NestedMatchResult
+
+    /**
+     * The delta matched both (analysis) dependencies and source dependencies.
+     * 
+     * 
+     * `sourceVersion` must be **less than** `analysisVersion` for this to apply. An
+     * analysis match would already invalidate the corresponding execution value, so if it matches
+     * analysis first, the source match is irrelevant.
+     * 
+     * @param analysisVersion the minimum version where an analysis match was observed
+     * @param sourceVersion the minimum version where the source match was observed.
+     */
+    @kotlin.jvm.JvmRecord
+    internal data class AnalysisAndSourceMatch(val analysisVersion: Int, val sourceVersion: Int) : NestedMatchResult,
+        MatchIndicator {
+        val isMatch: Boolean
+            get() = true
+
+        init {
+            com.google.common.base.Preconditions.checkArgument(
+                sourceVersion < analysisVersion,
+                "sourceVersion=%s must be less than analysisVersion=%s",
+                sourceVersion,
+                analysisVersion
+            )
+        }
+    }
+
+    /** A future match result.  */
+    internal class FutureNestedMatchResult
+        (key: NestedDependencies?, consumer: java.util.function.BiConsumer<NestedDependencies?, NestedMatchResult?>?) :
+        SettableFutureKeyedValue<FutureNestedMatchResult?, NestedDependencies?, NestedMatchResult?>(key, consumer),
+        NestedMatchResultOrFuture
 }

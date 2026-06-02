@@ -11,88 +11,82 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.packages.NoSuchTargetException;
-import com.google.devtools.build.lib.skyframe.TransitiveTargetValue.UnsuccessfulTransitiveTargetValue;
-import com.google.devtools.build.skyframe.SkyValue;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
- * A <i>transitive</i> target reference that, when built in skyframe, loads the entire transitive
+ * A *transitive* target reference that, when built in skyframe, loads the entire transitive
  * closure of a target.
- *
- * <p>Use {@link #unsuccessfulTransitiveLoading(NestedSet, NoSuchTargetException)} if this or any of
+ * 
+ * 
+ * Use [.unsuccessfulTransitiveLoading] if this or any of
  * its transitive values failed to load.
  */
 @Immutable
 @ThreadSafe
-public sealed class TransitiveTargetValue implements SkyValue
-    permits UnsuccessfulTransitiveTargetValue {
-  private final NestedSet<Label> transitiveTargets;
+open class TransitiveTargetValue private constructor(transitiveTargets: NestedSet<Label?>?) : SkyValue {
+    private val transitiveTargets: NestedSet<Label?>?
 
-  private TransitiveTargetValue(NestedSet<Label> transitiveTargets) {
-    this.transitiveTargets = transitiveTargets;
-  }
-
-  /**
-   * A value that represents an unsuccessful target loading.
-   *
-   * <p>If this TransitiveTargetKey that failed to load, {@code errorLoadingTarget} is not null.
-   *
-   * <p>If this TransitiveTargetKey loaded successfully, but some other key in its transitive
-   * dependencies has failed to load, then this value is {@link UnsuccessfulTransitiveTargetValue}
-   * with a null `errorLoadingTarget`.
-   *
-   * <p>This is kept as a subclass so as to not burden the TransitiveTargetValue class with wasteful
-   * fields for error handling.
-   */
-  static final class UnsuccessfulTransitiveTargetValue extends TransitiveTargetValue {
-
-    private final NoSuchTargetException errorLoadingTarget;
-
-    private UnsuccessfulTransitiveTargetValue(
-        NestedSet<Label> transitiveTargets, NoSuchTargetException errorLoadingTarget) {
-      super(transitiveTargets);
-      this.errorLoadingTarget = errorLoadingTarget;
+    init {
+        this.transitiveTargets = transitiveTargets
     }
 
-    @Override
-    @Nullable
-    public NoSuchTargetException getErrorLoadingTarget() {
-      return errorLoadingTarget;
+    /**
+     * A value that represents an unsuccessful target loading.
+     * 
+     * 
+     * If this TransitiveTargetKey that failed to load, `errorLoadingTarget` is not null.
+     * 
+     * 
+     * If this TransitiveTargetKey loaded successfully, but some other key in its transitive
+     * dependencies has failed to load, then this value is [UnsuccessfulTransitiveTargetValue]
+     * with a null `errorLoadingTarget`.
+     * 
+     * 
+     * This is kept as a subclass so as to not burden the TransitiveTargetValue class with wasteful
+     * fields for error handling.
+     */
+    internal class UnsuccessfulTransitiveTargetValue private constructor(
+        transitiveTargets: NestedSet<Label?>?,
+        errorLoadingTarget: NoSuchTargetException?
+    ) : TransitiveTargetValue(transitiveTargets) {
+        private val errorLoadingTarget: NoSuchTargetException?
+
+        init {
+            this.errorLoadingTarget = errorLoadingTarget
+        }
+
+        override fun getErrorLoadingTarget(): NoSuchTargetException? {
+            return errorLoadingTarget
+        }
+
+        override fun encounteredLoadingError(): Boolean {
+            return true
+        }
     }
 
-    @Override
-    public boolean encounteredLoadingError() {
-      return true;
+    /** Returns the targets that were transitively loaded.  */
+    fun getTransitiveTargets(): NestedSet<Label?>? {
+        return transitiveTargets
     }
-  }
 
-  static TransitiveTargetValue unsuccessfulTransitiveLoading(
-      NestedSet<Label> transitiveTargets, @Nullable NoSuchTargetException errorLoadingTarget) {
-    return new UnsuccessfulTransitiveTargetValue(transitiveTargets, errorLoadingTarget);
-  }
+    open fun encounteredLoadingError(): Boolean {
+        return false
+    }
 
-  static TransitiveTargetValue successfulTransitiveLoading(NestedSet<Label> transitiveTargets) {
-    return new TransitiveTargetValue(transitiveTargets);
-  }
+    open val errorLoadingTarget: NoSuchTargetException?
+        get() = null
 
-  /** Returns the targets that were transitively loaded. */
-  public NestedSet<Label> getTransitiveTargets() {
-    return transitiveTargets;
-  }
+    companion object {
+        fun unsuccessfulTransitiveLoading(
+            transitiveTargets: NestedSet<Label?>?, errorLoadingTarget: NoSuchTargetException?
+        ): TransitiveTargetValue {
+            return UnsuccessfulTransitiveTargetValue(transitiveTargets, errorLoadingTarget)
+        }
 
-  public boolean encounteredLoadingError() {
-    return false;
-  }
-
-  @Nullable
-  public NoSuchTargetException getErrorLoadingTarget() {
-    return null;
-  }
+        fun successfulTransitiveLoading(transitiveTargets: NestedSet<Label?>?): TransitiveTargetValue {
+            return TransitiveTargetValue(transitiveTargets)
+        }
+    }
 }

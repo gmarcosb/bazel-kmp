@@ -11,135 +11,122 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.pkgcache.FilteringPolicies;
-import com.google.devtools.build.lib.pkgcache.FilteringPolicy;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Objects;
+import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories
 
 /**
- * Dummy value that is the result of {@link PrepareDepsOfTargetsUnderDirectoryFunction}.
- *
- * <p>Note that even though the {@link PrepareDepsOfTargetsUnderDirectoryFunction} is evaluated
+ * Dummy value that is the result of [PrepareDepsOfTargetsUnderDirectoryFunction].
+ * 
+ * 
+ * Note that even though the [PrepareDepsOfTargetsUnderDirectoryFunction] is evaluated
  * entirely because of its side effects (i.e. loading transitive dependencies of targets), this
  * value interacts safely with change pruning, despite the fact that this value is a singleton. When
- * the targets in a package change, the {@link PackageValue} that
- * {@link PrepareDepsOfTargetsUnderDirectoryFunction} depends on will be invalidated, and the
+ * the targets in a package change, the [PackageValue] that
+ * [PrepareDepsOfTargetsUnderDirectoryFunction] depends on will be invalidated, and the
  * PrepareDeps function for that package's directory will be re-evaluated, loading any new
  * transitive dependencies. Change pruning may prevent the re-evaluation of PrepareDeps for
  * directories above that one, but they don't need to be re-run.
  */
-public final class PrepareDepsOfTargetsUnderDirectoryValue implements SkyValue {
-  @SerializationConstant
-  public static final PrepareDepsOfTargetsUnderDirectoryValue INSTANCE =
-      new PrepareDepsOfTargetsUnderDirectoryValue();
+object PrepareDepsOfTargetsUnderDirectoryValue : SkyValue {
+    @SerializationConstant
+    val INSTANCE: PrepareDepsOfTargetsUnderDirectoryValue = PrepareDepsOfTargetsUnderDirectoryValue()
 
-  private PrepareDepsOfTargetsUnderDirectoryValue() {}
-
-  /** Create a prepare deps of targets under directory request. */
-  @ThreadSafe
-  public static SkyKey key(
-      RepositoryName repository, RootedPath rootedPath, IgnoredSubdirectories excludedPaths) {
-    return key(repository, rootedPath, excludedPaths, FilteringPolicies.NO_FILTER);
-  }
-
-  /**
-   * Create a prepare deps of targets under directory request, specifying a filtering policy for
-   * targets.
-   */
-  @ThreadSafe
-  public static PrepareDepsOfTargetsUnderDirectoryKey key(
-      RepositoryName repository,
-      RootedPath rootedPath,
-      IgnoredSubdirectories excludedPaths,
-      FilteringPolicy filteringPolicy) {
-    return PrepareDepsOfTargetsUnderDirectoryKey.create(
-        new RecursivePkgKey(repository, rootedPath, excludedPaths), filteringPolicy);
-  }
-
-  /**
-   * The argument value for {@link SkyKey}s of {@link PrepareDepsOfTargetsUnderDirectoryFunction}.
-   */
-  @AutoCodec
-  public static final class PrepareDepsOfTargetsUnderDirectoryKey implements SkyKey {
-    private static final SkyKeyInterner<PrepareDepsOfTargetsUnderDirectoryKey> interner =
-        SkyKey.newInterner();
-
-    private final RecursivePkgKey recursivePkgKey;
-    private final FilteringPolicy filteringPolicy;
-
-    private PrepareDepsOfTargetsUnderDirectoryKey(
-        RecursivePkgKey recursivePkgKey, FilteringPolicy filteringPolicy) {
-      this.recursivePkgKey = Preconditions.checkNotNull(recursivePkgKey);
-      this.filteringPolicy = Preconditions.checkNotNull(filteringPolicy);
+    /** Create a prepare deps of targets under directory request.  */
+    @ThreadSafe
+    fun key(
+        repository: RepositoryName?, rootedPath: RootedPath, excludedPaths: IgnoredSubdirectories
+    ): SkyKey {
+        return key(repository, rootedPath, excludedPaths, FilteringPolicies.NO_FILTER)
     }
 
-    public static PrepareDepsOfTargetsUnderDirectoryKey create(
-        RecursivePkgKey recursivePkgKey, FilteringPolicy filteringPolicy) {
-      return interner.intern(
-          new PrepareDepsOfTargetsUnderDirectoryKey(recursivePkgKey, filteringPolicy));
+    /**
+     * Create a prepare deps of targets under directory request, specifying a filtering policy for
+     * targets.
+     */
+    @ThreadSafe
+    fun key(
+        repository: RepositoryName?,
+        rootedPath: RootedPath,
+        excludedPaths: IgnoredSubdirectories,
+        filteringPolicy: FilteringPolicy?
+    ): PrepareDepsOfTargetsUnderDirectoryKey {
+        return PrepareDepsOfTargetsUnderDirectoryKey.Companion.create(
+            RecursivePkgKey(repository, rootedPath, excludedPaths), filteringPolicy
+        )
     }
 
-    @VisibleForSerialization
-    @AutoCodec.Interner
-    static PrepareDepsOfTargetsUnderDirectoryKey intern(PrepareDepsOfTargetsUnderDirectoryKey key) {
-      return interner.intern(key);
-    }
+    /**
+     * The argument value for [SkyKey]s of [PrepareDepsOfTargetsUnderDirectoryFunction].
+     */
+    @AutoCodec
+    class PrepareDepsOfTargetsUnderDirectoryKey private constructor(
+        recursivePkgKey: RecursivePkgKey?,
+        filteringPolicy: FilteringPolicy?
+    ) : SkyKey {
+        private val recursivePkgKey: RecursivePkgKey
+        private val filteringPolicy: FilteringPolicy
 
-    public RecursivePkgKey getRecursivePkgKey() {
-      return recursivePkgKey;
-    }
+        init {
+            this.recursivePkgKey = com.google.common.base.Preconditions.checkNotNull<RecursivePkgKey>(recursivePkgKey)
+            this.filteringPolicy = com.google.common.base.Preconditions.checkNotNull<FilteringPolicy>(filteringPolicy)
+        }
 
-    public FilteringPolicy getFilteringPolicy() {
-      return filteringPolicy;
-    }
+        fun getRecursivePkgKey(): RecursivePkgKey {
+            return recursivePkgKey
+        }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.PREPARE_DEPS_OF_TARGETS_UNDER_DIRECTORY;
-    }
+        fun getFilteringPolicy(): FilteringPolicy {
+            return filteringPolicy
+        }
 
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (!(o instanceof PrepareDepsOfTargetsUnderDirectoryKey that)) {
-        return false;
-      }
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.PREPARE_DEPS_OF_TARGETS_UNDER_DIRECTORY
+        }
 
-      return Objects.equals(recursivePkgKey, that.recursivePkgKey)
-          && Objects.equals(filteringPolicy, that.filteringPolicy);
-    }
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o !is PrepareDepsOfTargetsUnderDirectoryKey) {
+                return false
+            }
 
-    @Override
-    public int hashCode() {
-      return Objects.hash(recursivePkgKey, filteringPolicy);
-    }
+            return recursivePkgKey == o.recursivePkgKey
+                    && filteringPolicy == o.filteringPolicy
+        }
 
-    @Override
-    public String toString() {
-      return MoreObjects.toStringHelper(PrepareDepsOfTargetsUnderDirectoryKey.class)
-              .add("pkg-key", recursivePkgKey)
-              .add("filtering policy", filteringPolicy)
-              .toString();
-    }
+        override fun hashCode(): Int {
+            return java.util.Objects.hash(recursivePkgKey, filteringPolicy)
+        }
 
-    @Override
-    public SkyKeyInterner<PrepareDepsOfTargetsUnderDirectoryKey> getSkyKeyInterner() {
-      return interner;
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(PrepareDepsOfTargetsUnderDirectoryKey::class.java)
+                .add("pkg-key", recursivePkgKey)
+                .add("filtering policy", filteringPolicy)
+                .toString()
+        }
+
+        val skyKeyInterner: SkyKeyInterner<PrepareDepsOfTargetsUnderDirectoryKey?>
+            get() = interner
+
+        companion object {
+            private val interner: SkyKeyInterner<PrepareDepsOfTargetsUnderDirectoryKey?> =
+                SkyKey.newInterner<PrepareDepsOfTargetsUnderDirectoryKey?>()
+
+            fun create(
+                recursivePkgKey: RecursivePkgKey?, filteringPolicy: FilteringPolicy?
+            ): PrepareDepsOfTargetsUnderDirectoryKey {
+                return interner.intern(
+                    PrepareDepsOfTargetsUnderDirectoryKey(recursivePkgKey, filteringPolicy)
+                )
+            }
+
+            @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+            @AutoCodec.Interner
+            fun intern(key: PrepareDepsOfTargetsUnderDirectoryKey?): PrepareDepsOfTargetsUnderDirectoryKey {
+                return interner.intern(key)
+            }
+        }
     }
-  }
 }

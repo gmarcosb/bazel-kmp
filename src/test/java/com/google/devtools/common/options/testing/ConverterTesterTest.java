@@ -64,7 +64,7 @@ public final class ConverterTesterTest {
   public void getConverterClass_returnsConstructorArg() throws Exception {
     ConverterTester tester =
         new ConverterTester(Converters.BooleanConverter.class, /*conversionContext=*/ null);
-    assertThat(tester.getConverterClass()).isEqualTo(Converters.BooleanConverter.class);
+    assertThat(tester.converterClass).isEqualTo(Converters.BooleanConverter.class);
   }
 
   @Test

@@ -11,37 +11,35 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-import static com.google.devtools.build.lib.util.TestType.isInTest;
-
-import com.google.devtools.build.lib.versioning.LongVersionGetter;
+import com.google.devtools.build.lib.util.TestType
+import com.google.devtools.build.lib.versioning.LongVersionGetter
 
 /**
- * Allows injecting a {@link LongVersionGetter} implementation to {@link FrontierSerializer} in
+ * Allows injecting a [LongVersionGetter] implementation to [FrontierSerializer] in
  * tests.
  */
-@SuppressWarnings("NonFinalStaticField")
-public final class LongVersionGetterTestInjection {
-  private static LongVersionGetter versionGetter = null;
-  private static boolean wasAccessed = false;
+object LongVersionGetterTestInjection {
+    private var versionGetter: LongVersionGetter? = null
+    private var wasAccessed = false
 
-  static LongVersionGetter getVersionGetterForTesting() {
-    checkState(isInTest());
-    wasAccessed = true;
-    return checkNotNull(versionGetter, "injectVersionGetterForTesting must be called first");
-  }
+    val versionGetterForTesting: LongVersionGetter
+        get() {
+            com.google.common.base.Preconditions.checkState(TestType.isInTest())
+            wasAccessed = true
+            return com.google.common.base.Preconditions.checkNotNull<LongVersionGetter>(
+                versionGetter,
+                "injectVersionGetterForTesting must be called first"
+            )
+        }
 
-  public static void injectVersionGetterForTesting(LongVersionGetter versionGetter) {
-    checkState(isInTest());
-    LongVersionGetterTestInjection.versionGetter = versionGetter;
-  }
+    fun injectVersionGetterForTesting(versionGetter: LongVersionGetter?) {
+        com.google.common.base.Preconditions.checkState(TestType.isInTest())
+        LongVersionGetterTestInjection.versionGetter = versionGetter
+    }
 
-  public static boolean wasGetterAccessed() {
-    return wasAccessed;
-  }
-
-  private LongVersionGetterTestInjection() {}
+    fun wasGetterAccessed(): Boolean {
+        return wasAccessed
+    }
 }

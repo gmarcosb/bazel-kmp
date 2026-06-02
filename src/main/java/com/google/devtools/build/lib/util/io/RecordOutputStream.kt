@@ -11,80 +11,78 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
+package com.google.devtools.build.lib.util.io
 
-import static com.google.common.math.IntMath.ceilingPowerOfTwo;
-
-import java.io.IOException;
-import java.io.OutputStream;
-import java.util.Arrays;
+import java.io.IOException
 
 /**
  * A buffered output stream that only flushes its buffer at record boundaries.
- *
- * <p>The {@link #finishRecord} method marks the current position as the end of a complete record.
- * Whenever a flush occurs (either explicitly via {@link #flush} or implicitly via {@link #write} or
- * {@link #close}), the internal buffer is only flushed up to the last recorded position, with any
+ * 
+ * 
+ * The [.finishRecord] method marks the current position as the end of a complete record.
+ * Whenever a flush occurs (either explicitly via [.flush] or implicitly via [.write] or
+ * [.close]), the internal buffer is only flushed up to the last recorded position, with any
  * following bytes remaining in the internal buffer. The internal buffer starts at 4KB but grows to
  * accommodate the largest record seen so far.
- *
- * <p>This is intended as a best-effort attempt to prevent incomplete records from being written to
+ * 
+ * 
+ * This is intended as a best-effort attempt to prevent incomplete records from being written to
  * disk in the event of an abrupt exit. It isn't completely safe since partial underlying writes are
  * still possible, but experiments suggest that they're very unlikely for small buffer sizes.
  */
-public final class RecordOutputStream extends OutputStream {
-  private final OutputStream out;
-  private byte[] buf = new byte[4096];
-  private int writeOff = 0;
-  private int flushOff = 0;
+class RecordOutputStream(out: java.io.OutputStream) : java.io.OutputStream() {
+    private val out: java.io.OutputStream
+    private var buf = ByteArray(4096)
+    private var writeOff = 0
+    private var flushOff = 0
 
-  public RecordOutputStream(OutputStream out) {
-    this.out = out;
-  }
-
-  /** Marks the current position as the end of a complete record. */
-  public void finishRecord() {
-    flushOff = writeOff;
-  }
-
-  @Override
-  public void write(int b) throws IOException {
-    write(new byte[] {(byte) b}, 0, 1);
-  }
-
-  @Override
-  public void write(byte[] b) throws IOException {
-    write(b, 0, b.length);
-  }
-
-  @Override
-  public void write(byte[] b, int off, int len) throws IOException {
-    if (len > buf.length - writeOff) {
-      // First try to make space by flushing.
-      flush();
-      if (len > buf.length - writeOff) {
-        // If the buffer is too small to fit a single record, grow it to the next power of two.
-        buf = Arrays.copyOf(buf, ceilingPowerOfTwo(writeOff + len));
-      }
+    init {
+        this.out = out
     }
-    System.arraycopy(b, off, buf, writeOff, len);
-    writeOff += len;
-  }
 
-  @Override
-  public void flush() throws IOException {
-    if (flushOff > 0) {
-      out.write(buf, 0, flushOff);
-      // TODO(tjgq): Consider using a ring buffer to avoid this copy.
-      System.arraycopy(buf, flushOff, buf, 0, writeOff - flushOff);
-      writeOff -= flushOff;
-      flushOff = 0;
+    /** Marks the current position as the end of a complete record.  */
+    fun finishRecord() {
+        flushOff = writeOff
     }
-  }
 
-  @Override
-  public void close() throws IOException {
-    flush();
-    out.close();
-  }
+    @Throws(IOException::class)
+    override fun write(b: Int) {
+        write(byteArrayOf(b.toByte()), 0, 1)
+    }
+
+    @Throws(IOException::class)
+    override fun write(b: ByteArray) {
+        write(b, 0, b.size)
+    }
+
+    @Throws(IOException::class)
+    override fun write(b: ByteArray?, off: Int, len: Int) {
+        if (len > buf.size - writeOff) {
+            // First try to make space by flushing.
+            flush()
+            if (len > buf.size - writeOff) {
+                // If the buffer is too small to fit a single record, grow it to the next power of two.
+                buf = buf.copyOf(com.google.common.math.IntMath.ceilingPowerOfTwo(writeOff + len))
+            }
+        }
+        java.lang.System.arraycopy(b, off, buf, writeOff, len)
+        writeOff += len
+    }
+
+    @Throws(IOException::class)
+    override fun flush() {
+        if (flushOff > 0) {
+            out.write(buf, 0, flushOff)
+            // TODO(tjgq): Consider using a ring buffer to avoid this copy.
+            java.lang.System.arraycopy(buf, flushOff, buf, 0, writeOff - flushOff)
+            writeOff -= flushOff
+            flushOff = 0
+        }
+    }
+
+    @Throws(IOException::class)
+    override fun close() {
+        flush()
+        out.close()
+    }
 }

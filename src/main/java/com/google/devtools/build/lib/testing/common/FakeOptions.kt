@@ -11,125 +11,110 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testing.common;
+package com.google.devtools.build.lib.testing.common
 
-import com.google.common.collect.ImmutableClassToInstanceMap;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.common.options.Options;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsProvider;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.Map;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.testing.common.FakeOptions
 
 /**
- * Fake options class, allowing to easily create an {@link OptionsProvider} with injected options.
- *
- * <p>The alternative to {@link FakeOptions} would be creating an {@link
- * com.google.devtools.common.options.OptionsParser} and parsing arguments.
+ * Fake options class, allowing to easily create an [OptionsProvider] with injected options.
+ * 
+ * 
+ * The alternative to [FakeOptions] would be creating an [ ] and parsing arguments.
  */
-public final class FakeOptions implements OptionsProvider {
-  private final ImmutableClassToInstanceMap<OptionsBase> options;
+class FakeOptions private constructor(options: com.google.common.collect.ImmutableClassToInstanceMap<com.google.devtools.common.options.OptionsBase?>) :
+    com.google.devtools.common.options.OptionsProvider {
+    private val options: com.google.common.collect.ImmutableClassToInstanceMap<com.google.devtools.common.options.OptionsBase?>
 
-  private FakeOptions(ImmutableClassToInstanceMap<OptionsBase> options) {
-    this.options = options;
-  }
-
-  /** Creates an {@link OptionsProvider} with a provided options value for its class. */
-  public static <O extends OptionsBase> OptionsProvider of(O options) {
-    return builder().put(options).build();
-  }
-
-  /**
-   * Creates an {@link OptionsProvider} which has defaults for all provided {@linkplain OptionsBase
-   * option} classes.
-   */
-  @SafeVarargs
-  public static OptionsProvider ofDefaults(Class<? extends OptionsBase>... optionsClasses) {
-    return builder().putDefaults(optionsClasses).build();
-  }
-
-  public static Builder builder() {
-    return new Builder();
-  }
-
-  /** Builder for {@link FakeOptions}. */
-  public static final class Builder {
-    private final ImmutableMap.Builder<Class<? extends OptionsBase>, OptionsBase> options =
-        ImmutableMap.builder();
-
-    private Builder() {}
-
-    /**
-     * Adds a specified option for the {@linkplain OptionsBase options} class.
-     *
-     * <p>Please note that {@link build} will fail if this method is called twice with options of
-     * the same class.
-     */
-    @CanIgnoreReturnValue
-    public <O extends OptionsBase> Builder put(O options) {
-      this.options.put(options.getOptionsClass(), options);
-      return this;
+    init {
+        this.options = options
     }
 
-    /**
-     * Puts defaults for each of the provided {@linkplain OptionsBase option classes}.
-     *
-     * <p>Please note that {@link build} will fail if we overwrite an already specified {@linkplain
-     * OptionsBase options} class.
-     */
-    @CanIgnoreReturnValue
-    @SafeVarargs
-    public final Builder putDefaults(Class<? extends OptionsBase>... optionsClasses) {
-      for (Class<? extends OptionsBase> optionsClass : optionsClasses) {
-        put(Options.getDefaults(optionsClass));
-      }
-      return this;
+    /** Builder for [FakeOptions].  */
+    class Builder private constructor() {
+        private val options: com.google.common.collect.ImmutableMap.Builder<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?, com.google.devtools.common.options.OptionsBase?> =
+            com.google.common.collect.ImmutableMap.builder<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?, com.google.devtools.common.options.OptionsBase?>()
+
+        /**
+         * Adds a specified option for the [options][OptionsBase] class.
+         * 
+         * 
+         * Please note that [build] will fail if this method is called twice with options of
+         * the same class.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun <O : com.google.devtools.common.options.OptionsBase?> put(options: O?): Builder {
+            this.options.put(options.getOptionsClass(), options)
+            return this
+        }
+
+        /**
+         * Puts defaults for each of the provided [option classes][OptionsBase].
+         * 
+         * 
+         * Please note that [build] will fail if we overwrite an already specified [ ] class.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        @java.lang.SafeVarargs
+        fun putDefaults(vararg optionsClasses: java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?): Builder {
+            for (optionsClass in optionsClasses) {
+                put(com.google.devtools.common.options.Options.getDefaults(optionsClass))
+            }
+            return this
+        }
+
+        fun build(): com.google.devtools.common.options.OptionsProvider? {
+            val optionsMap: com.google.common.collect.ImmutableMap<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?, com.google.devtools.common.options.OptionsBase?> =
+                options.build()
+            if (optionsMap.isEmpty()) {
+                return com.google.devtools.common.options.OptionsProvider.EMPTY
+            }
+            return FakeOptions(
+                com.google.common.collect.ImmutableClassToInstanceMap.copyOf<com.google.devtools.common.options.OptionsBase?, com.google.devtools.common.options.OptionsBase?>(
+                    optionsMap
+                )
+            )
+        }
     }
 
-    public OptionsProvider build() {
-      ImmutableMap<Class<? extends OptionsBase>, OptionsBase> optionsMap = options.build();
-      if (optionsMap.isEmpty()) {
-        return OptionsProvider.EMPTY;
-      }
-      return new FakeOptions(ImmutableClassToInstanceMap.copyOf(optionsMap));
+    override fun <O : com.google.devtools.common.options.OptionsBase?> getOptions(optionsClass: java.lang.Class<O?>): O? {
+        return options.getInstance<O?>(optionsClass)
     }
-  }
 
-  @Override
-  @Nullable
-  public <O extends OptionsBase> O getOptions(Class<O> optionsClass) {
-    return options.getInstance(optionsClass);
-  }
+    val starlarkOptions: com.google.common.collect.ImmutableMap<String?, Any?>
+        get() = com.google.common.collect.ImmutableMap.of<String?, Any?>()
 
-  @Override
-  public ImmutableMap<String, Object> getStarlarkOptions() {
-    return ImmutableMap.of();
-  }
+    val scopesAttributes: com.google.common.collect.ImmutableMap<String?, String?>
+        get() = com.google.common.collect.ImmutableMap.of<String?, String?>()
 
-  @Override
-  public ImmutableMap<String, String> getScopesAttributes() {
-    return ImmutableMap.of();
-  }
+    val onLeaveScopeValues: com.google.common.collect.ImmutableMap<String?, Any?>
+        get() = com.google.common.collect.ImmutableMap.of<String?, Any?>()
 
-  @Override
-  public ImmutableMap<String, Object> getOnLeaveScopeValues() {
-    return ImmutableMap.of();
-  }
+    val explicitCommandLineStarlarkOptions: MutableMap<String?, Any?>
+        get() = com.google.common.collect.ImmutableMap.of<String?, Any?>()
 
-  @Override
-  public Map<String, Object> getExplicitCommandLineStarlarkOptions() {
-    return ImmutableMap.of();
-  }
+    val starlarkOptionsAllowingMultiple: com.google.common.collect.ImmutableSet<String?>
+        get() = com.google.common.collect.ImmutableSet.of<String?>()
 
-  @Override
-  public ImmutableSet<String> getStarlarkOptionsAllowingMultiple() {
-    return ImmutableSet.of();
-  }
+    val userOptions: com.google.common.collect.ImmutableMap<String?, String?>
+        get() = com.google.common.collect.ImmutableMap.of<String?, String?>()
 
-  @Override
-  public ImmutableMap<String, String> getUserOptions() {
-    return ImmutableMap.of();
-  }
+    companion object {
+        /** Creates an [OptionsProvider] with a provided options value for its class.  */
+        fun <O : com.google.devtools.common.options.OptionsBase?> of(options: O?): com.google.devtools.common.options.OptionsProvider? {
+            return builder().put<O?>(options).build()
+        }
+
+        /**
+         * Creates an [OptionsProvider] which has defaults for all provided [ option][OptionsBase] classes.
+         */
+        @java.lang.SafeVarargs
+        fun ofDefaults(vararg optionsClasses: java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?): com.google.devtools.common.options.OptionsProvider? {
+            return builder().putDefaults(*optionsClasses).build()
+        }
+
+        @kotlin.jvm.JvmStatic
+        fun builder(): Builder {
+            return com.google.devtools.build.lib.testing.common.FakeOptions.Builder()
+        }
+    }
 }

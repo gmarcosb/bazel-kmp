@@ -11,51 +11,48 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
+/** Codec for an enum.  */
+open class EnumCodec<T : Enum<T?>?>(enumClass: java.lang.Class<T?>) : LeafObjectCodec<T?>() {
+    private val enumClass: java.lang.Class<T?>
 
-/** Codec for an enum. */
-public class EnumCodec<T extends Enum<T>> extends LeafObjectCodec<T> {
+    /**
+     * A cached copy of T.values(), to avoid allocating an array upon every deserialization operation.
+     */
+    private val values: com.google.common.collect.ImmutableList<T?>
 
-  private final Class<T> enumClass;
-
-  /**
-   * A cached copy of T.values(), to avoid allocating an array upon every deserialization operation.
-   */
-  private final ImmutableList<T> values;
-
-  public EnumCodec(Class<T> enumClass) {
-    this.enumClass = enumClass;
-    this.values = ImmutableList.copyOf(enumClass.getEnumConstants());
-  }
-
-  @Override
-  public Class<T> getEncodedClass() {
-    return enumClass;
-  }
-
-  @Override
-  public void serialize(LeafSerializationContext context, T value, CodedOutputStream codedOut)
-      throws IOException {
-    Preconditions.checkNotNull(value, "Enum value for %s is null", enumClass);
-    codedOut.writeEnumNoTag(value.ordinal());
-  }
-
-  @Override
-  public T deserialize(LeafDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    int ordinal = codedIn.readEnum();
-    try {
-      return values.get(ordinal);
-    } catch (ArrayIndexOutOfBoundsException e) {
-      throw new SerializationException(
-          "Invalid ordinal for " + enumClass.getName() + " enum: " + ordinal, e);
+    init {
+        this.enumClass = enumClass
+        this.values = com.google.common.collect.ImmutableList.copyOf<T?>(enumClass.getEnumConstants())
     }
-  }
+
+    override fun getEncodedClass(): java.lang.Class<T?> {
+        return enumClass
+    }
+
+    @Throws(IOException::class)
+    override fun serialize(context: LeafSerializationContext?, value: T?, codedOut: CodedOutputStream) {
+        com.google.common.base.Preconditions.checkNotNull<T?>(value, "Enum value for %s is null", enumClass)
+        codedOut.writeEnumNoTag(value.ordinal())
+    }
+
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun deserialize(context: LeafDeserializationContext?, codedIn: CodedInputStream): T? {
+        val ordinal: Int = codedIn.readEnum()
+        try {
+            return values.get(ordinal)
+        } catch (e: java.lang.ArrayIndexOutOfBoundsException) {
+            throw com.google.devtools.build.lib.skyframe.serialization.SerializationException(
+                "Invalid ordinal for " + enumClass.getName() + " enum: " + ordinal, e
+            )
+        }
+    }
 }

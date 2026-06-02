@@ -11,107 +11,87 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.skyframe.ProcessPackageDirectory.ProcessPackageDirectorySkyFunctionException;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Map;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
 /**
  * RecursivePkgFunction builds up the set of packages underneath a given directory transitively.
- *
- * <p>Example: foo/BUILD, foo/sub/x, foo/subpkg/BUILD would yield transitive packages "foo" and
+ * 
+ * 
+ * Example: foo/BUILD, foo/sub/x, foo/subpkg/BUILD would yield transitive packages "foo" and
  * "foo/subpkg".
  */
-public class RecursivePkgFunction implements SkyFunction {
-  private final BlazeDirectories directories;
+class RecursivePkgFunction(directories: BlazeDirectories?) : SkyFunction {
+    private val directories: BlazeDirectories?
 
-  public RecursivePkgFunction(BlazeDirectories directories) {
-    this.directories = directories;
-  }
-
-  /**
-   * N.B.: May silently throw {@link com.google.devtools.build.lib.packages.NoSuchPackageException}
-   * in nokeep_going mode!
-   */
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws InterruptedException, ProcessPackageDirectorySkyFunctionException {
-    return new MyTraversalFunction().visitDirectory((RecursivePkgKey) skyKey.argument(), env);
-  }
-
-  private class MyTraversalFunction
-      extends RecursiveDirectoryTraversalFunction<MyPackageDirectoryConsumer, RecursivePkgValue> {
-
-    private MyTraversalFunction() {
-      super(directories);
+    init {
+        this.directories = directories
     }
 
-    @Override
-    protected MyPackageDirectoryConsumer getInitialConsumer() {
-      return new MyPackageDirectoryConsumer();
+    /**
+     * N.B.: May silently throw [com.google.devtools.build.lib.packages.NoSuchPackageException]
+     * in nokeep_going mode!
+     */
+    @Throws(java.lang.InterruptedException::class, ProcessPackageDirectorySkyFunctionException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment?): SkyValue? {
+        return MyTraversalFunction().visitDirectory(skyKey.argument() as RecursivePkgKey?, env)
     }
 
-    @Override
-    protected SkyKey getSkyKeyForSubdirectory(
-        RepositoryName repository,
-        RootedPath subdirectory,
-        IgnoredSubdirectories excludedSubdirectoriesBeneathSubdirectory) {
-      return RecursivePkgValue.key(
-          repository, subdirectory, excludedSubdirectoriesBeneathSubdirectory);
-    }
+    private inner class MyTraversalFunction
 
-    @Override
-    protected RecursivePkgValue aggregateWithSubdirectorySkyValues(
-        MyPackageDirectoryConsumer consumer, Map<SkyKey, SkyValue> subdirectorySkyValues) {
-      // Aggregate the transitive subpackages.
-      for (SkyValue childValue : subdirectorySkyValues.values()) {
-        consumer.addTransitivePackages(((RecursivePkgValue) childValue).getPackages());
-        if (((RecursivePkgValue) childValue).hasErrors()) {
-          consumer.addTransitiveErrors();
+        : RecursiveDirectoryTraversalFunction<MyPackageDirectoryConsumer?, RecursivePkgValue?>(directories) {
+        val initialConsumer: MyPackageDirectoryConsumer
+            get() = MyPackageDirectoryConsumer()
+
+        override fun getSkyKeyForSubdirectory(
+            repository: RepositoryName?,
+            subdirectory: RootedPath?,
+            excludedSubdirectoriesBeneathSubdirectory: IgnoredSubdirectories?
+        ): SkyKey? {
+            return RecursivePkgValue.Companion.key(
+                repository, subdirectory, excludedSubdirectoriesBeneathSubdirectory
+            )
         }
-      }
-      return consumer.createRecursivePkgValue();
-    }
-  }
 
-  private static class MyPackageDirectoryConsumer
-      implements RecursiveDirectoryTraversalFunction.PackageDirectoryConsumer {
-
-    private final NestedSetBuilder<String> packages =
-        NestedSetBuilder.newBuilder(Order.STABLE_ORDER);
-    private boolean hasErrors = false;
-
-    @Override
-    public void notePackage(PathFragment pkgPath) {
-      packages.add(pkgPath.getPathString());
+        override fun aggregateWithSubdirectorySkyValues(
+            consumer: MyPackageDirectoryConsumer, subdirectorySkyValues: MutableMap<SkyKey?, SkyValue>
+        ): RecursivePkgValue? {
+            // Aggregate the transitive subpackages.
+            for (childValue in subdirectorySkyValues.values()) {
+                consumer.addTransitivePackages((childValue as RecursivePkgValue).getPackages())
+                if ((childValue as RecursivePkgValue).hasErrors()) {
+                    consumer.addTransitiveErrors()
+                }
+            }
+            return consumer.createRecursivePkgValue()
+        }
     }
 
-    @Override
-    public void notePackageError(String noSuchPackageExceptionErrorMessage) {
-      hasErrors = true;
-    }
+    private class MyPackageDirectoryConsumer
 
-    void addTransitivePackages(NestedSet<String> transitivePackages) {
-      packages.addTransitive(transitivePackages);
-    }
+        : PackageDirectoryConsumer {
+        private val packages: NestedSetBuilder<String?> = NestedSetBuilder.newBuilder(Order.STABLE_ORDER)
+        private var hasErrors = false
 
-    void addTransitiveErrors() {
-      hasErrors = true;
-    }
+        override fun notePackage(pkgPath: PathFragment) {
+            packages.add(pkgPath.getPathString())
+        }
 
-    RecursivePkgValue createRecursivePkgValue() {
-      return RecursivePkgValue.create(packages, hasErrors);
+        override fun notePackageError(noSuchPackageExceptionErrorMessage: String?) {
+            hasErrors = true
+        }
+
+        fun addTransitivePackages(transitivePackages: NestedSet<String?>?) {
+            packages.addTransitive(transitivePackages)
+        }
+
+        fun addTransitiveErrors() {
+            hasErrors = true
+        }
+
+        fun createRecursivePkgValue(): RecursivePkgValue? {
+            return RecursivePkgValue.Companion.create(packages, hasErrors)
+        }
     }
-  }
 }

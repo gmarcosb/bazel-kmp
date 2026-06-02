@@ -11,19 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
+import com.google.devtools.build.lib.concurrent.BlazeInterners
 
-import com.google.common.collect.Interner;
-import com.google.devtools.build.lib.concurrent.BlazeInterners;
-
-/** Factory class for producing a builder for {@link CachedBzlLoadData}. */
-// TODO(bazel-team): It's unclear why this needs to be public and whether we need it at all. Maybe
+/** Factory class for producing a builder for [CachedBzlLoadData].  */ // TODO(bazel-team): It's unclear why this needs to be public and whether we need it at all. Maybe
 // we can just inline it into BzlLoadFunction.
-public class CachedBzlLoadDataBuilderFactory {
-  private final Interner<CachedBzlLoadData> interner = BlazeInterners.newWeakInterner();
+class CachedBzlLoadDataBuilderFactory {
+    private val interner: com.google.common.collect.Interner<CachedBzlLoadData?>? = BlazeInterners.newWeakInterner()
 
-  CachedBzlLoadData.Builder newCachedBzlLoadDataBuilder() {
-    return new CachedBzlLoadData.Builder(interner);
-  }
+    fun newCachedBzlLoadDataBuilder(): com.google.devtools.build.lib.skyframe.CachedBzlLoadData.Builder {
+        return com.google.devtools.build.lib.skyframe.CachedBzlLoadData.Builder(interner)
+    }
 }

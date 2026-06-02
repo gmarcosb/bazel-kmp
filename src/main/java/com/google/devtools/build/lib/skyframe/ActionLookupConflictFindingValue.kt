@@ -11,67 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.base.Preconditions.checkArgument;
-
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.devtools.build.skyframe.AbstractSkyKey;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
+import com.google.devtools.build.lib.actions.ActionLookupKey
 
 /**
- * A marker for an {@link com.google.devtools.build.lib.actions.ActionLookupValue} which is known to
+ * A marker for an [com.google.devtools.build.lib.actions.ActionLookupValue] which is known to
  * be transitively error-free from action conflict issues.
  */
-public class ActionLookupConflictFindingValue implements SkyValue {
-  @SerializationConstant
-  static final ActionLookupConflictFindingValue INSTANCE = new ActionLookupConflictFindingValue();
+object ActionLookupConflictFindingValue : SkyValue {
+    @kotlin.jvm.JvmField
+    @SerializationConstant
+    val INSTANCE: ActionLookupConflictFindingValue = ActionLookupConflictFindingValue()
 
-  private ActionLookupConflictFindingValue() {}
-
-  public static Key key(ActionLookupKey lookupKey) {
-    return Key.create(lookupKey);
-  }
-
-  public static Key key(Artifact artifact) {
-    checkArgument(artifact instanceof Artifact.DerivedArtifact, artifact);
-    return ActionLookupConflictFindingValue.key(
-        ((Artifact.DerivedArtifact) artifact).getGeneratingActionKey().getActionLookupKey());
-  }
-
-  @VisibleForSerialization
-  @AutoCodec
-  static class Key extends AbstractSkyKey<ActionLookupKey> {
-    private static final SkyKeyInterner<Key> interner = SkyKey.newInterner();
-
-    private Key(ActionLookupKey arg) {
-      super(arg);
+    fun key(lookupKey: ActionLookupKey?): Key {
+        return com.google.devtools.build.lib.skyframe.ActionLookupConflictFindingValue.Key.Companion.create(lookupKey)
     }
 
-    private static Key create(ActionLookupKey arg) {
-      return interner.intern(new Key(arg));
+    fun key(artifact: Artifact): Key? {
+        com.google.common.base.Preconditions.checkArgument(artifact is Artifact.DerivedArtifact, artifact)
+        return key(
+            (artifact as Artifact.DerivedArtifact).getGeneratingActionKey().getActionLookupKey()
+        )
     }
 
-    @VisibleForSerialization
-    @AutoCodec.Interner
-    static Key intern(Key key) {
-      return interner.intern(key);
-    }
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    @AutoCodec
+    internal class Key private constructor(arg: ActionLookupKey?) : AbstractSkyKey<ActionLookupKey?>(arg) {
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.ACTION_LOOKUP_CONFLICT_FINDING
+        }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.ACTION_LOOKUP_CONFLICT_FINDING;
-    }
+        val skyKeyInterner: SkyKeyInterner<Key?>
+            get() = com.google.devtools.build.lib.skyframe.ActionLookupConflictFindingValue.Key.Companion.interner
 
-    @Override
-    public SkyKeyInterner<Key> getSkyKeyInterner() {
-      return interner;
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
+
+            private fun create(arg: ActionLookupKey?): Key {
+                return com.google.devtools.build.lib.skyframe.ActionLookupConflictFindingValue.Key.Companion.interner.intern(
+                    Key(arg)
+                )
+            }
+
+            @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+            @AutoCodec.Interner
+            fun intern(key: Key?): Key {
+                return com.google.devtools.build.lib.skyframe.ActionLookupConflictFindingValue.Key.Companion.interner.intern(
+                    key
+                )
+            }
+        }
     }
-  }
 }

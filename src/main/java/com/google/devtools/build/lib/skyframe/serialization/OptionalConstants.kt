@@ -11,26 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.errorprone.annotations.Keep;
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant
 
 /**
  * Declares serialization constants for empty optionals.
- *
- * <p>Upstream library constants cannot be annotated directly.
+ * 
+ * 
+ * Upstream library constants cannot be annotated directly.
  */
-@Keep
-@SuppressWarnings("rawtypes")
-final class OptionalConstants {
+@com.google.errorprone.annotations.Keep
+internal object OptionalConstants {
+    @SerializationConstant
+    val EMPTY_JDK_OPTIONAL: java.util.Optional<*> = java.util.Optional.empty<Any?>()
 
-  @SerializationConstant
-  static final java.util.Optional EMPTY_JDK_OPTIONAL = java.util.Optional.empty();
-
-  @SerializationConstant
-  static final com.google.common.base.Optional EMPTY_GUAVA_OPTIONAL =
-      com.google.common.base.Optional.absent();
-
-  private OptionalConstants() {}
+    @SerializationConstant
+    val EMPTY_GUAVA_OPTIONAL: com.google.common.base.Optional<*> = com.google.common.base.Optional.absent<Any?>()
 }

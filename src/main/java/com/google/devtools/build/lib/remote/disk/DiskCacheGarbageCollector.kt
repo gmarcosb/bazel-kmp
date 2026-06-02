@@ -225,8 +225,8 @@ class DiskCacheGarbageCollector(
         fun visitDirectory(path: Path) {
             try {
                 for (dirent in path.readdir(Symlinks.NOFOLLOW)) {
-                    val childPath = path.getChild(dirent.getName())
-                    if (dirent.getType() == Dirent.Type.FILE) {
+                    val childPath = path.getChild(dirent.name)
+                    if (dirent.type == Dirent.Type.FILE) {
                         // The file may be gone by the time we stat it.
                         val status: FileStatus? = childPath.statIfFound()
                         if (status != null) {
@@ -240,7 +240,7 @@ class DiskCacheGarbageCollector(
                                 entries.add(entry)
                             }
                         }
-                    } else if (dirent.getType() == Dirent.Type.DIRECTORY
+                    } else if (dirent.type == Dirent.Type.DIRECTORY
                         && !excludedDirs.contains(childPath)
                     ) {
                         execute({ visitDirectory(childPath) })

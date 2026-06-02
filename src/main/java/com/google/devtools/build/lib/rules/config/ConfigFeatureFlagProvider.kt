@@ -11,140 +11,112 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.config
 
-package com.google.devtools.build.lib.rules.config;
+import com.google.devtools.build.lib.analysis.TransitiveInfoCollection
 
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
-import com.google.common.base.Strings;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.TransitiveInfoCollection;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.BuiltinProvider;
-import com.google.devtools.build.lib.packages.NativeInfo;
-import com.google.devtools.build.lib.packages.RequiredProviders;
-import com.google.devtools.build.lib.packages.StarlarkProviderIdentifier;
-import com.google.devtools.build.lib.starlarkbuildapi.config.ConfigFeatureFlagProviderApi;
-import javax.annotation.Nullable;
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.eval.StarlarkValue;
+/** Provider for exporting value and valid value predicate of feature flags to consuming targets.  */ // TODO(adonovan): rename this to *Info and its constructor to *Provider.
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+class ConfigFeatureFlagProvider private constructor(
+    private val value: String?,
+    /** Gets the current value of the flag in the flag's current configuration.  */
+    val error: String?, validityPredicate: com.google.common.base.Predicate<String?>
+) : NativeInfo(), ConfigFeatureFlagProviderApi {
+    private val validityPredicate: com.google.common.base.Predicate<String?>
 
-/** Provider for exporting value and valid value predicate of feature flags to consuming targets. */
-// TODO(adonovan): rename this to *Info and its constructor to *Provider.
-@Immutable
-public class ConfigFeatureFlagProvider extends NativeInfo implements ConfigFeatureFlagProviderApi {
-
-  /** Name used in Starlark for accessing ConfigFeatureFlagProvider. */
-  static final String STARLARK_NAME = "FeatureFlagInfo";
-
-  /**
-   * Constructor and identifier for ConfigFeatureFlagProvider. This is the value of {@code
-   * config_common.FeatureFlagInfo}.
-   */
-  static final BuiltinProvider<ConfigFeatureFlagProvider> STARLARK_CONSTRUCTOR = new Constructor();
-
-  static final RequiredProviders REQUIRE_CONFIG_FEATURE_FLAG_PROVIDER =
-      RequiredProviders.acceptAnyBuilder().addStarlarkSet(ImmutableSet.of(id())).build();
-
-  private final String value;
-  @Nullable private final String potentialError;
-  private final Predicate<String> validityPredicate;
-
-  private ConfigFeatureFlagProvider(
-      String value, @Nullable String potentialError, Predicate<String> validityPredicate) {
-    this.value = value;
-    this.potentialError = potentialError;
-    this.validityPredicate = validityPredicate;
-  }
-
-  @Override
-  public BuiltinProvider<ConfigFeatureFlagProvider> getProvider() {
-    return STARLARK_CONSTRUCTOR;
-  }
-
-  /** Creates a new ConfigFeatureFlagProvider with the given value and valid value predicate. */
-  public static ConfigFeatureFlagProvider create(
-      String value, @Nullable String potentialError, Predicate<String> isValidValue) {
-    return new ConfigFeatureFlagProvider(value, potentialError, isValidValue);
-  }
-
-  /**
-   * A constructor callable from Starlark for OutputGroupInfo: {@code
-   * config_common.FeatureFlagInfo(value="...")}
-   */
-  @StarlarkBuiltin(name = "FeatureFlagInfo", documented = false)
-  @Immutable
-  private static final class Constructor extends BuiltinProvider<ConfigFeatureFlagProvider>
-      implements StarlarkValue {
-
-    Constructor() {
-      super(STARLARK_NAME, ConfigFeatureFlagProvider.class);
+    init {
+        this.validityPredicate = validityPredicate
     }
 
-    @StarlarkMethod(
-        name = "FeatureFlagInfo",
-        documented = false,
-        parameters = {@Param(name = "value", named = true)},
-        selfCall = true)
-    public ConfigFeatureFlagProvider selfcall(String value) {
-      return create(value, null, Predicates.alwaysTrue());
+    val provider: BuiltinProvider<ConfigFeatureFlagProvider?>
+        get() = STARLARK_CONSTRUCTOR
+
+    /**
+     * A constructor callable from Starlark for OutputGroupInfo: `config_common.FeatureFlagInfo(value="...")`
+     */
+    @net.starlark.java.annot.StarlarkBuiltin(name = "FeatureFlagInfo", documented = false)
+    @com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+    private class Constructor :
+        BuiltinProvider<ConfigFeatureFlagProvider?>(STARLARK_NAME, ConfigFeatureFlagProvider::class.java),
+        net.starlark.java.eval.StarlarkValue {
+        @net.starlark.java.annot.StarlarkMethod(
+            name = "FeatureFlagInfo",
+            documented = false,
+            parameters = [net.starlark.java.annot.Param(name = "value", named = true)],
+            selfCall = true
+        )
+        fun selfcall(value: String?): ConfigFeatureFlagProvider {
+            return create(value, null, com.google.common.base.Predicates.alwaysTrue<String?>())
+        }
+
+        override fun repr(
+            printer: net.starlark.java.eval.Printer,
+            semantics: net.starlark.java.eval.StarlarkSemantics?
+        ) {
+            printer.append("<function FeatureFlagInfo>")
+        }
     }
 
-    @Override
-    public void repr(Printer printer, StarlarkSemantics semantics) {
-      printer.append("<function FeatureFlagInfo>");
+    val flagValue: String?
+        /**
+         * Gets the current value of the flag in the flag's current configuration.
+         * 
+         * 
+         * Throws EvalException when getError() is non-empty.
+         */
+        get() {
+            if (!com.google.common.base.Strings.isNullOrEmpty(this.error)) {
+                return null
+            }
+            return value
+        }
+
+    /** Returns whether this value is valid for this flag.  */
+    override fun isValidValue(value: String?): Boolean {
+        return validityPredicate.apply(value)
     }
-  }
 
-  public static StarlarkProviderIdentifier id() {
-    return STARLARK_CONSTRUCTOR.id();
-  }
-
-  /** Retrieves and casts the provider from the given target. */
-  public static ConfigFeatureFlagProvider fromTarget(TransitiveInfoCollection target) {
-    return target.get(STARLARK_CONSTRUCTOR);
-  }
-
-  /**
-   * Gets the current value of the flag in the flag's current configuration.
-   *
-   * <p>Throws EvalException when getError() is non-empty.
-   */
-  @Override
-  @Nullable
-  public String getFlagValue() {
-    if (!Strings.isNullOrEmpty(potentialError)) {
-      return null;
+    // ConfigFeatureFlagProvider instances should all be unique, so we override the default
+    // equals and hashCode from Info to ensure that. SCO's toString is fine, however.
+    override fun equals(other: Any?): Boolean {
+        return other === this
     }
-    return value;
-  }
 
-  /** Gets the current value of the flag in the flag's current configuration. */
-  @Override
-  @Nullable
-  public String getError() {
-    return potentialError;
-  }
+    override fun hashCode(): Int {
+        return java.lang.System.identityHashCode(this)
+    }
 
-  /** Returns whether this value is valid for this flag. */
-  @Override
-  public boolean isValidValue(String value) {
-    return validityPredicate.apply(value);
-  }
+    companion object {
+        /** Name used in Starlark for accessing ConfigFeatureFlagProvider.  */
+        const val STARLARK_NAME: String = "FeatureFlagInfo"
 
-  // ConfigFeatureFlagProvider instances should all be unique, so we override the default
-  // equals and hashCode from Info to ensure that. SCO's toString is fine, however.
-  @Override
-  public boolean equals(Object other) {
-    return other == this;
-  }
+        /**
+         * Constructor and identifier for ConfigFeatureFlagProvider. This is the value of `config_common.FeatureFlagInfo`.
+         */
+        val STARLARK_CONSTRUCTOR: BuiltinProvider<ConfigFeatureFlagProvider?> =
+            com.google.devtools.build.lib.rules.config.ConfigFeatureFlagProvider.Constructor()
 
-  @Override
-  public int hashCode() {
-    return System.identityHashCode(this);
-  }
+        val REQUIRE_CONFIG_FEATURE_FLAG_PROVIDER: RequiredProviders? =
+            RequiredProviders.acceptAnyBuilder().addStarlarkSet(
+                com.google.common.collect.ImmutableSet.of<E?>(
+                    id()
+                )
+            ).build()
+
+        /** Creates a new ConfigFeatureFlagProvider with the given value and valid value predicate.  */
+        fun create(
+            value: String?, potentialError: String?, isValidValue: com.google.common.base.Predicate<String?>
+        ): ConfigFeatureFlagProvider {
+            return ConfigFeatureFlagProvider(value, potentialError, isValidValue)
+        }
+
+        fun id(): StarlarkProviderIdentifier {
+            return STARLARK_CONSTRUCTOR.id()
+        }
+
+        /** Retrieves and casts the provider from the given target.  */
+        fun fromTarget(target: TransitiveInfoCollection): ConfigFeatureFlagProvider {
+            return target.get(STARLARK_CONSTRUCTOR)
+        }
+    }
 }

@@ -11,69 +11,55 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.cache.MetadataDigestUtils;
-import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.DeferredObjectCodec;
-import com.google.devtools.build.lib.skyframe.serialization.DeserializedSkyValue;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.errorprone.annotations.Keep;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
+import com.google.devtools.build.lib.actions.cache.MetadataDigestUtils
 
 /**
- * A wrapper around the AutoCodec-generated codec for {@link TreeArtifactValue} that makes sure the
- * {@link TreeArtifactValue#empty()} constant is deserialized into a different constant ({@link
- * #EMPTY_DESERIALIZED}) that implements the {@link DeserializedSkyValue} marker interface.
+ * A wrapper around the AutoCodec-generated codec for [TreeArtifactValue] that makes sure the
+ * [TreeArtifactValue.empty] constant is deserialized into a different constant ([ ][.EMPTY_DESERIALIZED]) that implements the [DeserializedSkyValue] marker interface.
  */
-@Keep // Accessed reflectively.
-class TreeArtifactValueCodec extends DeferredObjectCodec<TreeArtifactValue> {
-  private static final TreeArtifactValue EMPTY_DESERIALIZED =
-      new TreeArtifactValue_AutoCodec.Deserialized(
-          MetadataDigestUtils.fromMetadata(ImmutableMap.of()),
-          TreeArtifactValue.EMPTY_MAP,
-          0L,
-          /* archivedRepresentation= */ null,
-          /* resolvedPath= */ null,
-          /* entirelyRemote= */ false);
+@com.google.errorprone.annotations.Keep
+internal class TreeArtifactValueCodec : DeferredObjectCodec<TreeArtifactValue?>() {
+    val encodedClass: java.lang.Class<TreeArtifactValue?>
+        get() = TreeArtifactValue::class.java
 
-  private static final DeferredObjectCodec<TreeArtifactValue> AUTOCODEC =
-      new TreeArtifactValue_AutoCodec();
-
-  @Override
-  public Class<TreeArtifactValue> getEncodedClass() {
-    return TreeArtifactValue.class;
-  }
-
-  @Override
-  public ImmutableSet<Class<? extends TreeArtifactValue>> additionalEncodedClasses() {
-    return ImmutableSet.of(TreeArtifactValue_AutoCodec.Deserialized.class);
-  }
-
-  @Override
-  public void serialize(
-      SerializationContext context, TreeArtifactValue obj, CodedOutputStream codedOut)
-      throws SerializationException, IOException {
-    if (obj.equals(TreeArtifactValue.empty())) {
-      codedOut.writeBoolNoTag(true);
-    } else {
-      codedOut.writeBoolNoTag(false);
-      AUTOCODEC.serialize(context, obj, codedOut);
+    public override fun additionalEncodedClasses(): com.google.common.collect.ImmutableSet<java.lang.Class<out TreeArtifactValue?>?> {
+        return com.google.common.collect.ImmutableSet.of<E?>(TreeArtifactValue_AutoCodec.Deserialized::class.java)
     }
-  }
 
-  @Override
-  public DeferredValue<? extends TreeArtifactValue> deserializeDeferred(
-      AsyncDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    if (codedIn.readBool()) {
-      return () -> EMPTY_DESERIALIZED;
+    @Throws(SerializationException::class, IOException::class)
+    public override fun serialize(
+        context: SerializationContext?, obj: TreeArtifactValue, codedOut: CodedOutputStream
+    ) {
+        if (obj == TreeArtifactValue.Companion.empty()) {
+            codedOut.writeBoolNoTag(true)
+        } else {
+            codedOut.writeBoolNoTag(false)
+            AUTOCODEC.serialize(context, obj, codedOut)
+        }
     }
-    return AUTOCODEC.deserializeDeferred(context, codedIn);
-  }
+
+    @Throws(SerializationException::class, IOException::class)
+    public override fun deserializeDeferred(
+        context: AsyncDeserializationContext?, codedIn: CodedInputStream
+    ): DeferredValue<out TreeArtifactValue?>? {
+        if (codedIn.readBool()) {
+            return DeferredValue { EMPTY_DESERIALIZED }
+        }
+        return AUTOCODEC.deserializeDeferred(context, codedIn)
+    }
+
+    companion object {
+        private val EMPTY_DESERIALIZED: TreeArtifactValue = Deserialized(
+            MetadataDigestUtils.fromMetadata(com.google.common.collect.ImmutableMap.of<K?, V?>()),
+            TreeArtifactValue.Companion.EMPTY_MAP,
+            0L,  /* archivedRepresentation= */
+            null,  /* resolvedPath= */
+            null,  /* entirelyRemote= */
+            false
+        )
+
+        private val AUTOCODEC: DeferredObjectCodec<TreeArtifactValue?> = TreeArtifactValue_AutoCodec()
+    }
 }

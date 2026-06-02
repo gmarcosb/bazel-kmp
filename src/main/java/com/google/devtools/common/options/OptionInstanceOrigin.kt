@@ -11,47 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options;
-
-import javax.annotation.Nullable;
+package com.google.devtools.common.options
 
 /**
  * Contains metadata describing the origin of an option. This includes its priority, a message about
  * where it came from, and whether it was set explicitly or expanded/implied by other flags.
  */
-public class OptionInstanceOrigin {
-  private final OptionPriority priority;
-  @Nullable private final String source;
-  @Nullable private final ParsedOptionDescription implicitDependent;
-  @Nullable private final ParsedOptionDescription expandedFrom;
+class OptionInstanceOrigin(
+    priority: com.google.devtools.common.options.OptionPriority?,
+    source: String?,
+    implicitDependent: com.google.devtools.common.options.ParsedOptionDescription?,
+    expandedFrom: com.google.devtools.common.options.ParsedOptionDescription?
+) {
+    private val priority: com.google.devtools.common.options.OptionPriority?
+    private val source: String?
+    private val implicitDependent: com.google.devtools.common.options.ParsedOptionDescription?
+    private val expandedFrom: com.google.devtools.common.options.ParsedOptionDescription?
 
-  public OptionInstanceOrigin(
-      OptionPriority priority,
-      String source,
-      ParsedOptionDescription implicitDependent,
-      ParsedOptionDescription expandedFrom) {
-    this.priority = priority;
-    this.source = source;
-    this.implicitDependent = implicitDependent;
-    this.expandedFrom = expandedFrom;
-  }
+    init {
+        this.priority = priority
+        this.source = source
+        this.implicitDependent = implicitDependent
+        this.expandedFrom = expandedFrom
+    }
 
-  public OptionPriority getPriority() {
-    return priority;
-  }
+    fun getPriority(): com.google.devtools.common.options.OptionPriority? {
+        return priority
+    }
 
-  @Nullable
-  public String getSource() {
-    return source;
-  }
+    fun getSource(): String? {
+        return source
+    }
 
-  @Nullable
-  public ParsedOptionDescription getImplicitDependent() {
-    return implicitDependent;
-  }
+    fun getImplicitDependent(): com.google.devtools.common.options.ParsedOptionDescription? {
+        return implicitDependent
+    }
 
-  @Nullable
-  public ParsedOptionDescription getExpandedFrom() {
-    return expandedFrom;
-  }
+    fun getExpandedFrom(): com.google.devtools.common.options.ParsedOptionDescription? {
+        return expandedFrom
+    }
 }

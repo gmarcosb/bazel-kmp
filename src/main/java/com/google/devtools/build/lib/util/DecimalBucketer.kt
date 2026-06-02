@@ -11,65 +11,61 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.util;
-
-import com.google.common.collect.ImmutableList;
-import java.util.ArrayList;
+package com.google.devtools.build.lib.util
 
 /**
  * A class that buckets values into buckets based on the length of the decimal representation of the
  * value and its leading digit.
- *
- * <p>To use this class, call {@link #add} to add values to the buckets. Then call {@link
- * #getBuckets} to get the buckets.
+ * 
+ * 
+ * To use this class, call [.add] to add values to the buckets. Then call [ ][.getBuckets] to get the buckets.
  */
-public class DecimalBucketer {
+class DecimalBucketer {
+    private val counts: java.util.ArrayList<Long?> = java.util.ArrayList<Long?>()
 
-  private final ArrayList<Long> counts = new ArrayList<>();
+    /** Adds a value to the bucketer. It must be non-negative.  */
+    @kotlin.jvm.Synchronized
+    fun add(value: Long) {
+        var value = value
+        require(value >= 0) { "value must be non-negative" }
 
-  public DecimalBucketer() {}
+        // Each length has 9 buckets, one for each leading digit, except for 0-9, which has 10.
+        var bucketIdx = 0
+        while (value >= 10) {
+            value /= 10
+            bucketIdx += 9
+        }
+        bucketIdx += value.toInt() // value here is always >0 except if the input is 0 so this works out
 
-  /** Adds a value to the bucketer. It must be non-negative. */
-  public synchronized void add(long value) {
-    if (value < 0) {
-      throw new IllegalArgumentException("value must be non-negative");
+        while (counts.size() <= bucketIdx) {
+            counts.add(0L)
+        }
+        counts.set(bucketIdx, counts.get(bucketIdx) + 1L)
     }
 
-    // Each length has 9 buckets, one for each leading digit, except for 0-9, which has 10.
-    int bucketIdx = 0;
-    while (value >= 10) {
-      value /= 10;
-      bucketIdx += 9;
-    }
-    bucketIdx += (int) value; // value here is always >0 except if the input is 0 so this works out
+    @get:kotlin.jvm.Synchronized
+    val buckets: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.util.Bucket?>
+        /** Returns the buckets in which there are values in increasing order of the bucket minimum.  */
+        get() {
+            val builder: com.google.common.collect.ImmutableList.Builder<com.google.devtools.build.lib.util.Bucket?> =
+                com.google.common.collect.ImmutableList.builder<com.google.devtools.build.lib.util.Bucket?>()
 
-    while (counts.size() <= bucketIdx) {
-      counts.add(0L);
-    }
-    counts.set(bucketIdx, counts.get(bucketIdx) + 1L);
-  }
+            var base: Long = 1
+            var leadingDigit: Long = 0
 
-  /** Returns the buckets in which there are values in increasing order of the bucket minimum. */
-  public synchronized ImmutableList<Bucket> getBuckets() {
-    ImmutableList.Builder<Bucket> builder = ImmutableList.builder();
+            for (count in counts) {
+                if (count > 0) {
+                    val min = base * leadingDigit
+                    val max = if (java.lang.Long.MAX_VALUE - base < min) java.lang.Long.MAX_VALUE else min + base
+                    builder.add(com.google.devtools.build.lib.util.Bucket(min, max, count))
+                }
 
-    long base = 1;
-    long leadingDigit = 0;
-
-    for (long count : counts) {
-      if (count > 0) {
-        long min = base * leadingDigit;
-        long max = Long.MAX_VALUE - base < min ? Long.MAX_VALUE : min + base;
-        builder.add(new Bucket(min, max, count));
-      }
-
-      leadingDigit += 1;
-      if (leadingDigit > 9) {
-        leadingDigit = 1;
-        base *= 10;
-      }
-    }
-    return builder.build();
-  }
+                leadingDigit += 1
+                if (leadingDigit > 9) {
+                    leadingDigit = 1
+                    base *= 10
+                }
+            }
+            return builder.build()
+        }
 }

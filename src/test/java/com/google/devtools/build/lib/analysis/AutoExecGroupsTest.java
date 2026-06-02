@@ -1532,8 +1532,8 @@ public class AutoExecGroupsTest extends BuildViewTestCase {
     Action genSrcOutputAction =
         getGeneratingAction(javaInfo.getOutputJars().getAllSrcOutputJars().get(0));
     JavaGenJarsProvider javaGenJarsProvider = javaInfo.getGenJarsProvider();
-    Action genClassAction = getGeneratingAction(javaGenJarsProvider.getGenClassJar());
-    Action genSourceAction = getGeneratingAction(javaGenJarsProvider.getGenSourceJar());
+    Action genClassAction = getGeneratingAction(javaGenJarsProvider.genClassJar);
+    Action genSourceAction = getGeneratingAction(javaGenJarsProvider.genSourceJar);
 
     assertThat(genSrcOutputAction.getOwner().getExecutionPlatform().label())
         .isEqualTo(Label.parseCanonical("//platforms:platform_1"));
@@ -1590,8 +1590,8 @@ public class AutoExecGroupsTest extends BuildViewTestCase {
     Action genSrcOutputAction =
         getGeneratingAction(javaInfo.getOutputJars().getAllSrcOutputJars().get(0));
     JavaGenJarsProvider javaGenJarsProvider = javaInfo.getGenJarsProvider();
-    Action genClassAction = getGeneratingAction(javaGenJarsProvider.getGenClassJar());
-    Action genSourceAction = getGeneratingAction(javaGenJarsProvider.getGenSourceJar());
+    Action genClassAction = getGeneratingAction(javaGenJarsProvider.genClassJar);
+    Action genSourceAction = getGeneratingAction(javaGenJarsProvider.genSourceJar);
 
     assertThat(genSrcOutputAction.getOwner().getExecutionPlatform().label())
         .isEqualTo(Label.parseCanonical("//platforms:platform_2"));

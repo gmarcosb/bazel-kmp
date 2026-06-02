@@ -131,7 +131,7 @@ public class ArtifactFunctionTest extends ArtifactFunctionTestCase {
     FileArtifactValue value = (FileArtifactValue) evaluateArtifactValue(input);
 
     FileStatus stat = inputPath.stat();
-    assertThat(value.getSize()).isEqualTo(stat.getSize());
+    assertThat(value.getSize()).isEqualTo(stat.size);
     assertThat(value.getDigest()).isEqualTo(expectedDigest);
   }
 
@@ -408,10 +408,10 @@ public class ArtifactFunctionTest extends ArtifactFunctionTestCase {
 
   private static void assertValueMatches(FileStatus file, byte[] digest, FileArtifactValue value)
       throws IOException {
-    assertThat(value.getSize()).isEqualTo(file.getSize());
+    assertThat(value.getSize()).isEqualTo(file.size);
     if (digest == null) {
       assertThat(value.getDigest()).isNull();
-      assertThat(value.getModifiedTime()).isEqualTo(file.getLastModifiedTime());
+      assertThat(value.getModifiedTime()).isEqualTo(file.lastModifiedTime);
     } else {
       assertThat(value.getDigest()).isEqualTo(digest);
     }

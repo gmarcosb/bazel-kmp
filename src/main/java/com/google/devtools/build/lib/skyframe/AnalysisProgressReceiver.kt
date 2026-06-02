@@ -11,89 +11,89 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.util.StringUtil;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * A class that, when being told the end of a target or aspect being configured, keeps track of the
  * configuration progress and provides it as a human-readable string intended for the progress bar.
- *
- * <p>Non-final to be mockable.
+ * 
+ * 
+ * Non-final to be mockable.
  */
-public class AnalysisProgressReceiver {
+class AnalysisProgressReceiver {
+    private val configuredTargetsCompleted: AtomicInteger = AtomicInteger()
+    private val configuredTargetsDownloaded: AtomicInteger = AtomicInteger()
+    private val configuredAspectsCompleted: AtomicInteger = AtomicInteger()
+    private val configuredAspectsDownloaded: AtomicInteger = AtomicInteger()
 
-  private final AtomicInteger configuredTargetsCompleted = new AtomicInteger();
-  private final AtomicInteger configuredTargetsDownloaded = new AtomicInteger();
-  private final AtomicInteger configuredAspectsCompleted = new AtomicInteger();
-  private final AtomicInteger configuredAspectsDownloaded = new AtomicInteger();
-
-  /** Register that a target has been configured. */
-  void doneConfigureTarget() {
-    configuredTargetsCompleted.incrementAndGet();
-  }
-
-  /** Register that a configured target has been downloaded from a remote cache. */
-  void doneDownloadedConfiguredTarget() {
-    configuredTargetsCompleted.incrementAndGet();
-    configuredTargetsDownloaded.incrementAndGet();
-  }
-
-  /** Register that a aspect has been configured. */
-  void doneConfigureAspect() {
-    configuredAspectsCompleted.incrementAndGet();
-  }
-
-  /** Register that a configured target has been downloaded from a remote cache. */
-  void doneDownloadedConfiguredAspect() {
-    configuredAspectsCompleted.incrementAndGet();
-    configuredAspectsDownloaded.incrementAndGet();
-  }
-
-  /**
-   * Reset all instance variables of this object to a state equal to that of a newly
-   * constructed object.
-   */
-  public void reset() {
-    configuredTargetsCompleted.set(0);
-    configuredTargetsDownloaded.set(0);
-    configuredAspectsCompleted.set(0);
-    configuredAspectsDownloaded.set(0);
-  }
-
-  /**
-   * Return a snapshot of the configuration progress as human-readable description of the number of
-   * targets and aspects configured so far.
-   */
-  public String getProgressString() {
-    StringBuilder sb = new StringBuilder();
-
-    long targets = configuredTargetsCompleted.get();
-    sb.append(StringUtil.formatCount(targets))
-        .append(targets == 1 ? " target" : " targets")
-        .append(" configured");
-
-    long downloadedTargets = configuredTargetsDownloaded.get();
-    if (downloadedTargets > 0) {
-      sb.append(" (")
-          .append(StringUtil.formatCount(downloadedTargets))
-          .append(" remote cache hits)");
+    /** Register that a target has been configured.  */
+    fun doneConfigureTarget() {
+        configuredTargetsCompleted.incrementAndGet()
     }
 
-    long aspects = configuredAspectsCompleted.get();
-    if (aspects > 0) {
-      sb.append(", ")
-          .append(StringUtil.formatCount(aspects))
-          .append(aspects == 1 ? " aspect application" : " aspect applications");
-      long downloadedAspects = configuredAspectsDownloaded.get();
-      if (downloadedAspects > 0) {
-        sb.append(" (")
-            .append(StringUtil.formatCount(downloadedAspects))
-            .append(" remote cache hits)");
-      }
+    /** Register that a configured target has been downloaded from a remote cache.  */
+    fun doneDownloadedConfiguredTarget() {
+        configuredTargetsCompleted.incrementAndGet()
+        configuredTargetsDownloaded.incrementAndGet()
     }
 
-    return sb.toString();
-  }
+    /** Register that a aspect has been configured.  */
+    fun doneConfigureAspect() {
+        configuredAspectsCompleted.incrementAndGet()
+    }
+
+    /** Register that a configured target has been downloaded from a remote cache.  */
+    fun doneDownloadedConfiguredAspect() {
+        configuredAspectsCompleted.incrementAndGet()
+        configuredAspectsDownloaded.incrementAndGet()
+    }
+
+    /**
+     * Reset all instance variables of this object to a state equal to that of a newly
+     * constructed object.
+     */
+    fun reset() {
+        configuredTargetsCompleted.set(0)
+        configuredTargetsDownloaded.set(0)
+        configuredAspectsCompleted.set(0)
+        configuredAspectsDownloaded.set(0)
+    }
+
+    val progressString: String
+        /**
+         * Return a snapshot of the configuration progress as human-readable description of the number of
+         * targets and aspects configured so far.
+         */
+        get() {
+            val sb: java.lang.StringBuilder = java.lang.StringBuilder()
+
+            val targets: Long = configuredTargetsCompleted.get().toLong()
+            sb.append(com.google.devtools.build.lib.util.StringUtil.formatCount(targets))
+                .append(if (targets == 1L) " target" else " targets")
+                .append(" configured")
+
+            val downloadedTargets: Long = configuredTargetsDownloaded.get().toLong()
+            if (downloadedTargets > 0) {
+                sb.append(" (")
+                    .append(com.google.devtools.build.lib.util.StringUtil.formatCount(downloadedTargets))
+                    .append(" remote cache hits)")
+            }
+
+            val aspects: Long = configuredAspectsCompleted.get().toLong()
+            if (aspects > 0) {
+                sb.append(", ")
+                    .append(com.google.devtools.build.lib.util.StringUtil.formatCount(aspects))
+                    .append(if (aspects == 1L) " aspect application" else " aspect applications")
+                val downloadedAspects: Long = configuredAspectsDownloaded.get().toLong()
+                if (downloadedAspects > 0) {
+                    sb.append(" (")
+                        .append(com.google.devtools.build.lib.util.StringUtil.formatCount(downloadedAspects))
+                        .append(" remote cache hits)")
+                }
+            }
+
+            return sb.toString()
+        }
 }

@@ -11,81 +11,87 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.devtools.build.skyframe.InvalidatingNodeVisitor.DeletingNodeVisitor;
-import com.google.devtools.build.skyframe.InvalidatingNodeVisitor.DirtyingNodeVisitor;
-import com.google.devtools.build.skyframe.InvalidatingNodeVisitor.InvalidationState;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.DirtyAndInflightTrackingProgressReceiver
+import com.google.devtools.build.skyframe.InMemoryGraph
+import com.google.devtools.build.skyframe.InvalidatingNodeVisitor
+import com.google.devtools.build.skyframe.InvalidatingNodeVisitor.DeletingInvalidationState
+import com.google.devtools.build.skyframe.InvalidatingNodeVisitor.DeletingNodeVisitor
+import com.google.devtools.build.skyframe.InvalidatingNodeVisitor.DirtyingNodeVisitor
+import com.google.devtools.build.skyframe.QueryableGraph
+import com.google.devtools.build.skyframe.SkyKey
 
 /**
  * Utility class for performing eager invalidation on Skyframe graphs.
- *
- * <p>This is intended only for use in alternative {@code MemoizingEvaluator} implementations.
+ * 
+ * 
+ * This is intended only for use in alternative `MemoizingEvaluator` implementations.
  */
-public final class EagerInvalidator {
-
-  private EagerInvalidator() {}
-
-  /**
-   * Deletes given values. The {@code traverseGraph} parameter controls whether this method deletes
-   * (transitive) dependents of these nodes and relevant graph edges, or just the nodes themselves.
-   * Deleting just the nodes is inconsistent unless the graph will not be used for incremental
-   * builds in the future, but unfortunately there is a case where we delete nodes intra-build. As
-   * long as the full upward transitive closure of the nodes is specified for deletion, the graph
-   * remains consistent.
-   */
-  public static void delete(
-      InMemoryGraph graph,
-      Iterable<SkyKey> diff,
-      DirtyAndInflightTrackingProgressReceiver progressReceiver,
-      InvalidatingNodeVisitor.DeletingInvalidationState state,
-      boolean traverseGraph)
-      throws InterruptedException {
-    DeletingNodeVisitor visitor =
-        createDeletingVisitorIfNeeded(
-            graph, diff, progressReceiver, state, traverseGraph);
-    if (visitor != null) {
-      visitor.run();
+object EagerInvalidator {
+    /**
+     * Deletes given values. The `traverseGraph` parameter controls whether this method deletes
+     * (transitive) dependents of these nodes and relevant graph edges, or just the nodes themselves.
+     * Deleting just the nodes is inconsistent unless the graph will not be used for incremental
+     * builds in the future, but unfortunately there is a case where we delete nodes intra-build. As
+     * long as the full upward transitive closure of the nodes is specified for deletion, the graph
+     * remains consistent.
+     */
+    @Throws(java.lang.InterruptedException::class)
+    fun delete(
+        graph: InMemoryGraph?,
+        diff: Iterable<SkyKey?>?,
+        progressReceiver: DirtyAndInflightTrackingProgressReceiver?,
+        state: DeletingInvalidationState,
+        traverseGraph: Boolean
+    ) {
+        val visitor: DeletingNodeVisitor? =
+            createDeletingVisitorIfNeeded(
+                graph, diff, progressReceiver, state, traverseGraph
+            )
+        if (visitor != null) {
+            visitor.run()
+        }
     }
-  }
 
-  @VisibleForTesting
-  @Nullable
-  static DeletingNodeVisitor createDeletingVisitorIfNeeded(
-      InMemoryGraph graph,
-      Iterable<SkyKey> diff,
-      DirtyAndInflightTrackingProgressReceiver progressReceiver,
-      InvalidatingNodeVisitor.DeletingInvalidationState state,
-      boolean traverseGraph) {
-    state.update(diff);
-    return state.isEmpty() ? null
-        : new DeletingNodeVisitor(graph, progressReceiver, state, traverseGraph);
-  }
-
-  @VisibleForTesting
-  @Nullable
-  static DirtyingNodeVisitor createInvalidatingVisitorIfNeeded(
-      QueryableGraph graph,
-      Iterable<SkyKey> diff,
-      DirtyAndInflightTrackingProgressReceiver progressReceiver,
-      InvalidationState state) {
-    state.update(diff);
-    return state.isEmpty() ? null : new DirtyingNodeVisitor(graph, progressReceiver, state);
-  }
-
-  /** Invalidates given values and their upward transitive closure in the graph if necessary. */
-  public static void invalidate(
-      QueryableGraph graph,
-      Iterable<SkyKey> diff,
-      DirtyAndInflightTrackingProgressReceiver progressReceiver,
-      InvalidationState state)
-      throws InterruptedException {
-    DirtyingNodeVisitor visitor =
-        createInvalidatingVisitorIfNeeded(graph, diff, progressReceiver, state);
-    if (visitor != null) {
-      visitor.run();
+    @com.google.common.annotations.VisibleForTesting
+    fun createDeletingVisitorIfNeeded(
+        graph: InMemoryGraph?,
+        diff: Iterable<SkyKey?>?,
+        progressReceiver: DirtyAndInflightTrackingProgressReceiver?,
+        state: DeletingInvalidationState,
+        traverseGraph: Boolean
+    ): DeletingNodeVisitor? {
+        state.update(diff)
+        return if (state.isEmpty())
+            null
+        else
+            DeletingNodeVisitor(graph, progressReceiver, state, traverseGraph)
     }
-  }
+
+    @com.google.common.annotations.VisibleForTesting
+    fun createInvalidatingVisitorIfNeeded(
+        graph: QueryableGraph?,
+        diff: Iterable<SkyKey?>?,
+        progressReceiver: DirtyAndInflightTrackingProgressReceiver?,
+        state: com.google.devtools.build.skyframe.InvalidatingNodeVisitor.InvalidationState
+    ): DirtyingNodeVisitor? {
+        state.update(diff)
+        return if (state.isEmpty()) null else DirtyingNodeVisitor(graph, progressReceiver, state)
+    }
+
+    /** Invalidates given values and their upward transitive closure in the graph if necessary.  */
+    @Throws(java.lang.InterruptedException::class)
+    fun invalidate(
+        graph: QueryableGraph?,
+        diff: Iterable<SkyKey?>?,
+        progressReceiver: DirtyAndInflightTrackingProgressReceiver?,
+        state: com.google.devtools.build.skyframe.InvalidatingNodeVisitor.InvalidationState
+    ) {
+        val visitor: DirtyingNodeVisitor? =
+            createInvalidatingVisitorIfNeeded(graph, diff, progressReceiver, state)
+        if (visitor != null) {
+            visitor.run()
+        }
+    }
 }

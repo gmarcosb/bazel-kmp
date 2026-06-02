@@ -11,25 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import com.google.common.collect.ImmutableMap;
+import com.google.devtools.build.lib.util.ResourceConverter
 
 /**
  * Converter for --local_resources=cpu=, which takes an integer greater than or equal to 1, or
  * "HOST_CPUS", optionally followed by [-|*]<float>.
- */
-public final class CpuResourceConverter extends ResourceConverter.IntegerConverter {
-  public CpuResourceConverter() {
-    super(
-        /* keywords= */ ImmutableMap.of(HOST_CPUS_KEYWORD, HOST_CPUS_SUPPLIER),
-        /* minValue= */ 0,
-        /* maxValue= */ Integer.MAX_VALUE);
-  }
-
-  @Override
-  public String getTypeDescription() {
-    return String.format(
-        "an integer, or \"%s\", optionally followed by [-|*]<float>.", HOST_CPUS_KEYWORD);
-  }
+</float> */
+class CpuResourceConverter : com.google.devtools.build.lib.util.ResourceConverter.IntegerConverter( /* keywords= */
+    com.google.common.collect.ImmutableMap.of<String?, java.util.function.Supplier<Int?>?>(
+        ResourceConverter.HOST_CPUS_KEYWORD,
+        ResourceConverter.HOST_CPUS_SUPPLIER
+    ),  /* minValue= */
+    0,  /* maxValue= */
+    java.lang.Integer.MAX_VALUE
+) {
+    val typeDescription: String?
+        get() = java.lang.String.format(
+            "an integer, or \"%s\", optionally followed by [-|*]<float>.", ResourceConverter.HOST_CPUS_KEYWORD
+        )
 }

@@ -11,21 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.core
 
-package com.google.devtools.build.lib.starlarkbuildapi.core;
-
-import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableMap
 
 /**
  * A helper for registering a portion of the build API to Starlark environment globals.
- *
- * <p>A global environment may be initialized by tabulating globals into a single map by passing a
- * single map builder to {@link #addBindingsToBuilder} for several bootstrap helpers.
+ * 
+ * 
+ * A global environment may be initialized by tabulating globals into a single map by passing a
+ * single map builder to [.addBindingsToBuilder] for several bootstrap helpers.
  */
 // TODO(bazel-team): If we end up deleting starlarkbuildapi/, consider merging this interface into
 // ConfiguredRuleClassProvider.RuleSet.
-public interface Bootstrap {
-
-  /** Adds this bootstrap's bindings to the given environment map builder. */
-  void addBindingsToBuilder(ImmutableMap.Builder<String, Object> builder);
+interface Bootstrap {
+    /** Adds this bootstrap's bindings to the given environment map builder.  */
+    fun addBindingsToBuilder(builder: ImmutableMap.Builder<String?, Any?>?)
 }

@@ -11,133 +11,136 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionId
 
-import com.google.common.base.Function;
-import com.google.common.base.Preconditions;
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleExtensionId;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.repository.RequestRepositoryInformationEvent;
-import com.google.devtools.build.lib.rules.repository.RepositoryDirectoryValue;
-import com.google.devtools.build.skyframe.CycleInfo;
-import com.google.devtools.build.skyframe.CyclesReporter;
-import com.google.devtools.build.skyframe.SkyKey;
+/** Reports cycles of recursive import of Starlark files.  */
+class BzlLoadCycleReporter : SingleCycleReporter {
+    public override fun maybeReportCycle(
+        topLevelKey: SkyKey?,
+        cycleInfo: CycleInfo,
+        alreadyReported: Boolean,
+        eventHandler: ExtendedEventHandler
+    ): Boolean {
+        val pathToCycle: com.google.common.collect.ImmutableList<SkyKey> = cycleInfo.getPathToCycle()
+        val cycle: com.google.common.collect.ImmutableList<SkyKey?> = cycleInfo.getCycle()
+        if (pathToCycle.isEmpty()) {
+            return false
+        }
+        val lastPathElement: SkyKey = pathToCycle.get(pathToCycle.size() - 1)
+        if (alreadyReported) {
+            return true
+        }
 
-/** Reports cycles of recursive import of Starlark files. */
-public class BzlLoadCycleReporter implements CyclesReporter.SingleCycleReporter {
+        if (com.google.common.collect.Iterables.all<SkyKey?>(
+                cycle,
+                IS_BZL_LOAD
+            ) // The last element before the cycle has to be a PackageFunction, a .bzl file, or an
+            // extension eval.
+            && (IS_PACKAGE_SKY_KEY.apply(lastPathElement)
+                    || IS_BZL_LOAD.apply(lastPathElement)
+                    || IS_BZLMOD_EXTENSION.apply(lastPathElement))
+        ) {
+            val printer: com.google.common.base.Function<Any?, String?> =
+                com.google.common.base.Function { rawInput: Any? ->
+                    val input: SkyKey? = rawInput as SkyKey?
+                    if (input.argument() is com.google.devtools.build.lib.skyframe.BzlLoadValue.Key) {
+                        return@Function (input.argument() as com.google.devtools.build.lib.skyframe.BzlLoadValue.Key).getLabel()
+                            .toString()
+                    }
+                    if (input.argument() is PackageIdentifier) {
+                        return@Function input.argument().toString() + "/BUILD"
+                    }
+                    com.google.common.base.Preconditions.checkArgument(input.argument() is ModuleExtensionId)
+                    val id: ModuleExtensionId? = input.argument() as ModuleExtensionId?
+                    "module extension " + id
+                }
 
-  private static final Predicate<SkyKey> IS_PACKAGE_SKY_KEY =
-      SkyFunctions.isSkyFunction(SkyFunctions.PACKAGE);
+            val cycleMessage: java.lang.StringBuilder =
+                java.lang.StringBuilder().append("cycle detected in extension files: ")
 
-  private static final Predicate<SkyKey> IS_PACKAGE_LOOKUP =
-      SkyFunctions.isSkyFunction(SkyFunctions.PACKAGE_LOOKUP);
-
-  private static final Predicate<SkyKey> IS_REPOSITORY_DIRECTORY =
-      SkyFunctions.isSkyFunction(SkyFunctions.REPOSITORY_DIRECTORY);
-
-  private static final Predicate<SkyKey> IS_BZL_LOAD =
-      SkyFunctions.isSkyFunction(SkyFunctions.BZL_LOAD);
-
-  private static final Predicate<SkyKey> IS_BZLMOD_EXTENSION =
-      Predicates.or(
-          SkyFunctions.isSkyFunction(SkyFunctions.SINGLE_EXTENSION),
-          SkyFunctions.isSkyFunction(SkyFunctions.SINGLE_EXTENSION_EVAL));
-
-  private static void requestRepoDefinitions(
-      ExtendedEventHandler eventHandler, Iterable<SkyKey> repos) {
-    for (SkyKey repo : repos) {
-      if (repo instanceof RepositoryDirectoryValue.Key) {
-        eventHandler.post(
-            new RequestRepositoryInformationEvent(
-                    ((RepositoryDirectoryValue.Key) repo).argument().name));
-      }
-    }
-  }
-
-  @Override
-  public boolean maybeReportCycle(
-      SkyKey topLevelKey,
-      CycleInfo cycleInfo,
-      boolean alreadyReported,
-      ExtendedEventHandler eventHandler) {
-    ImmutableList<SkyKey> pathToCycle = cycleInfo.getPathToCycle();
-    ImmutableList<SkyKey> cycle = cycleInfo.getCycle();
-    if (pathToCycle.isEmpty()) {
-      return false;
-    }
-    SkyKey lastPathElement = pathToCycle.get(pathToCycle.size() - 1);
-    if (alreadyReported) {
-      return true;
-    }
-
-    if (Iterables.all(cycle, IS_BZL_LOAD)
-        // The last element before the cycle has to be a PackageFunction, a .bzl file, or an
-        // extension eval.
-        && (IS_PACKAGE_SKY_KEY.apply(lastPathElement)
-            || IS_BZL_LOAD.apply(lastPathElement)
-            || IS_BZLMOD_EXTENSION.apply(lastPathElement))) {
-
-      Function<Object, String> printer =
-          rawInput -> {
-            SkyKey input = (SkyKey) rawInput;
-            if (input.argument() instanceof BzlLoadValue.Key) {
-              return ((BzlLoadValue.Key) input.argument()).getLabel().toString();
+            // go back the path that lead to the cycle till we found the BUILD file or extension eval
+            // that lead to the circular load,
+            var startIndex: Int = pathToCycle.size() - 1
+            while (startIndex > 0
+                && (IS_PACKAGE_SKY_KEY.apply(pathToCycle.get(startIndex - 1))
+                        || IS_BZL_LOAD.apply(pathToCycle.get(startIndex - 1))
+                        || IS_BZLMOD_EXTENSION.apply(pathToCycle.get(startIndex - 1)))
+            ) {
+                startIndex--
             }
-            if (input.argument() instanceof PackageIdentifier) {
-              return input.argument() + "/BUILD";
+            for (i in startIndex..<pathToCycle.size()) {
+                cycleMessage.append("\n    ").append(printer.apply(pathToCycle.get(i)))
             }
-            Preconditions.checkArgument(input.argument() instanceof ModuleExtensionId);
-            ModuleExtensionId id = (ModuleExtensionId) input.argument();
-            return "module extension " + id;
-          };
-
-      StringBuilder cycleMessage =
-          new StringBuilder().append("cycle detected in extension files: ");
-
-      // go back the path that lead to the cycle till we found the BUILD file or extension eval
-      // that lead to the circular load,
-      int startIndex = pathToCycle.size() - 1;
-      while (startIndex > 0
-          && (IS_PACKAGE_SKY_KEY.apply(pathToCycle.get(startIndex - 1))
-              || IS_BZL_LOAD.apply(pathToCycle.get(startIndex - 1))
-              || IS_BZLMOD_EXTENSION.apply(pathToCycle.get(startIndex - 1)))) {
-
-        startIndex--;
-      }
-      for (int i = startIndex; i < pathToCycle.size(); i++) {
-        cycleMessage.append("\n    ").append(printer.apply(pathToCycle.get(i)));
-      }
-      AbstractLabelCycleReporter.printCycle(cycleInfo.getCycle(), cycleMessage, printer);
-      // TODO(bazel-team): it would be nice to pass the Location of the load Statement in the
-      // BUILD file.
-      eventHandler.handle(Event.error(null, cycleMessage.toString()));
-      return true;
-    } else if (Iterables.all(cycle, Predicates.or(IS_PACKAGE_LOOKUP, IS_REPOSITORY_DIRECTORY))) {
-      StringBuilder cycleMessage =
-          new StringBuilder().append("Circular definition of repositories:");
-      Iterable<SkyKey> repos = Iterables.filter(cycle, IS_REPOSITORY_DIRECTORY);
-      Function<Object, String> printer =
-          input -> {
-            if (input instanceof RepositoryDirectoryValue.Key) {
-              return ((RepositoryDirectoryValue.Key) input).argument().toString();
-            } else {
-              throw new UnsupportedOperationException();
-            }
-          };
-      AbstractLabelCycleReporter.printCycle(ImmutableList.copyOf(repos), cycleMessage, printer);
-      eventHandler.handle(Event.error(null, cycleMessage.toString()));
-      // To help debugging, request that the information be printed about where the respective
-      // repositories were defined.
-      requestRepoDefinitions(eventHandler, repos);
-      return true;
+            AbstractLabelCycleReporter.printCycle(cycleInfo.getCycle(), cycleMessage, printer)
+            // TODO(bazel-team): it would be nice to pass the Location of the load Statement in the
+            // BUILD file.
+            eventHandler.handle(com.google.devtools.build.lib.events.Event.error(null, cycleMessage.toString()))
+            return true
+        } else if (com.google.common.collect.Iterables.all<SkyKey?>(
+                cycle, com.google.common.base.Predicates.or<SkyKey?>(
+                    IS_PACKAGE_LOOKUP, IS_REPOSITORY_DIRECTORY
+                )
+            )
+        ) {
+            val cycleMessage: java.lang.StringBuilder =
+                java.lang.StringBuilder().append("Circular definition of repositories:")
+            val repos: Iterable<SkyKey> =
+                com.google.common.collect.Iterables.filter<SkyKey?>(cycle, IS_REPOSITORY_DIRECTORY)
+            val printer: com.google.common.base.Function<Any?, String?> =
+                com.google.common.base.Function { input: Any? ->
+                    if (input is RepositoryDirectoryValue.Key) {
+                        return@Function (input as RepositoryDirectoryValue.Key).argument().toString()
+                    } else {
+                        throw java.lang.UnsupportedOperationException()
+                    }
+                }
+            AbstractLabelCycleReporter.printCycle(
+                com.google.common.collect.ImmutableList.< E > copyOf < E ? > (repos),
+                cycleMessage,
+                printer
+            )
+            eventHandler.handle(com.google.devtools.build.lib.events.Event.error(null, cycleMessage.toString()))
+            // To help debugging, request that the information be printed about where the respective
+            // repositories were defined.
+            requestRepoDefinitions(eventHandler, repos)
+            return true
+        }
+        return false
     }
-    return false;
-  }
+
+    companion object {
+        private val IS_PACKAGE_SKY_KEY: com.google.common.base.Predicate<SkyKey?> =
+            SkyFunctions.isSkyFunction(SkyFunctions.PACKAGE)
+
+        private val IS_PACKAGE_LOOKUP: com.google.common.base.Predicate<SkyKey?> =
+            SkyFunctions.isSkyFunction(SkyFunctions.PACKAGE_LOOKUP)
+
+        private val IS_REPOSITORY_DIRECTORY: com.google.common.base.Predicate<SkyKey?> =
+            SkyFunctions.isSkyFunction(SkyFunctions.REPOSITORY_DIRECTORY)
+
+        private val IS_BZL_LOAD: com.google.common.base.Predicate<SkyKey?> =
+            SkyFunctions.isSkyFunction(SkyFunctions.BZL_LOAD)
+
+        private val IS_BZLMOD_EXTENSION: com.google.common.base.Predicate<SkyKey?> =
+            com.google.common.base.Predicates.or<SkyKey?>(
+                SkyFunctions.isSkyFunction(SkyFunctions.SINGLE_EXTENSION),
+                SkyFunctions.isSkyFunction(SkyFunctions.SINGLE_EXTENSION_EVAL)
+            )
+
+        private fun requestRepoDefinitions(
+            eventHandler: ExtendedEventHandler, repos: Iterable<SkyKey>
+        ) {
+            for (repo in repos) {
+                if (repo is RepositoryDirectoryValue.Key) {
+                    eventHandler.post(
+                        RequestRepositoryInformationEvent(
+                            (repo as RepositoryDirectoryValue.Key).argument().name
+                        )
+                    )
+                }
+            }
+        }
+    }
 }

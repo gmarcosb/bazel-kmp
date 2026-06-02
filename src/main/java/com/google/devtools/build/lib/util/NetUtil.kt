@@ -11,64 +11,69 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import static com.google.common.base.MoreObjects.firstNonNull;
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-
-import java.net.InetAddress;
-import java.net.UnknownHostException;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.supplier.InterruptibleSupplier.get
+import java.net.InetAddress
 
 /**
  * Various utility methods for network related stuff.
  */
-public final class NetUtil {
+object NetUtil {
+    @kotlin.concurrent.Volatile
+    private var hostname: String? = null
+    private var hostnameSupplier: java.util.function.Supplier<String?>? = java.util.function.Supplier?
+    { obj: NetUtil? -> com.google.devtools.build.lib.util.NetUtil.computeShortHostName() }
 
-  @Nullable private static volatile String hostname = null;
-  @Nullable private static Supplier<String> hostnameSupplier = NetUtil::computeShortHostName;
-
-  private NetUtil() {}
-
-  /**
-   * Returns the *cached* short hostname (computed at most once per the lifetime of a server). Can
-   * take seconds to complete when the cache is cold.
-   */
-  public static String getCachedShortHostName() {
-    if (hostname == null) {
-      synchronized (NetUtil.class) {
-        if (hostname == null) {
-          hostname = firstNonNull(hostnameSupplier.get(), "unknown");
-          hostnameSupplier = null;
+    @kotlin.jvm.JvmStatic
+    val cachedShortHostName: String?
+        /**
+         * Returns the *cached* short hostname (computed at most once per the lifetime of a server). Can
+         * take seconds to complete when the cache is cold.
+         */
+        get() {
+            if (com.google.devtools.build.lib.util.NetUtil.hostname == null) {
+                synchronized(NetUtil::class.java) {
+                    if (com.google.devtools.build.lib.util.NetUtil.hostname == null) {
+                        com.google.devtools.build.lib.util.NetUtil.hostname =
+                            com.google.common.base.MoreObjects.firstNonNull<String?>(
+                                com.google.devtools.build.lib.util.NetUtil.hostnameSupplier.get(),
+                                "unknown"
+                            )
+                        com.google.devtools.build.lib.util.NetUtil.hostnameSupplier = null
+                    }
+                }
+            }
+            return com.google.devtools.build.lib.util.NetUtil.hostname
         }
-      }
-    }
-    return hostname;
-  }
 
-  /**
-   * Sets a {@link Supplier} for the hostname to return from {@link #getCachedShortHostName}.
-   *
-   * <p>If not called, the hostname comes from {@link #computeShortHostName}. To prevent multiple
-   * different hostnames from being used, it is illegal to call this after {@link
-   * #getCachedShortHostName} has been called.
-   */
-  public static synchronized void overrideHostnameSupplier(Supplier<String> override) {
-    checkState(hostname == null, "Hostname already set to %s", hostname);
-    hostnameSupplier = checkNotNull(override);
-  }
-
-  /**
-   * Returns the short hostname or <code>unknown</code> if the host name could not be determined.
-   * Performs reverse DNS lookup and can take seconds to complete.
-   */
-  private static String computeShortHostName() {
-    try {
-      return InetAddress.getLocalHost().getHostName();
-    } catch (UnknownHostException e) {
-      return "unknown";
+    /**
+     * Sets a [Supplier] for the hostname to return from [.getCachedShortHostName].
+     * 
+     * 
+     * If not called, the hostname comes from [.computeShortHostName]. To prevent multiple
+     * different hostnames from being used, it is illegal to call this after [ ][.getCachedShortHostName] has been called.
+     */
+    @kotlin.jvm.Synchronized
+    fun overrideHostnameSupplier(override: java.util.function.Supplier<String?>?) {
+        com.google.common.base.Preconditions.checkState(
+            com.google.devtools.build.lib.util.NetUtil.hostname == null,
+            "Hostname already set to %s",
+            com.google.devtools.build.lib.util.NetUtil.hostname
+        )
+        com.google.devtools.build.lib.util.NetUtil.hostnameSupplier =
+            com.google.common.base.Preconditions.checkNotNull<java.util.function.Supplier<String?>?>(override)
     }
-  }
+
+    /**
+     * Returns the short hostname or `unknown` if the host name could not be determined.
+     * Performs reverse DNS lookup and can take seconds to complete.
+     */
+    private fun computeShortHostName(): String? {
+        try {
+            return InetAddress.getLocalHost().getHostName()
+        } catch (e: java.net.UnknownHostException) {
+            return "unknown"
+        }
+    }
 }

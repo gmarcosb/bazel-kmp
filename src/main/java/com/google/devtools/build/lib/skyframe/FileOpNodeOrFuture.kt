@@ -11,41 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.concurrent.SettableFutureKeyedValue;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.util.function.BiConsumer;
+import com.google.devtools.build.lib.concurrent.SettableFutureKeyedValue
 
 /**
  * A possibly empty nested set of file system operations.
- *
- * <p>This value represents the set of file system operation dependencies of a given Skyframe entry,
+ * 
+ * 
+ * This value represents the set of file system operation dependencies of a given Skyframe entry,
  * computed by Skyframe graph traversal.
  */
-@SuppressWarnings("InterfaceWithOnlyStatics") // sealed hierarchy root
-public sealed interface FileOpNodeOrFuture
-    permits FileOpNodeOrFuture.FileOpNodeOrEmpty, FileOpNodeOrFuture.FutureFileOpNode {
+// sealed hierarchy root
+interface FileOpNodeOrFuture {
+    /** A possibly empty set of file system dependencies.  */
+    interface FileOpNodeOrEmpty : FileOpNodeOrFuture
 
-  /** A possibly empty set of file system dependencies. */
-  sealed interface FileOpNodeOrEmpty extends FileOpNodeOrFuture
-      permits EmptyFileOpNode, FileOpNode {}
 
-  /** A non-empty set of filesystem operations. */
-  sealed interface FileOpNode extends FileOpNodeOrEmpty
-      permits FileKey, DirectoryListingKey, AbstractNestedFileOpNodes {}
+    /** A non-empty set of filesystem operations.  */
+    interface FileOpNode : FileOpNodeOrEmpty
 
-  /** Empty set of filesystem dependencies. */
-  enum EmptyFileOpNode implements FileOpNodeOrEmpty {
-    EMPTY_FILE_OP_NODE;
-  }
 
-  /** The in-flight computation of a {@link FileOpNodeOrEmpty}. */
-  static final class FutureFileOpNode
-      extends SettableFutureKeyedValue<FutureFileOpNode, SkyKey, FileOpNodeOrEmpty>
-      implements FileOpNodeOrFuture {
-    public FutureFileOpNode(SkyKey key, BiConsumer<SkyKey, FileOpNodeOrEmpty> consumer) {
-      super(key, consumer);
+    /** Empty set of filesystem dependencies.  */
+    enum class EmptyFileOpNode : FileOpNodeOrEmpty {
+        EMPTY_FILE_OP_NODE
     }
-  }
+
+    /** The in-flight computation of a [FileOpNodeOrEmpty].  */
+    class FutureFileOpNode
+        (key: SkyKey?, consumer: java.util.function.BiConsumer<SkyKey?, FileOpNodeOrEmpty?>?) :
+        SettableFutureKeyedValue<FutureFileOpNode?, SkyKey?, FileOpNodeOrEmpty?>(key, consumer), FileOpNodeOrFuture
 }

@@ -11,244 +11,275 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.util
 
-package com.google.devtools.build.lib.util;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.common.primitives.Doubles;
-import com.google.common.primitives.Ints;
-import com.google.devtools.build.lib.actions.LocalHostCapacity;
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.Converters;
-import com.google.devtools.common.options.OptionsParsingException;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.Map;
-import java.util.function.DoubleBinaryOperator;
-import java.util.function.Supplier;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.LocalHostCapacity
 
 /**
  * Converter for options that configure Bazel's resource usage.
- *
- * <p>The option can take either a value or one of the keywords {@code auto}, {@code HOST_CPUS}, or
- * {@code HOST_RAM}, followed by an optional operator in the form {@code [-|*]<float>}.
- *
- * <p>If a keyword is passed, the converter returns the keyword's value in the {@link #keywords}
+ * 
+ * 
+ * The option can take either a value or one of the keywords `auto`, `HOST_CPUS`, or
+ * `HOST_RAM`, followed by an optional operator in the form `[-|*]<float>`.
+ * 
+ * 
+ * If a keyword is passed, the converter returns the keyword's value in the [.keywords]
  * map, scaled by the operation that follows if there is one. All values, explicit and derived, are
  * adjusted for validity.
- *
- * <p>The supplier of the auto value, and, optionally, a max or min allowed value (inclusive), are
+ * 
+ * 
+ * The supplier of the auto value, and, optionally, a max or min allowed value (inclusive), are
  * passed to the constructor.
  */
-public abstract class ResourceConverter<T extends Number & Comparable<T>>
-    extends Converter.Contextless<T> {
-  public static final String AUTO_KEYWORD = "auto";
-  public static final String HOST_CPUS_KEYWORD = "HOST_CPUS";
-  public static final String HOST_RAM_KEYWORD = "HOST_RAM";
-
-  public static final Supplier<Integer> HOST_CPUS_SUPPLIER =
-      () -> (int) Math.ceil(LocalHostCapacity.getLocalHostCapacity().getCpuUsage());
-  public static final Supplier<Integer> HOST_RAM_SUPPLIER =
-      () -> (int) Math.ceil(LocalHostCapacity.getLocalHostCapacity().getMemoryMb());
-
-  /** Resource converter for assignments. */
-  public static class AssignmentConverter extends Converter.Contextless<Map.Entry<String, Double>> {
-    private static final Converters.AssignmentConverter assignment =
-        new Converters.AssignmentConverter();
-    private static final ResourceConverter.DoubleConverter resource =
-        new ResourceConverter.DoubleConverter(
-            ImmutableMap.of(
-                HOST_CPUS_KEYWORD,
-                () -> (double) HOST_CPUS_SUPPLIER.get(),
-                HOST_RAM_KEYWORD,
-                () -> (double) HOST_RAM_SUPPLIER.get()),
-            0.0,
-            Double.MAX_VALUE);
-
-    @Override
-    public Map.Entry<String, Double> convert(String input) throws OptionsParsingException {
-      Map.Entry<String, String> s = assignment.convert(input);
-      return Map.entry(s.getKey(), resource.convert(s.getValue()));
-    }
-
-    @Override
-    public String getTypeDescription() {
-      return "a named double, 'name=value', where value is " + resource.getTypeDescription();
-    }
-  }
-
-  /** Resource converter for integers. */
-  public static class IntegerConverter extends ResourceConverter<Integer> {
-    private static final Converters.IntegerConverter converter = new Converters.IntegerConverter();
-
-    public IntegerConverter(Supplier<Integer> auto, int minValue, int maxValue) {
-      this(
-          ImmutableMap.of(
-              AUTO_KEYWORD,
-              auto,
-              HOST_CPUS_KEYWORD,
-              HOST_CPUS_SUPPLIER,
-              HOST_RAM_KEYWORD,
-              HOST_RAM_SUPPLIER),
-          minValue,
-          maxValue);
-    }
-
-    public IntegerConverter(
-        ImmutableMap<String, Supplier<Integer>> keywords, int minValue, int maxValue) {
-      super(keywords, minValue, maxValue);
-    }
-
-    @Override
-    public Integer convert(String input) throws OptionsParsingException {
-      return Ints.tryParse(input) != null
-          ? checkAndLimit(converter.convert(input))
-          : checkAndLimit((int) Math.round(convertKeyword(input)));
-    }
-  }
-
-  /** Resource converter for doubles. */
-  public static class DoubleConverter extends ResourceConverter<Double> {
-    private static final Converters.DoubleConverter converter = new Converters.DoubleConverter();
-
-    public DoubleConverter(Supplier<Double> auto, double minValue, double maxValue) {
-      this(
-          ImmutableMap.of(
-              AUTO_KEYWORD, auto,
-              HOST_CPUS_KEYWORD, () -> (double) HOST_CPUS_SUPPLIER.get(),
-              HOST_RAM_KEYWORD, () -> (double) HOST_RAM_SUPPLIER.get()),
-          minValue,
-          maxValue);
-    }
-
-    public DoubleConverter(
-        ImmutableMap<String, Supplier<Double>> keywords, double minValue, double maxValue) {
-      super(keywords, minValue, maxValue);
-    }
-
-    @Override
-    public Double convert(String input) throws OptionsParsingException {
-      return Doubles.tryParse(input) != null
-          ? checkAndLimit(converter.convert(input))
-          : convertKeyword(input);
-    }
-  }
-
-  private static final ImmutableMap<String, DoubleBinaryOperator> OPERATORS =
-      ImmutableMap.<String, DoubleBinaryOperator>builder()
-          .put("-", (l, r) -> l - r)
-          .put("*", (l, r) -> l * r)
-          .build();
-
-  /** Description of the accepted inputs to the converter. */
-  public static final String FLAG_SYNTAX =
-      "an integer, or a keyword (\""
-          + AUTO_KEYWORD
-          + "\", \""
-          + HOST_CPUS_KEYWORD
-          + "\", \""
-          + HOST_RAM_KEYWORD
-          + "\"), optionally followed by an operation ([-|*]<float>) eg. \""
-          + AUTO_KEYWORD
-          + "\", \""
-          + HOST_CPUS_KEYWORD
-          + "*.5\"";
-
-  private final ImmutableMap<String, Supplier<T>> keywords;
-
-  private final Pattern validInputPattern;
-
-  protected final T minValue;
-
-  protected final T maxValue;
-
-  /**
-   * Constructs a ResourceConverter for options that take keywords other than the default set.
-   *
-   * @param keywords a map of keyword to the suppliers of their values
-   */
-  public ResourceConverter(ImmutableMap<String, Supplier<T>> keywords, T minValue, T maxValue) {
-    this.keywords = keywords;
-    this.validInputPattern =
-        Pattern.compile(
-            String.format(
-                "(?<keyword>%s)(?<expression>[%s][0-9]?(?:.[0-9]+)?)?",
-                String.join("|", this.keywords.keySet()), String.join("", OPERATORS.keySet())));
-    this.minValue = minValue;
-    this.maxValue = maxValue;
-  }
-
-  public final Double convertKeyword(String input) throws OptionsParsingException {
-    Matcher matcher = validInputPattern.matcher(input);
-    if (matcher.matches()) {
-      Supplier<T> resourceSupplier = keywords.get(matcher.group("keyword"));
-      if (resourceSupplier != null) {
-        return applyOperator(matcher.group("expression"), resourceSupplier);
-      }
-    }
-    throw new OptionsParsingException(
-        String.format(
-            "Parameter '%s' does not follow correct syntax. This flag takes %s.",
-            input, getTypeDescription()));
-  }
-
-  /** Applies function designated in {@code expression} ([-|*]<float>) to value. */
-  private Double applyOperator(@Nullable String expression, Supplier<T> firstOperandSupplier)
-      throws OptionsParsingException {
-    if (expression == null) {
-      return firstOperandSupplier.get().doubleValue();
-    }
-    for (Map.Entry<String, DoubleBinaryOperator> operator : OPERATORS.entrySet()) {
-      if (expression.startsWith(operator.getKey())) {
-        float secondOperand;
-        try {
-          secondOperand = Float.parseFloat(expression.substring(operator.getKey().length()));
-        } catch (NumberFormatException e) {
-          throw new OptionsParsingException(
-              String.format("'%s is not a float", expression.substring(operator.getKey().length())),
-              e);
+abstract class ResourceConverter<T>
+    (
+    keywords: com.google.common.collect.ImmutableMap<String, java.util.function.Supplier<T?>?>,
+    minValue: T?,
+    maxValue: T?
+) : com.google.devtools.common.options.Converter.Contextless<T?>() where T : Number?, T : Comparable<T?>? {
+    /** Resource converter for assignments.  */
+    class AssignmentConverter :
+        com.google.devtools.common.options.Converter.Contextless<MutableMap.MutableEntry<String?, Double?>?>() {
+        @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+        override fun convert(input: String): MutableMap.MutableEntry<String?, Double?> {
+            val s: MutableMap.MutableEntry<String?, String?> =
+                com.google.devtools.build.lib.util.ResourceConverter.AssignmentConverter.Companion.assignment.convert(
+                    input
+                )
+            return java.util.Map.entry<String?, Double?>(
+                s.key,
+                com.google.devtools.build.lib.util.ResourceConverter.AssignmentConverter.Companion.resource.convert(s.value)
+            )
         }
-        return operator
-            .getValue()
-            .applyAsDouble(firstOperandSupplier.get().doubleValue(), secondOperand);
-      }
-    }
-    // This should never happen because we've checked for a valid operator already.
-    throw new OptionsParsingException(
-        String.format("Parameter value '%s' does not contain a valid operator.", expression));
-  }
 
-  /**
-   * Checks validity of a resource value against min/max constraints. Implementations may choose to
-   * either raise an exception on out-of-bounds values, or adjust them to within the constraints.
-   */
-  @CanIgnoreReturnValue
-  public T checkAndLimit(T value) throws OptionsParsingException {
-    if (value.compareTo(minValue) < 0) {
-      throw new OptionsParsingException(
-          String.format(
-              "Value '(%f)' must be at least %f.", value.doubleValue(), minValue.doubleValue()));
-    }
-    if (value.compareTo(maxValue) > 0) {
-      throw new OptionsParsingException(
-          String.format(
-              "Value '(%f)' cannot be greater than %f.",
-              value.doubleValue(), maxValue.doubleValue()));
-    }
-    return value;
-  }
+        val typeDescription: String
+            get() = "a named double, 'name=value', where value is " + com.google.devtools.build.lib.util.ResourceConverter.AssignmentConverter.Companion.resource.getTypeDescription()
 
-  @Override
-  public String getTypeDescription() {
-    String firstKeyword = keywords.keySet().iterator().next();
-    return "an integer, or a keyword (\""
-        + String.join("\", \"", keywords.keySet())
-        + "\"), optionally followed by an operation ([-|*]<float>) eg. \""
-        + firstKeyword
-        + "\", \""
-        + HOST_CPUS_KEYWORD
-        + "*.5\"";
-  }
+        companion object {
+            private val assignment: com.google.devtools.common.options.Converters.AssignmentConverter =
+                com.google.devtools.common.options.Converters.AssignmentConverter()
+            private val resource: DoubleConverter =
+                com.google.devtools.build.lib.util.ResourceConverter.DoubleConverter(
+                    com.google.common.collect.ImmutableMap.of<String?, java.util.function.Supplier<Double?>?>(
+                        HOST_CPUS_KEYWORD,
+                        java.util.function.Supplier { HOST_CPUS_SUPPLIER.get().toDouble() },
+                        HOST_RAM_KEYWORD,
+                        java.util.function.Supplier { HOST_RAM_SUPPLIER.get().toDouble() }),
+                    0.0,
+                    Double.Companion.MAX_VALUE
+                )
+        }
+    }
+
+    /** Resource converter for integers.  */
+    open class IntegerConverter(
+        keywords: com.google.common.collect.ImmutableMap<String, java.util.function.Supplier<Int?>?>,
+        minValue: Int,
+        maxValue: Int
+    ) : ResourceConverter<Int?>(keywords, minValue, maxValue) {
+        constructor(auto: java.util.function.Supplier<Int?>, minValue: Int, maxValue: Int) : this(
+            com.google.common.collect.ImmutableMap.of<String?, java.util.function.Supplier<Int?>?>(
+                AUTO_KEYWORD,
+                auto,
+                HOST_CPUS_KEYWORD,
+                HOST_CPUS_SUPPLIER,
+                HOST_RAM_KEYWORD,
+                HOST_RAM_SUPPLIER
+            ),
+            minValue,
+            maxValue
+        )
+
+        @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+        override fun convert(input: String): Int? {
+            return if (com.google.common.primitives.Ints.tryParse(input) != null)
+                checkAndLimit(
+                    com.google.devtools.build.lib.util.ResourceConverter.IntegerConverter.Companion.converter.convert(
+                        input
+                    )
+                )
+            else
+                checkAndLimit(java.lang.Math.round(convertKeyword(input)).toInt())
+        }
+
+        companion object {
+            private val converter: com.google.devtools.common.options.Converters.IntegerConverter =
+                com.google.devtools.common.options.Converters.IntegerConverter()
+        }
+    }
+
+    /** Resource converter for doubles.  */
+    class DoubleConverter(
+        keywords: com.google.common.collect.ImmutableMap<String, java.util.function.Supplier<Double?>?>,
+        minValue: Double,
+        maxValue: Double
+    ) : ResourceConverter<Double?>(keywords, minValue, maxValue) {
+        constructor(auto: java.util.function.Supplier<Double?>, minValue: Double, maxValue: Double) : this(
+            com.google.common.collect.ImmutableMap.of<String?, java.util.function.Supplier<Double?>?>(
+                AUTO_KEYWORD, auto,
+                HOST_CPUS_KEYWORD, java.util.function.Supplier { HOST_CPUS_SUPPLIER.get().toDouble() },
+                HOST_RAM_KEYWORD, java.util.function.Supplier { HOST_RAM_SUPPLIER.get().toDouble() }),
+            minValue,
+            maxValue
+        )
+
+        @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+        override fun convert(input: String): Double? {
+            return if (com.google.common.primitives.Doubles.tryParse(input) != null)
+                checkAndLimit(
+                    com.google.devtools.build.lib.util.ResourceConverter.DoubleConverter.Companion.converter.convert(
+                        input
+                    )
+                )
+            else
+                convertKeyword(input)
+        }
+
+        companion object {
+            private val converter: com.google.devtools.common.options.Converters.DoubleConverter =
+                com.google.devtools.common.options.Converters.DoubleConverter()
+        }
+    }
+
+    private val keywords: com.google.common.collect.ImmutableMap<String, java.util.function.Supplier<T?>?>
+
+    private val validInputPattern: java.util.regex.Pattern
+
+    @kotlin.jvm.JvmField
+    protected val minValue: T?
+
+    @kotlin.jvm.JvmField
+    protected val maxValue: T?
+
+    /**
+     * Constructs a ResourceConverter for options that take keywords other than the default set.
+     * 
+     * @param keywords a map of keyword to the suppliers of their values
+     */
+    init {
+        this.keywords = keywords
+        this.validInputPattern =
+            java.util.regex.Pattern.compile(
+                String.format(
+                    "(?<keyword>%s)(?<expression>[%s][0-9]?(?:.[0-9]+)?)?",
+                    java.lang.String.join("|", this.keywords.keys), java.lang.String.join("", OPERATORS.keys)
+                )
+            )
+        this.minValue = minValue
+        this.maxValue = maxValue
+    }
+
+    @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+    fun convertKeyword(input: String?): Double {
+        val matcher: java.util.regex.Matcher = validInputPattern.matcher(input)
+        if (matcher.matches()) {
+            val resourceSupplier: java.util.function.Supplier<T?>? = keywords.get(matcher.group("keyword"))
+            if (resourceSupplier != null) {
+                return applyOperator(matcher.group("expression"), resourceSupplier)
+            }
+        }
+        throw com.google.devtools.common.options.OptionsParsingException(
+            String.format(
+                "Parameter '%s' does not follow correct syntax. This flag takes %s.",
+                input, this.typeDescription
+            )
+        )
+    }
+
+    /** Applies function designated in `expression` ([-|*]<float>) to value. </float> */
+    @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+    private fun applyOperator(expression: String?, firstOperandSupplier: java.util.function.Supplier<T?>): Double {
+        if (expression == null) {
+            return firstOperandSupplier.get().toDouble()
+        }
+        for (operator in OPERATORS.entries) {
+            if (expression.startsWith(operator.key)) {
+                val secondOperand: Float
+                try {
+                    secondOperand = expression.substring(operator.key.length).toFloat()
+                } catch (e: java.lang.NumberFormatException) {
+                    throw com.google.devtools.common.options.OptionsParsingException(
+                        String.format("'%s is not a float", expression.substring(operator.key.length)),
+                        e
+                    )
+                }
+                return operator
+                    .value
+                    .applyAsDouble(firstOperandSupplier.get().toDouble(), secondOperand.toDouble())
+            }
+        }
+        // This should never happen because we've checked for a valid operator already.
+        throw com.google.devtools.common.options.OptionsParsingException(
+            String.format("Parameter value '%s' does not contain a valid operator.", expression)
+        )
+    }
+
+    /**
+     * Checks validity of a resource value against min/max constraints. Implementations may choose to
+     * either raise an exception on out-of-bounds values, or adjust them to within the constraints.
+     */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+    open fun checkAndLimit(value: T?): T? {
+        if (value!!.compareTo(minValue) < 0) {
+            throw com.google.devtools.common.options.OptionsParsingException(
+                String.format(
+                    "Value '(%f)' must be at least %f.", value.toDouble(), minValue!!.toDouble()
+                )
+            )
+        }
+        if (value.compareTo(maxValue) > 0) {
+            throw com.google.devtools.common.options.OptionsParsingException(
+                String.format(
+                    "Value '(%f)' cannot be greater than %f.",
+                    value.toDouble(), maxValue!!.toDouble()
+                )
+            )
+        }
+        return value
+    }
+
+    val typeDescription: String
+        get() {
+            val firstKeyword: String = keywords.keys.iterator().next()
+            return ("an integer, or a keyword (\""
+                    + java.lang.String.join("\", \"", keywords.keys)
+                    + "\"), optionally followed by an operation ([-|*]<float>) eg. \""
+                    + firstKeyword
+                    + "\", \""
+                    + HOST_CPUS_KEYWORD
+                    + "*.5\"")
+        }
+
+    companion object {
+        const val AUTO_KEYWORD: String = "auto"
+        const val HOST_CPUS_KEYWORD: String = "HOST_CPUS"
+        const val HOST_RAM_KEYWORD: String = "HOST_RAM"
+
+        @kotlin.jvm.JvmField
+        val HOST_CPUS_SUPPLIER: java.util.function.Supplier<Int?> =
+            java.util.function.Supplier { ceil(LocalHostCapacity.getLocalHostCapacity().getCpuUsage()) as Int }
+        val HOST_RAM_SUPPLIER: java.util.function.Supplier<Int?> =
+            java.util.function.Supplier { ceil(LocalHostCapacity.getLocalHostCapacity().getMemoryMb()) as Int }
+
+        private val OPERATORS: com.google.common.collect.ImmutableMap<String?, DoubleBinaryOperator?> =
+            com.google.common.collect.ImmutableMap.builder<String?, DoubleBinaryOperator?>()
+                .put("-", DoubleBinaryOperator { l: Double, r: Double -> l - r })
+                .put("*", DoubleBinaryOperator { l: Double, r: Double -> l * r })
+                .build()
+
+        /** Description of the accepted inputs to the converter.  */
+        @kotlin.jvm.JvmField
+        val FLAG_SYNTAX: String = ("an integer, or a keyword (\""
+                + AUTO_KEYWORD
+                + "\", \""
+                + HOST_CPUS_KEYWORD
+                + "\", \""
+                + HOST_RAM_KEYWORD
+                + "\"), optionally followed by an operation ([-|*]<float>) eg. \""
+                + AUTO_KEYWORD
+                + "\", \""
+                + HOST_CPUS_KEYWORD
+                + "*.5\"")
+    }
 }

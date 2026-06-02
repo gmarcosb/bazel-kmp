@@ -11,64 +11,61 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.packages.Globber;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.UnixGlob;
-import com.google.devtools.build.skyframe.SkyValue;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
 /**
- * A value corresponding to a glob. It has two subclasses, {@link GlobValueWithNestedSet} and {@link
- * GlobValueWithImmutableSet}.
+ * A value corresponding to a glob. It has two subclasses, [GlobValueWithNestedSet] and [ ].
  */
-public abstract class GlobValue implements SkyValue {
+abstract class GlobValue : SkyValue {
+    /** Returns all glob matching [PathFragment]s in [ImmutableSet].  */
+    @kotlin.jvm.JvmField
+    abstract val matches: com.google.common.collect.ImmutableSet<PathFragment?>?
 
-  /** Returns all glob matching {@link PathFragment}s in {@link ImmutableSet}. */
-  public abstract ImmutableSet<PathFragment> getMatches();
+    companion object {
+        /**
+         * Constructs a [GlobDescriptor] for a glob lookup. `packageName` is assumed to be an
+         * existing package. Trying to glob into a non-package is undefined behavior.
+         * 
+         * @throws InvalidGlobPatternException if the pattern is not valid.
+         */
+        @com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+        @Throws(InvalidGlobPatternException::class)
+        fun key(
+            packageId: PackageIdentifier?,
+            packageRoot: Root?,
+            pattern: String,
+            globOperation: Globber.Operation?,
+            subdir: PathFragment?
+        ): GlobDescriptor? {
+            if (pattern.indexOf('?') != -1) {
+                throw InvalidGlobPatternException(pattern, "wildcard ? forbidden")
+            }
 
-  /**
-   * Constructs a {@link GlobDescriptor} for a glob lookup. {@code packageName} is assumed to be an
-   * existing package. Trying to glob into a non-package is undefined behavior.
-   *
-   * @throws InvalidGlobPatternException if the pattern is not valid.
-   */
-  @ThreadSafe
-  public static GlobDescriptor key(
-      PackageIdentifier packageId,
-      Root packageRoot,
-      String pattern,
-      Globber.Operation globOperation,
-      PathFragment subdir)
-      throws InvalidGlobPatternException {
-    if (pattern.indexOf('?') != -1) {
-      throw new InvalidGlobPatternException(pattern, "wildcard ? forbidden");
+            val error: String? = UnixGlob.checkPatternForError(pattern)
+            if (error != null) {
+                throw InvalidGlobPatternException(pattern, error)
+            }
+
+            return internalKey(packageId, packageRoot, subdir, pattern, globOperation)
+        }
+
+        /**
+         * Constructs a [GlobDescriptor] for a glob lookup.
+         * 
+         * 
+         * Do not use outside `GlobFunction`.
+         */
+        @com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+        fun internalKey(
+            packageId: PackageIdentifier?,
+            packageRoot: Root?,
+            subdir: PathFragment?,
+            pattern: String?,
+            globOperation: Globber.Operation?
+        ): GlobDescriptor? {
+            return GlobDescriptor.Companion.create(packageId, packageRoot, subdir, pattern, globOperation)
+        }
     }
-
-    String error = UnixGlob.checkPatternForError(pattern);
-    if (error != null) {
-      throw new InvalidGlobPatternException(pattern, error);
-    }
-
-    return internalKey(packageId, packageRoot, subdir, pattern, globOperation);
-  }
-
-  /**
-   * Constructs a {@link GlobDescriptor} for a glob lookup.
-   *
-   * <p>Do not use outside {@code GlobFunction}.
-   */
-  @ThreadSafe
-  static GlobDescriptor internalKey(
-      PackageIdentifier packageId,
-      Root packageRoot,
-      PathFragment subdir,
-      String pattern,
-      Globber.Operation globOperation) {
-    return GlobDescriptor.create(packageId, packageRoot, subdir, pattern, globOperation);
-  }
 }

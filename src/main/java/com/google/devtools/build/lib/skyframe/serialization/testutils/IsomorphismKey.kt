@@ -11,105 +11,106 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.testutils;
+package com.google.devtools.build.lib.skyframe.serialization.testutils
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.IdentityHashMap;
-import java.util.Set;
+import java.util.Collections
+import java.util.IdentityHashMap
 
 /**
  * Concise description of an object, used for comparison with other objects.
- *
- * <p>Each instance corresponds to a partition found by partition refinement. It represents a set of
+ * 
+ * 
+ * Each instance corresponds to a partition found by partition refinement. It represents a set of
  * objects that have equivalent local fingerprints and equivalent links to other partitions.
- *
- * <p>Preserving the key can help with debugging and testing. It is possible to reduce this key to a
+ * 
+ * 
+ * Preserving the key can help with debugging and testing. It is possible to reduce this key to a
  * fingerprint if needed.
  */
-public class IsomorphismKey {
-  /**
-   * The local fingerprint of a partition.
-   *
-   * <p>See {@link Canonizer.Node#localFingerprint}.
-   */
-  private final String fingerprint;
+class IsomorphismKey internal constructor(
+    /**
+     * The local fingerprint of a partition.
+     * 
+     * 
+     * See [Canonizer.Node.localFingerprint].
+     */
+    private val fingerprint: String
+) {
+    /**
+     * The edges to other partitions.
+     * 
+     * 
+     * This is necessarily mutable because the underlying graphs are cyclic.
+     */
+    private val links: java.util.ArrayList<IsomorphismKey?> = java.util.ArrayList<IsomorphismKey?>()
 
-  /**
-   * The edges to other partitions.
-   *
-   * <p>This is necessarily mutable because the underlying graphs are cyclic.
-   */
-  private final ArrayList<IsomorphismKey> links = new ArrayList<>();
-
-  IsomorphismKey(String fingerprint) {
-    this.fingerprint = fingerprint;
-  }
-
-  String fingerprint() {
-    return fingerprint;
-  }
-
-  int getLinksCount() {
-    return links.size();
-  }
-
-  IsomorphismKey getLink(int i) {
-    return links.get(i);
-  }
-
-  /**
-   * Adds a link.
-   *
-   * <p>Only used by {@link Canonizer} during construction (and testing).
-   */
-  void addLink(IsomorphismKey key) {
-    links.add(key);
-  }
-
-  /**
-   * Compares two {@link IsomorphismKey}s using joint depth-first-search.
-   *
-   * <p>Depth first search is sufficient because {@link IsomorphismKey}s are canonically structured.
-   *
-   * @return true if the objects that the keys are derived from are equivalent.
-   */
-  public static boolean areIsomorphismKeysEqual(IsomorphismKey objA, IsomorphismKey objB) {
-    return IsomorphismKey.areKeysEqual(
-        objA,
-        objB,
-        Collections.newSetFromMap(new IdentityHashMap<>()),
-        Collections.newSetFromMap(new IdentityHashMap<>()));
-  }
-
-  private static boolean areKeysEqual(
-      IsomorphismKey objA,
-      IsomorphismKey objB,
-      Set<IsomorphismKey> visitedA,
-      Set<IsomorphismKey> visitedB) {
-    boolean objAIsNew = visitedA.add(objA);
-    boolean objBIsNew = visitedB.add(objB);
-    if (objAIsNew != objBIsNew) {
-      return false;
-    }
-    if (!objAIsNew) {
-      return true;
+    fun fingerprint(): String {
+        return fingerprint
     }
 
-    if (!objA.fingerprint.equals(objB.fingerprint)) {
-      return false;
+    fun getLinksCount(): Int {
+        return links.size()
     }
 
-    int size = objA.links.size();
-    if (objB.links.size() != size) {
-      return false;
+    fun getLink(i: Int): IsomorphismKey? {
+        return links.get(i)
     }
 
-    for (int i = 0; i < size; i++) {
-      if (!areKeysEqual(objA.links.get(i), objB.links.get(i), visitedA, visitedB)) {
-        return false;
-      }
+    /**
+     * Adds a link.
+     * 
+     * 
+     * Only used by [Canonizer] during construction (and testing).
+     */
+    fun addLink(key: IsomorphismKey?) {
+        links.add(key)
     }
-    return true;
-  }
+
+    companion object {
+        /**
+         * Compares two [IsomorphismKey]s using joint depth-first-search.
+         * 
+         * 
+         * Depth first search is sufficient because [IsomorphismKey]s are canonically structured.
+         * 
+         * @return true if the objects that the keys are derived from are equivalent.
+         */
+        @kotlin.jvm.JvmStatic
+        fun areIsomorphismKeysEqual(objA: IsomorphismKey, objB: IsomorphismKey): Boolean {
+            return areKeysEqual(
+                objA,
+                objB,
+                Collections.newSetFromMap<IsomorphismKey?>(IdentityHashMap<IsomorphismKey?, Boolean?>()),
+                Collections.newSetFromMap<IsomorphismKey?>(IdentityHashMap<IsomorphismKey?, Boolean?>())
+            )
+        }
+
+        private fun areKeysEqual(
+            objA: IsomorphismKey,
+            objB: IsomorphismKey,
+            visitedA: MutableSet<IsomorphismKey?>,
+            visitedB: MutableSet<IsomorphismKey?>
+        ): Boolean {
+            val objAIsNew = visitedA.add(objA)
+            val objBIsNew = visitedB.add(objB)
+            if (objAIsNew != objBIsNew) {
+                return false
+            }
+            if (!objAIsNew) {
+                return true
+            }
+
+            if (objA.fingerprint != objB.fingerprint) {
+                return false
+            }
+
+            val size: Int = objA.links.size()
+            if (objB.links.size() != size) {
+                return false
+            }
+
+            /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
+            return true
+        }
+    }
 }

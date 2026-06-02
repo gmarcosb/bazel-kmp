@@ -211,8 +211,8 @@ public class AppleRulesTest extends AnalysisTestCase {
         Iterables.getOnlyElement(result.getTopLevelTargetsWithConfigs()).getConfiguration();
     AppleCommandLineOptions appleOptions =
         configuration.getOptions().get(AppleCommandLineOptions.class);
-    assertThat(appleOptions.getIosMinimumOs()).isNotNull();
-    DottedVersion version = DottedVersion.maybeUnwrap(appleOptions.getIosMinimumOs());
+    assertThat(appleOptions.iosMinimumOs).isNotNull();
+    DottedVersion version = DottedVersion.maybeUnwrap(appleOptions.iosMinimumOs);
     assertThat(version.toString()).isEqualTo("10.0.1");
   }
 }

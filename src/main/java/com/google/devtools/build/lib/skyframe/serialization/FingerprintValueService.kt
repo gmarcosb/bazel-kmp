@@ -11,244 +11,279 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.hash.Hashing.murmur3_128;
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
-import static java.util.concurrent.Executors.newSingleThreadExecutor;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Throwables;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueStore.InMemoryFingerprintValueStore;
-import com.google.devtools.build.lib.skyframe.serialization.WriteStatuses.WriteStatus;
-import com.google.devtools.build.lib.util.DecimalBucketer;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.protobuf.ByteString;
-import java.io.IOException;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
-import java.util.concurrent.TimeUnit;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.skyframe.serialization.AsyncSerializationTask
+import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueCache
+import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueStore
+import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueStore.InMemoryFingerprintValueStore
+import com.google.devtools.build.lib.skyframe.serialization.Fingerprinter
+import com.google.devtools.build.lib.skyframe.serialization.FrontierNodeVersion
+import com.google.devtools.build.lib.skyframe.serialization.KeyBytesProvider
+import com.google.devtools.build.lib.skyframe.serialization.KeyValueWriter
+import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecs
+import com.google.devtools.build.lib.skyframe.serialization.PackedFingerprint
+import com.google.devtools.build.lib.skyframe.serialization.PutOperation
+import com.google.devtools.build.lib.skyframe.serialization.SerializationResult
+import com.google.devtools.build.lib.skyframe.serialization.WriteStatuses.WriteStatus
+import com.google.devtools.build.lib.util.DecimalBucketer
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.protobuf.ByteString
+import java.io.IOException
+import java.time.Instant
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * Bundles the components needed to store serialized values by fingerprint, the storage interface,
  * the cache and the hash function for computing fingerprints.
  */
-public final class FingerprintValueService implements KeyValueWriter {
+class FingerprintValueService(
+    executor: java.util.concurrent.Executor?,
+    store: FingerprintValueStore,
+    cache: FingerprintValueCache,
+    fingerprinter: Fingerprinter
+) : KeyValueWriter {
+    private val executor: java.util.concurrent.Executor?
+    private val store: FingerprintValueStore
+    private val cache: FingerprintValueCache
 
-  /** A {@link Fingerprinter} implementation for non-production use. */
-  public static final Fingerprinter NONPROD_FINGERPRINTER =
-      input -> PackedFingerprint.fromBytes(murmur3_128().hashBytes(input).asBytes());
+    /**
+     * The function used to generate fingerprints.
+     * 
+     * 
+     * Used to derive [.fingerprintPlaceholder] and [.fingerprintLength].
+     */
+    private val fingerprinter: Fingerprinter
 
-  private final Executor executor;
-  private final FingerprintValueStore store;
-  private final FingerprintValueCache cache;
+    private val fingerprintPlaceholder: PackedFingerprint
+    private val fingerprintLength: Int
 
-  /**
-   * The function used to generate fingerprints.
-   *
-   * <p>Used to derive {@link #fingerprintPlaceholder} and {@link #fingerprintLength}.
-   */
-  private final Fingerprinter fingerprinter;
+    private val getLatencyMicros: DecimalBucketer = DecimalBucketer()
+    private val setLatencyMicros: DecimalBucketer = DecimalBucketer()
 
-  private final PackedFingerprint fingerprintPlaceholder;
-  private final int fingerprintLength;
+    init {
+        this.executor = executor
+        this.store = store
+        this.cache = cache
+        this.fingerprinter = fingerprinter
 
-  private final DecimalBucketer getLatencyMicros = new DecimalBucketer();
-  private final DecimalBucketer setLatencyMicros = new DecimalBucketer();
-
-  @VisibleForTesting
-  public static FingerprintValueService createForTesting() {
-    return createForTesting(
-        FingerprintValueStore.inMemoryStore(), FingerprintValueCache.SyncMode.NOT_LINKED);
-  }
-
-  /**
-   * Returns an instance that uses a {@link FingerprintValueStore} that indicates a missing entry by
-   * returning null, which is what analysis caching expects.
-   */
-  @VisibleForTesting
-  public static FingerprintValueService createForAnalysisCacheTesting() {
-    return createForTesting(new InMemoryFingerprintValueStore(true));
-  }
-
-  @VisibleForTesting
-  public static FingerprintValueService createForTesting(FingerprintValueStore store) {
-    return createForTesting(store, FingerprintValueCache.SyncMode.NOT_LINKED);
-  }
-
-  @VisibleForTesting
-  public static FingerprintValueService createForTesting(FingerprintValueCache.SyncMode mode) {
-    return createForTesting(FingerprintValueStore.inMemoryStore(), mode);
-  }
-
-  private static FingerprintValueService createForTesting(
-      FingerprintValueStore store, FingerprintValueCache.SyncMode mode) {
-    return new FingerprintValueService(
-        newSingleThreadExecutor(), store, new FingerprintValueCache(mode), NONPROD_FINGERPRINTER);
-  }
-
-  public FingerprintValueService(
-      Executor executor,
-      FingerprintValueStore store,
-      FingerprintValueCache cache,
-      Fingerprinter fingerprinter) {
-    this.executor = executor;
-    this.store = store;
-    this.cache = cache;
-    this.fingerprinter = fingerprinter;
-
-    this.fingerprintPlaceholder = fingerprint(new byte[] {});
-    this.fingerprintLength = fingerprintPlaceholder.toBytes().length;
-  }
-
-  /**
-   * Serializes a {@link SkyKey}, concatenates it with the {@link FrontierNodeVersion}, computes the
-   * fingerprint, and returns the {@link PackedFingerprint}.
-   */
-  public static PackedFingerprint computeFingerprint(
-      FingerprintValueService fingerprintValueService,
-      ObjectCodecs codecs,
-      SkyKey key,
-      FrontierNodeVersion nodeVersion)
-      throws InterruptedException, SerializationException {
-    AsyncSerializationTask serializeKeyTask =
-        codecs.serializeMemoizedAsync(fingerprintValueService, key, /* profileCollector= */ null);
-    serializeKeyTask.run();
-
-    ListenableFuture<PackedFingerprint> fingerprintFuture =
-        Futures.transform(
-            serializeKeyTask,
-            k ->
-                fingerprintValueService.fingerprint(
-                    nodeVersion.concat(k.getObject().toByteArray())),
-            // Keys are hopefully small enough that it's reasonable to not spawn off a separate task
-            directExecutor());
-
-    try {
-      return fingerprintFuture.get();
-    } catch (ExecutionException e) {
-      Throwables.throwIfInstanceOf(e.getCause(), SerializationException.class);
-      throw new IllegalStateException(e);
+        this.fingerprintPlaceholder = fingerprint(byteArrayOf())
+        this.fingerprintLength = fingerprintPlaceholder.toBytes().size
     }
-  }
 
-  public void shutdown() {
-    store.shutdown();
-  }
+    fun shutdown() {
+        store.shutdown()
+    }
 
-  /** Delegates to {@link FingerprintValueStore#put}. */
-  @Override
-  public WriteStatus put(KeyBytesProvider fingerprint, byte[] serializedBytes) {
-    Instant before = Instant.now();
-    WriteStatus putStatus = store.put(fingerprint, serializedBytes);
-    putStatus.addListener(
-        () ->
-            setLatencyMicros.add(
-                TimeUnit.NANOSECONDS.toMicros(Duration.between(before, Instant.now()).toNanos())),
-        directExecutor());
-    return putStatus;
-  }
+    /** Delegates to [FingerprintValueStore.put].  */
+    override fun put(fingerprint: KeyBytesProvider?, serializedBytes: ByteArray?): WriteStatus {
+        val before: Instant = Instant.now()
+        val putStatus: WriteStatus = store.put(fingerprint, serializedBytes)
+        putStatus.addListener(
+            java.lang.Runnable {
+                setLatencyMicros.add(
+                    TimeUnit.NANOSECONDS.toMicros(java.time.Duration.between(before, Instant.now()).toNanos())
+                )
+            },
+            com.google.common.util.concurrent.MoreExecutors.directExecutor()
+        )
+        return putStatus
+    }
 
-  public FingerprintValueStore.Stats getStats() {
-    FingerprintValueStore.Stats storeStats = store.getStats();
-    return new FingerprintValueStore.Stats(
-        storeStats.valueBytesReceived(),
-        storeStats.valueBytesSent(),
-        storeStats.keyBytesSent(),
-        storeStats.entriesWritten(),
-        storeStats.entriesFound(),
-        storeStats.entriesNotFound(),
-        storeStats.getBatches(),
-        storeStats.setBatches(),
-        getLatencyMicros.getBuckets(),
-        setLatencyMicros.getBuckets(),
-        storeStats.getBatchLatencyMicros(),
-        storeStats.setBatchLatencyMicros());
-  }
+    fun getStats(): com.google.devtools.build.lib.skyframe.serialization.FingerprintValueStore.Stats {
+        val storeStats: com.google.devtools.build.lib.skyframe.serialization.FingerprintValueStore.Stats =
+            store.getStats()
+        return com.google.devtools.build.lib.skyframe.serialization.FingerprintValueStore.Stats(
+            storeStats.valueBytesReceived,
+            storeStats.valueBytesSent,
+            storeStats.keyBytesSent,
+            storeStats.entriesWritten,
+            storeStats.entriesFound,
+            storeStats.entriesNotFound,
+            storeStats.getBatches,
+            storeStats.setBatches,
+            getLatencyMicros.getBuckets(),
+            setLatencyMicros.getBuckets(),
+            storeStats.getBatchLatencyMicros,
+            storeStats.setBatchLatencyMicros
+        )
+    }
 
-  /** Delegates to {@link FingerprintValueStore#get}. */
-  public ListenableFuture<byte[]> get(KeyBytesProvider fingerprint) throws IOException {
-    Instant before = Instant.now();
-    ListenableFuture<byte[]> result = store.get(fingerprint);
-    result.addListener(
-        () ->
-            getLatencyMicros.add(
-                TimeUnit.NANOSECONDS.toMicros(Duration.between(before, Instant.now()).toNanos())),
-        directExecutor());
-    return result;
-  }
+    /** Delegates to [FingerprintValueStore.get].  */
+    @Throws(IOException::class)
+    fun get(fingerprint: KeyBytesProvider?): com.google.common.util.concurrent.ListenableFuture<ByteArray?> {
+        val before: Instant = Instant.now()
+        val result: com.google.common.util.concurrent.ListenableFuture<ByteArray?> = store.get(fingerprint)
+        result.addListener(
+            java.lang.Runnable {
+                getLatencyMicros.add(
+                    TimeUnit.NANOSECONDS.toMicros(java.time.Duration.between(before, Instant.now()).toNanos())
+                )
+            },
+            com.google.common.util.concurrent.MoreExecutors.directExecutor()
+        )
+        return result
+    }
 
-  /** Delegates to {@link FingerprintValueCache#getOrClaimPutOperation}. */
-  @Nullable
-  Object getOrClaimPutOperation(
-      Object obj, @Nullable Object distinguisher, ListenableFuture<PutOperation> putOperation) {
-    return cache.getOrClaimPutOperation(obj, distinguisher, putOperation);
-  }
+    /** Delegates to [FingerprintValueCache.getOrClaimPutOperation].  */
+    fun getOrClaimPutOperation(
+        obj: Any?, distinguisher: Any?, putOperation: com.google.common.util.concurrent.ListenableFuture<PutOperation?>?
+    ): Any? {
+        return cache.getOrClaimPutOperation(obj, distinguisher, putOperation)
+    }
 
-  /** Delegates to {@link FingerprintValueCache#getOrClaimGetOperation}. */
-  @Nullable
-  Object getOrClaimGetOperation(
-      PackedFingerprint fingerprint,
-      @Nullable Object distinguisher,
-      ListenableFuture<Object> getOperation) {
-    return cache.getOrClaimGetOperation(fingerprint, distinguisher, getOperation);
-  }
+    /** Delegates to [FingerprintValueCache.getOrClaimGetOperation].  */
+    fun getOrClaimGetOperation(
+        fingerprint: PackedFingerprint?,
+        distinguisher: Any?,
+        getOperation: com.google.common.util.concurrent.ListenableFuture<Any?>?
+    ): Any? {
+        return cache.getOrClaimGetOperation(fingerprint, distinguisher, getOperation)
+    }
 
-  /** Computes the fingerprint of {@code bytes}. */
-  @Override
-  public PackedFingerprint fingerprint(byte[] bytes) {
-    return fingerprinter.fingerprint(bytes);
-  }
+    /** Computes the fingerprint of `bytes`.  */
+    override fun fingerprint(bytes: ByteArray?): PackedFingerprint {
+        return fingerprinter.fingerprint(bytes)
+    }
 
-  /** Convenience overload of {@link #fingerprint(byte[])}. */
-  @VisibleForTesting
-  PackedFingerprint fingerprint(ByteString bytes) {
-    return fingerprint(bytes.toByteArray());
-  }
+    /** Convenience overload of [.fingerprint].  */
+    @com.google.common.annotations.VisibleForTesting
+    fun fingerprint(bytes: ByteString): PackedFingerprint {
+        return fingerprint(bytes.toByteArray())
+    }
 
-  /**
-   * A placeholder fingerprint to use when the actual fingerprint is not yet available.
-   *
-   * <p>The placeholder has the same length as the real fingerprint so the real fingerprint can
-   * overwrite the placeholder when it becomes available.
-   */
-  PackedFingerprint fingerprintPlaceholder() {
-    return fingerprintPlaceholder;
-  }
+    /**
+     * A placeholder fingerprint to use when the actual fingerprint is not yet available.
+     * 
+     * 
+     * The placeholder has the same length as the real fingerprint so the real fingerprint can
+     * overwrite the placeholder when it becomes available.
+     */
+    fun fingerprintPlaceholder(): PackedFingerprint {
+        return fingerprintPlaceholder
+    }
 
-  /** The fixed length of fingerprints. */
-  int fingerprintLength() {
-    return fingerprintLength;
-  }
+    /** The fixed length of fingerprints.  */
+    fun fingerprintLength(): Int {
+        return fingerprintLength
+    }
 
-  /**
-   * Executor for scheduling work related to serializing and deserializing values from the
-   * fingerprint value store.
-   *
-   * <p>Technically, this should be plumbed separately but for the time being, {@link
-   * FingerprintValueService} is a convenient container for the {@link Executor}.
-   */
-  public Executor getExecutor() {
-    return executor;
-  }
+    /**
+     * Executor for scheduling work related to serializing and deserializing values from the
+     * fingerprint value store.
+     * 
+     * 
+     * Technically, this should be plumbed separately but for the time being, [ ] is a convenient container for the [Executor].
+     */
+    fun getExecutor(): java.util.concurrent.Executor? {
+        return executor
+    }
 
-  @VisibleForTesting
-  public FingerprintValueStore getStoreForTesting() {
-    return store;
-  }
+    @com.google.common.annotations.VisibleForTesting
+    fun getStoreForTesting(): FingerprintValueStore {
+        return store
+    }
 
-  @VisibleForTesting
-  public PackedFingerprint getCachedFingerprintForTesting(Object object) {
-    return (PackedFingerprint) cache.getSerializationCache().getIfPresent(object);
-  }
+    @com.google.common.annotations.VisibleForTesting
+    fun getCachedFingerprintForTesting(`object`: Any?): PackedFingerprint? {
+        return cache.getSerializationCache().getIfPresent(`object`) as PackedFingerprint?
+    }
 
-  @VisibleForTesting
-  public void cacheCleanUpForTesting() {
-    cache.cleanUpForTesting();
-  }
+    @com.google.common.annotations.VisibleForTesting
+    fun cacheCleanUpForTesting() {
+        cache.cleanUpForTesting()
+    }
+
+    companion object {
+        /** A [Fingerprinter] implementation for non-production use.  */
+        @kotlin.jvm.JvmField
+        val NONPROD_FINGERPRINTER: Fingerprinter = Fingerprinter { input: ByteArray? ->
+            PackedFingerprint.Companion.fromBytes(
+                com.google.common.hash.Hashing.murmur3_128().hashBytes(input).asBytes()
+            )
+        }
+
+        @com.google.common.annotations.VisibleForTesting
+        fun createForTesting(): FingerprintValueService {
+            return createForTesting(
+                FingerprintValueStore.Companion.inMemoryStore(),
+                com.google.devtools.build.lib.skyframe.serialization.FingerprintValueCache.SyncMode.NOT_LINKED
+            )
+        }
+
+        /**
+         * Returns an instance that uses a [FingerprintValueStore] that indicates a missing entry by
+         * returning null, which is what analysis caching expects.
+         */
+        @kotlin.jvm.JvmStatic
+        @com.google.common.annotations.VisibleForTesting
+        fun createForAnalysisCacheTesting(): FingerprintValueService {
+            return Companion.createForTesting(InMemoryFingerprintValueStore(true))
+        }
+
+        @com.google.common.annotations.VisibleForTesting
+        fun createForTesting(store: FingerprintValueStore): FingerprintValueService {
+            return createForTesting(
+                store,
+                com.google.devtools.build.lib.skyframe.serialization.FingerprintValueCache.SyncMode.NOT_LINKED
+            )
+        }
+
+        @com.google.common.annotations.VisibleForTesting
+        fun createForTesting(mode: com.google.devtools.build.lib.skyframe.serialization.FingerprintValueCache.SyncMode?): FingerprintValueService {
+            return createForTesting(FingerprintValueStore.Companion.inMemoryStore(), mode)
+        }
+
+        @kotlin.jvm.JvmStatic
+        private fun createForTesting(
+            store: FingerprintValueStore,
+            mode: com.google.devtools.build.lib.skyframe.serialization.FingerprintValueCache.SyncMode?
+        ): FingerprintValueService {
+            return FingerprintValueService(
+                Executors.newSingleThreadExecutor(), store, FingerprintValueCache(mode), NONPROD_FINGERPRINTER
+            )
+        }
+
+        /**
+         * Serializes a [SkyKey], concatenates it with the [FrontierNodeVersion], computes the
+         * fingerprint, and returns the [PackedFingerprint].
+         */
+        @Throws(
+            java.lang.InterruptedException::class,
+            com.google.devtools.build.lib.skyframe.serialization.SerializationException::class
+        )
+        fun computeFingerprint(
+            fingerprintValueService: FingerprintValueService,
+            codecs: ObjectCodecs,
+            key: SkyKey?,
+            nodeVersion: FrontierNodeVersion
+        ): PackedFingerprint? {
+            val serializeKeyTask: AsyncSerializationTask =
+                codecs.serializeMemoizedAsync(fingerprintValueService, key,  /* profileCollector= */null)
+            serializeKeyTask.run()
+
+            val fingerprintFuture: com.google.common.util.concurrent.ListenableFuture<PackedFingerprint?> =
+                com.google.common.util.concurrent.Futures.transform<SerializationResult<ByteString?>?, PackedFingerprint?>(
+                    serializeKeyTask,
+                    com.google.common.base.Function { k: SerializationResult<ByteString?>? ->
+                        fingerprintValueService.fingerprint(
+                            nodeVersion.concat(k.getObject().toByteArray())
+                        )
+                    },  // Keys are hopefully small enough that it's reasonable to not spawn off a separate task
+                    com.google.common.util.concurrent.MoreExecutors.directExecutor()
+                )
+
+            try {
+                return fingerprintFuture.get()
+            } catch (e: ExecutionException) {
+                com.google.common.base.Throwables.throwIfInstanceOf<com.google.devtools.build.lib.skyframe.serialization.SerializationException?>(
+                    e.getCause(),
+                    com.google.devtools.build.lib.skyframe.serialization.SerializationException::class.java
+                )
+                throw java.lang.IllegalStateException(e)
+            }
+        }
+    }
 }

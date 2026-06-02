@@ -11,53 +11,44 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.runtime.proto.InvocationPolicyOuterClass.InvocationPolicy;
-import com.google.devtools.build.lib.server.IdleTask;
-import com.google.devtools.build.lib.util.Pair;
-import com.google.devtools.build.lib.util.io.CommandExtensionReporter;
-import com.google.devtools.build.lib.util.io.OutErr;
-import com.google.protobuf.Any;
-import java.util.List;
-import java.util.Optional;
-import java.util.function.Supplier;
+import com.google.devtools.build.lib.runtime.proto.InvocationPolicyOuterClass.InvocationPolicy
 
 /**
  * Dispatches to the commands; that is, given a command line, this abstraction looks up the
  * appropriate command object, parses the options required by the object, and calls its exec method.
  */
-public interface CommandDispatcher {
+interface CommandDispatcher {
+    /** What to do if the command lock is not available.  */
+    enum class LockingMode {
+        WAIT,  // Wait until it is available
+        ERROR_OUT,  // Return with an error
+    }
 
-  /** What to do if the command lock is not available. */
-  enum LockingMode {
-    WAIT, // Wait until it is available
-    ERROR_OUT, // Return with an error
-  }
+    /** How much output to emit on the console.  */
+    enum class UiVerbosity {
+        QUIET,  // Only errors
+        NORMAL,  // Everything
+    }
 
-  /** How much output to emit on the console. */
-  enum UiVerbosity {
-    QUIET, // Only errors
-    NORMAL, // Everything
-  }
-
-  /**
-   * Executes a single command. Returns a {@link BlazeCommandResult} to indicate either an exit
-   * code, the desire to shut down the server, or that a given binary should be executed by the
-   * client.
-   */
-  BlazeCommandResult exec(
-      InvocationPolicy invocationPolicy,
-      List<String> args,
-      OutErr outErr,
-      LockingMode lockingMode,
-      UiVerbosity uiVerbosity,
-      String clientDescription,
-      long firstContactTimeMillis,
-      Optional<List<Pair<String, String>>> startupOptionsTaggedWithBazelRc,
-      Supplier<ImmutableList<IdleTask.Result>> idleTaskResultsSupplier,
-      List<Any> commandExtensions,
-      CommandExtensionReporter commandExtensionReporter)
-      throws InterruptedException;
+    /**
+     * Executes a single command. Returns a [BlazeCommandResult] to indicate either an exit
+     * code, the desire to shut down the server, or that a given binary should be executed by the
+     * client.
+     */
+    @Throws(java.lang.InterruptedException::class)
+    fun exec(
+        invocationPolicy: InvocationPolicy?,
+        args: MutableList<String?>?,
+        outErr: OutErr?,
+        lockingMode: LockingMode?,
+        uiVerbosity: UiVerbosity?,
+        clientDescription: String?,
+        firstContactTimeMillis: Long,
+        startupOptionsTaggedWithBazelRc: java.util.Optional<MutableList<com.google.devtools.build.lib.util.Pair<String?, String?>?>?>?,
+        idleTaskResultsSupplier: java.util.function.Supplier<com.google.common.collect.ImmutableList<com.google.devtools.build.lib.server.IdleTask.Result?>?>?,
+        commandExtensions: MutableList<Any?>?,
+        commandExtensionReporter: CommandExtensionReporter?
+    ): BlazeCommandResult?
 }

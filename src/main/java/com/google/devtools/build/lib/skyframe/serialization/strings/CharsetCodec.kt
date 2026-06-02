@@ -11,36 +11,38 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.strings;
+package com.google.devtools.build.lib.skyframe.serialization.strings
 
-import static com.google.devtools.build.lib.skyframe.serialization.strings.UnsafeStringCodec.stringCodec;
+import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext
+import com.google.devtools.build.lib.skyframe.serialization.strings.UnsafeStringCodec
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
-import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec;
-import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import java.nio.charset.Charset;
+internal class CharsetCodec : LeafObjectCodec<java.nio.charset.Charset?>() {
+    override fun getEncodedClass(): java.lang.Class<java.nio.charset.Charset?> {
+        return java.nio.charset.Charset::class.java
+    }
 
-class CharsetCodec extends LeafObjectCodec<Charset> {
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun serialize(
+        context: LeafSerializationContext, charset: java.nio.charset.Charset, codedOut: CodedOutputStream?
+    ) {
+        context.serializeLeaf<String?>(charset.name(), UnsafeStringCodec.Companion.stringCodec(), codedOut)
+    }
 
-  @Override
-  public Class<Charset> getEncodedClass() {
-    return Charset.class;
-  }
-
-  @Override
-  public void serialize(
-      LeafSerializationContext context, Charset charset, CodedOutputStream codedOut)
-      throws SerializationException, IOException {
-    context.serializeLeaf(charset.name(), stringCodec(), codedOut);
-  }
-
-  @Override
-  public Charset deserialize(LeafDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    return Charset.forName(context.deserializeLeaf(codedIn, stringCodec()));
-  }
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun deserialize(
+        context: LeafDeserializationContext,
+        codedIn: CodedInputStream?
+    ): java.nio.charset.Charset? {
+        return java.nio.charset.Charset.forName(
+            context.deserializeLeaf<String?>(
+                codedIn,
+                UnsafeStringCodec.Companion.stringCodec()
+            )
+        )
+    }
 }

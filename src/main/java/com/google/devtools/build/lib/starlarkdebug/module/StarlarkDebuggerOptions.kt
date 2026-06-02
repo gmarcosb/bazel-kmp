@@ -11,58 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkdebug.module
 
-package com.google.devtools.build.lib.starlarkdebug.module;
-
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionMetadataTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-
-/** Configuration options for Starlark debugging. */
-// TODO(laurentlb): Rename the flags (remove 'experimental' and replace 'skylark' with 'starlark')
+/** Configuration options for Starlark debugging.  */ // TODO(laurentlb): Rename the flags (remove 'experimental' and replace 'skylark' with 'starlark')
 // when the interpreter code is more stable.
-@OptionsClass
-public abstract class StarlarkDebuggerOptions extends OptionsBase {
-  @Option(
-      name = "experimental_skylark_debug",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.EXECUTION},
-      metadataTags = {OptionMetadataTag.EXPERIMENTAL},
-      help =
-          "If true, Blaze will open the Starlark debug server at the start of the build "
-              + "invocation, and wait for a debugger to attach before running the build.")
-  public abstract boolean getDebugStarlark();
+@com.google.devtools.common.options.OptionsClass
+abstract class StarlarkDebuggerOptions : com.google.devtools.common.options.OptionsBase() {
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_skylark_debug",
+        defaultValue = "false",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.EXECUTION],
+        metadataTags = [com.google.devtools.common.options.OptionMetadataTag.EXPERIMENTAL],
+        help = ("If true, Blaze will open the Starlark debug server at the start of the build "
+                + "invocation, and wait for a debugger to attach before running the build.")
+    )
+    abstract val debugStarlark: Boolean
 
-  @Option(
-      name = "experimental_skylark_debug_server_port",
-      defaultValue = "7300",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.EXECUTION},
-      metadataTags = {OptionMetadataTag.EXPERIMENTAL},
-      help = "The port on which the Starlark debug server will listen for connections.")
-  public abstract int getDebugServerPort();
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_skylark_debug_server_port",
+        defaultValue = "7300",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.EXECUTION],
+        metadataTags = [com.google.devtools.common.options.OptionMetadataTag.EXPERIMENTAL],
+        help = "The port on which the Starlark debug server will listen for connections."
+    )
+    abstract val debugServerPort: Int
 
-  @Option(
-      name = "experimental_skylark_debug_verbose_logging",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.TERMINAL_OUTPUT},
-      metadataTags = {OptionMetadataTag.EXPERIMENTAL},
-      help = "Show verbose logs for the debugger.")
-  public abstract boolean getVerboseLogs();
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_skylark_debug_verbose_logging",
+        defaultValue = "false",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.TERMINAL_OUTPUT],
+        metadataTags = [com.google.devtools.common.options.OptionMetadataTag.EXPERIMENTAL],
+        help = "Show verbose logs for the debugger."
+    )
+    abstract val verboseLogs: Boolean
 
-  @Option(
-      name = "experimental_skylark_debug_reset_analysis",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.EXECUTION, OptionEffectTag.LOADING_AND_ANALYSIS},
-      metadataTags = {OptionMetadataTag.EXPERIMENTAL},
-      help =
-          "If true, resets analysis before executing the build. Has no effect without"
-              + " --experimental_skylark_debug")
-  public abstract boolean getResetAnalysis();
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_skylark_debug_reset_analysis",
+        defaultValue = "false",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.EXECUTION, com.google.devtools.common.options.OptionEffectTag.LOADING_AND_ANALYSIS],
+        metadataTags = [com.google.devtools.common.options.OptionMetadataTag.EXPERIMENTAL],
+        help = ("If true, resets analysis before executing the build. Has no effect without"
+                + " --experimental_skylark_debug")
+    )
+    abstract val resetAnalysis: Boolean
 }

@@ -11,56 +11,53 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime.commands.info;
+package com.google.devtools.build.lib.runtime.commands.info
 
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.InfoItem;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import java.io.IOException;
+import com.google.devtools.build.lib.runtime.CommandEnvironment
 
-/** Handles how {@link InfoItem}s are outputted. */
-public interface InfoItemHandler extends AutoCloseable {
-  /** Stores {@link InfoItem} information. */
-  void addInfoItem(String key, byte[] value)
-      throws AbruptExitException, InterruptedException, IOException;
+/** Handles how [InfoItem]s are outputted.  */
+interface InfoItemHandler : AutoCloseable {
+    /** Stores [InfoItem] information.  */
+    @Throws(AbruptExitException::class, InterruptedException::class, IOException::class)
+    fun addInfoItem(key: String?, value: ByteArray?)
 
-  /** Flushes any internal state. */
-  @Override
-  void close() throws IOException;
+    /** Flushes any internal state.  */
+    @Throws(IOException::class)
+    override fun close()
 
-  /** Defines the way to output {@link InfoItem} information. */
-  enum InfoItemOutputType {
-    /**
-     * Info information is directly printed to the console. {@link StdoutInfoItemHandler} is created
-     * if this type is passed in.
-     */
-    STDOUT,
+    /** Defines the way to output [InfoItem] information.  */
+    enum class InfoItemOutputType {
+        /**
+         * Info information is directly printed to the console. [StdoutInfoItemHandler] is created
+         * if this type is passed in.
+         */
+        STDOUT,
 
-    /**
-     * Info information is packed in response extensions for downstream service processing. {@link
-     * RemoteRequestedInfoItemHandler} is created if this type is passed in.
-     */
-    RESPONSE_PROTO
-  }
-
-  /** Contains method to create the correct type of {@link InfoItemHandler}. */
-  interface InfoItemHandlerFactory {
-    InfoItemHandler create(
-        CommandEnvironment env, InfoItemOutputType infoItemOutputType, boolean printKeys);
-  }
-
-  /**
-   * Implementation of {@link InfoItemHandlerFactory} that creates {@link InfoItemHandler} instances
-   * based on the provided {@link InfoItemOutputType}.
-   */
-  class InfoItemHandlerFactoryImpl implements InfoItemHandlerFactory {
-    @Override
-    public InfoItemHandler create(
-        CommandEnvironment env, InfoItemOutputType infoItemOutputType, boolean printKeys) {
-      return switch (infoItemOutputType) {
-        case STDOUT -> new StdoutInfoItemHandler(env.getReporterOutErr(), printKeys);
-        case RESPONSE_PROTO -> new RemoteRequestedInfoItemHandler(env, printKeys);
-      };
+        /**
+         * Info information is packed in response extensions for downstream service processing. [ ] is created if this type is passed in.
+         */
+        RESPONSE_PROTO
     }
-  }
+
+    /** Contains method to create the correct type of [InfoItemHandler].  */
+    interface InfoItemHandlerFactory {
+        fun create(
+            env: CommandEnvironment?, infoItemOutputType: InfoItemOutputType?, printKeys: Boolean
+        ): InfoItemHandler?
+    }
+
+    /**
+     * Implementation of [InfoItemHandlerFactory] that creates [InfoItemHandler] instances
+     * based on the provided [InfoItemOutputType].
+     */
+    class InfoItemHandlerFactoryImpl : InfoItemHandlerFactory {
+        override fun create(
+            env: CommandEnvironment, infoItemOutputType: InfoItemOutputType, printKeys: Boolean
+        ): InfoItemHandler {
+            return when (infoItemOutputType) {
+                InfoItemOutputType.STDOUT -> StdoutInfoItemHandler(env.getReporterOutErr(), printKeys)
+                InfoItemOutputType.RESPONSE_PROTO -> RemoteRequestedInfoItemHandler(env, printKeys)
+            }
+        }
+    }
 }

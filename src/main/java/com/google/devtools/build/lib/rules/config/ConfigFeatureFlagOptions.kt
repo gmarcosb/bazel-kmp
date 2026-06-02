@@ -11,55 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License
+package com.google.devtools.build.lib.rules.config
 
-package com.google.devtools.build.lib.rules.config;
+import com.google.devtools.build.lib.analysis.config.FragmentOptions
 
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionMetadataTag;
-import com.google.devtools.common.options.OptionsClass;
+/** The options fragment which defines options related to tagged trimming of feature flags.  */
+@com.google.devtools.common.options.OptionsClass
+abstract class ConfigFeatureFlagOptions : FragmentOptions() {
+    @get:com.google.devtools.common.options.Option(
+        name = "enforce_transitive_configs_for_config_feature_flag",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.LOSES_INCREMENTAL_STATE, com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS, com.google.devtools.common.options.OptionEffectTag.BUILD_FILE_SEMANTICS, com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION, com.google.devtools.common.options.OptionEffectTag.LOADING_AND_ANALYSIS
+        ],
+        defaultValue = "false"
+    )
+    abstract val enforceTransitiveConfigsForConfigFeatureFlag: Boolean
 
-/** The options fragment which defines options related to tagged trimming of feature flags. */
-@OptionsClass
-public abstract class ConfigFeatureFlagOptions extends FragmentOptions {
-  /**
-   * Whether to perform user-guided trimming of feature flags based on the tagging in the
-   * transitive_configs attribute.
-   */
-  @Option(
-      name = "enforce_transitive_configs_for_config_feature_flag",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {
-        OptionEffectTag.LOSES_INCREMENTAL_STATE,
-        OptionEffectTag.AFFECTS_OUTPUTS,
-        OptionEffectTag.BUILD_FILE_SEMANTICS,
-        OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION,
-        OptionEffectTag.LOADING_AND_ANALYSIS
-      },
-      defaultValue = "false")
-  public abstract boolean getEnforceTransitiveConfigsForConfigFeatureFlag();
-
-  /**
-   * If {@code true}, the configuration contains all non-default feature flag values, and any flags
-   * which are not present are known to have their default value; if {@code false}, the
-   * configuration only contains some feature flag values, and all others have been trimmed and so
-   * nothing is known about their values.
-   */
-  @Option(
-      name = "all feature flag values are present (internal)",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {
-        OptionEffectTag.LOSES_INCREMENTAL_STATE,
-        OptionEffectTag.AFFECTS_OUTPUTS,
-        OptionEffectTag.BUILD_FILE_SEMANTICS,
-        OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION,
-        OptionEffectTag.LOADING_AND_ANALYSIS
-      },
-      metadataTags = {OptionMetadataTag.INTERNAL},
-      defaultValue = "true")
-  public abstract boolean getAllFeatureFlagValuesArePresent();
-
-  public abstract void setAllFeatureFlagValuesArePresent(boolean value);
+    @get:com.google.devtools.common.options.Option(
+        name = "all feature flag values are present (internal)",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.LOSES_INCREMENTAL_STATE, com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS, com.google.devtools.common.options.OptionEffectTag.BUILD_FILE_SEMANTICS, com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION, com.google.devtools.common.options.OptionEffectTag.LOADING_AND_ANALYSIS
+        ],
+        metadataTags = [com.google.devtools.common.options.OptionMetadataTag.INTERNAL],
+        defaultValue = "true"
+    )
+    abstract var allFeatureFlagValuesArePresent: Boolean
 }

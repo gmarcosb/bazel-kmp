@@ -11,12 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs.inmemoryfs;
+package com.google.devtools.build.lib.vfs.inmemoryfs
 
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.vfs.PathFragment;
+import com.google.devtools.build.lib.clock.Clock
+import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
 
 /**
  * This interface represents a symbolic link to an absolute or relative path, stored in an
@@ -24,59 +22,51 @@ import com.google.devtools.build.lib.vfs.PathFragment;
  */
 @ThreadSafe
 @Immutable
-final class InMemoryLinkInfo extends InMemoryContentInfo {
+internal class InMemoryLinkInfo(clock: Clock?, linkContent: PathFragment) : InMemoryContentInfo(clock) {
+    private val linkContent: PathFragment
+    private val normalizedLinkContent: PathFragment?
 
-  private final PathFragment linkContent;
-  private final PathFragment normalizedLinkContent;
+    init {
+        this.linkContent = linkContent
+        this.normalizedLinkContent = linkContent
+    }
 
-  InMemoryLinkInfo(Clock clock, PathFragment linkContent) {
-    super(clock);
-    this.linkContent = linkContent;
-    this.normalizedLinkContent = linkContent;
-  }
+    override fun isDirectory(): Boolean {
+        return false
+    }
 
-  @Override
-  public boolean isDirectory() {
-    return false;
-  }
+    override fun isSymbolicLink(): Boolean {
+        return true
+    }
 
-  @Override
-  public boolean isSymbolicLink() {
-    return true;
-  }
+    override fun isFile(): Boolean {
+        return false
+    }
 
-  @Override
-  public boolean isFile() {
-    return false;
-  }
+    override fun isSpecialFile(): Boolean {
+        return false
+    }
 
-  @Override
-  public boolean isSpecialFile() {
-    return false;
-  }
+    override fun getSize(): Long {
+        return linkContent.getSafePathString().length().toLong()
+    }
 
-  @Override
-  public long getSize() {
-    return linkContent.getSafePathString().length();
-  }
+    /**
+     * Returns the content of the symbolic link.
+     */
+    fun getLinkContent(): PathFragment {
+        return linkContent
+    }
 
-  /**
-   * Returns the content of the symbolic link.
-   */
-  PathFragment getLinkContent() {
-    return linkContent;
-  }
+    /**
+     * Returns the content of the symbolic link, with ".." and "." removed
+     * (except for the possibility of necessary ".." segments at the beginning).
+     */
+    fun getNormalizedLinkContent(): PathFragment? {
+        return normalizedLinkContent
+    }
 
-  /**
-   * Returns the content of the symbolic link, with ".." and "." removed
-   * (except for the possibility of necessary ".." segments at the beginning).
-   */
-  PathFragment getNormalizedLinkContent() {
-    return normalizedLinkContent;
-  }
-
-  @Override
-  public String toString() {
-    return super.toString() + " -> " + linkContent;
-  }
+    override fun toString(): String {
+        return super.toString() + " -> " + linkContent
+    }
 }

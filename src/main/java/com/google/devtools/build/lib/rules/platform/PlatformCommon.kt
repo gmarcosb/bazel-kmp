@@ -11,42 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.platform
 
-package com.google.devtools.build.lib.rules.platform;
+import com.google.devtools.build.lib.analysis.TemplateVariableInfo
 
-import com.google.devtools.build.lib.analysis.TemplateVariableInfo;
-import com.google.devtools.build.lib.analysis.platform.ConstraintSettingInfo;
-import com.google.devtools.build.lib.analysis.platform.ConstraintValueInfo;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.analysis.platform.ToolchainInfo;
-import com.google.devtools.build.lib.packages.Provider;
-import com.google.devtools.build.lib.starlarkbuildapi.platform.PlatformCommonApi;
+/** Starlark namespace used to interact with the platform APIs.  */
+class PlatformCommon : PlatformCommonApi {
+    val platformInfoConstructor: Provider
+        get() = PlatformInfo.PROVIDER
 
-/** Starlark namespace used to interact with the platform APIs. */
-public class PlatformCommon implements PlatformCommonApi {
+    val constraintSettingInfoConstructor: Provider
+        get() = ConstraintSettingInfo.PROVIDER
 
-  @Override
-  public Provider getPlatformInfoConstructor() {
-    return PlatformInfo.PROVIDER;
-  }
+    val constraintValueInfoConstructor: Provider
+        get() = ConstraintValueInfo.PROVIDER
 
-  @Override
-  public Provider getConstraintSettingInfoConstructor() {
-    return ConstraintSettingInfo.PROVIDER;
-  }
+    val makeVariableProvider: Provider
+        get() = TemplateVariableInfo.PROVIDER
 
-  @Override
-  public Provider getConstraintValueInfoConstructor() {
-    return ConstraintValueInfo.PROVIDER;
-  }
-
-  @Override
-  public Provider getMakeVariableProvider() {
-    return TemplateVariableInfo.PROVIDER;
-  }
-
-  @Override
-  public Provider getToolchainInfoConstructor() {
-    return ToolchainInfo.PROVIDER;
-  }
+    val toolchainInfoConstructor: Provider
+        get() = ToolchainInfo.PROVIDER
 }

@@ -11,99 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi
 
-package com.google.devtools.build.lib.starlarkbuildapi;
-
-import com.google.devtools.build.docgen.annot.GlobalMethods;
-import com.google.devtools.build.docgen.annot.GlobalMethods.Environment;
-import com.google.devtools.build.docgen.annot.StarlarkConstructor;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.semantics.BuildLanguageOptions;
-import com.google.devtools.build.lib.starlarkbuildapi.config.StarlarkConfigApi.BuildSettingApi;
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.ParamType;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.NoneType;
-import net.starlark.java.eval.Sequence;
-import net.starlark.java.eval.StarlarkCallable;
-import net.starlark.java.eval.StarlarkFunction;
-import net.starlark.java.eval.StarlarkThread;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * Interface for a global Starlark library containing rule-related helper and registration
  * functions.
  */
-@GlobalMethods(environment = Environment.BZL)
-public interface StarlarkRuleFunctionsApi {
-
-  String EXEC_COMPATIBLE_WITH_PARAM = "exec_compatible_with";
-  String TOOLCHAINS_PARAM = "toolchains";
-
-  String PROVIDES_DOC =
-      "A list of providers that the implementation function must return." //
-          + "<p>It is an error if the implementation function omits any of the types of providers"
-          + " listed here from its return value. However, the implementation function may return"
-          + " additional providers not listed here." //
-          + "<p>Each element of the list is an <code>*Info</code> object returned by <a"
-          + " href='../globals/bzl.html#provider'><code>provider()</code></a>. When a target of the"
-          + " rule is used as a dependency for a target that declares a required provider, it is"
-          + " not necessary to specify that provider here. It is enough that the implementation"
-          + " function returns it. However, it is considered best practice to specify it, even"
-          + " though this is not required. The <a"
-          + " href='../globals/bzl.html#aspect.required_providers'><code>required_providers</code></a>"
-          + " field of an <a href='../globals/bzl.html#aspect'>aspect</a> does, however, require"
-          + " that providers are specified here.";
-
-  String DEPENDENCY_RESOLUTION_RULE_DOC =
-      "If set, the rule can be a dependency through attributes also marked as available in"
-          + " materializers. Every attribute of rules with this flag set must be marked as "
-          + " available in materializers also. This is so that rules so marked cannot depend on"
-          + " rules that are not so marked.";
-
-  @StarlarkMethod(
-      name = "provider",
-      doc =
-          "Defines a provider symbol. The resulting value of this function must be stored in a"
-              + " global value to be usable in a rule or aspect implementation. Providers can be"
-              + " instantiated by calling the resulting value as a function, or used directly as"
-              + " an index key for retrieving an instance of that provider from a target."
-              + " Example:<br><pre class=\"language-python\">" //
-              + "MyInfo = provider()\n"
-              + "...\n"
-              + "def _my_library_impl(ctx):\n"
-              + "    ...\n"
-              + "    my_info = MyInfo(x = 2, y = 3)\n"
-              + "    # my_info.x == 2\n"
-              + "    # my_info.y == 3\n"
-              + "    ..." //
-              + "</pre><p>See <a href='https://bazel.build/extending/rules#providers'>Rules"
-              + " (Providers)</a> for a comprehensive guide on how to use providers." //
-              + "<p>Returns a <a href='../builtins/Provider.html'><code>Provider</code></a>"
-              + " callable value if <code>init</code> is not specified." //
-              + "<p>If <code>init</code> is specified, returns a tuple of 2 elements: a <a"
-              + " href='../builtins/Provider.html'><code>Provider</code></a> callable value and a"
-              + " <em>raw constructor</em> callable value. See <a"
-              + " href='https://bazel.build/extending/rules#custom_initialization_of_providers'>"
-              + " Rules (Custom initialization of custom providers)</a> and the discussion of the"
-              + " <code>init</code> parameter below for details.",
-      parameters = {
-        @Param(
+@com.google.devtools.build.docgen.annot.GlobalMethods(environment = com.google.devtools.build.docgen.annot.GlobalMethods.Environment.BZL)
+interface StarlarkRuleFunctionsApi {
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "provider", doc = ("Defines a provider symbol. The resulting value of this function must be stored in a"
+                + " global value to be usable in a rule or aspect implementation. Providers can be"
+                + " instantiated by calling the resulting value as a function, or used directly as"
+                + " an index key for retrieving an instance of that provider from a target."
+                + " Example:<br><pre class=\"language-python\">" //
+                + "MyInfo = provider()\n"
+                + "...\n"
+                + "def _my_library_impl(ctx):\n"
+                + "    ...\n"
+                + "    my_info = MyInfo(x = 2, y = 3)\n"
+                + "    # my_info.x == 2\n"
+                + "    # my_info.y == 3\n"
+                + "    ..." //
+                + "</pre><p>See <a href='https://bazel.build/extending/rules#providers'>Rules"
+                + " (Providers)</a> for a comprehensive guide on how to use providers." //
+                + "<p>Returns a <a href='../builtins/Provider.html'><code>Provider</code></a>"
+                + " callable value if <code>init</code> is not specified." //
+                + "<p>If <code>init</code> is specified, returns a tuple of 2 elements: a <a"
+                + " href='../builtins/Provider.html'><code>Provider</code></a> callable value and a"
+                + " <em>raw constructor</em> callable value. See <a"
+                + " href='https://bazel.build/extending/rules#custom_initialization_of_providers'>"
+                + " Rules (Custom initialization of custom providers)</a> and the discussion of the"
+                + " <code>init</code> parameter below for details."), parameters = [net.starlark.java.annot.Param(
             name = "doc",
             named = true,
-            allowedTypes = {
-              @ParamType(type = String.class),
-              @ParamType(type = NoneType.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = String::class), net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.NoneType::class
+            )],
             defaultValue = "None",
-            doc =
-                "A description of the provider that can be extracted by documentation generating"
-                    + " tools."),
-        @Param(
+            doc = "A description of the provider that can be extracted by documentation generating"
+                    + " tools."
+        ), net.starlark.java.annot.Param(
             name = "fields",
-            doc =
-                "If specified, restricts the set of allowed fields. <br>Possible values are:<ul> "
+            doc = ("If specified, restricts the set of allowed fields. <br>Possible values are:<ul> "
                     + " <li> list of fields:<br>       <pre"
                     + " class=\"language-python\">provider(fields = ['a', 'b'])</pre><p>  <li>"
                     + " dictionary field name -> documentation:<br>       <pre"
@@ -112,19 +64,19 @@ public interface StarlarkRuleFunctionsApi {
                     + " })</pre></ul>All fields are optional." //
                     + "<p>It is <em>strongly recommended</em> to specify this parameter, as"
                     + " defining a field schema allows Bazel to store provider instances more"
-                    + " compactly.",
-            allowedTypes = {
-              @ParamType(type = Sequence.class, generic1 = String.class),
-              @ParamType(type = Dict.class),
-              @ParamType(type = NoneType.class),
-            },
+                    + " compactly."),
+            allowedTypes = [net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.Sequence::class,
+                generic1 = String::class
+            ), net.starlark.java.annot.ParamType(type = net.starlark.java.eval.Dict::class), net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.NoneType::class
+            )],
             named = true,
             positional = false,
-            defaultValue = "None"),
-        @Param(
+            defaultValue = "None"
+        ), net.starlark.java.annot.Param(
             name = "init",
-            doc =
-                "An optional callback for preprocessing and validating the provider's field values"
+            doc = ("An optional callback for preprocessing and validating the provider's field values"
                     + " during instantiation. If <code>init</code> is specified,"
                     + " <code>provider()</code> returns a tuple of 2 elements: the normal provider"
                     + " symbol and a <em>raw constructor</em>." //
@@ -188,23 +140,20 @@ public interface StarlarkRuleFunctionsApi {
                     + " current .bzl file has direct access to it:" //
                     + "<pre class=\"language-python\">" //
                     + "MyInfo, _new_myinfo = provider(init = ...)" //
-                    + "</pre>",
+                    + "</pre>"),
             named = true,
-            allowedTypes = {
-              @ParamType(type = StarlarkCallable.class),
-              @ParamType(type = NoneType.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = net.starlark.java.eval.StarlarkCallable::class), net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.NoneType::class
+            )],
             positional = false,
-            defaultValue = "None"),
-      },
-      useStarlarkThread = true)
-  Object provider(Object doc, Object fields, Object init, StarlarkThread thread)
-      throws EvalException;
+            defaultValue = "None"
+        )], useStarlarkThread = true
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun provider(doc: Any?, fields: Any?, init: Any?, thread: net.starlark.java.eval.StarlarkThread?): Any?
 
-  @StarlarkMethod(
-      name = "macro",
-      doc =
-"""
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "macro", doc = """
 Defines a symbolic macro, which may be called in <code>BUILD</code> files or macros (legacy or
 symbolic) to define targets &ndash; possibly multiple ones.
 
@@ -213,14 +162,9 @@ file; the name of the global variable will be the macro symbol's name.
 
 <p>See <a href="https://bazel.build/extending/macros">Macros</a> for a comprehensive guide on how to use symbolic
 macros.
-""",
-      parameters = {
-        @Param(
-            name = "implementation",
-            positional = false,
-            named = true,
-            doc =
-"""
+
+""".trimIndent(), parameters = [net.starlark.java.annot.Param(
+            name = "implementation", positional = false, named = true, doc = """
 The Starlark function implementing this macro. The values of the macro's attributes are passed to
 the implementation function as keyword arguments. The implementation function must have at least two
 named parameters, <code>name</code> and <code>visibility</code>, and if the macro inherits
@@ -265,20 +209,18 @@ function it transitively calls:
     <a href="../globals/workspace#register_execution_platforms"><code>register_execution_platforms()</code></a>,
     <a href="../globals/workspace#bind"><code>bind()</code></a>, repository rule instantiation
 </ul>
-"""),
-        @Param(
+
+""".trimIndent()
+        ), net.starlark.java.annot.Param(
             name = "attrs",
-            allowedTypes = {
-              @ParamType(type = Dict.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = net.starlark.java.eval.Dict::class)],
             named = true,
             positional = false,
             defaultValue = "{}",
-            doc =
-"""
+            doc = """
 A dictionary of the attributes this macro supports, analogous to
 <a href="#rule.attrs">rule.attrs</a>. Keys are attribute names, and values are either attribute
-objects like <code>attr.label_list(...)</code> (see the <a href=\"../toplevel/attr.html\">attr</a>
+objects like <code>attr.label_list(...)</code> (see the <a href=${'"'}../toplevel/attr.html${'"'}>attr</a>
 module), or <code>None</code>. A <code>None</code> entry means that the macro does not have an
 attribute by that name, even if it would have otherwise inherited one via <code>inherit_attrs</code>
 (see below).
@@ -292,20 +234,17 @@ site of the rule. Such attributes can be assigned a default value (as in
 <code>attr.label(default="//pkg:foo")</code>) to create an implicit dependency on a label.
 
 <p>To limit memory usage, there is a cap on the number of attributes that may be declared.
-"""),
-        @Param(
+
+""".trimIndent()
+        ), net.starlark.java.annot.Param(
             name = "inherit_attrs",
-            allowedTypes = {
-              @ParamType(type = RuleFunctionApi.class),
-              @ParamType(type = MacroFunctionApi.class),
-              @ParamType(type = String.class),
-              @ParamType(type = NoneType.class)
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = RuleFunctionApi::class), net.starlark.java.annot.ParamType(
+                type = MacroFunctionApi::class
+            ), net.starlark.java.annot.ParamType(type = String::class), net.starlark.java.annot.ParamType(type = net.starlark.java.eval.NoneType::class)],
             positional = false,
             named = true,
             defaultValue = "None",
-            doc =
-"""
+            doc = """
 A rule symbol, macro symbol, or the name of a built-in common attribute list (see below) from which
 the macro should inherit attributes.
 
@@ -379,21 +318,10 @@ parameters for some inherited attributes (most commonly, <code>tags</code> and
 <code>testonly</code>) if the macro needs to pass those attributes to both "main" and non-"main"
 targets &ndash; but if the macro also needs to examine or manipulate those attributes, you must take
 care to handle the <code>None</code> default value of non-mandatory inherited attributes.
-"""),
-        // TODO: #19922 - Make a concepts page for symbolic macros, migrate some details like the
-        // list of disallowed APIs to there.
-        // TODO: #19922 - Make good on the above threat of enforcing a cap on the number of
-        // attributes.
-        // TODO: #19922 - Add a mechanism to optionally automatically pre-populate attrs with
-        // common build rule attributes ("tags", "testonly", etc.), or to inherit the list of
-        // attributes of a given rule class.
-        @Param(
-            name = "finalizer",
-            positional = false,
-            named = true,
-            defaultValue = "False",
-            doc =
-"""
+
+""".trimIndent()
+        ), net.starlark.java.annot.Param(
+            name = "finalizer", positional = false, named = true, defaultValue = "False", doc = """
 Whether this macro is a rule finalizer, which is a macro that, regardless of its position in a
 <code>BUILD</code> file, is evaluated at the end of package loading, after all non-finalizer targets
 have been defined.
@@ -404,101 +332,79 @@ have been defined.
 set of <em>non-finalizer</em> rule targets defined in the current package. Note that
 <code>native.existing_rule()</code> and <code>native.existing_rules()</code> cannot access the
 targets defined by any rule finalizer, including this one.
-"""),
-        @Param(
+
+""".trimIndent()
+        ), net.starlark.java.annot.Param(
             name = "doc",
             positional = false,
             named = true,
-            allowedTypes = {
-              @ParamType(type = String.class),
-              @ParamType(type = NoneType.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = String::class), net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.NoneType::class
+            )],
             defaultValue = "None",
-            doc =
-                "A description of the macro that can be extracted by documentation generating "
-                    + "tools.")
-      },
-      useStarlarkThread = true)
-  MacroFunctionApi macro(
-      StarlarkFunction implementation,
-      Dict<?, ?> attrs,
-      Object inheritAttrs,
-      boolean finalizer,
-      Object doc,
-      StarlarkThread thread)
-      throws EvalException;
+            doc = "A description of the macro that can be extracted by documentation generating "
+                    + "tools."
+        )], useStarlarkThread = true
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun macro(
+        implementation: net.starlark.java.eval.StarlarkFunction?,
+        attrs: net.starlark.java.eval.Dict<*, *>?,
+        inheritAttrs: Any?,
+        finalizer: Boolean,
+        doc: Any?,
+        thread: net.starlark.java.eval.StarlarkThread?
+    ): MacroFunctionApi?
 
-  @StarlarkMethod(
-      name = "rule",
-      doc =
-          "Creates a new rule, which can be called from a BUILD file or a macro to create targets."
-              + "<p>Rules must be assigned to global variables in a .bzl file; the name of the "
-              + "global variable is the rule's name."
-              + "<p>Test rules are required to have a name ending in <code>_test</code>, while all "
-              + "other rules must not have this suffix. (This restriction applies only to rules, "
-              + "not to their targets.)",
-      parameters = {
-        @Param(
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "rule", doc = ("Creates a new rule, which can be called from a BUILD file or a macro to create targets."
+                + "<p>Rules must be assigned to global variables in a .bzl file; the name of the "
+                + "global variable is the rule's name."
+                + "<p>Test rules are required to have a name ending in <code>_test</code>, while all "
+                + "other rules must not have this suffix. (This restriction applies only to rules, "
+                + "not to their targets.)"), parameters = [net.starlark.java.annot.Param(
             name = "implementation",
             named = true,
-            doc =
-                "the Starlark function implementing this rule, must have exactly one parameter: <a"
+            doc = ("the Starlark function implementing this rule, must have exactly one parameter: <a"
                     + " href=\"../builtins/ctx.html\">ctx</a>. The function is called during the"
                     + " analysis phase for each instance of the rule. It can access the attributes"
                     + " provided by the user. It must create actions to generate all the declared "
-                    + "outputs."),
-        @Param(
+                    + "outputs.")
+        ), net.starlark.java.annot.Param(
             name = "test",
             named = true,
             positional = false,
             defaultValue = "unbound",
-            allowedTypes = {
-              @ParamType(type = Boolean.class),
-            },
-            doc =
-                "Whether this rule is a test rule, that is, whether it may be the subject of a"
+            allowedTypes = [net.starlark.java.annot.ParamType(type = Boolean::class)],
+            doc = ("Whether this rule is a test rule, that is, whether it may be the subject of a"
                     + " <code>bazel test</code> command. All test rules are automatically"
                     + " considered <a href='#rule.executable'>executable</a>; it is unnecessary"
                     + " (and discouraged) to explicitly set <code>executable = True</code> for a"
                     + " test rule. The value defaults to <code>False</code>. See the <a"
                     + " href='https://bazel.build/extending/rules#executable_rules_and_test_rules'>"
-                    + " Rules page</a> for more information."),
-        @Param(
+                    + " Rules page</a> for more information.")
+        ), net.starlark.java.annot.Param(
             name = "attrs",
-            allowedTypes = {
-              @ParamType(type = Dict.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = net.starlark.java.eval.Dict::class)],
             named = true,
             positional = false,
             defaultValue = "{}",
-            doc =
-"""
-A dictionary to declare all the attributes of the rule. It maps from an attribute \
-name to an attribute object (see
-<a href="../toplevel/attr.html"><code>attr</code></a> module). Attributes starting \
-with <code>_</code> are private, and can be used to add an implicit dependency on \
-a label. The attribute <code>name</code> is implicitly added and must not be \
-specified. Attributes <code>visibility</code>, <code>deprecation</code>, \
-<code>tags</code>, <code>testonly</code>, and <code>features</code> are implicitly \
-added and cannot be overridden. Most rules need only a handful of attributes. To \
-limit memory usage, there is a cap on the number of attributes that may be \
-declared.
+            doc = """
+A dictionary to declare all the attributes of the rule. It maps from an attribute name to an attribute object (see
+<a href="../toplevel/attr.html"><code>attr</code></a> module). Attributes starting with <code>_</code> are private, and can be used to add an implicit dependency on a label. The attribute <code>name</code> is implicitly added and must not be specified. Attributes <code>visibility</code>, <code>deprecation</code>, <code>tags</code>, <code>testonly</code>, and <code>features</code> are implicitly added and cannot be overridden. Most rules need only a handful of attributes. To limit memory usage, there is a cap on the number of attributes that may be declared.
 <p>Declared attributes will convert <code>None</code> to the default value.</p>
-"""),
-        // TODO(bazel-team): need to give the types of these builtin attributes
-        @Param(
+
+""".trimIndent()
+        ), net.starlark.java.annot.Param(
             name = "outputs",
-            allowedTypes = {
-              @ParamType(type = Dict.class),
-              @ParamType(type = NoneType.class),
-              @ParamType(type = StarlarkFunction.class) // a function defined in Starlark
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = net.starlark.java.eval.Dict::class), net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.NoneType::class
+            ), net.starlark.java.annot.ParamType(type = net.starlark.java.eval.StarlarkFunction::class)],
             named = true,
             positional = false,
             defaultValue = "None",
             disableWithFlag = BuildLanguageOptions.INCOMPATIBLE_NO_RULE_OUTPUTS_PARAM,
-            doc =
-                "This parameter has been deprecated. Migrate rules to use"
+            doc = ("This parameter has been deprecated. Migrate rules to use"
                     + " <code>OutputGroupInfo</code> or <code>attr.output</code> instead. <p>A"
                     + " schema for defining predeclared outputs. Unlike <a"
                     + " href='../toplevel/attr.html#output'><code>output</code></a> and <a"
@@ -541,111 +447,111 @@ declared.
                     + " target named \"foo\", the outputs dict <code>{\"bin\":"
                     + " \"%{name}.exe\"}</code> predeclares an output named <code>foo.exe</code>"
                     + " that is accessible in the implementation function as"
-                    + " <code>ctx.outputs.bin</code>."),
-        @Param(
+                    + " <code>ctx.outputs.bin</code>.")
+        ), net.starlark.java.annot.Param(
             name = "executable",
             named = true,
             positional = false,
             defaultValue = "unbound",
-            allowedTypes = {
-              @ParamType(type = Boolean.class),
-            },
-            doc =
-                "Whether this rule is considered executable, that is, whether it may be the subject"
+            allowedTypes = [net.starlark.java.annot.ParamType(type = Boolean::class)],
+            doc = ("Whether this rule is considered executable, that is, whether it may be the subject"
                     + " of a <code>bazel run</code> command. It defaults to <code>False</code>. See"
                     + " the <a"
                     + " href='https://bazel.build/extending/rules#executable_rules_and_test_rules'>"
-                    + " Rules page</a> for more information."),
-        @Param(
+                    + " Rules page</a> for more information.")
+        ), net.starlark.java.annot.Param(
             name = "output_to_genfiles",
             named = true,
             positional = false,
             defaultValue = "False",
-            doc =
-                "If true, the files will be generated in the genfiles directory instead of the "
+            doc = ("If true, the files will be generated in the genfiles directory instead of the "
                     + "bin directory. Unless you need it for compatibility with existing rules "
-                    + "(e.g. when generating header files for C++), do not set this flag."),
-        @Param(
+                    + "(e.g. when generating header files for C++), do not set this flag.")
+        ), net.starlark.java.annot.Param(
             name = "fragments",
-            allowedTypes = {@ParamType(type = Sequence.class, generic1 = String.class)},
+            allowedTypes = [net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.Sequence::class,
+                generic1 = String::class
+            )],
             named = true,
             positional = false,
             defaultValue = "[]",
-            doc =
-                "List of names of configuration fragments that the rule requires "
-                    + "in target configuration."),
-        @Param(
+            doc = "List of names of configuration fragments that the rule requires "
+                    + "in target configuration."
+        ), net.starlark.java.annot.Param(
             name = "host_fragments",
-            allowedTypes = {@ParamType(type = Sequence.class, generic1 = String.class)},
+            allowedTypes = [net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.Sequence::class,
+                generic1 = String::class
+            )],
             named = true,
             positional = false,
             defaultValue = "[]",
-            doc =
-                "List of names of configuration fragments that the rule requires "
-                    + "in host configuration."),
-        @Param(
+            doc = "List of names of configuration fragments that the rule requires "
+                    + "in host configuration."
+        ), net.starlark.java.annot.Param(
             name = "_skylark_testable",
             named = true,
             positional = false,
             defaultValue = "False",
-            doc =
-                "<i>(Experimental)</i><br/><br/>If true, this rule will expose its actions for"
+            doc = ("<i>(Experimental)</i><br/><br/>If true, this rule will expose its actions for"
                     + " inspection by rules that depend on it via an <code>Actions</code> provider."
                     + " The provider is also available to the rule itself by calling <a"
                     + " href=\"../builtins/ctx.html#created_actions\">ctx.created_actions()</a>."
                     + "<br/><br/>This should only be used for testing the analysis-time behavior of"
-                    + " Starlark rules. This flag may be removed in the future."),
-        @Param(
+                    + " Starlark rules. This flag may be removed in the future.")
+        ), net.starlark.java.annot.Param(
             name = TOOLCHAINS_PARAM,
-            allowedTypes = {@ParamType(type = Sequence.class, generic1 = Object.class)},
+            allowedTypes = [net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.Sequence::class,
+                generic1 = Any::class
+            )],
             named = true,
             positional = false,
             defaultValue = "[]",
-            doc =
-                "If set, the set of toolchains this rule requires. The list can contain String,"
+            doc = ("If set, the set of toolchains this rule requires. The list can contain String,"
                     + " Label, or StarlarkToolchainTypeApi objects, in any combination. Toolchains"
                     + " will be found by checking the current platform, and provided to the rule"
-                    + " implementation via <code>ctx.toolchain</code>."),
-        @Param(
+                    + " implementation via <code>ctx.toolchain</code>.")
+        ), net.starlark.java.annot.Param(
             name = "doc",
             named = true,
             positional = false,
-            allowedTypes = {
-              @ParamType(type = String.class),
-              @ParamType(type = NoneType.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = String::class), net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.NoneType::class
+            )],
             defaultValue = "None",
-            doc =
-                "A description of the rule that can be extracted by documentation generating "
-                    + "tools."),
-        @Param(
+            doc = "A description of the rule that can be extracted by documentation generating "
+                    + "tools."
+        ), net.starlark.java.annot.Param(
             name = "provides",
             named = true,
             positional = false,
             defaultValue = "[]",
-            doc = PROVIDES_DOC),
-        @Param(
+            doc = PROVIDES_DOC
+        ), net.starlark.java.annot.Param(
             name = "dependency_resolution_rule",
             named = true,
             positional = false,
             defaultValue = "False",
-            doc = DEPENDENCY_RESOLUTION_RULE_DOC),
-        @Param(
+            doc = DEPENDENCY_RESOLUTION_RULE_DOC
+        ), net.starlark.java.annot.Param(
             name = EXEC_COMPATIBLE_WITH_PARAM,
-            allowedTypes = {@ParamType(type = Sequence.class, generic1 = String.class)},
+            allowedTypes = [net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.Sequence::class,
+                generic1 = String::class
+            )],
             named = true,
             positional = false,
             defaultValue = "[]",
-            doc =
-                "A list of constraints on the execution platform that apply to all targets of "
-                    + "this rule type."),
-        @Param(
+            doc = "A list of constraints on the execution platform that apply to all targets of "
+                    + "this rule type."
+        ), net.starlark.java.annot.Param(
             name = "analysis_test",
             named = true,
             positional = false,
             defaultValue = "False",
-            doc =
-                "If true, then this rule is treated as an analysis test. <p>Note: Analysis test"
+            doc = ("If true, then this rule is treated as an analysis test. <p>Note: Analysis test"
                     + " rules are primarily defined using infrastructure provided in core Starlark"
                     + " libraries. See <a"
                     + " href=\"https://bazel.build/rules/testing#testing-rules\">Testing</a> for"
@@ -658,53 +564,47 @@ declared.
                     + " This supersedes the value of <code>test</code></li> <li>The rule"
                     + " implementation function may not register actions. Instead, it must register"
                     + " a pass/fail result via providing <a"
-                    + " href='../providers/AnalysisTestResultInfo.html'>AnalysisTestResultInfo</a>.</li></ul>"),
-        @Param(
+                    + " href='../providers/AnalysisTestResultInfo.html'>AnalysisTestResultInfo</a>.</li></ul>")
+        ), net.starlark.java.annot.Param(
             name = "build_setting",
-            allowedTypes = {
-              @ParamType(type = BuildSettingApi.class),
-              @ParamType(type = NoneType.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = BuildSettingApi::class), net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.NoneType::class
+            )],
             defaultValue = "None",
             named = true,
             positional = false,
-            doc =
-                "If set, describes what kind of <a href='${link"
+            doc = ("If set, describes what kind of <a href='\${link"
                     + " config#user-defined-build-settings}'><code>build setting</code></a> this"
                     + " rule is. See the <a href='../toplevel/config.html'><code>config</code></a>"
                     + " module. If this is set, a mandatory attribute named"
                     + " \"build_setting_default\" is automatically added to this rule, with a type"
-                    + " corresponding to the value passed in here."),
-        @Param(
+                    + " corresponding to the value passed in here.")
+        ), net.starlark.java.annot.Param(
             name = "cfg",
             defaultValue = "None",
             named = true,
             positional = false,
-            doc =
-                "If set, points to the configuration transition the rule will "
-                    + "apply to its own configuration before analysis."),
-        @Param(
+            doc = "If set, points to the configuration transition the rule will "
+                    + "apply to its own configuration before analysis."
+        ), net.starlark.java.annot.Param(
             name = "exec_groups",
-            allowedTypes = {
-              @ParamType(type = Dict.class),
-              @ParamType(type = NoneType.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = net.starlark.java.eval.Dict::class), net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.NoneType::class
+            )],
             named = true,
             defaultValue = "None",
             positional = false,
-            doc =
-                "Dict of execution group name (string) to <a"
+            doc = ("Dict of execution group name (string) to <a"
                     + " href='../globals/bzl.html#exec_group'><code>exec_group</code>s</a>. If set,"
                     + " allows rules to run actions on multiple execution platforms within a"
-                    + " single target. See <a href='${link exec-groups}'>execution groups"
-                    + " documentation</a> for more info."),
-        @Param(
+                    + " single target. See <a href='\${link exec-groups}'>execution groups"
+                    + " documentation</a> for more info.")
+        ), net.starlark.java.annot.Param(
             name = "initializer",
             named = true,
             defaultValue = "None",
             positional = false,
-            doc =
-                "Experimental: the Stalark function initializing the attributes of the rule. "
+            doc = ("Experimental: the Stalark function initializing the attributes of the rule. "
                     + "<p>The function is called at load time for each instance of the rule. It's "
                     + "called with <code>name</code> and the values of public attributes defined "
                     + "by the rule (not with generic attributes, for example <code>tags</code>). "
@@ -723,145 +623,122 @@ declared.
                     + "are not handled."
                     + "<p>In case of extended rules, all initializers are called proceeding from "
                     + "child to ancestors. Each initializer is passed only the public attributes "
-                    + "it knows about."),
-        @Param(
+                    + "it knows about.")
+        ), net.starlark.java.annot.Param(
             name = "parent",
             named = true,
             defaultValue = "None",
             positional = false,
-            doc =
-                "Experimental: the Stalark rule that is extended. When set the public"
+            doc = ("Experimental: the Stalark rule that is extended. When set the public"
                     + " attributes are merged as well as advertised providers. The rule matches"
                     + " <code>executable</code> and <code>test</code> from the parent. Values of"
                     + " <code>fragments</code>, <code>toolchains</code>,"
                     + " <code>exec_compatible_with</code>, and <code>exec_groups</code> are"
                     + " merged. Legacy or deprecated parameters may not be set. Incoming"
                     + " configuration transition <code>cfg</code> of parent is applied after this"
-                    + " rule's incoming configuration."),
-        @Param(
+                    + " rule's incoming configuration.")
+        ), net.starlark.java.annot.Param(
             name = "extendable",
             named = true,
             defaultValue = "None",
             positional = false,
-            allowedTypes = {
-              @ParamType(type = Boolean.class),
-              @ParamType(type = Label.class),
-              @ParamType(type = String.class),
-              @ParamType(type = NoneType.class),
-            },
-            doc =
-                "Experimental: A label of an allowlist defining which rules can extending this"
+            allowedTypes = [net.starlark.java.annot.ParamType(type = Boolean::class), net.starlark.java.annot.ParamType(
+                type = Label::class
+            ), net.starlark.java.annot.ParamType(type = String::class), net.starlark.java.annot.ParamType(type = net.starlark.java.eval.NoneType::class)],
+            doc = ("Experimental: A label of an allowlist defining which rules can extending this"
                     + " rule. It can be set also to True/False to always allow/disallow extending."
-                    + " Bazel defaults to always allowing extensions."),
-        @Param(
+                    + " Bazel defaults to always allowing extensions.")
+        ), net.starlark.java.annot.Param(
             name = "subrules",
-            allowedTypes = {
-              @ParamType(type = Sequence.class, generic1 = StarlarkSubruleApi.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.Sequence::class,
+                generic1 = StarlarkSubruleApi::class
+            )],
             named = true,
             defaultValue = "[]",
             positional = false,
-            doc = "Experimental: List of subrules used by this rule."),
-      },
-      useStarlarkThread = true)
-  StarlarkCallable rule(
-      StarlarkFunction implementation,
-      Object testUnchecked,
-      Dict<?, ?> attrs,
-      Object implicitOutputs,
-      Object executableUnchecked,
-      boolean outputToGenfiles,
-      Sequence<?> fragments,
-      Sequence<?> hostFragments,
-      boolean starlarkTestable,
-      Sequence<?> toolchains,
-      Object doc,
-      Sequence<?> providesArg,
-      boolean dependencyResolutionRule,
-      Sequence<?> execCompatibleWith,
-      boolean analysisTest,
-      Object buildSetting,
-      Object cfg,
-      Object execGroups,
-      Object initializer,
-      Object parentUnchecked,
-      Object extendableUnchecked,
-      Sequence<?> subrules,
-      StarlarkThread thread)
-      throws EvalException;
+            doc = "Experimental: List of subrules used by this rule."
+        )], useStarlarkThread = true
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun rule(
+        implementation: net.starlark.java.eval.StarlarkFunction?,
+        testUnchecked: Any?,
+        attrs: net.starlark.java.eval.Dict<*, *>?,
+        implicitOutputs: Any?,
+        executableUnchecked: Any?,
+        outputToGenfiles: Boolean,
+        fragments: net.starlark.java.eval.Sequence<*>?,
+        hostFragments: net.starlark.java.eval.Sequence<*>?,
+        starlarkTestable: Boolean,
+        toolchains: net.starlark.java.eval.Sequence<*>?,
+        doc: Any?,
+        providesArg: net.starlark.java.eval.Sequence<*>?,
+        dependencyResolutionRule: Boolean,
+        execCompatibleWith: net.starlark.java.eval.Sequence<*>?,
+        analysisTest: Boolean,
+        buildSetting: Any?,
+        cfg: Any?,
+        execGroups: Any?,
+        initializer: Any?,
+        parentUnchecked: Any?,
+        extendableUnchecked: Any?,
+        subrules: net.starlark.java.eval.Sequence<*>?,
+        thread: net.starlark.java.eval.StarlarkThread?
+    ): net.starlark.java.eval.StarlarkCallable?
 
-  @StarlarkMethod(
-      name = "aspect",
-      doc =
-          "Creates a new aspect. The result of this function must be stored in a global value."
-              + " Please see the <a href=\"https://bazel.build/extending/aspects\">introduction to"
-              + " Aspects</a> for more details.",
-      parameters = {
-        @Param(
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "aspect", doc = ("Creates a new aspect. The result of this function must be stored in a global value."
+                + " Please see the <a href=\"https://bazel.build/extending/aspects\">introduction to"
+                + " Aspects</a> for more details."), parameters = [net.starlark.java.annot.Param(
             name = "implementation",
             named = true,
-            doc =
-                "A Starlark function that implements this aspect, with exactly two parameters: <a"
+            doc = ("A Starlark function that implements this aspect, with exactly two parameters: <a"
                     + " href=\"../builtins/Target.html\">Target</a> (the target to which the aspect"
                     + " is applied) and <a href=\"../builtins/ctx.html\">ctx</a> (the rule context"
                     + " which the target is created from). Attributes of the target are available"
                     + " via the <code>ctx.rule</code> field. This function is evaluated during the"
-                    + " analysis phase for each application of an aspect to a target."),
-        @Param(
+                    + " analysis phase for each application of an aspect to a target.")
+        ), net.starlark.java.annot.Param(
             name = "attr_aspects",
-            allowedTypes = {
-              @ParamType(type = Sequence.class, generic1 = String.class),
-              @ParamType(type = StarlarkFunction.class)
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.Sequence::class,
+                generic1 = String::class
+            ), net.starlark.java.annot.ParamType(type = net.starlark.java.eval.StarlarkFunction::class)],
             named = true,
             defaultValue = "[]",
-            doc =
-                "Accepts a list of attribute names or [Experimental] a function that returns the"
+            doc = ("Accepts a list of attribute names or [Experimental] a function that returns the"
                     + " list of attribute names. The aspect propagates along dependencies specified"
                     + " in the attributes of a target with these names. Common values here include"
                     + " <code>deps</code> and <code>exports</code>. The list can also contain a"
                     + " single string <code>\"*\"</code> to propagate along all dependencies of a"
-                    + " target."),
-        @Param(
+                    + " target.")
+        ), net.starlark.java.annot.Param(
             name = "toolchains_aspects",
-            allowedTypes = {
-              @ParamType(type = Sequence.class, generic1 = Object.class),
-              @ParamType(type = StarlarkFunction.class)
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.Sequence::class,
+                generic1 = Any::class
+            ), net.starlark.java.annot.ParamType(type = net.starlark.java.eval.StarlarkFunction::class)],
             named = true,
             defaultValue = "[]",
-            doc =
-                "Accepts a list of toolchain types or [Experimental] a function that returns the"
+            doc = ("Accepts a list of toolchain types or [Experimental] a function that returns the"
                     + " list of toolchain types. The aspect propagates to target toolchains which"
-                    + " match these toolchain types."),
-        @Param(
+                    + " match these toolchain types.")
+        ), net.starlark.java.annot.Param(
             name = "attrs",
-            allowedTypes = {
-              @ParamType(type = Dict.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = net.starlark.java.eval.Dict::class)],
             named = true,
             defaultValue = "{}",
-            doc =
-                """
-                A dictionary declaring all the attributes of the aspect. It maps from an \
-                attribute name to an attribute object, like <code>attr.label</code> or \
-                <code>attr.string</code> (see \
-                <a href="../toplevel/attr.html"><code>attr</code></a> module). Aspect attributes \
-                are available to implementation function as fields of <code>ctx</code> parameter. \
-                <p>Implicit attributes starting with <code>_</code> must have default values, and \
-                have type <code>label</code> or <code>label_list</code>.</p> \
-                <p>Explicit attributes must have type <code>string</code>, and must use the \
-                <code>values</code> restriction. Explicit attributes restrict the aspect to only \
-                be used with rules that have attributes of the same name, type, and valid values \
-                according to the restriction.</p>
+            doc = """
+                A dictionary declaring all the attributes of the aspect. It maps from an attribute name to an attribute object, like <code>attr.label</code> or <code>attr.string</code> (see <a href="../toplevel/attr.html"><code>attr</code></a> module). Aspect attributes are available to implementation function as fields of <code>ctx</code> parameter. <p>Implicit attributes starting with <code>_</code> must have default values, and have type <code>label</code> or <code>label_list</code>.</p> <p>Explicit attributes must have type <code>string</code>, and must use the <code>values</code> restriction. Explicit attributes restrict the aspect to only be used with rules that have attributes of the same name, type, and valid values according to the restriction.</p>
                 <p>Declared attributes will convert <code>None</code> to the default value.</p>
-                """),
-        @Param(
+                
+                """.trimIndent()
+        ), net.starlark.java.annot.Param(
             name = "required_providers",
             named = true,
             defaultValue = "[]",
-            doc =
-                "This attribute allows the aspect to limit its propagation to only the targets "
+            doc = ("This attribute allows the aspect to limit its propagation to only the targets "
                     + "whose rules advertise its required providers. The value must be a "
                     + "list containing either individual providers or lists of providers but not "
                     + "both. For example, <code>[[FooInfo], [BarInfo], [BazInfo, QuxInfo]]</code> "
@@ -880,13 +757,12 @@ declared.
                     + "see <code>some_rule</code> targets if and only if "
                     + "<code>some_rule</code> provides <code>FooInfo</code>, <em>or</em> "
                     + "<code>BarInfo</code>, <em>or</em> both <code>BazInfo</code> <em>and</em> "
-                    + "<code>QuxInfo</code>."),
-        @Param(
+                    + "<code>QuxInfo</code>.")
+        ), net.starlark.java.annot.Param(
             name = "required_aspect_providers",
             named = true,
             defaultValue = "[]",
-            doc =
-                "This attribute allows this aspect to inspect other aspects. The value must be a "
+            doc = ("This attribute allows this aspect to inspect other aspects. The value must be a "
                     + "list containing either individual providers or lists of providers but not "
                     + "both. For example, <code>[[FooInfo], [BarInfo], [BazInfo, QuxInfo]]</code> "
                     + "is a valid value while <code>[FooInfo, BarInfo, [BazInfo, QuxInfo]]</code> "
@@ -903,69 +779,77 @@ declared.
                     + "<code>[[FooInfo], [BarInfo], [BazInfo, QuxInfo]]</code>, this aspect can "
                     + "see <code>other_aspect</code> if and only if <code>other_aspect</code> "
                     + "provides <code>FooInfo</code>, <em>or</em> <code>BarInfo</code>, "
-                    + "<em>or</em> both <code>BazInfo</code> <em>and</em> <code>QuxInfo</code>."),
-        @Param(name = "provides", named = true, defaultValue = "[]", doc = PROVIDES_DOC),
-        @Param(
-            name = "requires",
-            allowedTypes = {@ParamType(type = Sequence.class, generic1 = StarlarkAspectApi.class)},
+                    + "<em>or</em> both <code>BazInfo</code> <em>and</em> <code>QuxInfo</code>.")
+        ), net.starlark.java.annot.Param(
+            name = "provides",
             named = true,
             defaultValue = "[]",
-            doc = "List of aspects required to be propagated before this aspect."),
-        @Param(
+            doc = PROVIDES_DOC
+        ), net.starlark.java.annot.Param(
+            name = "requires",
+            allowedTypes = [net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.Sequence::class,
+                generic1 = StarlarkAspectApi::class
+            )],
+            named = true,
+            defaultValue = "[]",
+            doc = "List of aspects required to be propagated before this aspect."
+        ), net.starlark.java.annot.Param(
             name = "propagation_predicate",
-            allowedTypes = {
-              @ParamType(type = StarlarkFunction.class),
-              @ParamType(type = NoneType.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = net.starlark.java.eval.StarlarkFunction::class), net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.NoneType::class
+            )],
             named = true,
             defaultValue = "None",
-            doc =
-                "Experimental: a function that returns a boolean value indicating whether the"
-                    + " aspect should be propagated to a target."),
-        @Param(
+            doc = "Experimental: a function that returns a boolean value indicating whether the"
+                    + " aspect should be propagated to a target."
+        ), net.starlark.java.annot.Param(
             name = "fragments",
-            allowedTypes = {@ParamType(type = Sequence.class, generic1 = String.class)},
+            allowedTypes = [net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.Sequence::class,
+                generic1 = String::class
+            )],
             named = true,
             defaultValue = "[]",
-            doc =
-                "List of names of configuration fragments that the aspect requires "
-                    + "in target configuration."),
-        @Param(
+            doc = "List of names of configuration fragments that the aspect requires "
+                    + "in target configuration."
+        ), net.starlark.java.annot.Param(
             name = "host_fragments",
-            allowedTypes = {@ParamType(type = Sequence.class, generic1 = String.class)},
+            allowedTypes = [net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.Sequence::class,
+                generic1 = String::class
+            )],
             named = true,
             defaultValue = "[]",
-            doc =
-                "List of names of configuration fragments that the aspect requires "
-                    + "in host configuration."),
-        @Param(
+            doc = "List of names of configuration fragments that the aspect requires "
+                    + "in host configuration."
+        ), net.starlark.java.annot.Param(
             name = TOOLCHAINS_PARAM,
-            allowedTypes = {@ParamType(type = Sequence.class, generic1 = Object.class)},
+            allowedTypes = [net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.Sequence::class,
+                generic1 = Any::class
+            )],
             named = true,
             defaultValue = "[]",
-            doc =
-                "If set, the set of toolchains this aspect requires. The list can contain String,"
+            doc = ("If set, the set of toolchains this aspect requires. The list can contain String,"
                     + " Label, or StarlarkToolchainTypeApi objects, in any combination. Toolchains"
                     + " will be found by checking the current platform, and provided to the aspect"
-                    + " implementation via <code>ctx.toolchain</code>."),
-        @Param(
+                    + " implementation via <code>ctx.toolchain</code>.")
+        ), net.starlark.java.annot.Param(
             name = "doc",
             named = true,
-            allowedTypes = {
-              @ParamType(type = String.class),
-              @ParamType(type = NoneType.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = String::class), net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.NoneType::class
+            )],
             defaultValue = "None",
-            doc =
-                "A description of the aspect that can be extracted by documentation generating "
-                    + "tools."),
-        @Param(
+            doc = "A description of the aspect that can be extracted by documentation generating "
+                    + "tools."
+        ), net.starlark.java.annot.Param(
             name = "apply_to_generating_rules",
             named = true,
             positional = false,
             defaultValue = "False",
-            doc =
-                "If true, the aspect will, when applied to an output file, instead apply to the "
+            doc = ("If true, the aspect will, when applied to an output file, instead apply to the "
                     + "output file's generating rule. "
                     + "<p>For example, suppose an aspect propagates transitively through attribute "
                     + "`deps` and it is applied to target `alpha`. Suppose `alpha` has "
@@ -973,137 +857,141 @@ declared.
                     + "a target `beta`. Suppose `beta` has a target `charlie` as one of its "
                     + "`deps`. If `apply_to_generating_rules=True` for the aspect, then the aspect "
                     + "will propagate through `alpha`, `beta`, and `charlie`. If False, then the "
-                    + "aspect will propagate only to `alpha`. </p><p>False by default.</p>"),
-        @Param(
+                    + "aspect will propagate only to `alpha`. </p><p>False by default.</p>")
+        ), net.starlark.java.annot.Param(
             name = EXEC_COMPATIBLE_WITH_PARAM,
-            allowedTypes = {@ParamType(type = Sequence.class, generic1 = String.class)},
+            allowedTypes = [net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.Sequence::class,
+                generic1 = String::class
+            )],
             named = true,
             positional = false,
             defaultValue = "[]",
-            doc =
-                "A list of constraints on the execution platform that apply to all instances of"
-                    + " this aspect."),
-        @Param(
+            doc = "A list of constraints on the execution platform that apply to all instances of"
+                    + " this aspect."
+        ), net.starlark.java.annot.Param(
             name = "exec_groups",
-            allowedTypes = {
-              @ParamType(type = Dict.class),
-              @ParamType(type = NoneType.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = net.starlark.java.eval.Dict::class), net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.NoneType::class
+            )],
             named = true,
             defaultValue = "None",
             positional = false,
-            doc =
-                "Dict of execution group name (string) to <a"
+            doc = ("Dict of execution group name (string) to <a"
                     + " href='../globals/bzl.html#exec_group'><code>exec_group</code>s</a>. If set,"
                     + " allows aspects to run actions on multiple execution platforms within a"
-                    + " single instance. See <a href='${link exec-groups}'>execution groups"
-                    + " documentation</a> for more info."),
-        @Param(
+                    + " single instance. See <a href='\${link exec-groups}'>execution groups"
+                    + " documentation</a> for more info.")
+        ), net.starlark.java.annot.Param(
             name = "subrules",
-            allowedTypes = {
-              @ParamType(type = Sequence.class, generic1 = StarlarkSubruleApi.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.Sequence::class,
+                generic1 = StarlarkSubruleApi::class
+            )],
             named = true,
             defaultValue = "[]",
             positional = false,
-            doc = "Experimental: list of subrules used by this aspect.")
-      },
-      useStarlarkThread = true)
-  StarlarkAspectApi aspect(
-      StarlarkFunction implementation,
-      Object attributeAspects,
-      Object toolchainsAspects,
-      Dict<?, ?> attrs,
-      Sequence<?> requiredProvidersArg,
-      Sequence<?> requiredAspectProvidersArg,
-      Sequence<?> providesArg,
-      Sequence<?> requiredAspects,
-      Object propagationPredicate,
-      Sequence<?> fragments,
-      Sequence<?> hostFragments,
-      Sequence<?> toolchains,
-      Object doc,
-      Boolean applyToGeneratingRules,
-      Sequence<?> execCompatibleWith,
-      Object execGroups,
-      Sequence<?> subrules,
-      StarlarkThread thread)
-      throws EvalException;
+            doc = "Experimental: list of subrules used by this aspect."
+        )], useStarlarkThread = true
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun aspect(
+        implementation: net.starlark.java.eval.StarlarkFunction?,
+        attributeAspects: Any?,
+        toolchainsAspects: Any?,
+        attrs: net.starlark.java.eval.Dict<*, *>?,
+        requiredProvidersArg: net.starlark.java.eval.Sequence<*>?,
+        requiredAspectProvidersArg: net.starlark.java.eval.Sequence<*>?,
+        providesArg: net.starlark.java.eval.Sequence<*>?,
+        requiredAspects: net.starlark.java.eval.Sequence<*>?,
+        propagationPredicate: Any?,
+        fragments: net.starlark.java.eval.Sequence<*>?,
+        hostFragments: net.starlark.java.eval.Sequence<*>?,
+        toolchains: net.starlark.java.eval.Sequence<*>?,
+        doc: Any?,
+        applyToGeneratingRules: Boolean?,
+        execCompatibleWith: net.starlark.java.eval.Sequence<*>?,
+        execGroups: Any?,
+        subrules: net.starlark.java.eval.Sequence<*>?,
+        thread: net.starlark.java.eval.StarlarkThread?
+    ): StarlarkAspectApi?
 
-  @StarlarkMethod(
-      name = "Label",
-      doc =
-          "Converts a label string into a <code>Label</code> object, in the context of the package"
-              + " where the calling <code>.bzl</code> source file lives. If the given value is"
-              + " already a <code>Label</code>, it is returned unchanged.<p>For macros, a related"
-              + " function, <code><a"
-              + " href='../toplevel/native.html#package_relative_label'>native.package_relative_label()</a></code>,"
-              + " converts the input into a <code>Label</code> in the context of the package"
-              + " currently being constructed. For rule and aspect implementation functions, <a"
-              + " href='ctx.html#package_relative_label'><code>ctx.package_relative_label()</code></a>"
-              + " can be used for the same purpose. Use these functions to mimic the"
-              + " string-to-label conversion that is automatically done by label-valued rule"
-              + " attributes.",
-      parameters = {
-        @Param(
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "Label", doc = ("Converts a label string into a <code>Label</code> object, in the context of the package"
+                + " where the calling <code>.bzl</code> source file lives. If the given value is"
+                + " already a <code>Label</code>, it is returned unchanged.<p>For macros, a related"
+                + " function, <code><a"
+                + " href='../toplevel/native.html#package_relative_label'>native.package_relative_label()</a></code>,"
+                + " converts the input into a <code>Label</code> in the context of the package"
+                + " currently being constructed. For rule and aspect implementation functions, <a"
+                + " href='ctx.html#package_relative_label'><code>ctx.package_relative_label()</code></a>"
+                + " can be used for the same purpose. Use these functions to mimic the"
+                + " string-to-label conversion that is automatically done by label-valued rule"
+                + " attributes."), parameters = [net.starlark.java.annot.Param(
             name = "input",
-            allowedTypes = {@ParamType(type = String.class), @ParamType(type = Label.class)},
-            doc =
-                "The input label string or Label object. If a Label object is passed, it's"
-                    + " returned as is.")
-      },
-      useStarlarkThread = true)
-  @StarlarkConstructor
-  Label label(Object input, StarlarkThread thread) throws EvalException;
+            allowedTypes = [net.starlark.java.annot.ParamType(type = String::class), net.starlark.java.annot.ParamType(
+                type = Label::class
+            )],
+            doc = "The input label string or Label object. If a Label object is passed, it's"
+                    + " returned as is."
+        )], useStarlarkThread = true
+    )
+    @com.google.devtools.build.docgen.annot.StarlarkConstructor
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun label(input: Any?, thread: net.starlark.java.eval.StarlarkThread?): Label?
 
-  @StarlarkMethod(
-      name = "exec_group",
-      doc =
-          "Creates an <a href='${link exec-groups}'>execution group</a> which can be used to"
-              + " create actions for a specific execution platform during rule implementation.",
-      parameters = {
-        @Param(
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "exec_group",
+        doc = ("Creates an <a href='\${link exec-groups}'>execution group</a> which can be used to"
+                + " create actions for a specific execution platform during rule implementation."),
+        parameters = [net.starlark.java.annot.Param(
             name = TOOLCHAINS_PARAM,
-            allowedTypes = {@ParamType(type = Sequence.class, generic1 = Object.class)},
+            allowedTypes = [net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.Sequence::class,
+                generic1 = Any::class
+            )],
             named = true,
             positional = false,
             defaultValue = "[]",
-            doc =
-                "The set of toolchains this execution group requires. The list can contain String,"
-                    + " Label, or StarlarkToolchainTypeApi objects, in any combination."),
-        @Param(
+            doc = "The set of toolchains this execution group requires. The list can contain String,"
+                    + " Label, or StarlarkToolchainTypeApi objects, in any combination."
+        ), net.starlark.java.annot.Param(
             name = EXEC_COMPATIBLE_WITH_PARAM,
-            allowedTypes = {@ParamType(type = Sequence.class, generic1 = String.class)},
+            allowedTypes = [net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.Sequence::class,
+                generic1 = String::class
+            )],
             named = true,
             positional = false,
             defaultValue = "[]",
-            doc = "A list of constraints on the execution platform."),
-      },
-      useStarlarkThread = true)
-  ExecGroupApi execGroup(
-      Sequence<?> toolchains, Sequence<?> execCompatibleWith, StarlarkThread thread)
-      throws EvalException;
+            doc = "A list of constraints on the execution platform."
+        )],
+        useStarlarkThread = true
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun execGroup(
+        toolchains: net.starlark.java.eval.Sequence<*>?,
+        execCompatibleWith: net.starlark.java.eval.Sequence<*>?,
+        thread: net.starlark.java.eval.StarlarkThread?
+    ): ExecGroupApi?
 
-  @StarlarkMethod(
-      name = "subrule",
-      doc =
-          "Constructs a new instance of a subrule. The result of this function must be stored in "
-              + "a global variable before it can be used.",
-      parameters = {
-        @Param(
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "subrule",
+        doc = ("Constructs a new instance of a subrule. The result of this function must be stored in "
+                + "a global variable before it can be used."),
+        parameters = [net.starlark.java.annot.Param(
             name = "implementation",
             doc = "The Starlark function implementing this subrule",
             named = true,
             positional = false,
-            allowedTypes = {@ParamType(type = StarlarkFunction.class)}),
-        @Param(
+            allowedTypes = [net.starlark.java.annot.ParamType(type = net.starlark.java.eval.StarlarkFunction::class)]
+        ), net.starlark.java.annot.Param(
             name = "attrs",
-            allowedTypes = {@ParamType(type = Dict.class)},
+            allowedTypes = [net.starlark.java.annot.ParamType(type = net.starlark.java.eval.Dict::class)],
             named = true,
             positional = false,
             defaultValue = "{}",
-            doc =
-                "A dictionary to declare all the (private) attributes of the subrule. "
+            doc = ("A dictionary to declare all the (private) attributes of the subrule. "
                     + "<p/>Subrules may only have private attributes that are label-typed (i.e. "
                     + "label or label-list). The resolved values corresponding to these labels are"
                     + " automatically passed by Bazel to the subrule's implementation function as"
@@ -1117,120 +1005,135 @@ declared.
                     + "<li><code>Target</code> for"
                     + " all other label attributes</li>"
                     + "<li><code>[Target]</code> for all label-list"
-                    + " attributes</li></ul>"),
-        @Param(
+                    + " attributes</li></ul>")
+        ), net.starlark.java.annot.Param(
             name = "toolchains",
-            allowedTypes = {@ParamType(type = Sequence.class)},
+            allowedTypes = [net.starlark.java.annot.ParamType(type = net.starlark.java.eval.Sequence::class)],
             named = true,
             positional = false,
             defaultValue = "[]",
-            doc =
-                "If set, the set of toolchains this subrule requires. The list can contain String,"
+            doc = ("If set, the set of toolchains this subrule requires. The list can contain String,"
                     + " Label, or StarlarkToolchainTypeApi objects, in any combination. Toolchains"
                     + " will be found by checking the current platform, and provided to the subrule"
                     + " implementation via <code>ctx.toolchains</code>. Note that AEGs need to be"
                     + " enabled on the consuming rule(s) if this parameter is set. In case you"
                     + " haven't migrated to AEGs yet, see"
-                    + " https://bazel.build/extending/auto-exec-groups#migration-aegs."),
-        @Param(
+                    + " https://bazel.build/extending/auto-exec-groups#migration-aegs.")
+        ), net.starlark.java.annot.Param(
             name = "fragments",
-            allowedTypes = {@ParamType(type = Sequence.class, generic1 = String.class)},
+            allowedTypes = [net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.Sequence::class,
+                generic1 = String::class
+            )],
             named = true,
             positional = false,
             defaultValue = "[]",
-            doc =
-                "List of names of configuration fragments that the subrule requires in target"
-                    + " configuration."),
-        @Param(
+            doc = "List of names of configuration fragments that the subrule requires in target"
+                    + " configuration."
+        ), net.starlark.java.annot.Param(
             name = "subrules",
-            allowedTypes = {@ParamType(type = Sequence.class, generic1 = StarlarkSubruleApi.class)},
+            allowedTypes = [net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.Sequence::class,
+                generic1 = StarlarkSubruleApi::class
+            )],
             named = true,
             positional = false,
             defaultValue = "[]",
-            doc = "List of other subrules needed by this subrule.")
-      },
-      useStarlarkThread = true)
-  StarlarkSubruleApi subrule(
-      StarlarkFunction implementation,
-      Dict<?, ?> attrs,
-      Sequence<?> toolchains,
-      Sequence<?> fragments,
-      Sequence<?> subrules,
-      StarlarkThread thread)
-      throws EvalException;
+            doc = "List of other subrules needed by this subrule."
+        )],
+        useStarlarkThread = true
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun subrule(
+        implementation: net.starlark.java.eval.StarlarkFunction?,
+        attrs: net.starlark.java.eval.Dict<*, *>?,
+        toolchains: net.starlark.java.eval.Sequence<*>?,
+        fragments: net.starlark.java.eval.Sequence<*>?,
+        subrules: net.starlark.java.eval.Sequence<*>?,
+        thread: net.starlark.java.eval.StarlarkThread?
+    ): StarlarkSubruleApi?
 
-  @StarlarkMethod(
-      name = "materializer_rule",
-      doc =
-          "Creates a new materializer rule, which can be called from a BUILD file or a macro to"
-              + " create materializer targets.<p>Materializer targets are used to dynamically"
-              + " select dependencies at analysis time. Targets which depend on a materializer"
-              + " target will see the materialized dependencies, rather than the materializer"
-              + " target itself.",
-      parameters = {
-        @Param(
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "materializer_rule",
+        doc = ("Creates a new materializer rule, which can be called from a BUILD file or a macro to"
+                + " create materializer targets.<p>Materializer targets are used to dynamically"
+                + " select dependencies at analysis time. Targets which depend on a materializer"
+                + " target will see the materialized dependencies, rather than the materializer"
+                + " target itself."),
+        parameters = [net.starlark.java.annot.Param(
             name = "implementation",
             named = true,
             positional = false,
-            doc =
-                "The Starlark function implementing this materializer rule. It must have exactly"
+            doc = ("The Starlark function implementing this materializer rule. It must have exactly"
                     + " one parameter: <a href=\"../builtins/ctx.html\">ctx</a>. This function is"
                     + " called during the analysis phase for each instance of the rule."
                     + " Materializer rules return exactly one and only one MaterializedDepsInfo"
                     + " provider which specifies the dependencies to materialize in place of any"
-                    + " instance of this rule in the attributes of another target."),
-        @Param(
+                    + " instance of this rule in the attributes of another target.")
+        ), net.starlark.java.annot.Param(
             name = "attrs",
-            allowedTypes = {
-              @ParamType(type = Dict.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = net.starlark.java.eval.Dict::class)],
             named = true,
             positional = false,
             defaultValue = "{}",
-            doc =
-"""
-A dictionary to declare all the attributes of the rule. It maps from an attribute \
-name to an attribute object (see
-<a href="../toplevel/attr.html"><code>attr</code></a> module). Attributes starting \
-with <code>_</code> are private, and can be used to add an implicit dependency on \
-a label. The attribute <code>name</code> is implicitly added and must not be \
-specified. Attributes <code>visibility</code>, <code>deprecation</code>, \
-<code>tags</code>, <code>testonly</code>, and <code>features</code> are implicitly \
-added and cannot be overridden. Most rules need only a handful of attributes. To \
-limit memory usage, there is a cap on the number of attributes that may be \
-declared.
+            doc = """
+A dictionary to declare all the attributes of the rule. It maps from an attribute name to an attribute object (see
+<a href="../toplevel/attr.html"><code>attr</code></a> module). Attributes starting with <code>_</code> are private, and can be used to add an implicit dependency on a label. The attribute <code>name</code> is implicitly added and must not be specified. Attributes <code>visibility</code>, <code>deprecation</code>, <code>tags</code>, <code>testonly</code>, and <code>features</code> are implicitly added and cannot be overridden. Most rules need only a handful of attributes. To limit memory usage, there is a cap on the number of attributes that may be declared.
 <p>Declared attributes will convert <code>None</code> to the default value.</p>
-"""),
-        @Param(
+
+""".trimIndent()
+        ), net.starlark.java.annot.Param(
             name = "doc",
             named = true,
             positional = false,
-            allowedTypes = {
-              @ParamType(type = String.class),
-              @ParamType(type = NoneType.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = String::class), net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.NoneType::class
+            )],
             defaultValue = "None",
-            doc =
-                "A description of the rule that can be extracted by documentation generating "
-                    + "tools."),
-        @Param(
+            doc = "A description of the rule that can be extracted by documentation generating "
+                    + "tools."
+        ), net.starlark.java.annot.Param(
             name = "allow_real_deps",
             named = true,
             positional = false,
-            allowedTypes = {
-              @ParamType(type = Boolean.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = Boolean::class)],
             defaultValue = "False",
-            doc =
-                "Whether to allow instances of this materializer rule to have real dependencies "
-                    + "(non-dormant deps / non-for_dependency_resolution). Subject to allowlist."),
-      },
-      useStarlarkThread = true)
-  StarlarkCallable materializerRule(
-      StarlarkFunction implementation,
-      Dict<?, ?> attrs,
-      Object doc,
-      boolean allowRealDeps,
-      StarlarkThread thread)
-      throws EvalException;
+            doc = "Whether to allow instances of this materializer rule to have real dependencies "
+                    + "(non-dormant deps / non-for_dependency_resolution). Subject to allowlist."
+        )],
+        useStarlarkThread = true
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun materializerRule(
+        implementation: net.starlark.java.eval.StarlarkFunction?,
+        attrs: net.starlark.java.eval.Dict<*, *>?,
+        doc: Any?,
+        allowRealDeps: Boolean,
+        thread: net.starlark.java.eval.StarlarkThread?
+    ): net.starlark.java.eval.StarlarkCallable?
+
+    companion object {
+        const val EXEC_COMPATIBLE_WITH_PARAM: String = "exec_compatible_with"
+        const val TOOLCHAINS_PARAM: String = "toolchains"
+
+        val PROVIDES_DOC: String = ("A list of providers that the implementation function must return." //
+                + "<p>It is an error if the implementation function omits any of the types of providers"
+                + " listed here from its return value. However, the implementation function may return"
+                + " additional providers not listed here." //
+                + "<p>Each element of the list is an <code>*Info</code> object returned by <a"
+                + " href='../globals/bzl.html#provider'><code>provider()</code></a>. When a target of the"
+                + " rule is used as a dependency for a target that declares a required provider, it is"
+                + " not necessary to specify that provider here. It is enough that the implementation"
+                + " function returns it. However, it is considered best practice to specify it, even"
+                + " though this is not required. The <a"
+                + " href='../globals/bzl.html#aspect.required_providers'><code>required_providers</code></a>"
+                + " field of an <a href='../globals/bzl.html#aspect'>aspect</a> does, however, require"
+                + " that providers are specified here.")
+
+        val DEPENDENCY_RESOLUTION_RULE_DOC: String =
+            ("If set, the rule can be a dependency through attributes also marked as available in"
+                    + " materializers. Every attribute of rules with this flag set must be marked as "
+                    + " available in materializers also. This is so that rules so marked cannot depend on"
+                    + " rules that are not so marked.")
+    }
 }

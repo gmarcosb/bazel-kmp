@@ -11,86 +11,69 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import static com.google.common.base.Preconditions.checkState;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.util.TestType;
-import java.util.Map;
+import com.google.devtools.build.lib.util.TestType
+import com.google.devtools.build.skyframe.AbstractInMemoryMemoizingEvaluator
+import com.google.devtools.build.skyframe.Differencer
+import com.google.devtools.build.skyframe.DirtyAndInflightTrackingProgressReceiver
+import com.google.devtools.build.skyframe.EmittedEventState
+import com.google.devtools.build.skyframe.EvaluationProgressReceiver
+import com.google.devtools.build.skyframe.GraphInconsistencyReceiver
+import com.google.devtools.build.skyframe.InMemoryGraph
+import com.google.devtools.build.skyframe.MemoizingEvaluator.GraphTransformerForTesting
+import com.google.devtools.build.skyframe.SkyFunction
+import com.google.devtools.build.skyframe.SkyFunctionName
 
 /**
- * An in-memory {@link MemoizingEvaluator} that uses the eager invalidation strategy. This class is,
+ * An in-memory [MemoizingEvaluator] that uses the eager invalidation strategy. This class is,
  * by itself, not thread-safe. Neither is it thread-safe to use this class in parallel with any of
  * the returned graphs. However, it is allowed to access the graph from multiple threads as long as
- * that does not happen in parallel with an {@link #evaluate} call.
- *
- * <p>This memoizing evaluator uses a monotonically increasing {@link IntVersion} for incremental
- * evaluations and {@link Version#constant} for non-incremental evaluations.
+ * that does not happen in parallel with an [.evaluate] call.
+ * 
+ * 
+ * This memoizing evaluator uses a monotonically increasing [IntVersion] for incremental
+ * evaluations and [Version.constant] for non-incremental evaluations.
  */
-public final class InMemoryMemoizingEvaluator extends AbstractInMemoryMemoizingEvaluator {
+class InMemoryMemoizingEvaluator @kotlin.jvm.JvmOverloads constructor(
+    skyFunctions: MutableMap<SkyFunctionName?, SkyFunction?>,
+    differencer: Differencer?,
+    progressReceiver: EvaluationProgressReceiver? = EvaluationProgressReceiver.Companion.NULL,
+    graphInconsistencyReceiver: GraphInconsistencyReceiver? = GraphInconsistencyReceiver.Companion.THROWING,
+    eventFilter: com.google.devtools.build.skyframe.EventFilter? = com.google.devtools.build.skyframe.EventFilter.Companion.FULL_STORAGE,
+    emittedEventState: EmittedEventState? = EmittedEventState(),
+    keepEdges: Boolean = true,
+    usePooledInterning: Boolean = true
+) : AbstractInMemoryMemoizingEvaluator(
+    com.google.common.collect.ImmutableMap.copyOf<SkyFunctionName?, SkyFunction?>(skyFunctions),
+    differencer,
+    DirtyAndInflightTrackingProgressReceiver(progressReceiver),
+    eventFilter,
+    emittedEventState,
+    graphInconsistencyReceiver,
+    keepEdges,
+    com.google.devtools.build.skyframe.Version.Companion.minimal()
+) {
+    // Not final only for testing.
+    private var graph: InMemoryGraph?
 
-  // Not final only for testing.
-  private InMemoryGraph graph;
+    init {
+        this.graph =
+            if (keepEdges)
+                InMemoryGraph.Companion.create(usePooledInterning)
+            else
+                InMemoryGraph.Companion.createEdgeless(usePooledInterning)
+    }
 
-  public InMemoryMemoizingEvaluator(
-      Map<SkyFunctionName, SkyFunction> skyFunctions, Differencer differencer) {
-    this(skyFunctions, differencer, EvaluationProgressReceiver.NULL);
-  }
+    override fun injectGraphTransformerForTesting(transformer: GraphTransformerForTesting) {
+        com.google.common.base.Preconditions.checkState(TestType.Companion.isInTest())
+        this.graph = transformer.transform(this.graph)
+    }
 
-  public InMemoryMemoizingEvaluator(
-      Map<SkyFunctionName, SkyFunction> skyFunctions,
-      Differencer differencer,
-      EvaluationProgressReceiver progressReceiver) {
-    this(
-        skyFunctions,
-        differencer,
-        progressReceiver,
-        GraphInconsistencyReceiver.THROWING,
-        EventFilter.FULL_STORAGE,
-        new EmittedEventState(),
-        /* keepEdges= */ true,
-        /* usePooledInterning= */ true);
-  }
+    val inMemoryGraph: InMemoryGraph?
+        get() = graph
 
-  public InMemoryMemoizingEvaluator(
-      Map<SkyFunctionName, SkyFunction> skyFunctions,
-      Differencer differencer,
-      EvaluationProgressReceiver progressReceiver,
-      GraphInconsistencyReceiver graphInconsistencyReceiver,
-      EventFilter eventFilter,
-      EmittedEventState emittedEventState,
-      boolean keepEdges,
-      boolean usePooledInterning) {
-    super(
-        ImmutableMap.copyOf(skyFunctions),
-        differencer,
-        new DirtyAndInflightTrackingProgressReceiver(progressReceiver),
-        eventFilter,
-        emittedEventState,
-        graphInconsistencyReceiver,
-        keepEdges,
-        Version.minimal());
-    this.graph =
-        keepEdges
-            ? InMemoryGraph.create(usePooledInterning)
-            : InMemoryGraph.createEdgeless(usePooledInterning);
-  }
-
-  @Override
-  public void injectGraphTransformerForTesting(GraphTransformerForTesting transformer) {
-    checkState(TestType.isInTest());
-    this.graph = transformer.transform(this.graph);
-  }
-
-  @Override
-  public InMemoryGraph getInMemoryGraph() {
-    return graph;
-  }
-
-  @VisibleForTesting
-  public ImmutableMap<SkyFunctionName, SkyFunction> getSkyFunctionsForTesting() {
-    return skyFunctions;
-  }
+    @get:com.google.common.annotations.VisibleForTesting
+    val skyFunctionsForTesting: com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?>?
+        get() = skyFunctions
 }

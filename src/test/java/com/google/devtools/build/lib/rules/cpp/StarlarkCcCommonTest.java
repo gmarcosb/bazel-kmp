@@ -2123,8 +2123,8 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
     assertThat(variable).isNotNull();
     VariableWithValue v = variableWithValueFromStarlark(variable);
     assertThat(v).isNotNull();
-    assertThat(v.variable()).isEqualTo("abc");
-    assertThat(v.value()).isEqualTo("def");
+    assertThat(v.variable).isEqualTo("abc");
+    assertThat(v.value).isEqualTo("def");
 
     createEnvEntryRule("six", /* key= */ "'abc'", /* value= */ "'def'");
     t = getConfiguredTarget("//six:a");
@@ -4107,7 +4107,7 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
     assertThat(actionConfigStruct).isNotNull();
     ActionConfig a = actionConfigFromStarlark(actionConfigStruct, OS.getCurrent());
     assertThat(a).isNotNull();
-    assertThat(a.getActionName()).isEqualTo("actionname32._++-");
+    assertThat(a.actionName).isEqualTo("actionname32._++-");
     assertThat(a.getImplies()).containsExactly("a", "b").inOrder();
     assertThat(Iterables.getOnlyElement(a.getFlagSets()).actions())
         .containsExactly("actionname32._++-");

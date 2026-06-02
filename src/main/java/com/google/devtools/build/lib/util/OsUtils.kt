@@ -11,29 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
 /**
  * Operating system-specific utilities.
  */
-public final class OsUtils {
+object OsUtils {
+    private val EXECUTABLE_EXTENSION = executableExtension(com.google.devtools.build.lib.util.OS.Companion.getCurrent())
 
-  private static final String EXECUTABLE_EXTENSION = executableExtension(OS.getCurrent());
+    fun executableExtension(os: com.google.devtools.build.lib.util.OS?): String {
+        return if (os == com.google.devtools.build.lib.util.OS.WINDOWS) ".exe" else ""
+    }
 
-  // Utility class.
-  private OsUtils() {
-  }
-
-  public static String executableExtension(OS os) {
-    return os == OS.WINDOWS ? ".exe" : "";
-  }
-
-  /**
-   * Returns the extension used for executables on the current platform (.exe
-   * for Windows, empty string for others).
-   */
-  public static String executableExtension() {
-    return EXECUTABLE_EXTENSION;
-  }
+    /**
+     * Returns the extension used for executables on the current platform (.exe
+     * for Windows, empty string for others).
+     */
+    @kotlin.jvm.JvmStatic
+    fun executableExtension(): String {
+        return EXECUTABLE_EXTENSION
+    }
 }

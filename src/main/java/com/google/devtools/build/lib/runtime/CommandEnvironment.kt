@@ -11,1157 +11,1108 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
-
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.common.collect.Maps;
-import com.google.common.eventbus.EventBus;
-import com.google.common.eventbus.Subscribe;
-import com.google.devtools.build.lib.actions.ActionOutputDirectoryHelper;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.ResourceManager;
-import com.google.devtools.build.lib.analysis.AnalysisOptions;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.BuildInfoEvent;
-import com.google.devtools.build.lib.analysis.config.AdditionalConfigurationChangeEvent;
-import com.google.devtools.build.lib.analysis.config.CoreOptions;
-import com.google.devtools.build.lib.analysis.test.TestConfiguration.TestOptions;
-import com.google.devtools.build.lib.bazel.repository.downloader.DelegatingDownloader;
-import com.google.devtools.build.lib.bazel.repository.downloader.HttpDownloader;
-import com.google.devtools.build.lib.buildtool.BuildRequestOptions;
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.concurrent.QuiescingExecutors;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventBusEventHandler;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.exec.SingleBuildFileCache;
-import com.google.devtools.build.lib.pkgcache.PackageManager;
-import com.google.devtools.build.lib.pkgcache.PathPackageLocator;
-import com.google.devtools.build.lib.runtime.proto.InvocationPolicyOuterClass.InvocationPolicy;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.server.FailureDetails.ExternalRepository;
-import com.google.devtools.build.lib.server.FailureDetails.ExternalRepository.Code;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.Skyfocus;
-import com.google.devtools.build.lib.server.IdleTask;
-import com.google.devtools.build.lib.skyframe.BuildResultListener;
-import com.google.devtools.build.lib.skyframe.SkyfocusOptions;
-import com.google.devtools.build.lib.skyframe.SkyframeBuildView;
-import com.google.devtools.build.lib.skyframe.SkyframeExecutor;
-import com.google.devtools.build.lib.skyframe.WorkspaceInfoFromDiff;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCachingEventListener;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.EnvVar;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.util.io.CommandExtensionReporter;
-import com.google.devtools.build.lib.util.io.OutErr;
-import com.google.devtools.build.lib.util.io.TimestampGranularityMonitor;
-import com.google.devtools.build.lib.versioning.LongVersionGetter;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.LocalOutputService;
-import com.google.devtools.build.lib.vfs.OutputService;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.lib.vfs.XattrProvider;
-import com.google.devtools.common.options.OptionAndRawValue;
-import com.google.devtools.common.options.OptionsParsingResult;
-import com.google.devtools.common.options.OptionsProvider;
-import com.google.protobuf.Any;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.TreeSet;
-import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
-import javax.annotation.Nullable;
-import javax.annotation.concurrent.GuardedBy;
+import com.google.devtools.build.lib.actions.ActionOutputDirectoryHelper
 
 /**
  * Encapsulates the state needed for a single command. The environment is dropped when the current
  * command is done and all corresponding objects are garbage collected.
- *
- * <p>This class is non-final for mocking purposes. DO NOT extend it in production code.
+ * 
+ * 
+ * This class is non-final for mocking purposes. DO NOT extend it in production code.
  */
-public class CommandEnvironment {
-  private static final ImmutableSet<String> ALWAYS_INHERITED_REPO_ENV =
-      OS.getCurrent() == OS.WINDOWS ? ImmutableSet.of("PATH", "PATHEXT") : ImmutableSet.of("PATH");
+class CommandEnvironment internal constructor(
+    runtime: BlazeRuntime,
+    workspace: BlazeWorkspace,
+    eventBus: com.google.common.eventbus.EventBus,
+    commandThread: java.lang.Thread,
+    command: com.google.devtools.build.lib.runtime.Command,
+    options: com.google.devtools.common.options.OptionsParsingResult,
+    invocationPolicy: InvocationPolicy?,
+    packageLocator: PathPackageLocator?,
+    syscallCache: SyscallCache?,
+    quiescingExecutors: QuiescingExecutors?,
+    warnings: MutableList<String?>,
+    waitTimeInMs: Long,
+    commandStartTime: Long,
+    idleTaskResultsFromPreviousIdlePeriod: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.server.IdleTask.Result?>?,
+    shutdownReasonConsumer: java.util.function.Consumer<String?>,
+    commandExtensions: MutableList<Any?>,
+    commandExtensionReporter: CommandExtensionReporter?,
+    attemptNumber: Int,
+    buildRequestIdOverride: String?,
+    configFlagDefinitions: ConfigFlagDefinitions?,
+    resourceManager: ResourceManager?
+) {
+    private val runtime: BlazeRuntime
+    private val workspace: BlazeWorkspace
+    private val directories: BlazeDirectories
+    private val configFlagDefinitions: ConfigFlagDefinitions?
 
-  private final BlazeRuntime runtime;
-  private final BlazeWorkspace workspace;
-  private final BlazeDirectories directories;
-  private final ConfigFlagDefinitions configFlagDefinitions;
+    private val commandId: UUID // Unique identifier for the command being run
 
-  private final UUID commandId; // Unique identifier for the command being run
-  private final String buildRequestId; // Unique identifier for the build being run
-  private final Reporter reporter;
-  private final EventBus eventBus;
-  private final BlazeModule.ModuleEnvironment blazeModuleEnvironment;
-  private final ImmutableMap<String, String> clientEnv;
-  private final Set<String> visibleActionEnv = new TreeSet<>();
-  private final Set<String> visibleTestEnv = new TreeSet<>();
-  private final ImmutableMap<String, String> repoEnv;
-  private final ImmutableMap<String, String> nonstrictRepoEnv;
-  private final TimestampGranularityMonitor timestampGranularityMonitor;
-  private final Thread commandThread;
-  private final Command command;
-  private final OptionsParsingResult options;
-  private final InvocationPolicy invocationPolicy;
-  private final PathPackageLocator packageLocator;
-  private final Path workingDirectory;
-  private final PathFragment relativeWorkingDirectory;
-  private final SyscallCache syscallCache;
-  private final QuiescingExecutors quiescingExecutors;
-  private final Duration waitTime;
-  private final long commandStartTime;
-  private final ImmutableList<Any> commandExtensions;
-  private final ImmutableList.Builder<Any> responseExtensions = ImmutableList.builder();
-  private final Consumer<String> shutdownReasonConsumer;
-  private final BuildResultListener buildResultListener;
-  private final CommandLinePathFactory commandLinePathFactory;
-  private final CommandExtensionReporter commandExtensionReporter;
-  private final int attemptNumber;
-  private final HttpDownloader httpDownloader;
-  private final DelegatingDownloader delegatingDownloader;
-  private final RemoteAnalysisCachingEventListener remoteAnalysisCachingEventListener;
-  @Nullable private final ImmutableList<IdleTask.Result> idleTaskResultsFromPreviousIdlePeriod;
-  private final ImmutableList.Builder<IdleTask> idleTasks = ImmutableList.builder();
-  private final ResourceManager resourceManager;
+    /**
+     * Returns the ID that Blaze uses to identify everything logged from the current build request.
+     * TODO(olaola): this should be a prefixed UUID, but some existing clients still use arbitrary
+     * strings, so we accept these when passed by environment variable for compatibility.
+     */
+    val buildRequestId: String? // Unique identifier for the build being run
+    private val reporter: com.google.devtools.build.lib.events.Reporter
+    private val eventBus: com.google.common.eventbus.EventBus
+    private val blazeModuleEnvironment: ModuleEnvironment
+    private val clientEnv: com.google.common.collect.ImmutableMap<String?, String?>
+    private val visibleActionEnv: MutableSet<String?> = TreeSet<String?>()
+    private val visibleTestEnv: MutableSet<String?> = TreeSet<String?>()
+    private val repoEnv: com.google.common.collect.ImmutableMap<String?, String?>
+    private val nonstrictRepoEnv: com.google.common.collect.ImmutableMap<String?, String?>
+    private val timestampGranularityMonitor: TimestampGranularityMonitor
+    private val commandThread: java.lang.Thread
+    private val command: com.google.devtools.build.lib.runtime.Command
+    private val options: com.google.devtools.common.options.OptionsParsingResult
+    private val invocationPolicy: InvocationPolicy?
+    private val packageLocator: PathPackageLocator?
+    private val workingDirectory: com.google.devtools.build.lib.vfs.Path?
+    private val relativeWorkingDirectory: PathFragment?
+    private val syscallCache: SyscallCache?
+    private val quiescingExecutors: QuiescingExecutors?
+    private val waitTime: java.time.Duration?
+    @kotlin.jvm.JvmField
+    val commandStartTime: Long
+    private val commandExtensions: com.google.common.collect.ImmutableList<Any?>
+    private val responseExtensions: com.google.common.collect.ImmutableList.Builder<Any?> =
+        com.google.common.collect.ImmutableList.builder<Any?>()
+    private val shutdownReasonConsumer: java.util.function.Consumer<String?>
+    private val buildResultListener: BuildResultListener
+    private val commandLinePathFactory: CommandLinePathFactory
+    private val commandExtensionReporter: CommandExtensionReporter?
 
-  private boolean mergedAnalysisAndExecution;
+    /**
+     * Returns the number of the invocation attempt, starting at 1 and increasing by 1 for each new
+     * attempt. Can be used to determine if there is a build retry by `--experimental_remote_cache_eviction_retries`.
+     */
+    val attemptNumber: Int
+    private val httpDownloader: HttpDownloader
+    private val delegatingDownloader: DelegatingDownloader
+    private val remoteAnalysisCachingEventListener: RemoteAnalysisCachingEventListener
+    private val idleTaskResultsFromPreviousIdlePeriod: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.server.IdleTask.Result?>?
+    private val idleTasks: com.google.common.collect.ImmutableList.Builder<com.google.devtools.build.lib.server.IdleTask?> =
+        com.google.common.collect.ImmutableList.builder<com.google.devtools.build.lib.server.IdleTask?>()
+    private val resourceManager: ResourceManager?
 
-  private OutputService outputService;
-  private boolean hasSyncedPackageLoading = false;
-  private boolean buildInfoPosted = false;
-  private Optional<AdditionalConfigurationChangeEvent> additionalConfigurationChangeEvent =
-      Optional.empty();
-  @Nullable private WorkspaceInfoFromDiff workspaceInfoFromDiff;
+    private var mergedAnalysisAndExecution = false
 
-  // This AtomicReference is set to:
-  //   - null, if neither BlazeModuleEnvironment#exit nor #precompleteCommand have been called
-  //   - Optional.of(e), if BlazeModuleEnvironment#exit has been called with value e
-  //   - Optional.empty(), if #precompleteCommand was called before any call to
-  //     BlazeModuleEnvironment#exit
-  private final AtomicReference<Optional<AbruptExitException>> pendingException =
-      new AtomicReference<>();
+    private var outputService: OutputService? = null
+    private var hasSyncedPackageLoading = false
+    private var buildInfoPosted = false
+    private var additionalConfigurationChangeEvent: java.util.Optional<AdditionalConfigurationChangeEvent?> =
+        java.util.Optional.empty<AdditionalConfigurationChangeEvent?>()
+    private var workspaceInfoFromDiff: WorkspaceInfoFromDiff? = null
 
-  private final Object fileCacheLock = new Object();
-  private volatile InputMetadataProvider fileCache;
+    // This AtomicReference is set to:
+    //   - null, if neither BlazeModuleEnvironment#exit nor #precompleteCommand have been called
+    //   - Optional.of(e), if BlazeModuleEnvironment#exit has been called with value e
+    //   - Optional.empty(), if #precompleteCommand was called before any call to
+    //     BlazeModuleEnvironment#exit
+    private val pendingException: AtomicReference<java.util.Optional<AbruptExitException?>?> =
+        AtomicReference<java.util.Optional<AbruptExitException?>?>()
 
-  private final Object outputDirectoryHelperLock = new Object();
+    private val fileCacheLock = Any()
 
-  @GuardedBy("outputDirectoryHelperLock")
-  private ActionOutputDirectoryHelper outputDirectoryHelper;
-
-  // List of flags and their values that were added by invocation policy. May contain multiple
-  // occurrences of the same flag.
-  private ImmutableList<OptionAndRawValue> invocationPolicyFlags = ImmutableList.of();
-
-  @Nullable // Optionally set in `beforeCommand` phase.
-  private LongVersionGetter versionGetter;
-  private boolean useFakeStampData = false;
-
-  private UiEventHandler uiEventHandler;
-
-  /**
-   * Gets the {@link RemoteAnalysisCachingEventListener} for this invocation.
-   *
-   * <p>A new copy of the listener is instantiated for every new {@link CommandEnvironment}, so
-   * statistics are not retained between invocations.
-   */
-  public RemoteAnalysisCachingEventListener getRemoteAnalysisCachingEventListener() {
-    return remoteAnalysisCachingEventListener;
-  }
-
-  private class BlazeModuleEnvironment implements BlazeModule.ModuleEnvironment {
-    @Nullable
-    @Override
-    public Path getFileFromWorkspace(Label label) {
-      Path buildFile = getPackageManager().getBuildFileForPackage(label.getPackageIdentifier());
-      if (buildFile == null) {
-        return null;
-      }
-      return buildFile.getParentDirectory().getRelative(label.name);
-    }
-
-    @Override
-    public void exit(AbruptExitException exception) {
-      checkNotNull(exception);
-      checkNotNull(exception.getExitCode());
-      if (pendingException.compareAndSet(null, Optional.of(exception))
-          && !Thread.currentThread().equals(commandThread)) {
-        // There was no exception, so we're the first one to ask for an exit. Interrupt the command
-        // if this exit is coming from a different thread, so that the command terminates promptly.
-        commandThread.interrupt();
-      }
-    }
-  }
-
-  /**
-   * Creates a new command environment which can be used for executing commands for the given
-   * runtime in the given workspace, which will publish events on the given eventBus. The
-   * commandThread passed is interrupted when a module requests an early exit.
-   *
-   * @param warnings will be filled with any warnings from command environment initialization.
-   */
-  CommandEnvironment(
-      BlazeRuntime runtime,
-      BlazeWorkspace workspace,
-      EventBus eventBus,
-      Thread commandThread,
-      Command command,
-      OptionsParsingResult options,
-      InvocationPolicy invocationPolicy,
-      @Nullable PathPackageLocator packageLocator,
-      SyscallCache syscallCache,
-      QuiescingExecutors quiescingExecutors,
-      List<String> warnings,
-      long waitTimeInMs,
-      long commandStartTime,
-      @Nullable ImmutableList<IdleTask.Result> idleTaskResultsFromPreviousIdlePeriod,
-      Consumer<String> shutdownReasonConsumer,
-      List<Any> commandExtensions,
-      CommandExtensionReporter commandExtensionReporter,
-      int attemptNumber,
-      @Nullable String buildRequestIdOverride,
-      ConfigFlagDefinitions configFlagDefinitions,
-      ResourceManager resourceManager) {
-    checkArgument(attemptNumber >= 1);
-
-    this.runtime = runtime;
-    this.workspace = workspace;
-    this.directories = workspace.getDirectories();
-    this.reporter = new Reporter(new EventBusEventHandler(eventBus));
-    this.eventBus = eventBus;
-    this.commandThread = commandThread;
-    this.command = command;
-    this.options = options;
-    this.invocationPolicy = invocationPolicy;
-    this.packageLocator = packageLocator;
-    this.idleTaskResultsFromPreviousIdlePeriod = idleTaskResultsFromPreviousIdlePeriod;
-    this.shutdownReasonConsumer = shutdownReasonConsumer;
-    this.syscallCache = syscallCache;
-    this.quiescingExecutors = quiescingExecutors;
-    this.commandExtensionReporter = commandExtensionReporter;
-    this.blazeModuleEnvironment = new BlazeModuleEnvironment();
-    this.timestampGranularityMonitor = new TimestampGranularityMonitor(runtime.getClock());
-    this.attemptNumber = attemptNumber;
-    this.configFlagDefinitions = configFlagDefinitions;
-    this.resourceManager = resourceManager;
-
-    // Record the command's starting time again, for use by
-    // TimestampGranularityMonitor.waitForTimestampGranularity().
-    // This should be done as close as possible to the start of
-    // the command's execution.
-    timestampGranularityMonitor.setCommandStartTime();
-
-    CommonCommandOptions commandOptions =
-        checkNotNull(
-            options.getOptions(CommonCommandOptions.class),
-            "CommandEnvironment needs its options provider to have CommonCommandOptions loaded.");
-    Path workingDirectory;
-    try {
-      workingDirectory = computeWorkingDirectory(commandOptions);
-    } catch (AbruptExitException e) {
-      // We'll exit very soon, but set the working directory to something reasonable so remainder of
-      // setup can finish.
-      this.blazeModuleEnvironment.exit(e);
-      workingDirectory = directories.getWorkingDirectory();
-    }
-    this.workingDirectory = workingDirectory;
-    if (getWorkspace() != null) {
-      this.relativeWorkingDirectory = workingDirectory.relativeTo(getWorkspace());
-    } else {
-      this.relativeWorkingDirectory = PathFragment.EMPTY_FRAGMENT;
-    }
-
-    this.waitTime = Duration.ofMillis(waitTimeInMs + commandOptions.getWaitTime());
-    this.commandStartTime = commandStartTime - commandOptions.getStartupTime();
-    this.commandExtensions = ImmutableList.copyOf(commandExtensions);
-    workspace.getSkyframeExecutor().setEventBus(eventBus);
-    eventBus.register(this);
-    float httpTimeoutScaling = (float) commandOptions.getHttpTimeoutScaling();
-    if (commandOptions.getHttpTimeoutScaling() <= 0) {
-      reporter.handle(
-          Event.warn("Ignoring request to scale http timeouts by a non-positive factor"));
-      httpTimeoutScaling = 1.0f;
-    }
-    if (commandOptions.getHttpMaxParallelDownloads() <= 0) {
-      this.blazeModuleEnvironment.exit(
-          new AbruptExitException(
-              DetailedExitCode.of(
-                  FailureDetail.newBuilder()
-                      .setMessage(
-                          "The maximum number of parallel downloads needs to be a positive number")
-                      .setExternalRepository(
-                          ExternalRepository.newBuilder().setCode(Code.BAD_DOWNLOADER_CONFIG))
-                      .build())));
-    }
-
-    this.httpDownloader =
-        new HttpDownloader(
-            commandOptions.getHttpConnectorAttempts(),
-            commandOptions.getHttpConnectorRetryMaxTimeout(),
-            commandOptions.getHttpMaxParallelDownloads(),
-            httpTimeoutScaling);
-    this.delegatingDownloader = new DelegatingDownloader(httpDownloader);
-
-    ClientOptions clientOptions =
-        checkNotNull(
-            options.getOptions(ClientOptions.class),
-            "CommandEnvironment needs its options provider to have ClientOptions loaded.");
-
-    this.clientEnv = makeMapFromMapEntries(clientOptions.getClientEnv());
-    this.commandId = computeCommandId(commandOptions.getInvocationId(), warnings, attemptNumber);
-    this.buildRequestId =
-        commandOptions.getBuildRequestId() != null
-            ? commandOptions.getBuildRequestId()
-            : buildRequestIdOverride != null
-                ? buildRequestIdOverride
-                : UUID.randomUUID().toString();
-
-    var repoEnvBuilder =
-        new TreeMap<>(
-            commandOptions.getUseStrictRepoEnv()
-                ? Maps.filterKeys(clientEnv, ALWAYS_INHERITED_REPO_ENV::contains)
-                : clientEnv);
-    var nonstrictRepoEnvBuilder = new TreeMap<>(clientEnv);
-
-    // TODO: This only needs to check for loads() rather than analyzes() due to
-    //  the effect of --action_env on the repository env. Revert back to
-    //  analyzes() when --action_env no longer affects it.
-    if (command.buildPhase().loads() || command.name().equals("info")) {
-      // Compute the set of environment variables that are allowlisted on the commandline
-      // for inheritance.
-      for (var envVar : options.getOptions(CoreOptions.class).getActionEnvironment()) {
-        switch (envVar) {
-          case EnvVar.Set(String name, String value) -> {
-            visibleActionEnv.remove(name);
-            if (!options.getOptions(CommonCommandOptions.class).getRepoEnvIgnoresActionEnv()) {
-              repoEnvBuilder.put(name, value);
-              nonstrictRepoEnvBuilder.put(name, value);
+    @kotlin.concurrent.Volatile
+    var fileCache: InputMetadataProvider? = null
+        /** Returns the file cache to use during this build.  */
+        get() {
+            if (field == null) {
+                synchronized(fileCacheLock) {
+                    if (field == null) {
+                        field =
+                            SingleBuildFileCache(
+                                this.execRoot.getPathString(),
+                                PathFragment.create(directories.getRelativeOutputPath()),
+                                runtime.getFileSystem(),
+                                syscallCache
+                            )
+                    }
+                }
             }
-          }
-          case EnvVar.Inherit(String name) -> {
-            visibleActionEnv.add(name);
-          }
-          case EnvVar.Unset(String name) -> {
-            visibleActionEnv.remove(name);
-            if (!options.getOptions(CommonCommandOptions.class).getRepoEnvIgnoresActionEnv()) {
-              repoEnvBuilder.remove(name);
-              nonstrictRepoEnvBuilder.remove(name);
+            return field
+        }
+        private set
+
+    private val outputDirectoryHelperLock = Any()
+
+    @javax.annotation.concurrent.GuardedBy("outputDirectoryHelperLock")
+    var outputDirectoryHelper: ActionOutputDirectoryHelper? = null
+        get() {
+            synchronized(outputDirectoryHelperLock) {
+                if (field == null) {
+                    val buildRequestOptions: O? = options.getOptions<O?>(BuildRequestOptions::class.java)
+                    field =
+                        ActionOutputDirectoryHelper(buildRequestOptions.directoryCreationCacheSpec)
+                }
+                return field
             }
-          }
         }
-      }
+        private set
+
+    // List of flags and their values that were added by invocation policy. May contain multiple
+    // occurrences of the same flag.
+    private var invocationPolicyFlags: com.google.common.collect.ImmutableList<com.google.devtools.common.options.OptionAndRawValue?>? =
+        com.google.common.collect.ImmutableList.of<com.google.devtools.common.options.OptionAndRawValue?>()
+
+    // Optionally set in `beforeCommand` phase.
+    private var versionGetter: LongVersionGetter? = null
+    @kotlin.jvm.JvmField
+    var useFakeStampData: Boolean = false
+
+    private var uiEventHandler: UiEventHandler? = null
+
+    /**
+     * Gets the [RemoteAnalysisCachingEventListener] for this invocation.
+     * 
+     * 
+     * A new copy of the listener is instantiated for every new [CommandEnvironment], so
+     * statistics are not retained between invocations.
+     */
+    fun getRemoteAnalysisCachingEventListener(): RemoteAnalysisCachingEventListener {
+        return remoteAnalysisCachingEventListener
     }
-    if (command.buildPhase().analyzes() || command.name().equals("info")) {
-      for (EnvVar envVar : options.getOptions(TestOptions.class).getTestEnvironment()) {
-        if (envVar instanceof EnvVar.Inherit(String name)) {
-          visibleTestEnv.add(name);
+
+    private inner class BlazeModuleEnvironment : ModuleEnvironment {
+        override fun getFileFromWorkspace(label: Label): com.google.devtools.build.lib.vfs.Path? {
+            val buildFile: com.google.devtools.build.lib.vfs.Path? =
+                this.packageManager.getBuildFileForPackage(label.getPackageIdentifier())
+            if (buildFile == null) {
+                return null
+            }
+            return buildFile.getParentDirectory().getRelative(label.name)
         }
-      }
-    }
 
-    String bazelWorkspace = null;
-    if (workspace.getWorkspace() != null) {
-      bazelWorkspace = workspace.getWorkspace().getPathString();
-      // On Windows, convert forward slashes to backslashes for PATH-like variables.
-      if (OS.getCurrent() == OS.WINDOWS) {
-        bazelWorkspace = bazelWorkspace.replace('/', '\\');
-      }
-    }
-    for (var envVar : commandOptions.getRepositoryEnvironment()) {
-      switch (envVar) {
-        case EnvVar.Set(String name, String value) -> {
-          if (bazelWorkspace != null) {
-            value = value.replace("%bazel_workspace%", bazelWorkspace);
-          }
-          repoEnvBuilder.put(name, value);
-          nonstrictRepoEnvBuilder.put(name, value);
+        override fun exit(exception: AbruptExitException?) {
+            com.google.common.base.Preconditions.checkNotNull<AbruptExitException?>(exception)
+            com.google.common.base.Preconditions.checkNotNull<ExitCode?>(exception.getExitCode())
+            if (pendingException.compareAndSet(null, java.util.Optional.of<AbruptExitException?>(exception))
+                && java.lang.Thread.currentThread() != commandThread
+            ) {
+                // There was no exception, so we're the first one to ask for an exit. Interrupt the command
+                // if this exit is coming from a different thread, so that the command terminates promptly.
+                commandThread.interrupt()
+            }
         }
-        case EnvVar.Inherit(String name) -> {
-          String value = clientEnv.get(name);
-          if (value != null) {
-            repoEnvBuilder.put(name, value);
-            nonstrictRepoEnvBuilder.put(name, value);
-          }
-        }
-        case EnvVar.Unset(String name) -> {
-          repoEnvBuilder.remove(name);
-          nonstrictRepoEnvBuilder.remove(name);
-        }
-      }
     }
-    this.repoEnv = ImmutableMap.copyOf(repoEnvBuilder);
-    this.nonstrictRepoEnv = ImmutableMap.copyOf(nonstrictRepoEnvBuilder);
-    this.buildResultListener = new BuildResultListener();
-    this.eventBus.register(this.buildResultListener);
 
-    this.commandLinePathFactory =
-        CommandLinePathFactory.create(runtime.getFileSystem(), directories);
+    /**
+     * Creates a new command environment which can be used for executing commands for the given
+     * runtime in the given workspace, which will publish events on the given eventBus. The
+     * commandThread passed is interrupted when a module requests an early exit.
+     * 
+     * @param warnings will be filled with any warnings from command environment initialization.
+     */
+    init {
+        com.google.common.base.Preconditions.checkArgument(attemptNumber >= 1)
 
-    this.remoteAnalysisCachingEventListener = new RemoteAnalysisCachingEventListener();
-    this.eventBus.register(remoteAnalysisCachingEventListener);
-  }
+        this.runtime = runtime
+        this.workspace = workspace
+        this.directories = workspace.getDirectories()
+        this.reporter = com.google.devtools.build.lib.events.Reporter(EventBusEventHandler(eventBus))
+        this.eventBus = eventBus
+        this.commandThread = commandThread
+        this.command = command
+        this.options = options
+        this.invocationPolicy = invocationPolicy
+        this.packageLocator = packageLocator
+        this.idleTaskResultsFromPreviousIdlePeriod = idleTaskResultsFromPreviousIdlePeriod
+        this.shutdownReasonConsumer = shutdownReasonConsumer
+        this.syscallCache = syscallCache
+        this.quiescingExecutors = quiescingExecutors
+        this.commandExtensionReporter = commandExtensionReporter
+        this.blazeModuleEnvironment = BlazeModuleEnvironment()
+        this.timestampGranularityMonitor = TimestampGranularityMonitor(runtime.getClock())
+        this.attemptNumber = attemptNumber
+        this.configFlagDefinitions = configFlagDefinitions
+        this.resourceManager = resourceManager
 
-  private Path computeWorkingDirectory(CommonCommandOptions commandOptions)
-      throws AbruptExitException {
-    Path workspace = getWorkspace();
-    Path workingDirectory;
-    if (directories.inWorkspace()) {
-      PathFragment clientCwd = commandOptions.getClientCwd();
-      if (clientCwd.containsUplevelReferences()) {
-        throw new AbruptExitException(
-            DetailedExitCode.of(
-                FailureDetail.newBuilder()
-                    .setMessage("Client cwd '" + clientCwd + "' contains uplevel references")
-                    .setClientEnvironment(
-                        FailureDetails.ClientEnvironment.newBuilder()
-                            .setCode(FailureDetails.ClientEnvironment.Code.CLIENT_CWD_MALFORMED)
-                            .build())
-                    .build()));
-      }
-      if (clientCwd.isAbsolute() && !clientCwd.startsWith(workspace.asFragment())) {
-        throw new AbruptExitException(
-            DetailedExitCode.of(
-                FailureDetail.newBuilder()
-                    .setMessage(
-                        String.format(
-                            "Client cwd '%s' is not inside workspace '%s'", clientCwd, workspace))
-                    .setClientEnvironment(
-                        FailureDetails.ClientEnvironment.newBuilder()
-                            .setCode(FailureDetails.ClientEnvironment.Code.CLIENT_CWD_MALFORMED)
-                            .build())
-                    .build()));
-      }
-      workingDirectory = workspace.getRelative(clientCwd);
-    } else {
-      workingDirectory = FileSystemUtils.getWorkingDirectory(runtime.getFileSystem());
-    }
-    return workingDirectory;
-  }
+        // Record the command's starting time again, for use by
+        // TimestampGranularityMonitor.waitForTimestampGranularity().
+        // This should be done as close as possible to the start of
+        // the command's execution.
+        timestampGranularityMonitor.setCommandStartTime()
 
-  public BlazeRuntime getRuntime() {
-    return runtime;
-  }
-
-  public Clock getClock() {
-    return runtime.getClock();
-  }
-
-  public CommandExtensionReporter getCommandExtensionReporter() {
-    return commandExtensionReporter;
-  }
-
-  void notifyOnCrash(String message) {
-    shutdownReasonConsumer.accept(message);
-    if (!Thread.currentThread().equals(commandThread)) {
-      // Give shutdown hooks priority in JVM and stop generating more data for modules to consume.
-      commandThread.interrupt();
-    }
-  }
-
-  public OptionsProvider getStartupOptionsProvider() {
-    return runtime.getStartupOptionsProvider();
-  }
-
-  public BlazeWorkspace getBlazeWorkspace() {
-    return workspace;
-  }
-
-  public BlazeDirectories getDirectories() {
-    return directories;
-  }
-
-  @Nullable // Null for commands that don't have PackageOptions (version, help, shutdown, etc).
-  public PathPackageLocator getPackageLocator() {
-    return packageLocator;
-  }
-
-  /** Returns the reporter for events. */
-  public Reporter getReporter() {
-    return reporter;
-  }
-
-  // TODO: b/395157821 - Replace env.getReporter().getOutErr() with env.getReporterOutErr().
-  public OutErr getReporterOutErr() {
-    return reporter.getOutErr();
-  }
-
-  public EventBus getEventBus() {
-    return eventBus;
-  }
-
-  public BlazeModule.ModuleEnvironment getBlazeModuleEnvironment() {
-    return blazeModuleEnvironment;
-  }
-
-  /**
-   * Return an unmodifiable view of the blaze client's environment when it invoked the current
-   * command.
-   */
-  public ImmutableMap<String, String> getClientEnv() {
-    return clientEnv;
-  }
-
-  public Command getCommand() {
-    return command;
-  }
-
-  public String getCommandName() {
-    return command.name();
-  }
-
-  public OptionsParsingResult getOptions() {
-    return options;
-  }
-
-  /** {@code --config} definitions for this invocation. */
-  public ConfigFlagDefinitions getConfigFlagDefinitions() {
-    return configFlagDefinitions;
-  }
-
-  public InvocationPolicy getInvocationPolicy() {
-    return invocationPolicy;
-  }
-
-  void setInvocationPolicyFlags(ImmutableList<OptionAndRawValue> invocationPolicyFlags) {
-    this.invocationPolicyFlags = invocationPolicyFlags;
-  }
-
-  public ImmutableList<OptionAndRawValue> getInvocationPolicyFlags() {
-    return invocationPolicyFlags;
-  }
-
-  /**
-   * Return an ordered version of the client environment restricted to those variables allowlisted
-   * by the command-line options to be inheritable by actions.
-   */
-  public Map<String, String> getAllowlistedActionEnv() {
-    return filterClientEnv(visibleActionEnv);
-  }
-
-  /**
-   * Return an ordered version of the client environment restricted to those variables allowlisted
-   * by the command-line options to be inheritable by actions.
-   */
-  public Map<String, String> getAllowlistedTestEnv() {
-    return filterClientEnv(visibleTestEnv);
-  }
-
-  /**
-   * This should be the source of truth for whether this build should be run with merged analysis
-   * and execution phases.
-   */
-  public boolean withMergedAnalysisAndExecutionSourceOfTruth() {
-    return mergedAnalysisAndExecution;
-  }
-
-  public void setMergedAnalysisAndExecution(boolean value) {
-    mergedAnalysisAndExecution = value;
-    getSkyframeExecutor()
-        .setMergedSkyframeAnalysisExecutionSupplier(
-            this::withMergedAnalysisAndExecutionSourceOfTruth);
-  }
-
-  private Map<String, String> filterClientEnv(Set<String> vars) {
-    Map<String, String> result = new TreeMap<>();
-    for (String var : vars) {
-      String value = clientEnv.get(var);
-      if (value != null) {
-        result.put(var, value);
-      }
-    }
-    return Collections.unmodifiableMap(result);
-  }
-
-  private static ImmutableMap<String, String> makeMapFromMapEntries(
-      List<Map.Entry<String, String>> mapEntryList) {
-    Map<String, String> result = new TreeMap<>();
-    for (Map.Entry<String, String> entry : mapEntryList) {
-      result.put(entry.getKey(), entry.getValue());
-    }
-    return ImmutableMap.copyOf(result);
-  }
-
-  private UUID computeCommandId(UUID idFromOptions, List<String> warnings, int attemptNumber) {
-    // TODO(b/67895628): Stop reading ids from the environment after the compatibility window has
-    // passed.
-    UUID commandId = idFromOptions;
-    if (commandId == null) { // Try to set the clientId from the client environment.
-      String uuidString = clientEnv.getOrDefault("BAZEL_INTERNAL_INVOCATION_ID", "");
-      if (!uuidString.isEmpty()) {
+        val commandOptions: CommonCommandOptions =
+            com.google.common.base.Preconditions.checkNotNull<CommonCommandOptions>(
+                options.getOptions<CommonCommandOptions?>(CommonCommandOptions::class.java),
+                "CommandEnvironment needs its options provider to have CommonCommandOptions loaded."
+            )
+        var workingDirectory: com.google.devtools.build.lib.vfs.Path
         try {
-          commandId = UUID.fromString(uuidString);
-          warnings.add(
-              "BAZEL_INTERNAL_INVOCATION_ID is set. This will soon be deprecated in favor of "
-                  + "--invocation_id. Please switch to using the flag.");
-        } catch (IllegalArgumentException e) {
-          // String was malformed, so we will resort to generating a random UUID
-          return UUID.randomUUID();
+            workingDirectory = computeWorkingDirectory(commandOptions)
+        } catch (e: AbruptExitException) {
+            // We'll exit very soon, but set the working directory to something reasonable so remainder of
+            // setup can finish.
+            this.blazeModuleEnvironment.exit(e)
+            workingDirectory = directories.getWorkingDirectory()
         }
-      } else {
-        return UUID.randomUUID();
-      }
-    }
-    // When retrying a command, the retry has to use a different command ID. BES backends can still
-    // link the invocations since their build ID will be the same and the attempt number will be
-    // increased.
-    if (attemptNumber > 1) {
-      return UUID.randomUUID();
-    }
-    return commandId;
-  }
-
-  public TimestampGranularityMonitor getTimestampGranularityMonitor() {
-    return timestampGranularityMonitor;
-  }
-
-  public PackageManager getPackageManager() {
-    return getSkyframeExecutor().getPackageManager();
-  }
-
-  public PathFragment getRelativeWorkingDirectory() {
-    return relativeWorkingDirectory;
-  }
-
-  public Duration getWaitTime() {
-    return waitTime;
-  }
-
-  List<OutErr> getOutputListeners() {
-    List<OutErr> result = new ArrayList<>();
-    for (BlazeModule module : runtime.getBlazeModules()) {
-      OutErr listener = module.getOutputListener();
-      if (listener != null) {
-        result.add(listener);
-      }
-    }
-    return result;
-  }
-
-  /**
-   * Returns the UUID that Blaze uses to identify everything logged from the current build command.
-   * It's also used to invalidate Skyframe nodes that are specific to a certain invocation, such as
-   * the build info.
-   */
-  public UUID getCommandId() {
-    return commandId;
-  }
-
-  /**
-   * Returns the ID that Blaze uses to identify everything logged from the current build request.
-   * TODO(olaola): this should be a prefixed UUID, but some existing clients still use arbitrary
-   * strings, so we accept these when passed by environment variable for compatibility.
-   */
-  public String getBuildRequestId() {
-    return buildRequestId;
-  }
-
-  public SkyframeExecutor getSkyframeExecutor() {
-    return workspace.getSkyframeExecutor();
-  }
-
-  public SkyframeBuildView getSkyframeBuildView() {
-    return getSkyframeExecutor().getSkyframeBuildView();
-  }
-
-  /**
-   * Returns the working directory of the server.
-   *
-   * <p>This is often the first entry on the {@code --package_path}, but not always. Callers should
-   * certainly not make this assumption. The Path returned may be null; for example, when the
-   * command is invoked outside a workspace.
-   */
-  @Nullable
-  public Path getWorkspace() {
-    return directories.getWorkingDirectory();
-  }
-
-  public String getWorkspaceName() {
-    return runtime.getRuleClassProvider().getRunfilesPrefix();
-  }
-
-  /**
-   * Returns the output base directory associated with this Blaze server process. This is the base
-   * directory for shared Blaze state as well as tool and strategy specific subdirectories.
-   */
-  public Path getOutputBase() {
-    return directories.getOutputBase();
-  }
-
-  /**
-   * Returns the execution root directory associated with this Blaze server process. This is where
-   * all input and output files visible to the actual build reside.
-   */
-  public Path getExecRoot() {
-    return directories.getExecRoot(getWorkspaceName());
-  }
-
-  /**
-   * Returns the directory where actions' temporary files will be written. Is below the directory
-   * returned by {@link #getExecRoot}.
-   */
-  public Path getActionTempsDirectory() {
-    return directories.getActionTempsDirectory(getExecRoot());
-  }
-
-  /**
-   * Returns the working directory of the {@code blaze} client process.
-   *
-   * <p>This may be equal to {@code BlazeRuntime#getWorkspace()}, or beneath it.
-   *
-   * @see #getWorkspace()
-   */
-  public Path getWorkingDirectory() {
-    return workingDirectory;
-  }
-
-  /**
-   * Returns the {@link OutputService} to use, or {@code null} if this is not a command that
-   * performs analysis according to {@linkplain Command#buildPhase()}.
-   */
-  @Nullable
-  public OutputService getOutputService() {
-    return outputService;
-  }
-
-  /**
-   * Returns workspace information obtained from the {@linkplain
-   * com.google.devtools.build.lib.skyframe.DiffAwareness.View#getWorkspaceInfo() diff} or null.
-   *
-   * <p>We store workspace info as an optimization to allow sharing of information about the
-   * workspace if it was derived from the diff at the time of synchronizing the workspace. This way
-   * we can make it available earlier during the build and avoid retrieving it again.
-   */
-  @Nullable
-  public WorkspaceInfoFromDiff getWorkspaceInfoFromDiff() {
-    return workspaceInfoFromDiff;
-  }
-
-  public ResourceManager getLocalResourceManager() {
-    return resourceManager;
-  }
-
-  /**
-   * Prevents any further interruption of this command by modules, and returns the final {@link
-   * DetailedExitCode} from modules, or null if no modules requested an abrupt exit.
-   *
-   * <p>Always returns the same value on subsequent calls.
-   */
-  @Nullable
-  public DetailedExitCode finalizeDetailedExitCode() {
-    // Set the pending exception so that further calls to exit(AbruptExitException) don't lead to
-    // unwanted thread interrupts.
-    if (pendingException.compareAndSet(null, Optional.empty())) {
-      return null;
-    }
-    if (Thread.currentThread() == commandThread) {
-      // We may have interrupted the thread in the process, so clear the interrupted bit.
-      // Whether the command was interrupted or not, it's about to be over, so don't interrupt later
-      // things happening on this thread.
-      Thread.interrupted();
-    }
-    // Extract the exit code (it can be null if someone has already called finalizeExitCode()).
-    return getPendingDetailedExitCode();
-  }
-
-  /** Returns the current exit code requested by modules, or null if no exit has been requested. */
-  @Nullable
-  private DetailedExitCode getPendingDetailedExitCode() {
-    AbruptExitException exception = getPendingException();
-    return exception == null ? null : exception.getDetailedExitCode();
-  }
-
-  /**
-   * Retrieves the exception currently queued by a Blaze module.
-   *
-   * <p>Prefer {@link #getPendingDetailedExitCode} or {@link #throwPendingException} where
-   * appropriate.
-   */
-  @Nullable
-  public AbruptExitException getPendingException() {
-    Optional<AbruptExitException> abruptExitExceptionMaybe = pendingException.get();
-    return abruptExitExceptionMaybe == null ? null : abruptExitExceptionMaybe.orElse(null);
-  }
-
-  /**
-   * Throws the exception currently queued by a Blaze module.
-   *
-   * <p>This should be called as often as is practical so that errors are reported as soon as
-   * possible. Ideally, we'd not need this, but the event bus swallows exceptions so we raise the
-   * exception this way.
-   */
-  public void throwPendingException() throws AbruptExitException {
-    AbruptExitException exception = getPendingException();
-    if (exception != null) {
-      if (Thread.currentThread() == commandThread) {
-        // Throwing this exception counts as the requested interruption. Clear the interrupted bit.
-        Thread.interrupted();
-      }
-      throw exception;
-    }
-  }
-
-  /**
-   * Initializes and syncs the graph with the given options, readying it for the next evaluation.
-   *
-   * @throws IllegalStateException if the method has already been called in this environment.
-   */
-  public void syncPackageLoading(OptionsProvider options)
-      throws InterruptedException, AbruptExitException {
-    // We want to ensure that we're never calling #syncPackageLoading twice in the same build
-    // because it does the very expensive work of diffing the cache between incremental builds.
-    // {@link SequencedSkyframeExecutor#handleDiffs} is the particular method we don't want to be
-    // calling twice. We could feasibly factor it out of this call.
-    if (hasSyncedPackageLoading) {
-      throw new IllegalStateException(
-          "We should never call this method more than once over the course of a single command");
-    }
-    hasSyncedPackageLoading = true;
-    workspaceInfoFromDiff =
-        getSkyframeExecutor()
-            .sync(
-                reporter,
-                packageLocator,
-                commandId,
-                clientEnv,
-                timestampGranularityMonitor,
-                quiescingExecutors,
-                options,
-                getCommandName(),
-                command.buildPhase().executes());
-  }
-
-  /** Returns true if {@link #syncPackageLoading} has already been called. */
-  public boolean hasSyncedPackageLoading() {
-    return hasSyncedPackageLoading;
-  }
-
-  public void recordLastExecutionTime() {
-    workspace.recordLastExecutionTime(commandStartTime);
-  }
-
-  public long getCommandStartTime() {
-    return commandStartTime;
-  }
-
-  /**
-   * Calls {@link SkyframeExecutor#decideKeepIncrementalState} with this command's options.
-   *
-   * <p>Must be called prior to {@link BlazeModule#beforeCommand} so that modules can use the result
-   * of {@link SkyframeExecutor#tracksStateForIncrementality}.
-   */
-  public void decideKeepIncrementalState() {
-    SkyframeExecutor skyframeExecutor = getSkyframeExecutor();
-    skyframeExecutor.setActive(false);
-    var commonOptions = options.getOptions(CommonCommandOptions.class);
-    var keepStateAfterBuildOption = options.getOptions(KeepStateAfterBuildOption.class);
-    var analysisOptions = options.getOptions(AnalysisOptions.class);
-    skyframeExecutor.decideKeepIncrementalState(
-        runtime.getStartupOptionsProvider().getOptions(BlazeServerStartupOptions.class).getBatch(),
-        keepStateAfterBuildOption.getKeepStateAfterBuild(),
-        commonOptions.getTrackIncrementalState(),
-        commonOptions.getHeuristicallyDropNodes(),
-        analysisOptions != null && analysisOptions.getDiscardAnalysisCache(),
-        reporter);
-  }
-
-  /**
-   * Hook method called by the BlazeCommandDispatcher prior to the dispatch of each command.
-   *
-   * <p>Both {@link #decideKeepIncrementalState} and {@link BlazeModule#beforeCommand} on each
-   * module should have already been called before this.
-   *
-   * @throws AbruptExitException if this command is unsuitable to be run as specified
-   */
-  @VisibleForTesting
-  public void beforeCommand(InvocationPolicy invocationPolicy) throws AbruptExitException {
-    CommonCommandOptions commonOptions = options.getOptions(CommonCommandOptions.class);
-    eventBus.post(new BuildMetadataEvent(makeMapFromMapEntries(commonOptions.getBuildMetadata())));
-    eventBus.post(
-        new GotOptionsEvent(runtime.getStartupOptionsProvider(), options, invocationPolicy));
-    throwPendingException();
-
-    outputService = null;
-    BlazeModule outputModule = null;
-    if (command.buildPhase().analyzes() || command.name().equals("clean")) {
-      // Output service should only affect commands that execute actions, but due to the legacy
-      // wiring of BuildTool.java, this covers analysis-only commands as well.
-      //
-      // TODO: fix this.
-      for (BlazeModule module : runtime.getBlazeModules()) {
-        OutputService moduleService = module.getOutputService();
-        if (moduleService != null) {
-          if (outputService != null) {
-            throw new IllegalStateException(
-                String.format(
-                    "More than one module (%s and %s) returns an output service",
-                    module.getClass(), outputModule.getClass()));
-          }
-          outputService = moduleService;
-          outputModule = module;
+        this.workingDirectory = workingDirectory
+        if (getWorkspace() != null) {
+            this.relativeWorkingDirectory = workingDirectory.relativeTo(getWorkspace())
+        } else {
+            this.relativeWorkingDirectory = PathFragment.EMPTY_FRAGMENT
         }
-      }
-      if (outputService == null) {
-        outputService = new LocalOutputService(directories);
-      }
-    }
 
-    SkyframeExecutor skyframeExecutor = getSkyframeExecutor();
-    skyframeExecutor.setOutputService(outputService);
-    skyframeExecutor.noteCommandStart();
-
-    // Start the performance and memory profilers.
-    runtime.beforeCommand(this, commonOptions);
-
-    eventBus.post(new CommandStartEvent());
-
-    // Modules that are subscribed to CommandStartEvent may create pending exceptions.
-    throwPendingException();
-
-    // Determine if Skyfocus will run for this command: Skyfocus runs only for commands that
-    // execute actions. Throw an error if this is a command that is not guaranteed to work
-    // correctly on a focused Skyframe graph.
-    if (getCommand().buildPhase().executes()) {
-      skyframeExecutor.prepareForSkyfocus(
-          options.getOptions(SkyfocusOptions.class), reporter, runtime.getProductName());
-    } else if (getCommand().buildPhase().loads()
-        && !getSkyframeExecutor().getSkyfocusState().activeDirectories().isEmpty()) {
-      // A non-empty active directories implies a focused Skyframe state.
-      throw new AbruptExitException(
-          DetailedExitCode.of(
-              FailureDetail.newBuilder()
-                  .setMessage(
-                      command.name()
-                          + " is not supported after using Skyfocus because it can"
-                          + " return partial/incorrect results. Run clean or shutdown and try"
-                          + " again.")
-                  .setSkyfocus(
-                      Skyfocus.newBuilder()
-                          .setCode(Skyfocus.Code.DISALLOWED_OPERATION_ON_FOCUSED_GRAPH)
-                          .build())
-                  .build()));
-    }
-  }
-
-  /**
-   * Returns the environment for repository rules and module extensions, which is constructed as
-   * follows:
-   *
-   * <ul>
-   *   <li>the client environment as the base;
-   *   <li>if {@code --experimental_strict_repo_env} is set, only the variables {@code PATH} and, on
-   *       Windows only, {@code PATHEXT} are kept;
-   *   <li>if {@code --noincompatible_repo_env_ignores_action_env} is set, {@code --action_env} is
-   *       applied on top of that;
-   *   <li>finally, {@code --repo_env} is applied on top of that.
-   * </ul>
-   */
-  public ImmutableMap<String, String> getRepoEnv() {
-    return repoEnv;
-  }
-
-  /**
-   * Returns the environment for inherently local, non-hermetic operations associated with
-   * repository rules and module extensions, such as credential helpers. It is constructed as
-   * follows:
-   *
-   * <ul>
-   *   <li>the client environment as the base;
-   *   <li>if {@code --noincompatible_repo_env_ignores_action_env} is set, {@code --action_env} is
-   *       applied on top of that;
-   *   <li>finally, {@code --repo_env} is applied on top of that.
-   * </ul>
-   *
-   * <p>This differs from {@link #getRepoEnv()} in that it does not apply {@code
-   * --experimental_strict_repo_env}, and thus always includes the full client environment as a
-   * base.
-   */
-  public ImmutableMap<String, String> getNonstrictRepoEnv() {
-    return nonstrictRepoEnv;
-  }
-
-  /** Returns the file cache to use during this build. */
-  public InputMetadataProvider getFileCache() {
-    if (fileCache == null) {
-      synchronized (fileCacheLock) {
-        if (fileCache == null) {
-          fileCache =
-              new SingleBuildFileCache(
-                  getExecRoot().getPathString(),
-                  PathFragment.create(directories.getRelativeOutputPath()),
-                  runtime.getFileSystem(),
-                  syscallCache);
+        this.waitTime = java.time.Duration.ofMillis(waitTimeInMs + commandOptions.getWaitTime())
+        this.commandStartTime = commandStartTime - commandOptions.getStartupTime()
+        this.commandExtensions = com.google.common.collect.ImmutableList.copyOf<Any?>(commandExtensions)
+        workspace.getSkyframeExecutor().setEventBus(eventBus)
+        eventBus.register(this)
+        var httpTimeoutScaling: Float = commandOptions.getHttpTimeoutScaling().toFloat()
+        if (commandOptions.getHttpTimeoutScaling() <= 0) {
+            reporter.handle(
+                com.google.devtools.build.lib.events.Event.warn("Ignoring request to scale http timeouts by a non-positive factor")
+            )
+            httpTimeoutScaling = 1.0f
         }
-      }
+        if (commandOptions.getHttpMaxParallelDownloads() <= 0) {
+            this.blazeModuleEnvironment.exit(
+                AbruptExitException(
+                    DetailedExitCode.of(
+                        FailureDetail.newBuilder()
+                            .setMessage(
+                                "The maximum number of parallel downloads needs to be a positive number"
+                            )
+                            .setExternalRepository(
+                                ExternalRepository.newBuilder().setCode(Code.BAD_DOWNLOADER_CONFIG)
+                            )
+                            .build()
+                    )
+                )
+            )
+        }
+
+        this.httpDownloader =
+            HttpDownloader(
+                commandOptions.getHttpConnectorAttempts(),
+                commandOptions.getHttpConnectorRetryMaxTimeout(),
+                commandOptions.getHttpMaxParallelDownloads(),
+                httpTimeoutScaling
+            )
+        this.delegatingDownloader = DelegatingDownloader(httpDownloader)
+
+        val clientOptions: ClientOptions =
+            com.google.common.base.Preconditions.checkNotNull<ClientOptions>(
+                options.getOptions<ClientOptions?>(ClientOptions::class.java),
+                "CommandEnvironment needs its options provider to have ClientOptions loaded."
+            )
+
+        this.clientEnv = makeMapFromMapEntries(clientOptions.getClientEnv())
+        this.commandId = computeCommandId(commandOptions.getInvocationId(), warnings, attemptNumber)
+        this.buildRequestId =
+            if (commandOptions.getBuildRequestId() != null)
+                commandOptions.getBuildRequestId()
+            else
+                if (buildRequestIdOverride != null)
+                    buildRequestIdOverride
+                else
+                    UUID.randomUUID().toString()
+
+        val repoEnvBuilder: TreeMap<String?, String?> =
+            TreeMap<String?, String?>(
+                if (commandOptions.getUseStrictRepoEnv())
+                    com.google.common.collect.Maps.filterKeys<String?, String?>(
+                        clientEnv,
+                        com.google.common.base.Predicate { `object`: String? ->
+                            ALWAYS_INHERITED_REPO_ENV.contains(`object`)
+                        })
+                else
+                    clientEnv
+            )
+        val nonstrictRepoEnvBuilder: TreeMap<String?, String?> = TreeMap<String?, String?>(clientEnv)
+
+        // TODO: This only needs to check for loads() rather than analyzes() due to
+        //  the effect of --action_env on the repository env. Revert back to
+        //  analyzes() when --action_env no longer affects it.
+        if (command.buildPhase.loads() || command.name == "info") {
+            // Compute the set of environment variables that are allowlisted on the commandline
+            // for inheritance.
+            for (envVar in options.getOptions<O?>(CoreOptions::class.java).getActionEnvironment()) {
+                when (envVar) {
+                    -> {
+                        visibleActionEnv.remove(name)
+                        if (!options.getOptions<CommonCommandOptions?>(CommonCommandOptions::class.java)
+                                .getRepoEnvIgnoresActionEnv()
+                        ) {
+                            repoEnvBuilder.put(name, value)
+                            nonstrictRepoEnvBuilder.put(name, value)
+                        }
+                    }
+
+                    -> {
+                        visibleActionEnv.add(name)
+                    }
+
+                    -> {
+                        visibleActionEnv.remove(name)
+                        if (!options.getOptions<CommonCommandOptions?>(CommonCommandOptions::class.java)
+                                .getRepoEnvIgnoresActionEnv()
+                        ) {
+                            repoEnvBuilder.remove(name)
+                            nonstrictRepoEnvBuilder.remove(name)
+                        }
+                    }
+                }
+            }
+        }
+        if (command.buildPhase.analyzes() || command.name == "info") {
+            for (envVar in options.getOptions<O?>(TestOptions::class.java).getTestEnvironment()) {
+                if (envVar is) {
+                    visibleTestEnv.add(name)
+                }
+            }
+        }
+
+        var bazelWorkspace: String? = null
+        if (workspace.getWorkspace() != null) {
+            bazelWorkspace = workspace.getWorkspace().getPathString()
+            // On Windows, convert forward slashes to backslashes for PATH-like variables.
+            if (com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.WINDOWS) {
+                bazelWorkspace = bazelWorkspace.replace('/', '\\')
+            }
+        }
+        for (envVar in commandOptions.getRepositoryEnvironment()) {
+            when (envVar) {
+                -> {
+                    if (bazelWorkspace != null) {
+                        value = value.replace("%bazel_workspace%", bazelWorkspace)
+                    }
+                    repoEnvBuilder.put(name, value)
+                    nonstrictRepoEnvBuilder.put(name, value)
+                }
+
+                -> {
+                    val value: String? = clientEnv.get(name)
+                    if (value != null) {
+                        repoEnvBuilder.put(name, value)
+                        nonstrictRepoEnvBuilder.put(name, value)
+                    }
+                }
+
+                -> {
+                    repoEnvBuilder.remove(name)
+                    nonstrictRepoEnvBuilder.remove(name)
+                }
+            }
+        }
+        this.repoEnv = com.google.common.collect.ImmutableMap.copyOf<String?, String?>(repoEnvBuilder)
+        this.nonstrictRepoEnv = com.google.common.collect.ImmutableMap.copyOf<String?, String?>(nonstrictRepoEnvBuilder)
+        this.buildResultListener = BuildResultListener()
+        this.eventBus.register(this.buildResultListener)
+
+        this.commandLinePathFactory =
+            CommandLinePathFactory.create(runtime.getFileSystem(), directories)
+
+        this.remoteAnalysisCachingEventListener = RemoteAnalysisCachingEventListener()
+        this.eventBus.register(remoteAnalysisCachingEventListener)
     }
-    return fileCache;
-  }
 
-  public ActionOutputDirectoryHelper getOutputDirectoryHelper() {
-    synchronized (outputDirectoryHelperLock) {
-      if (outputDirectoryHelper == null) {
-        var buildRequestOptions = options.getOptions(BuildRequestOptions.class);
-        outputDirectoryHelper =
-            new ActionOutputDirectoryHelper(buildRequestOptions.directoryCreationCacheSpec);
-      }
-      return outputDirectoryHelper;
+    @Throws(AbruptExitException::class)
+    private fun computeWorkingDirectory(commandOptions: CommonCommandOptions): com.google.devtools.build.lib.vfs.Path {
+        val workspace: com.google.devtools.build.lib.vfs.Path? = getWorkspace()
+        val workingDirectory: com.google.devtools.build.lib.vfs.Path
+        if (directories.inWorkspace()) {
+            val clientCwd: PathFragment = commandOptions.getClientCwd()
+            if (clientCwd.containsUplevelReferences()) {
+                throw AbruptExitException(
+                    DetailedExitCode.of(
+                        FailureDetail.newBuilder()
+                            .setMessage("Client cwd '" + clientCwd + "' contains uplevel references")
+                            .setClientEnvironment(
+                                FailureDetails.ClientEnvironment.newBuilder()
+                                    .setCode(FailureDetails.ClientEnvironment.Code.CLIENT_CWD_MALFORMED)
+                                    .build()
+                            )
+                            .build()
+                    )
+                )
+            }
+            if (clientCwd.isAbsolute() && !clientCwd.startsWith(workspace.asFragment())) {
+                throw AbruptExitException(
+                    DetailedExitCode.of(
+                        FailureDetail.newBuilder()
+                            .setMessage(
+                                java.lang.String.format(
+                                    "Client cwd '%s' is not inside workspace '%s'", clientCwd, workspace
+                                )
+                            )
+                            .setClientEnvironment(
+                                FailureDetails.ClientEnvironment.newBuilder()
+                                    .setCode(FailureDetails.ClientEnvironment.Code.CLIENT_CWD_MALFORMED)
+                                    .build()
+                            )
+                            .build()
+                    )
+                )
+            }
+            workingDirectory = workspace.getRelative(clientCwd)
+        } else {
+            workingDirectory =
+                com.google.devtools.build.lib.vfs.FileSystemUtils.getWorkingDirectory(runtime.getFileSystem())
+        }
+        return workingDirectory
     }
-  }
 
-  /** Use {@link #getXattrProvider} when possible: see documentation of {@link SyscallCache}. */
-  public SyscallCache getSyscallCache() {
-    return syscallCache;
-  }
-
-  public XattrProvider getXattrProvider() {
-    return syscallCache;
-  }
-
-  public QuiescingExecutors getQuiescingExecutors() {
-    return quiescingExecutors;
-  }
-
-  /**
-   * Returns the {@linkplain
-   * com.google.devtools.build.lib.server.CommandProtos.RunRequest#getCommandExtensions extensions}
-   * passed to the server for this command.
-   *
-   * <p>Extensions are arbitrary messages containing additional per-command information.
-   */
-  public ImmutableList<Any> getCommandExtensions() {
-    return commandExtensions;
-  }
-
-  /**
-   * Returns the {@linkplain
-   * com.google.devtools.build.lib.server.CommandProtos.RunResponse#getCommandExtensions extensions}
-   * to be passed to the client for this command.
-   *
-   * <p>Extensions are arbitrary messages containing additional execution results.
-   */
-  public ImmutableList<Any> getResponseExtensions() {
-    return responseExtensions.build();
-  }
-
-  public void addResponseExtensions(Iterable<Any> extensions) {
-    responseExtensions.addAll(extensions);
-  }
-
-  public BuildResultListener getBuildResultListener() {
-    return buildResultListener;
-  }
-
-  public CommandLinePathFactory getCommandLinePathFactory() {
-    return commandLinePathFactory;
-  }
-
-  public void ensureBuildInfoPosted() {
-    if (buildInfoPosted) {
-      return;
+    fun getRuntime(): BlazeRuntime {
+        return runtime
     }
-    ImmutableSortedMap<String, String> workspaceStatus =
-        workspace
-            .getWorkspaceStatusActionFactory()
-            .createDummyWorkspaceStatus(workspaceInfoFromDiff);
-    eventBus.post(new BuildInfoEvent(workspaceStatus));
-  }
 
-  @Subscribe
-  @SuppressWarnings("unused")
-  void gotBuildInfo(BuildInfoEvent event) {
-    buildInfoPosted = true;
-  }
+    val clock: com.google.devtools.build.lib.clock.Clock?
+        get() = runtime.getClock()
 
-  @Subscribe
-  public void additionalConfigurationChangeEvent(AdditionalConfigurationChangeEvent event) {
-    additionalConfigurationChangeEvent = Optional.of(event);
-  }
+    fun getCommandExtensionReporter(): CommandExtensionReporter? {
+        return commandExtensionReporter
+    }
 
-  public Optional<AdditionalConfigurationChangeEvent> getAdditionalConfigurationChangeEvent() {
-    return additionalConfigurationChangeEvent;
-  }
+    fun notifyOnCrash(message: String?) {
+        shutdownReasonConsumer.accept(message)
+        if (java.lang.Thread.currentThread() != commandThread) {
+            // Give shutdown hooks priority in JVM and stop generating more data for modules to consume.
+            commandThread.interrupt()
+        }
+    }
 
-  /**
-   * Returns the number of the invocation attempt, starting at 1 and increasing by 1 for each new
-   * attempt. Can be used to determine if there is a build retry by {@code
-   * --experimental_remote_cache_eviction_retries}.
-   */
-  public int getAttemptNumber() {
-    return attemptNumber;
-  }
+    val startupOptionsProvider: com.google.devtools.common.options.OptionsProvider?
+        get() = runtime.getStartupOptionsProvider()
 
-  public HttpDownloader getHttpDownloader() {
-    return httpDownloader;
-  }
+    val blazeWorkspace: BlazeWorkspace
+        get() = workspace
 
-  public DelegatingDownloader getDownloaderDelegate() {
-    return delegatingDownloader;
-  }
+    fun getDirectories(): BlazeDirectories {
+        return directories
+    }
 
-  /**
-   * Retrieves the idle tasks stats from a previous idle period, if this command was preceded by
-   * one.
-   */
-  @Nullable
-  public ImmutableList<IdleTask.Result> getIdleTaskResultsFromPreviousIdlePeriod() {
-    return idleTaskResultsFromPreviousIdlePeriod;
-  }
+    // Null for commands that don't have PackageOptions (version, help, shutdown, etc).
+    fun getPackageLocator(): PathPackageLocator? {
+        return packageLocator
+    }
 
-  /** Registers a task to be executed during an idle period following this command. */
-  public void addIdleTask(IdleTask idleTask) {
-    idleTasks.add(idleTask);
-  }
+    /** Returns the reporter for events.  */
+    fun getReporter(): com.google.devtools.build.lib.events.Reporter {
+        return reporter
+    }
 
-  /** Returns the list of registered idle tasks. */
-  public ImmutableList<IdleTask> getIdleTasks() {
-    return idleTasks.build();
-  }
+    val reporterOutErr: OutErr?
+        // TODO: b/395157821 - Replace env.getReporter().getOutErr() with env.getReporterOutErr().
+        get() = reporter.getOutErr()
 
-  public void setVersionGetter(LongVersionGetter versionGetter) {
-    this.versionGetter = versionGetter;
-  }
+    fun getEventBus(): com.google.common.eventbus.EventBus {
+        return eventBus
+    }
 
-  @Nullable
-  public LongVersionGetter getVersionGetter() {
-    return versionGetter;
-  }
+    fun getBlazeModuleEnvironment(): ModuleEnvironment {
+        return blazeModuleEnvironment
+    }
 
-  public void setUseFakeStampData(boolean useFakeStampData) {
-    this.useFakeStampData = useFakeStampData;
-  }
+    /**
+     * Return an unmodifiable view of the blaze client's environment when it invoked the current
+     * command.
+     */
+    fun getClientEnv(): com.google.common.collect.ImmutableMap<String?, String?> {
+        return clientEnv
+    }
 
-  public boolean getUseFakeStampData() {
-    return useFakeStampData;
-  }
+    fun getCommand(): com.google.devtools.build.lib.runtime.Command {
+        return command
+    }
 
-  public void setUiEventHandler(UiEventHandler uiEventHandler) {
-    checkState(this.uiEventHandler == null, "UiEventHandler already set");
-    this.uiEventHandler = checkNotNull(uiEventHandler);
-    eventBus.register(uiEventHandler);
-    reporter.addHandler(uiEventHandler);
-  }
+    val commandName: String?
+        get() = command.name
 
-  public UiEventHandler getUiEventHandler() {
-    return checkNotNull(uiEventHandler, "UiEventHandler was not set");
-  }
+    fun getOptions(): com.google.devtools.common.options.OptionsParsingResult {
+        return options
+    }
+
+    /** `--config` definitions for this invocation.  */
+    fun getConfigFlagDefinitions(): ConfigFlagDefinitions? {
+        return configFlagDefinitions
+    }
+
+    fun getInvocationPolicy(): InvocationPolicy? {
+        return invocationPolicy
+    }
+
+    fun setInvocationPolicyFlags(invocationPolicyFlags: com.google.common.collect.ImmutableList<com.google.devtools.common.options.OptionAndRawValue?>?) {
+        this.invocationPolicyFlags = invocationPolicyFlags
+    }
+
+    fun getInvocationPolicyFlags(): com.google.common.collect.ImmutableList<com.google.devtools.common.options.OptionAndRawValue?>? {
+        return invocationPolicyFlags
+    }
+
+    val allowlistedActionEnv: MutableMap<String?, String?>
+        /**
+         * Return an ordered version of the client environment restricted to those variables allowlisted
+         * by the command-line options to be inheritable by actions.
+         */
+        get() = filterClientEnv(visibleActionEnv)
+
+    val allowlistedTestEnv: MutableMap<String?, String?>
+        /**
+         * Return an ordered version of the client environment restricted to those variables allowlisted
+         * by the command-line options to be inheritable by actions.
+         */
+        get() = filterClientEnv(visibleTestEnv)
+
+    /**
+     * This should be the source of truth for whether this build should be run with merged analysis
+     * and execution phases.
+     */
+    fun withMergedAnalysisAndExecutionSourceOfTruth(): Boolean {
+        return mergedAnalysisAndExecution
+    }
+
+    fun setMergedAnalysisAndExecution(value: Boolean) {
+        mergedAnalysisAndExecution = value
+        this.skyframeExecutor
+            .setMergedSkyframeAnalysisExecutionSupplier(
+                java.util.function.Supplier { this.withMergedAnalysisAndExecutionSourceOfTruth() })
+    }
+
+    private fun filterClientEnv(vars: MutableSet<String?>): MutableMap<String?, String?> {
+        val result: MutableMap<String?, String?> = TreeMap<String?, String?>()
+        for (`var` in vars) {
+            val value: String? = clientEnv.get(`var`)
+            if (value != null) {
+                result.put(`var`, value)
+            }
+        }
+        return Collections.unmodifiableMap<String?, String?>(result)
+    }
+
+    private fun computeCommandId(idFromOptions: UUID?, warnings: MutableList<String?>, attemptNumber: Int): UUID {
+        // TODO(b/67895628): Stop reading ids from the environment after the compatibility window has
+        // passed.
+        var commandId: UUID? = idFromOptions
+        if (commandId == null) { // Try to set the clientId from the client environment.
+            val uuidString: String? = clientEnv.getOrDefault("BAZEL_INTERNAL_INVOCATION_ID", "")
+            if (!uuidString.isEmpty()) {
+                try {
+                    commandId = UUID.fromString(uuidString)
+                    warnings.add(
+                        "BAZEL_INTERNAL_INVOCATION_ID is set. This will soon be deprecated in favor of "
+                                + "--invocation_id. Please switch to using the flag."
+                    )
+                } catch (e: java.lang.IllegalArgumentException) {
+                    // String was malformed, so we will resort to generating a random UUID
+                    return UUID.randomUUID()
+                }
+            } else {
+                return UUID.randomUUID()
+            }
+        }
+        // When retrying a command, the retry has to use a different command ID. BES backends can still
+        // link the invocations since their build ID will be the same and the attempt number will be
+        // increased.
+        if (attemptNumber > 1) {
+            return UUID.randomUUID()
+        }
+        return commandId
+    }
+
+    fun getTimestampGranularityMonitor(): TimestampGranularityMonitor {
+        return timestampGranularityMonitor
+    }
+
+    val packageManager: PackageManager?
+        get() = this.skyframeExecutor.getPackageManager()
+
+    fun getRelativeWorkingDirectory(): PathFragment? {
+        return relativeWorkingDirectory
+    }
+
+    fun getWaitTime(): java.time.Duration? {
+        return waitTime
+    }
+
+    val outputListeners: MutableList<OutErr>
+        get() {
+            val result: MutableList<OutErr?> = java.util.ArrayList<OutErr?>()
+            for (module in runtime.getBlazeModules()) {
+                val listener: OutErr? = module.getOutputListener()
+                if (listener != null) {
+                    result.add(listener)
+                }
+            }
+            return result
+        }
+
+    /**
+     * Returns the UUID that Blaze uses to identify everything logged from the current build command.
+     * It's also used to invalidate Skyframe nodes that are specific to a certain invocation, such as
+     * the build info.
+     */
+    fun getCommandId(): UUID {
+        return commandId
+    }
+
+    val skyframeExecutor: SkyframeExecutor
+        get() = workspace.getSkyframeExecutor()
+
+    val skyframeBuildView: SkyframeBuildView?
+        get() = this.skyframeExecutor.getSkyframeBuildView()
+
+    /**
+     * Returns the working directory of the server.
+     * 
+     * 
+     * This is often the first entry on the `--package_path`, but not always. Callers should
+     * certainly not make this assumption. The Path returned may be null; for example, when the
+     * command is invoked outside a workspace.
+     */
+    fun getWorkspace(): com.google.devtools.build.lib.vfs.Path? {
+        return directories.getWorkingDirectory()
+    }
+
+    val workspaceName: String
+        get() = runtime.getRuleClassProvider().getRunfilesPrefix()
+
+    val outputBase: com.google.devtools.build.lib.vfs.Path
+        /**
+         * Returns the output base directory associated with this Blaze server process. This is the base
+         * directory for shared Blaze state as well as tool and strategy specific subdirectories.
+         */
+        get() = directories.getOutputBase()
+
+    val execRoot: com.google.devtools.build.lib.vfs.Path
+        /**
+         * Returns the execution root directory associated with this Blaze server process. This is where
+         * all input and output files visible to the actual build reside.
+         */
+        get() = directories.getExecRoot(this.workspaceName)
+
+    val actionTempsDirectory: com.google.devtools.build.lib.vfs.Path
+        /**
+         * Returns the directory where actions' temporary files will be written. Is below the directory
+         * returned by [.getExecRoot].
+         */
+        get() = directories.getActionTempsDirectory(this.execRoot)
+
+    /**
+     * Returns the working directory of the `blaze` client process.
+     * 
+     * 
+     * This may be equal to `BlazeRuntime#getWorkspace()`, or beneath it.
+     * 
+     * @see .getWorkspace
+     */
+    fun getWorkingDirectory(): com.google.devtools.build.lib.vfs.Path? {
+        return workingDirectory
+    }
+
+    /**
+     * Returns the [OutputService] to use, or `null` if this is not a command that
+     * performs analysis according to [Command.buildPhase].
+     */
+    fun getOutputService(): OutputService? {
+        return outputService
+    }
+
+    /**
+     * Returns workspace information obtained from the [ ][com.google.devtools.build.lib.skyframe.DiffAwareness.View.getWorkspaceInfo] or null.
+     * 
+     * 
+     * We store workspace info as an optimization to allow sharing of information about the
+     * workspace if it was derived from the diff at the time of synchronizing the workspace. This way
+     * we can make it available earlier during the build and avoid retrieving it again.
+     */
+    fun getWorkspaceInfoFromDiff(): WorkspaceInfoFromDiff? {
+        return workspaceInfoFromDiff
+    }
+
+    val localResourceManager: ResourceManager?
+        get() = resourceManager
+
+    /**
+     * Prevents any further interruption of this command by modules, and returns the final [ ] from modules, or null if no modules requested an abrupt exit.
+     * 
+     * 
+     * Always returns the same value on subsequent calls.
+     */
+    fun finalizeDetailedExitCode(): DetailedExitCode? {
+        // Set the pending exception so that further calls to exit(AbruptExitException) don't lead to
+        // unwanted thread interrupts.
+        if (pendingException.compareAndSet(null, java.util.Optional.empty<AbruptExitException?>())) {
+            return null
+        }
+        if (java.lang.Thread.currentThread() === commandThread) {
+            // We may have interrupted the thread in the process, so clear the interrupted bit.
+            // Whether the command was interrupted or not, it's about to be over, so don't interrupt later
+            // things happening on this thread.
+            java.lang.Thread.interrupted()
+        }
+        // Extract the exit code (it can be null if someone has already called finalizeExitCode()).
+        return this.pendingDetailedExitCode
+    }
+
+    private val pendingDetailedExitCode: DetailedExitCode?
+        /** Returns the current exit code requested by modules, or null if no exit has been requested.  */
+        get() {
+            val exception: AbruptExitException? = getPendingException()
+            return if (exception == null) null else exception.getDetailedExitCode()
+        }
+
+    /**
+     * Retrieves the exception currently queued by a Blaze module.
+     * 
+     * 
+     * Prefer [.getPendingDetailedExitCode] or [.throwPendingException] where
+     * appropriate.
+     */
+    fun getPendingException(): AbruptExitException? {
+        val abruptExitExceptionMaybe: java.util.Optional<AbruptExitException?>? = pendingException.get()
+        return if (abruptExitExceptionMaybe == null) null else abruptExitExceptionMaybe.orElse(null)
+    }
+
+    /**
+     * Throws the exception currently queued by a Blaze module.
+     * 
+     * 
+     * This should be called as often as is practical so that errors are reported as soon as
+     * possible. Ideally, we'd not need this, but the event bus swallows exceptions so we raise the
+     * exception this way.
+     */
+    @Throws(AbruptExitException::class)
+    fun throwPendingException() {
+        val exception: AbruptExitException? = getPendingException()
+        if (exception != null) {
+            if (java.lang.Thread.currentThread() === commandThread) {
+                // Throwing this exception counts as the requested interruption. Clear the interrupted bit.
+                java.lang.Thread.interrupted()
+            }
+            throw exception
+        }
+    }
+
+    /**
+     * Initializes and syncs the graph with the given options, readying it for the next evaluation.
+     * 
+     * @throws IllegalStateException if the method has already been called in this environment.
+     */
+    @Throws(java.lang.InterruptedException::class, AbruptExitException::class)
+    fun syncPackageLoading(options: com.google.devtools.common.options.OptionsProvider) {
+        // We want to ensure that we're never calling #syncPackageLoading twice in the same build
+        // because it does the very expensive work of diffing the cache between incremental builds.
+        // {@link SequencedSkyframeExecutor#handleDiffs} is the particular method we don't want to be
+        // calling twice. We could feasibly factor it out of this call.
+        check(!hasSyncedPackageLoading) { "We should never call this method more than once over the course of a single command" }
+        hasSyncedPackageLoading = true
+        workspaceInfoFromDiff =
+            this.skyframeExecutor
+                .sync(
+                    reporter,
+                    packageLocator,
+                    commandId,
+                    clientEnv,
+                    timestampGranularityMonitor,
+                    quiescingExecutors,
+                    options,
+                    this.commandName,
+                    command.buildPhase.executes()
+                )
+    }
+
+    /** Returns true if [.syncPackageLoading] has already been called.  */
+    fun hasSyncedPackageLoading(): Boolean {
+        return hasSyncedPackageLoading
+    }
+
+    fun recordLastExecutionTime() {
+        workspace.recordLastExecutionTime(commandStartTime)
+    }
+
+    /**
+     * Calls [SkyframeExecutor.decideKeepIncrementalState] with this command's options.
+     * 
+     * 
+     * Must be called prior to [BlazeModule.beforeCommand] so that modules can use the result
+     * of [SkyframeExecutor.tracksStateForIncrementality].
+     */
+    fun decideKeepIncrementalState() {
+        val skyframeExecutor: SkyframeExecutor = this.skyframeExecutor
+        skyframeExecutor.setActive(false)
+        val commonOptions: CommonCommandOptions? =
+            options.getOptions<CommonCommandOptions?>(CommonCommandOptions::class.java)
+        val keepStateAfterBuildOption: KeepStateAfterBuildOption? =
+            options.getOptions<KeepStateAfterBuildOption?>(KeepStateAfterBuildOption::class.java)
+        val analysisOptions: O? = options.getOptions<O?>(AnalysisOptions::class.java)
+        skyframeExecutor.decideKeepIncrementalState(
+            runtime.getStartupOptionsProvider()
+                .getOptions<BlazeServerStartupOptions?>(BlazeServerStartupOptions::class.java).getBatch(),
+            keepStateAfterBuildOption.getKeepStateAfterBuild(),
+            commonOptions.getTrackIncrementalState(),
+            commonOptions.getHeuristicallyDropNodes(),
+            analysisOptions != null && analysisOptions.getDiscardAnalysisCache(),
+            reporter
+        )
+    }
+
+    /**
+     * Hook method called by the BlazeCommandDispatcher prior to the dispatch of each command.
+     * 
+     * 
+     * Both [.decideKeepIncrementalState] and [BlazeModule.beforeCommand] on each
+     * module should have already been called before this.
+     * 
+     * @throws AbruptExitException if this command is unsuitable to be run as specified
+     */
+    @com.google.common.annotations.VisibleForTesting
+    @Throws(AbruptExitException::class)
+    fun beforeCommand(invocationPolicy: InvocationPolicy?) {
+        val commonOptions: CommonCommandOptions? =
+            options.getOptions<CommonCommandOptions?>(CommonCommandOptions::class.java)
+        eventBus.post(BuildMetadataEvent(makeMapFromMapEntries(commonOptions.getBuildMetadata())))
+        eventBus.post(
+            GotOptionsEvent(runtime.getStartupOptionsProvider(), options, invocationPolicy)
+        )
+        throwPendingException()
+
+        outputService = null
+        var outputModule: BlazeModule? = null
+        if (command.buildPhase.analyzes() || command.name == "clean") {
+            // Output service should only affect commands that execute actions, but due to the legacy
+            // wiring of BuildTool.java, this covers analysis-only commands as well.
+            //
+            // TODO: fix this.
+            for (module in runtime.getBlazeModules()) {
+                val moduleService: OutputService? = module.getOutputService()
+                if (moduleService != null) {
+                    check(outputService == null) {
+                        java.lang.String.format(
+                            "More than one module (%s and %s) returns an output service",
+                            module.getClass(), outputModule.getClass()
+                        )
+                    }
+                    outputService = moduleService
+                    outputModule = module
+                }
+            }
+            if (outputService == null) {
+                outputService = LocalOutputService(directories)
+            }
+        }
+
+        val skyframeExecutor: SkyframeExecutor = this.skyframeExecutor
+        skyframeExecutor.setOutputService(outputService)
+        skyframeExecutor.noteCommandStart()
+
+        // Start the performance and memory profilers.
+        runtime.beforeCommand(this, commonOptions)
+
+        eventBus.post(CommandStartEvent())
+
+        // Modules that are subscribed to CommandStartEvent may create pending exceptions.
+        throwPendingException()
+
+        // Determine if Skyfocus will run for this command: Skyfocus runs only for commands that
+        // execute actions. Throw an error if this is a command that is not guaranteed to work
+        // correctly on a focused Skyframe graph.
+        if (getCommand().buildPhase.executes()) {
+            skyframeExecutor.prepareForSkyfocus(
+                options.getOptions<SkyfocusOptions?>(SkyfocusOptions::class.java), reporter, runtime.productName
+            )
+        } else if (getCommand().buildPhase.loads()
+            && !this.skyframeExecutor.getSkyfocusState().activeDirectories.isEmpty()
+        ) {
+            // A non-empty active directories implies a focused Skyframe state.
+            throw AbruptExitException(
+                DetailedExitCode.of(
+                    FailureDetail.newBuilder()
+                        .setMessage(
+                            (command.name
+                                    + " is not supported after using Skyfocus because it can"
+                                    + " return partial/incorrect results. Run clean or shutdown and try"
+                                    + " again.")
+                        )
+                        .setSkyfocus(
+                            Skyfocus.newBuilder()
+                                .setCode(Skyfocus.Code.DISALLOWED_OPERATION_ON_FOCUSED_GRAPH)
+                                .build()
+                        )
+                        .build()
+                )
+            )
+        }
+    }
+
+    /**
+     * Returns the environment for repository rules and module extensions, which is constructed as
+     * follows:
+     * 
+     * 
+     *  * the client environment as the base;
+     *  * if `--experimental_strict_repo_env` is set, only the variables `PATH` and, on
+     * Windows only, `PATHEXT` are kept;
+     *  * if `--noincompatible_repo_env_ignores_action_env` is set, `--action_env` is
+     * applied on top of that;
+     *  * finally, `--repo_env` is applied on top of that.
+     * 
+     */
+    fun getRepoEnv(): com.google.common.collect.ImmutableMap<String?, String?> {
+        return repoEnv
+    }
+
+    /**
+     * Returns the environment for inherently local, non-hermetic operations associated with
+     * repository rules and module extensions, such as credential helpers. It is constructed as
+     * follows:
+     * 
+     * 
+     *  * the client environment as the base;
+     *  * if `--noincompatible_repo_env_ignores_action_env` is set, `--action_env` is
+     * applied on top of that;
+     *  * finally, `--repo_env` is applied on top of that.
+     * 
+     * 
+     * 
+     * This differs from [.getRepoEnv] in that it does not apply `--experimental_strict_repo_env`, and thus always includes the full client environment as a
+     * base.
+     */
+    fun getNonstrictRepoEnv(): com.google.common.collect.ImmutableMap<String?, String?> {
+        return nonstrictRepoEnv
+    }
+
+    /** Use [.getXattrProvider] when possible: see documentation of [SyscallCache].  */
+    fun getSyscallCache(): SyscallCache? {
+        return syscallCache
+    }
+
+    val xattrProvider: XattrProvider?
+        get() = syscallCache
+
+    fun getQuiescingExecutors(): QuiescingExecutors? {
+        return quiescingExecutors
+    }
+
+    /**
+     * Returns the [ ][com.google.devtools.build.lib.server.CommandProtos.RunRequest.getCommandExtensions]
+     * passed to the server for this command.
+     * 
+     * 
+     * Extensions are arbitrary messages containing additional per-command information.
+     */
+    fun getCommandExtensions(): com.google.common.collect.ImmutableList<Any?> {
+        return commandExtensions
+    }
+
+    /**
+     * Returns the [ ][com.google.devtools.build.lib.server.CommandProtos.RunResponse.getCommandExtensions]
+     * to be passed to the client for this command.
+     * 
+     * 
+     * Extensions are arbitrary messages containing additional execution results.
+     */
+    fun getResponseExtensions(): com.google.common.collect.ImmutableList<Any?> {
+        return responseExtensions.build()
+    }
+
+    fun addResponseExtensions(extensions: Iterable<Any?>) {
+        responseExtensions.addAll(extensions)
+    }
+
+    fun getBuildResultListener(): BuildResultListener {
+        return buildResultListener
+    }
+
+    fun getCommandLinePathFactory(): CommandLinePathFactory {
+        return commandLinePathFactory
+    }
+
+    fun ensureBuildInfoPosted() {
+        if (buildInfoPosted) {
+            return
+        }
+        val workspaceStatus: com.google.common.collect.ImmutableSortedMap<String?, String?>? =
+            workspace
+                .getWorkspaceStatusActionFactory()
+                .createDummyWorkspaceStatus(workspaceInfoFromDiff)
+        eventBus.post(BuildInfoEvent(workspaceStatus))
+    }
+
+    @com.google.common.eventbus.Subscribe
+    @Suppress("unused")
+    fun gotBuildInfo(event: BuildInfoEvent?) {
+        buildInfoPosted = true
+    }
+
+    @com.google.common.eventbus.Subscribe
+    fun additionalConfigurationChangeEvent(event: AdditionalConfigurationChangeEvent) {
+        additionalConfigurationChangeEvent = java.util.Optional.of<AdditionalConfigurationChangeEvent?>(event)
+    }
+
+    fun getAdditionalConfigurationChangeEvent(): java.util.Optional<AdditionalConfigurationChangeEvent?> {
+        return additionalConfigurationChangeEvent
+    }
+
+    fun getHttpDownloader(): HttpDownloader {
+        return httpDownloader
+    }
+
+    val downloaderDelegate: DelegatingDownloader
+        get() = delegatingDownloader
+
+    /**
+     * Retrieves the idle tasks stats from a previous idle period, if this command was preceded by
+     * one.
+     */
+    fun getIdleTaskResultsFromPreviousIdlePeriod(): com.google.common.collect.ImmutableList<com.google.devtools.build.lib.server.IdleTask.Result?>? {
+        return idleTaskResultsFromPreviousIdlePeriod
+    }
+
+    /** Registers a task to be executed during an idle period following this command.  */
+    fun addIdleTask(idleTask: com.google.devtools.build.lib.server.IdleTask) {
+        idleTasks.add(idleTask)
+    }
+
+    /** Returns the list of registered idle tasks.  */
+    fun getIdleTasks(): com.google.common.collect.ImmutableList<com.google.devtools.build.lib.server.IdleTask?> {
+        return idleTasks.build()
+    }
+
+    fun setVersionGetter(versionGetter: LongVersionGetter?) {
+        this.versionGetter = versionGetter
+    }
+
+    fun getVersionGetter(): LongVersionGetter? {
+        return versionGetter
+    }
+
+    fun setUiEventHandler(uiEventHandler: UiEventHandler?) {
+        com.google.common.base.Preconditions.checkState(this.uiEventHandler == null, "UiEventHandler already set")
+        this.uiEventHandler = com.google.common.base.Preconditions.checkNotNull<UiEventHandler?>(uiEventHandler)
+        eventBus.register(uiEventHandler)
+        reporter.addHandler(uiEventHandler)
+    }
+
+    fun getUiEventHandler(): UiEventHandler {
+        return com.google.common.base.Preconditions.checkNotNull<UiEventHandler>(
+            uiEventHandler,
+            "UiEventHandler was not set"
+        )
+    }
+
+    companion object {
+        private val ALWAYS_INHERITED_REPO_ENV: com.google.common.collect.ImmutableSet<String?> =
+            if (com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.WINDOWS) com.google.common.collect.ImmutableSet.of<String?>(
+                "PATH",
+                "PATHEXT"
+            ) else com.google.common.collect.ImmutableSet.of<String?>("PATH")
+
+        private fun makeMapFromMapEntries(
+            mapEntryList: MutableList<MutableMap.MutableEntry<String?, String?>>
+        ): com.google.common.collect.ImmutableMap<String?, String?> {
+            val result: MutableMap<String?, String?> = TreeMap<String?, String?>()
+            for (entry in mapEntryList) {
+                result.put(entry.getKey(), entry.getValue())
+            }
+            return com.google.common.collect.ImmutableMap.copyOf<String?, String?>(result)
+        }
+    }
 }

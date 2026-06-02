@@ -11,45 +11,40 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.cpp
 
-package com.google.devtools.build.lib.rules.cpp;
-
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.ActionExecutionException;
-import com.google.devtools.build.lib.server.FailureDetails.CppCompile;
-import com.google.devtools.build.lib.server.FailureDetails.CppCompile.Code;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.util.DetailedExitCode;
+import com.google.devtools.build.lib.actions.Action
 
 /**
  * Accumulator for problems encountered while reading or validating inclusion
  * results.
  */
-class IncludeProblems {
+internal class IncludeProblems {
+    private var problems: java.lang.StringBuilder? = null // null when no problems
 
-  private StringBuilder problems; // null when no problems
-
-  void add(String included) {
-    if (problems == null) {
-      problems = new StringBuilder();
+    fun add(included: String?) {
+        if (problems == null) {
+            problems = java.lang.StringBuilder()
+        }
+        problems.append("\n  '").append(included).append("'")
     }
-    problems.append("\n  '").append(included).append("'");
-  }
 
-  boolean hasProblems() {
-    return problems != null;
-  }
-
-  void assertProblemFree(String message, Action action) throws ActionExecutionException {
-    if (hasProblems()) {
-      String fullMessage = message + problems;
-      DetailedExitCode code =
-          DetailedExitCode.of(
-              FailureDetail.newBuilder()
-                  .setMessage(fullMessage)
-                  .setCppCompile(CppCompile.newBuilder().setCode(Code.UNDECLARED_INCLUSIONS))
-                  .build());
-      throw new ActionExecutionException(fullMessage, action, false, code);
+    fun hasProblems(): Boolean {
+        return problems != null
     }
-  }
+
+    @Throws(ActionExecutionException::class)
+    fun assertProblemFree(message: String, action: Action?) {
+        if (hasProblems()) {
+            val fullMessage = message + problems
+            val code: DetailedExitCode =
+                DetailedExitCode.of(
+                    FailureDetail.newBuilder()
+                        .setMessage(fullMessage)
+                        .setCppCompile(CppCompile.newBuilder().setCode(Code.UNDECLARED_INCLUSIONS))
+                        .build()
+                )
+            throw ActionExecutionException(fullMessage, action, false, code)
+        }
+    }
 }

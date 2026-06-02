@@ -11,28 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options;
+package com.google.devtools.common.options
 
 // TODO(b/65049598) make ConstructionException checked.
+
 /**
  * An unchecked exception thrown when there is a problem constructing a parser, e.g. an error while
- * validating an {@link OptionDefinition} in one of its {@link OptionsBase} subclasses.
- *
- * <p>This exception is unchecked because it generally indicates an internal error affecting all
+ * validating an [OptionDefinition] in one of its [OptionsBase] subclasses.
+ * 
+ * 
+ * This exception is unchecked because it generally indicates an internal error affecting all
  * invocations of the program. I.e., any such error should be immediately obvious to the developer.
  * Although unchecked, we explicitly mark some methods as throwing it as a reminder in the API.
  */
-public class ConstructionException extends RuntimeException {
+class ConstructionException : java.lang.RuntimeException {
+    constructor(message: String?) : super(message)
 
-  public ConstructionException(String message) {
-    super(message);
-  }
+    constructor(cause: Throwable?) : super(cause)
 
-  public ConstructionException(Throwable cause) {
-    super(cause);
-  }
-
-  public ConstructionException(String message, Throwable cause) {
-    super(message, cause);
-  }
+    constructor(message: String?, cause: Throwable?) : super(message, cause)
 }

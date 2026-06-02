@@ -11,16 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
-
-import com.google.common.base.Preconditions;
+package com.google.devtools.build.lib.skyframe
 
 /**
- * Thrown on {@link DiffAwareness#getDiff} to indicate that the given {@link DiffAwareness.View}s
- * are incompatible with the {@link DiffAwareness} instance.
+ * Thrown on [DiffAwareness.getDiff] to indicate that the given [DiffAwareness.View]s
+ * are incompatible with the [DiffAwareness] instance.
  */
-public class IncompatibleViewException extends Exception {
-  public IncompatibleViewException(String msg) {
-    super(Preconditions.checkNotNull(msg));
-  }
-}
+class IncompatibleViewException(msg: String?) :
+    java.lang.Exception(com.google.common.base.Preconditions.checkNotNull<String?>(msg))

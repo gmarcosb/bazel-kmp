@@ -11,386 +11,393 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.eval
 
-package net.starlark.java.eval;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.concurrent.ConcurrentHashMap;
-import javax.annotation.Nullable;
-import net.starlark.java.annot.StarlarkAnnotations;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.syntax.StarlarkType;
-import net.starlark.java.syntax.TypeConstructor;
-import net.starlark.java.syntax.TypeContext;
-import net.starlark.java.syntax.Types;
+import com.google.devtools.build.lib.supplier.InterruptibleSupplier.get
+import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Helper functions for {@link StarlarkMethod}-annotated methods.
- *
- * <p>This class is public for the benefit of serialization in Bazel. Other code outside the
+ * Helper functions for [StarlarkMethod]-annotated methods.
+ * 
+ * 
+ * This class is public for the benefit of serialization in Bazel. Other code outside the
  * Starlark interpreter should not rely on it.
  */
-public final class CallUtils {
+object CallUtils {
+    /** A map for obtaining a [BuiltinManager] from a [StarlarkSemantics].  */ // Historically, this code used to have a big map from (StarlarkSemantics, Class) pairs to
+    // ClassDescriptors. This caused unnecessary GC churn and method call overhead for the dedicated
+    // tuple objects, which became observable at scale. It was subsequently rewritten to be a
+    // double-layer map from Semantics to Class to ClassDescriptor, which optimized for the common
+    // case of few (typically just one) StarlarkSemantics instances. The inner map was then abstracted
+    // into BuiltinManager.
+    //
+    // Avoid ConcurrentHashMap#computeIfAbsent because it is not reentrant: If a ClassDescriptor is
+    // looked up before Starlark.UNIVERSE is initialized then the computation will re-enter the cache
+    // and have a cycle; see b/161479826 for history.
+    // TODO(bazel-team): Does the above cycle concern still exist?
+    private val managerForSemantics: ConcurrentHashMap<net.starlark.java.eval.StarlarkSemantics?, BuiltinManager?> =
+        ConcurrentHashMap<net.starlark.java.eval.StarlarkSemantics?, BuiltinManager?>()
 
-  private CallUtils() {} // uninstantiable
-
-  /** A map for obtaining a {@link BuiltinManager} from a {@link StarlarkSemantics}. */
-  // Historically, this code used to have a big map from (StarlarkSemantics, Class) pairs to
-  // ClassDescriptors. This caused unnecessary GC churn and method call overhead for the dedicated
-  // tuple objects, which became observable at scale. It was subsequently rewritten to be a
-  // double-layer map from Semantics to Class to ClassDescriptor, which optimized for the common
-  // case of few (typically just one) StarlarkSemantics instances. The inner map was then abstracted
-  // into BuiltinManager.
-  //
-  // Avoid ConcurrentHashMap#computeIfAbsent because it is not reentrant: If a ClassDescriptor is
-  // looked up before Starlark.UNIVERSE is initialized then the computation will re-enter the cache
-  // and have a cycle; see b/161479826 for history.
-  // TODO(bazel-team): Does the above cycle concern still exist?
-  private static final ConcurrentHashMap<StarlarkSemantics, BuiltinManager> managerForSemantics =
-      new ConcurrentHashMap<>();
-
-  public static BuiltinManager getBuiltinManager(StarlarkSemantics semantics) {
-    // TODO: b/513244797 - Eliminate need for getBuiltinManagerCacheKey.
-    StarlarkSemantics key = semantics.getBuiltinManagerCacheKey();
-    BuiltinManager manager = managerForSemantics.get(key);
-    if (manager == null) {
-      manager = new BuiltinManager(semantics);
-      BuiltinManager prev = managerForSemantics.putIfAbsent(key, manager);
-      if (prev != null) {
-        manager = prev; // first thread wins
-      }
-    }
-    return manager;
-  }
-
-  /**
-   * Describes the Starlark methods - meaning methods annotated with {@link StarlarkMethod} -
-   * available for a particular Java class under a particular {@link StarlarkSemantics}.
-   *
-   * <p>Generally, instances of this class are valid as Starlark values, and the class itself is
-   * generally annotated with {@link StarlarkBuiltin}. However, there are exceptions. For example,
-   * compilations of global functions, such as {@link MethodLibrary}, are not Starlark values. Some
-   * internal {@link StarlarkValue} implementations, such as {@link Starlark.UnboundMarker}, do not
-   * have a {@link StarlarkBuiltin} annotation. And {@link StringModule} cannot be used as a valid
-   * Starlark value despite having a {@link StarlarkBuiltin} annotation.
-   *
-   * <p>Although a {@code ClassDescriptor} does not directly embed the {@code StarlarkSemantics},
-   * its contents vary based on them. In contrast, {@link MethodDescriptor} and {@link
-   * ParamDescriptor} do not vary with the semantics.
-   */
-  private static class ClassDescriptor {
-    /** The manager that created this descriptor. Used for obtaining method type information. */
-    @SuppressWarnings("UnusedVariable") // TODO: #28325 - Use it for obtaining StarlarkTypes.
-    BuiltinManager manager;
-
-    /**
-     * The descriptor for the unique {@code @StarlarkMethod}-annotated method on this class that has
-     * {@link StarlarkMethod#selfCall} set to true (ex: "struct" in Bazel), or null if there is no
-     * such method.
-     */
-    @Nullable MethodDescriptor selfCall;
-
-    /**
-     * A map of the method descriptors that are available as fields of this object.
-     *
-     * <p>This includes methods with {@link StarlarkMethod#structField} set to true, i.e.
-     * non-callable Starlark fields.
-     *
-     * <p>The {@code selfCall} method is omitted (if one even exists). Any methods that are disabled
-     * by flag guarding via the {@link StarlarkSemantics} are also omitted.
-     *
-     * <p>The map is keyed on the Starlark field name, and sorted by Java method name.
-     */
-    ImmutableMap<String, MethodDescriptor> methods;
-
-    /**
-     * The type constructor to be called when the Starlark symbol that acts as this class's Starlark
-     * constructor appears in a type application expression; or null if this class cannot be used as
-     * a Starlark type.
-     *
-     * <p>For example, for {@link StarlarkList}'s descriptor this is {@link Types#LIST_CONSTRUCTOR}.
-     *
-     * <p>See {@link StarlarkMethod#isTypeConstructor}.
-     */
-    @Nullable TypeConstructor typeConstructor;
-
-    /**
-     * The Starlark type to be used for values of this class if neither this class nor its
-     * superclasses overrides {@link StarlarkValue#getStarlarkType}; or null if there is such an
-     * override.
-     */
-    @Nullable ClassStarlarkType classStarlarkType;
-
-    private static final class ClassStarlarkType extends StarlarkType {
-      private final String name;
-      @Nullable private final MethodDescriptor selfCall; // shared with ClassDescriptor
-      private final ImmutableMap<String, MethodDescriptor> methods; // shared with ClassDescriptor
-
-      private ClassStarlarkType(
-          String name,
-          @Nullable MethodDescriptor selfCall,
-          ImmutableMap<String, MethodDescriptor> methods) {
-        this.name = name;
-        this.selfCall = selfCall;
-        this.methods = methods;
-      }
-
-      @Override
-      public ImmutableList<StarlarkType> getSupertypes() {
-        // TODO: #28325 - Populate supertypes where possible.
-        return selfCall == null
-            ? ImmutableList.of()
-            // Values of a self-call type are callable, with the self-call method's signature.
-            : ImmutableList.of(selfCall.getStarlarkType());
-      }
-
-      @Override
-      @Nullable
-      public StarlarkType getField(String name, TypeContext context) {
-        @Nullable MethodDescriptor method = methods.get(name);
-        return method == null ? null : method.getStarlarkType();
-      }
-
-      @Override
-      public String toString() {
-        return name;
-      }
-    }
-  }
-
-  /**
-   * A manager for obtaining descriptors for native-defined Starlark objects and methods, under a
-   * specific {@code StarlarkSemantics}.
-   *
-   * <p>This class is public for the benefit of serialization in Bazel. Other code outside the
-   * Starlark interpreter should not rely on it.
-   */
-  public static class BuiltinManager {
-
-    private final StarlarkSemantics semantics;
-
-    private final ClassValue<ClassDescriptor> classDescriptorCache =
-        new ClassValue<ClassDescriptor>() {
-          @Override
-          protected ClassDescriptor computeValue(Class<?> clazz) {
-            if (clazz == String.class) {
-              clazz = StringModule.class;
+    fun getBuiltinManager(semantics: net.starlark.java.eval.StarlarkSemantics): BuiltinManager {
+        // TODO: b/513244797 - Eliminate need for getBuiltinManagerCacheKey.
+        val key: net.starlark.java.eval.StarlarkSemantics? = semantics.getBuiltinManagerCacheKey()
+        var manager: BuiltinManager? = net.starlark.java.eval.CallUtils.managerForSemantics.get(key)
+        if (manager == null) {
+            manager = net.starlark.java.eval.CallUtils.BuiltinManager(semantics)
+            val prev: BuiltinManager? = net.starlark.java.eval.CallUtils.managerForSemantics.putIfAbsent(key, manager)
+            if (prev != null) {
+                manager = prev // first thread wins
             }
-            return buildClassDescriptor(BuiltinManager.this, clazz);
-          }
-        };
-
-    private BuiltinManager(StarlarkSemantics semantics) {
-      this.semantics = semantics;
-    }
-
-    /**
-     * Returns the Starlark type to be used for valid Starlark values of the given class which
-     * doesn't override {@link StarlarkValue#getStarlarkType}; or null if it (or one of its
-     * superclasses) does override {@link StarlarkValue#getStarlarkType}.
-     */
-    @Nullable
-    StarlarkType getClassStarlarkType(Class<?> clazz) {
-      return getClassDescriptor(clazz).classStarlarkType;
-    }
-
-    StarlarkSemantics getSemantics() {
-      return semantics;
-    }
-
-    /**
-     * Returns the {@link ClassDescriptor} for the given {@link Class}, under the BuiltinManager's
-     * {@link StarlarkSemantics}.
-     *
-     * <p>This method is a hotspot! It's called on every function call and field access. A single
-     * `bazel build` invocation can make tens or even hundreds of millions of calls to this method.
-     */
-    private ClassDescriptor getClassDescriptor(Class<?> clazz) {
-      return classDescriptorCache.get(clazz);
-    }
-
-    /**
-     * Returns the type constructor associated with the given Java class under a given {@code
-     * StarlarkSemantics}, or null if there is none.
-     *
-     * <p>An example would be getting the type constructor for the {@code list} type from the class
-     * {@code StarlarkList}.
-     *
-     * <p>The returned constructor has complete type information about the available Starlark
-     * methods of the class.
-     */
-    @Nullable
-    TypeConstructor getTypeConstructor(Class<?> clazz) {
-      return getClassDescriptor(clazz).typeConstructor;
-    }
-
-    /**
-     * Returns the set of all StarlarkMethod-annotated Java methods (excluding the self-call method)
-     * of the specified class.
-     */
-    ImmutableMap<String, MethodDescriptor> getAnnotatedMethods(Class<?> objClass) {
-      return getClassDescriptor(objClass).methods;
-    }
-
-    /**
-     * Returns a {@link MethodDescriptor} object representing a function which calls the selfCall
-     * java method of the given object (the {@link StarlarkMethod} method with {@link
-     * StarlarkMethod#selfCall()} set to true). Returns null if no such method exists.
-     */
-    @Nullable
-    MethodDescriptor getSelfCallMethodDescriptor(Class<?> objClass) {
-      return getClassDescriptor(objClass).selfCall;
-    }
-
-    /**
-     * Returns a {@code selfCall=true} method for the given class under the given Starlark
-     * semantics, or null if no such method exists.
-     */
-    @Nullable
-    Method getSelfCallMethod(Class<?> objClass) {
-      MethodDescriptor descriptor = getClassDescriptor(objClass).selfCall;
-      if (descriptor == null) {
-        return null;
-      }
-      return descriptor.getMethod();
-    }
-  }
-
-  private static ClassDescriptor buildClassDescriptor(BuiltinManager manager, Class<?> clazz) {
-    MethodDescriptor selfCall = null;
-    ImmutableMap.Builder<String, MethodDescriptor> methodsBuilder = ImmutableMap.builder();
-
-    TypeConstructor typeConstructor = getAssociatedTypeConstructor(clazz);
-
-    @Nullable StarlarkBuiltin annotation = StarlarkAnnotations.getStarlarkBuiltin(clazz);
-    boolean overridesGetStarlarkType = false;
-    if (annotation != null) {
-      try {
-        if (!clazz
-            // LINT.IfChange
-            .getMethod("getStarlarkType", StarlarkSemantics.class)
-            // LINT.ThenChange(//src/main/java/net/starlark/java/eval/StarlarkValue.java)
-            .getDeclaringClass()
-            .equals(StarlarkValue.class)) {
-          overridesGetStarlarkType = true;
         }
-      } catch (NoSuchMethodException e) {
-        // All StarlarkBuiltin-annotated classes must implement StarlarkValue and thus have a
-        // getStarlarkType method.
-        throw new IllegalStateException(
-            String.format("%s missing getStarlarkType(StarlarkSemantics) method", clazz), e);
-      }
+        return manager!!
     }
 
-    // Sort methods by Java name, for determinism.
-    Method[] classMethods = clazz.getMethods();
-    Arrays.sort(classMethods, Comparator.comparing(Method::getName));
-    for (Method method : classMethods) {
-      // Synthetic methods lead to false multiple matches
-      if (method.isSynthetic()) {
-        continue;
-      }
+    private fun buildClassDescriptor(manager: BuiltinManager, clazz: java.lang.Class<*>): ClassDescriptor {
+        var selfCall: net.starlark.java.eval.MethodDescriptor? = null
+        val methodsBuilder: com.google.common.collect.ImmutableMap.Builder<String?, net.starlark.java.eval.MethodDescriptor?> =
+            com.google.common.collect.ImmutableMap.builder<String?, net.starlark.java.eval.MethodDescriptor?>()
 
-      // annotated?
-      StarlarkMethod callable = StarlarkAnnotations.getStarlarkMethod(method);
-      if (callable == null) {
-        continue;
-      }
+        val typeConstructor: net.starlark.java.syntax.TypeConstructor? =
+            net.starlark.java.eval.CallUtils.getAssociatedTypeConstructor(clazz)
 
-      // enabled by semantics?
-      if (!manager
-          .getSemantics()
-          .isFeatureEnabledBasedOnTogglingFlags(
-              callable.enableOnlyWithFlag(), callable.disableWithFlag())) {
-        continue;
-      }
-
-      MethodDescriptor descriptor = MethodDescriptor.of(manager, method, callable);
-
-      // self-call method?
-      if (callable.selfCall()) {
-        if (selfCall != null) {
-          throw new IllegalArgumentException(
-              String.format("Class %s has two selfCall methods defined", clazz.getName()));
+        val annotation: net.starlark.java.annot.StarlarkBuiltin? =
+            net.starlark.java.annot.StarlarkAnnotations.getStarlarkBuiltin(clazz)
+        var overridesGetStarlarkType = false
+        if (annotation != null) {
+            try {
+                if (clazz // LINT.IfChange
+                        .getMethod(
+                            "getStarlarkType",
+                            net.starlark.java.eval.StarlarkSemantics::class.java
+                        ) // LINT.ThenChange(//src/main/java/net/starlark/java/eval/StarlarkValue.java)
+                        .getDeclaringClass()
+                    != net.starlark.java.eval.StarlarkValue::class.java
+                ) {
+                    overridesGetStarlarkType = true
+                }
+            } catch (e: java.lang.NoSuchMethodException) {
+                // All StarlarkBuiltin-annotated classes must implement StarlarkValue and thus have a
+                // getStarlarkType method.
+                throw java.lang.IllegalStateException(
+                    java.lang.String.format("%s missing getStarlarkType(StarlarkSemantics) method", clazz), e
+                )
+            }
         }
-        selfCall = descriptor;
-        continue;
-      }
 
-      // regular method
-      methodsBuilder.put(callable.name(), descriptor);
-    }
-    ImmutableMap<String, MethodDescriptor> methods = methodsBuilder.buildOrThrow();
+        // Sort methods by Java name, for determinism.
+        val classMethods: Array<java.lang.reflect.Method> = clazz.getMethods()
+        java.util.Arrays.sort<java.lang.reflect.Method?>(
+            classMethods,
+            java.util.Comparator.comparing<java.lang.reflect.Method?, String?>(java.util.function.Function { obj: java.lang.reflect.Method? -> obj.getName() })
+        )
+        for (method in classMethods) {
+            // Synthetic methods lead to false multiple matches
+            if (method.isSynthetic()) {
+                continue
+            }
 
-    ClassDescriptor classDescriptor = new ClassDescriptor();
-    classDescriptor.manager = manager;
-    classDescriptor.selfCall = selfCall;
-    classDescriptor.methods = methods;
-    classDescriptor.typeConstructor = typeConstructor;
-    if (StarlarkValue.class.isAssignableFrom(clazz) && !overridesGetStarlarkType) {
-      String typeName = annotation != null ? annotation.name() : clazz.getSimpleName();
-      classDescriptor.classStarlarkType =
-          new ClassDescriptor.ClassStarlarkType(typeName, selfCall, methods);
-    }
-    return classDescriptor;
-  }
+            // annotated?
+            val callable: net.starlark.java.annot.StarlarkMethod? =
+                net.starlark.java.annot.StarlarkAnnotations.getStarlarkMethod(method)
+            if (callable == null) {
+                continue
+            }
 
-  /**
-   * Returns the type constructor identified by calling the given class's {@code
-   * getAssociatedTypeConstructor()} static method, or null if it does not have such a method.
-   *
-   * @throws IllegalArgumentException if the method exists but has an unexpected signature, or if it
-   *     does not evaluate successfully
-   */
-  @Nullable
-  private static TypeConstructor getAssociatedTypeConstructor(Class<?> clazz) {
-    // Special-case bool, which is represented by Java booleans and does not have its own class.
-    // (String.class does not need special-casing because it's already been replaced by
-    // StringModule.class by this point.)
-    if (clazz.equals(Boolean.class) || clazz.equals(boolean.class)) {
-      return Types.BOOL_CONSTRUCTOR;
-    }
+            // enabled by semantics?
+            if (!manager
+                    .getSemantics()
+                    .isFeatureEnabledBasedOnTogglingFlags(
+                        callable.enableOnlyWithFlag, callable.disableWithFlag
+                    )
+            ) {
+                continue
+            }
 
-    Method found = null;
-    for (Method m : clazz.getDeclaredMethods()) {
-      if (m.getName().equals("getAssociatedTypeConstructor")) {
-        if (found != null) {
-          throw new IllegalArgumentException(
-              String.format(
-                  "Class %s has multiple methods named getAssociatedTypeConstructor",
-                  clazz.getName()));
+            val descriptor: net.starlark.java.eval.MethodDescriptor =
+                net.starlark.java.eval.MethodDescriptor.Companion.of(manager, method, callable)
+
+            // self-call method?
+            if (callable.selfCall) {
+                require(selfCall == null) {
+                    java.lang.String.format(
+                        "Class %s has two selfCall methods defined",
+                        clazz.getName()
+                    )
+                }
+                selfCall = descriptor
+                continue
+            }
+
+            // regular method
+            methodsBuilder.put(callable.name, descriptor)
         }
-        found = m;
-      }
-    }
-    if (found == null) {
-      return null;
+        val methods: com.google.common.collect.ImmutableMap<String?, net.starlark.java.eval.MethodDescriptor?> =
+            methodsBuilder.buildOrThrow()
+
+        val classDescriptor: ClassDescriptor = net.starlark.java.eval.CallUtils.ClassDescriptor()
+        classDescriptor.manager = manager
+        classDescriptor.selfCall = selfCall
+        classDescriptor.methods = methods
+        classDescriptor.typeConstructor = typeConstructor
+        if (net.starlark.java.eval.StarlarkValue::class.java.isAssignableFrom(clazz) && !overridesGetStarlarkType) {
+            val typeName: String? = if (annotation != null) annotation.name else clazz.getSimpleName()
+            classDescriptor.classStarlarkType =
+                net.starlark.java.eval.CallUtils.ClassDescriptor.ClassStarlarkType(typeName, selfCall, methods)
+        }
+        return classDescriptor
     }
 
-    // Signature check.
-    if (!Modifier.isPublic(found.getModifiers())
-        || !Modifier.isStatic(found.getModifiers())
-        || !found.getReturnType().equals(TypeConstructor.class)
-        || found.getParameterCount() != 0) {
-      throw new IllegalArgumentException(
-          String.format(
-              "Method %s#getAssociatedTypeConstructor has an invalid signature; "
-                  + "expected 'public static TypeConstructor getAssociatedTypeConstructor()'",
-              clazz.getName()));
+    /**
+     * Returns the type constructor identified by calling the given class's `getAssociatedTypeConstructor()` static method, or null if it does not have such a method.
+     * 
+     * @throws IllegalArgumentException if the method exists but has an unexpected signature, or if it
+     * does not evaluate successfully
+     */
+    private fun getAssociatedTypeConstructor(clazz: java.lang.Class<*>): net.starlark.java.syntax.TypeConstructor? {
+        // Special-case bool, which is represented by Java booleans and does not have its own class.
+        // (String.class does not need special-casing because it's already been replaced by
+        // StringModule.class by this point.)
+        if (clazz == Boolean::class.java || clazz == Boolean::class.javaPrimitiveType) {
+            return net.starlark.java.syntax.Types.BOOL_CONSTRUCTOR
+        }
+
+        var found: java.lang.reflect.Method? = null
+        for (m in clazz.getDeclaredMethods()) {
+            if (m.getName() == "getAssociatedTypeConstructor") {
+                require(found == null) {
+                    java.lang.String.format(
+                        "Class %s has multiple methods named getAssociatedTypeConstructor",
+                        clazz.getName()
+                    )
+                }
+                found = m
+            }
+        }
+        if (found == null) {
+            return null
+        }
+
+        // Signature check.
+        require(
+            !(!java.lang.reflect.Modifier.isPublic(found.getModifiers()) || !java.lang.reflect.Modifier.isStatic(
+                found.getModifiers()
+            ) || (found.getReturnType() != net.starlark.java.syntax.TypeConstructor::class.java) || found.getParameterCount() != 0)
+        ) {
+            java.lang.String.format(
+                "Method %s#getAssociatedTypeConstructor has an invalid signature; "
+                        + "expected 'public static TypeConstructor getAssociatedTypeConstructor()'",
+                clazz.getName()
+            )
+        }
+
+        try {
+            return found.invoke(null) as net.starlark.java.syntax.TypeConstructor?
+        } catch (e: java.lang.IllegalAccessException) {
+            throw java.lang.IllegalArgumentException(
+                java.lang.String.format("Error invoking %s#getAssociatedTypeConstructor", clazz.getName()), e
+            )
+        } catch (e: java.lang.reflect.InvocationTargetException) {
+            throw java.lang.IllegalArgumentException(
+                java.lang.String.format("Error invoking %s#getAssociatedTypeConstructor", clazz.getName()), e
+            )
+        } catch (e: java.lang.RuntimeException) {
+            throw java.lang.IllegalArgumentException(
+                java.lang.String.format("Error invoking %s#getAssociatedTypeConstructor", clazz.getName()), e
+            )
+        }
     }
 
-    try {
-      return (TypeConstructor) found.invoke(null);
-    } catch (IllegalAccessException | InvocationTargetException | RuntimeException e) {
-      throw new IllegalArgumentException(
-          String.format("Error invoking %s#getAssociatedTypeConstructor", clazz.getName()), e);
+    /**
+     * Describes the Starlark methods - meaning methods annotated with [StarlarkMethod] -
+     * available for a particular Java class under a particular [StarlarkSemantics].
+     * 
+     * 
+     * Generally, instances of this class are valid as Starlark values, and the class itself is
+     * generally annotated with [StarlarkBuiltin]. However, there are exceptions. For example,
+     * compilations of global functions, such as [MethodLibrary], are not Starlark values. Some
+     * internal [StarlarkValue] implementations, such as [Starlark.UnboundMarker], do not
+     * have a [StarlarkBuiltin] annotation. And [StringModule] cannot be used as a valid
+     * Starlark value despite having a [StarlarkBuiltin] annotation.
+     * 
+     * 
+     * Although a `ClassDescriptor` does not directly embed the `StarlarkSemantics`,
+     * its contents vary based on them. In contrast, [MethodDescriptor] and [ ] do not vary with the semantics.
+     */
+    private class ClassDescriptor {
+        /** The manager that created this descriptor. Used for obtaining method type information.  */
+        var manager:  // TODO: #28325 - Use it for obtaining StarlarkTypes.
+                BuiltinManager? = null
+
+        /**
+         * The descriptor for the unique `@StarlarkMethod`-annotated method on this class that has
+         * [StarlarkMethod.selfCall] set to true (ex: "struct" in Bazel), or null if there is no
+         * such method.
+         */
+        var selfCall: net.starlark.java.eval.MethodDescriptor? = null
+
+        /**
+         * A map of the method descriptors that are available as fields of this object.
+         * 
+         * 
+         * This includes methods with [StarlarkMethod.structField] set to true, i.e.
+         * non-callable Starlark fields.
+         * 
+         * 
+         * The `selfCall` method is omitted (if one even exists). Any methods that are disabled
+         * by flag guarding via the [StarlarkSemantics] are also omitted.
+         * 
+         * 
+         * The map is keyed on the Starlark field name, and sorted by Java method name.
+         */
+        var methods: com.google.common.collect.ImmutableMap<String?, net.starlark.java.eval.MethodDescriptor?>? = null
+
+        /**
+         * The type constructor to be called when the Starlark symbol that acts as this class's Starlark
+         * constructor appears in a type application expression; or null if this class cannot be used as
+         * a Starlark type.
+         * 
+         * 
+         * For example, for [StarlarkList]'s descriptor this is [Types.LIST_CONSTRUCTOR].
+         * 
+         * 
+         * See [StarlarkMethod.isTypeConstructor].
+         */
+        var typeConstructor: net.starlark.java.syntax.TypeConstructor? = null
+
+        /**
+         * The Starlark type to be used for values of this class if neither this class nor its
+         * superclasses overrides [StarlarkValue.getStarlarkType]; or null if there is such an
+         * override.
+         */
+        var classStarlarkType: ClassStarlarkType? = null
+
+        private class ClassStarlarkType(
+            private val name: String?,
+            selfCall: net.starlark.java.eval.MethodDescriptor?,
+            methods: com.google.common.collect.ImmutableMap<String?, net.starlark.java.eval.MethodDescriptor?>
+        ) : net.starlark.java.syntax.StarlarkType() {
+            private val selfCall: net.starlark.java.eval.MethodDescriptor? // shared with ClassDescriptor
+            private val methods: com.google.common.collect.ImmutableMap<String?, net.starlark.java.eval.MethodDescriptor?> // shared with ClassDescriptor
+
+            init {
+                this.selfCall = selfCall
+                this.methods = methods
+            }
+
+            override fun getSupertypes(): com.google.common.collect.ImmutableList<net.starlark.java.syntax.StarlarkType?> {
+                // TODO: #28325 - Populate supertypes where possible.
+                return if (selfCall == null)
+                    com.google.common.collect.ImmutableList.of<net.starlark.java.syntax.StarlarkType?>() // Values of a self-call type are callable, with the self-call method's signature.
+                else
+                    com.google.common.collect.ImmutableList.of<net.starlark.java.syntax.StarlarkType?>(selfCall.getStarlarkType())
+            }
+
+            override fun getField(
+                name: String?,
+                context: net.starlark.java.syntax.TypeContext?
+            ): net.starlark.java.syntax.StarlarkType? {
+                val method: net.starlark.java.eval.MethodDescriptor? = methods.get(name)
+                return if (method == null) null else method.getStarlarkType()
+            }
+
+            override fun toString(): String {
+                return name!!
+            }
+        }
     }
-  }
+
+    /**
+     * A manager for obtaining descriptors for native-defined Starlark objects and methods, under a
+     * specific `StarlarkSemantics`.
+     * 
+     * 
+     * This class is public for the benefit of serialization in Bazel. Other code outside the
+     * Starlark interpreter should not rely on it.
+     */
+    class BuiltinManager private constructor(semantics: net.starlark.java.eval.StarlarkSemantics?) {
+        private val semantics: net.starlark.java.eval.StarlarkSemantics?
+
+        private val classDescriptorCache: java.lang.ClassValue<ClassDescriptor?> =
+            object : java.lang.ClassValue<ClassDescriptor?>() {
+                override fun computeValue(clazz: java.lang.Class<*>): ClassDescriptor {
+                    var clazz: java.lang.Class<*> = clazz
+                    if (clazz == String::class.java) {
+                        clazz = net.starlark.java.eval.StringModule::class.java
+                    }
+                    return net.starlark.java.eval.CallUtils.buildClassDescriptor(this@BuiltinManager, clazz)
+                }
+            }
+
+        init {
+            this.semantics = semantics
+        }
+
+        /**
+         * Returns the Starlark type to be used for valid Starlark values of the given class which
+         * doesn't override [StarlarkValue.getStarlarkType]; or null if it (or one of its
+         * superclasses) does override [StarlarkValue.getStarlarkType].
+         */
+        fun getClassStarlarkType(clazz: java.lang.Class<*>?): net.starlark.java.syntax.StarlarkType? {
+            return getClassDescriptor(clazz)!!.classStarlarkType
+        }
+
+        fun getSemantics(): net.starlark.java.eval.StarlarkSemantics? {
+            return semantics
+        }
+
+        /**
+         * Returns the [ClassDescriptor] for the given [Class], under the BuiltinManager's
+         * [StarlarkSemantics].
+         * 
+         * 
+         * This method is a hotspot! It's called on every function call and field access. A single
+         * `bazel build` invocation can make tens or even hundreds of millions of calls to this method.
+         */
+        private fun getClassDescriptor(clazz: java.lang.Class<*>?): ClassDescriptor? {
+            return classDescriptorCache.get(clazz)
+        }
+
+        /**
+         * Returns the type constructor associated with the given Java class under a given `StarlarkSemantics`, or null if there is none.
+         * 
+         * 
+         * An example would be getting the type constructor for the `list` type from the class
+         * `StarlarkList`.
+         * 
+         * 
+         * The returned constructor has complete type information about the available Starlark
+         * methods of the class.
+         */
+        fun getTypeConstructor(clazz: java.lang.Class<*>?): net.starlark.java.syntax.TypeConstructor? {
+            return getClassDescriptor(clazz)!!.typeConstructor
+        }
+
+        /**
+         * Returns the set of all StarlarkMethod-annotated Java methods (excluding the self-call method)
+         * of the specified class.
+         */
+        fun getAnnotatedMethods(objClass: java.lang.Class<*>?): com.google.common.collect.ImmutableMap<String?, net.starlark.java.eval.MethodDescriptor?>? {
+            return getClassDescriptor(objClass)!!.methods
+        }
+
+        /**
+         * Returns a [MethodDescriptor] object representing a function which calls the selfCall
+         * java method of the given object (the [StarlarkMethod] method with [ ][StarlarkMethod.selfCall] set to true). Returns null if no such method exists.
+         */
+        fun getSelfCallMethodDescriptor(objClass: java.lang.Class<*>?): net.starlark.java.eval.MethodDescriptor? {
+            return getClassDescriptor(objClass)!!.selfCall
+        }
+
+        /**
+         * Returns a `selfCall=true` method for the given class under the given Starlark
+         * semantics, or null if no such method exists.
+         */
+        fun getSelfCallMethod(objClass: java.lang.Class<*>?): java.lang.reflect.Method? {
+            val descriptor: net.starlark.java.eval.MethodDescriptor? = getClassDescriptor(objClass)!!.selfCall
+            if (descriptor == null) {
+                return null
+            }
+            return descriptor.getMethod()
+        }
+    }
 }

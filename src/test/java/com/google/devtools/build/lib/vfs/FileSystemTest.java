@@ -1213,7 +1213,7 @@ public abstract class FileSystemTest {
 
     // Expect the change time to be only slightly behind the current time.
     assertThat(
-            Duration.between(Instant.ofEpochMilli(file.stat().getLastChangeTime()), Instant.now()))
+            Duration.between(Instant.ofEpochMilli(file.stat().lastChangeTime), Instant.now()))
         .isLessThan(Duration.ofSeconds(1));
   }
 
@@ -2012,8 +2012,8 @@ public abstract class FileSystemTest {
   }
 
   protected boolean isHardLinked(Path a, Path b) throws IOException {
-    return testFS.stat(a.asFragment(), false).getNodeId()
-        == testFS.stat(b.asFragment(), false).getNodeId();
+    return testFS.stat(a.asFragment(), false).nodeId
+        == testFS.stat(b.asFragment(), false).nodeId;
   }
 
   @Test

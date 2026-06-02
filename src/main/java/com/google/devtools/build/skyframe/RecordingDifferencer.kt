@@ -11,28 +11,35 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.skyframe
 
-package com.google.devtools.build.skyframe;
+import com.google.devtools.build.skyframe.Differencer
+import com.google.devtools.build.skyframe.ErrorTransienceValue
+import com.google.devtools.build.skyframe.Injectable
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.WalkableGraph
 
-import com.google.common.collect.ImmutableList;
+/** A simple [Differencer] that is manually informed of invalid/injected nodes.  */
+interface RecordingDifferencer : Differencer, Injectable {
+    override fun getDiff(
+        fromGraph: WalkableGraph?,
+        fromVersion: com.google.devtools.build.skyframe.Version?,
+        toVersion: com.google.devtools.build.skyframe.Version?
+    ): com.google.devtools.build.skyframe.Differencer.Diff?
 
-/** A simple {@link Differencer} that is manually informed of invalid/injected nodes. */
-public interface RecordingDifferencer extends Differencer, Injectable {
-  @Override
-  Diff getDiff(WalkableGraph fromGraph, Version fromVersion, Version toVersion);
+    /** Stores the given values for invalidation.  */
+    fun invalidate(values: Iterable<SkyKey?>?)
 
-  /** Stores the given values for invalidation. */
-  void invalidate(Iterable<SkyKey> values);
-
-  /**
-   * Invalidates the cached values of any values in error transiently.
-   *
-   * <p>If a future call to {@link MemoizingEvaluator#evaluate} requests a value that transitively
-   * depends on any value that was in an error state (or is one of these), they will be re-computed.
-   */
-  default void invalidateTransientErrors() {
-    // All transient error values have a dependency on the single global ERROR_TRANSIENCE value,
-    // so we only have to invalidate that one value to catch everything.
-    invalidate(ImmutableList.of(ErrorTransienceValue.KEY));
-  }
+    /**
+     * Invalidates the cached values of any values in error transiently.
+     * 
+     * 
+     * If a future call to [MemoizingEvaluator.evaluate] requests a value that transitively
+     * depends on any value that was in an error state (or is one of these), they will be re-computed.
+     */
+    fun invalidateTransientErrors() {
+        // All transient error values have a dependency on the single global ERROR_TRANSIENCE value,
+        // so we only have to invalidate that one value to catch everything.
+        invalidate(com.google.common.collect.ImmutableList.of<SkyKey?>(ErrorTransienceValue.Companion.KEY))
+    }
 }

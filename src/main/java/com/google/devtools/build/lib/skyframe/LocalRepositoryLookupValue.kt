@@ -11,214 +11,186 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.skyframe.AbstractSkyKey;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
+import com.google.devtools.build.lib.cmdline.RepositoryName
 
 /**
  * A value that represents a local repository lookup result.
- *
- * <p>Local repository lookups will always produce a value. The {@code #getRepository} method
+ * 
+ * 
+ * Local repository lookups will always produce a value. The `#getRepository` method
  * returns the name of the repository that the directory resides in.
  */
-public abstract class LocalRepositoryLookupValue implements SkyValue {
+abstract class LocalRepositoryLookupValue : SkyValue {
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    @AutoCodec
+    internal class Key private constructor(arg: RootedPath?) : AbstractSkyKey<RootedPath?>(arg) {
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.LOCAL_REPOSITORY_LOOKUP
+        }
 
-  static Key key(RootedPath directory) {
-    return Key.create(directory);
-  }
+        val skyKeyInterner: SkyKeyInterner<Key?>
+            get() = com.google.devtools.build.lib.skyframe.LocalRepositoryLookupValue.Key.Companion.interner
 
-  @VisibleForSerialization
-  @AutoCodec
-  static class Key extends AbstractSkyKey<RootedPath> {
-    private static final SkyKeyInterner<Key> interner = SkyKey.newInterner();
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
 
-    private Key(RootedPath arg) {
-      super(arg);
+            private fun create(arg: RootedPath?): Key {
+                return com.google.devtools.build.lib.skyframe.LocalRepositoryLookupValue.Key.Companion.interner.intern(
+                    com.google.devtools.build.lib.skyframe.LocalRepositoryLookupValue.Key(arg)
+                )
+            }
+
+            @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+            @AutoCodec.Interner
+            fun intern(key: Key?): Key {
+                return com.google.devtools.build.lib.skyframe.LocalRepositoryLookupValue.Key.Companion.interner.intern(
+                    key
+                )
+            }
+        }
     }
 
-    private static Key create(RootedPath arg) {
-      return interner.intern(new Key(arg));
+    /**
+     * Returns `true` if the local repository lookup succeeded and the [.getRepository]
+     * method will return a useful result.
+     */
+    abstract fun exists(): Boolean
+
+    /**
+     * Returns the [RepositoryName] of the local repository contained in the directory which was
+     * looked up, [RepositoryName.MAIN] if the directory is part of the main repository, or
+     * throws a [IllegalStateException] if there was no repository found.
+     */
+    @kotlin.jvm.JvmField
+    abstract val repository: RepositoryName?
+
+    /**
+     * Returns the path to the local repository, or throws a [IllegalStateException] if there
+     * was no repository found.
+     */
+    @kotlin.jvm.JvmField
+    abstract val path: PathFragment?
+
+    /** Represents a successful lookup of the main repository.  */
+    class MainRepositoryLookupValue  // This should be a singleton value.
+    private constructor() : LocalRepositoryLookupValue() {
+        override fun exists(): Boolean {
+            return true
+        }
+
+        override fun getRepository(): RepositoryName {
+            return RepositoryName.MAIN
+        }
+
+        override fun getPath(): PathFragment {
+            return PathFragment.EMPTY_FRAGMENT
+        }
+
+        override fun toString(): String {
+            return "MainRepositoryLookupValue"
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            // All MainRepositoryLookupValue instances are equivalent.
+            return obj is MainRepositoryLookupValue
+        }
+
+        override fun hashCode(): Int {
+            return MainRepositoryLookupValue::class.java.getSimpleName().hashCode()
+        }
     }
 
-    @VisibleForSerialization
-    @AutoCodec.Interner
-    static Key intern(Key key) {
-      return interner.intern(key);
+    /** Represents a successful lookup of a local repository.  */
+    class SuccessfulLocalRepositoryLookupValue
+        (repositoryName: RepositoryName, path: PathFragment?) : LocalRepositoryLookupValue() {
+        private val repositoryName: RepositoryName
+        private val path: PathFragment?
+
+        init {
+            this.repositoryName = repositoryName
+            this.path = path
+        }
+
+        override fun exists(): Boolean {
+            return true
+        }
+
+        override fun getRepository(): RepositoryName {
+            return repositoryName
+        }
+
+        override fun getPath(): PathFragment? {
+            return path
+        }
+
+        override fun toString(): String {
+            return "SuccessfulLocalRepositoryLookupValue(" + repositoryName + ")"
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            if (obj !is SuccessfulLocalRepositoryLookupValue) {
+                return false
+            }
+            return repositoryName.equals(obj.repositoryName)
+        }
+
+        override fun hashCode(): Int {
+            return repositoryName.hashCode()
+        }
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.LOCAL_REPOSITORY_LOOKUP;
+    /** Represents the state where no repository was found, either local or the main repository.  */
+    class NotFoundLocalRepositoryLookupValue  // This should be a singleton value.
+    private constructor() : LocalRepositoryLookupValue() {
+        override fun exists(): Boolean {
+            return false
+        }
+
+        override fun getRepository(): RepositoryName? {
+            throw java.lang.IllegalStateException("Repository was not found")
+        }
+
+        override fun getPath(): PathFragment? {
+            throw java.lang.IllegalStateException("Repository was not found")
+        }
+
+        override fun toString(): String {
+            return "NotFoundLocalRepositoryLookupValue"
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            // All NotFoundLocalRepositoryLookupValue instances are equivalent.
+            return obj is NotFoundLocalRepositoryLookupValue
+        }
+
+        override fun hashCode(): Int {
+            return NotFoundLocalRepositoryLookupValue::class.java.getSimpleName().hashCode()
+        }
     }
 
-    @Override
-    public SkyKeyInterner<Key> getSkyKeyInterner() {
-      return interner;
+    companion object {
+        fun key(directory: RootedPath?): Key {
+            return com.google.devtools.build.lib.skyframe.LocalRepositoryLookupValue.Key.Companion.create(directory)
+        }
+
+        private val MAIN_REPO_VALUE: LocalRepositoryLookupValue = MainRepositoryLookupValue()
+        private val NOT_FOUND_VALUE: LocalRepositoryLookupValue = NotFoundLocalRepositoryLookupValue()
+
+        @kotlin.jvm.JvmStatic
+        fun mainRepository(): LocalRepositoryLookupValue {
+            return MAIN_REPO_VALUE
+        }
+
+        fun success(
+            repositoryName: RepositoryName, path: PathFragment?
+        ): LocalRepositoryLookupValue {
+            return SuccessfulLocalRepositoryLookupValue(repositoryName, path)
+        }
+
+        fun notFound(): LocalRepositoryLookupValue {
+            return NOT_FOUND_VALUE
+        }
     }
-  }
-
-  private static final LocalRepositoryLookupValue MAIN_REPO_VALUE = new MainRepositoryLookupValue();
-  private static final LocalRepositoryLookupValue NOT_FOUND_VALUE =
-      new NotFoundLocalRepositoryLookupValue();
-
-  public static LocalRepositoryLookupValue mainRepository() {
-    return MAIN_REPO_VALUE;
-  }
-
-  public static LocalRepositoryLookupValue success(
-      RepositoryName repositoryName, PathFragment path) {
-    return new SuccessfulLocalRepositoryLookupValue(repositoryName, path);
-  }
-
-  public static LocalRepositoryLookupValue notFound() {
-    return NOT_FOUND_VALUE;
-  }
-
-  /**
-   * Returns {@code true} if the local repository lookup succeeded and the {@link #getRepository}
-   * method will return a useful result.
-   */
-  public abstract boolean exists();
-
-  /**
-   * Returns the {@link RepositoryName} of the local repository contained in the directory which was
-   * looked up, {@link RepositoryName#MAIN} if the directory is part of the main repository, or
-   * throws a {@link IllegalStateException} if there was no repository found.
-   */
-  public abstract RepositoryName getRepository();
-
-  /**
-   * Returns the path to the local repository, or throws a {@link IllegalStateException} if there
-   * was no repository found.
-   */
-  public abstract PathFragment getPath();
-
-  /** Represents a successful lookup of the main repository. */
-  public static final class MainRepositoryLookupValue extends LocalRepositoryLookupValue {
-
-    // This should be a singleton value.
-    private MainRepositoryLookupValue() {}
-
-    @Override
-    public boolean exists() {
-      return true;
-    }
-
-    @Override
-    public RepositoryName getRepository() {
-      return RepositoryName.MAIN;
-    }
-
-    @Override
-    public PathFragment getPath() {
-      return PathFragment.EMPTY_FRAGMENT;
-    }
-
-    @Override
-    public String toString() {
-      return "MainRepositoryLookupValue";
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      // All MainRepositoryLookupValue instances are equivalent.
-      return obj instanceof MainRepositoryLookupValue;
-    }
-
-    @Override
-    public int hashCode() {
-      return MainRepositoryLookupValue.class.getSimpleName().hashCode();
-    }
-  }
-
-  /** Represents a successful lookup of a local repository. */
-  public static final class SuccessfulLocalRepositoryLookupValue
-      extends LocalRepositoryLookupValue {
-    private final RepositoryName repositoryName;
-    private final PathFragment path;
-
-    public SuccessfulLocalRepositoryLookupValue(RepositoryName repositoryName, PathFragment path) {
-      this.repositoryName = repositoryName;
-      this.path = path;
-    }
-
-    @Override
-    public boolean exists() {
-      return true;
-    }
-
-    @Override
-    public RepositoryName getRepository() {
-      return repositoryName;
-    }
-
-    @Override
-    public PathFragment getPath() {
-      return path;
-    }
-
-    @Override
-    public String toString() {
-      return "SuccessfulLocalRepositoryLookupValue(" + repositoryName + ")";
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      if (!(obj instanceof SuccessfulLocalRepositoryLookupValue other)) {
-        return false;
-      }
-      return repositoryName.equals(other.repositoryName);
-    }
-
-    @Override
-    public int hashCode() {
-      return repositoryName.hashCode();
-    }
-  }
-
-  /** Represents the state where no repository was found, either local or the main repository. */
-  public static final class NotFoundLocalRepositoryLookupValue extends LocalRepositoryLookupValue {
-
-    // This should be a singleton value.
-    private NotFoundLocalRepositoryLookupValue() {}
-
-    @Override
-    public boolean exists() {
-      return false;
-    }
-
-    @Override
-    public RepositoryName getRepository() {
-      throw new IllegalStateException("Repository was not found");
-    }
-
-    @Override
-    public PathFragment getPath() {
-      throw new IllegalStateException("Repository was not found");
-    }
-
-    @Override
-    public String toString() {
-      return "NotFoundLocalRepositoryLookupValue";
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      // All NotFoundLocalRepositoryLookupValue instances are equivalent.
-      return obj instanceof NotFoundLocalRepositoryLookupValue;
-    }
-
-    @Override
-    public int hashCode() {
-      return NotFoundLocalRepositoryLookupValue.class.getSimpleName().hashCode();
-    }
-  }
 }

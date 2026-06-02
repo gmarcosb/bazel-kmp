@@ -226,11 +226,11 @@ public class WorkerSpawnRunnerTest {
   @Test
   public void testExecInWorker_sendsCancelMessageOnInterrupt() throws Exception {
     WorkerOptions workerOptions = Options.getDefaults(WorkerOptions.class);
-    workerOptions.setWorkerCancellation(true);
-    workerOptions.setWorkerSandboxing(true);
+    workerOptions.workerCancellation = true;
+    workerOptions.workerSandboxing = true;
     when(spawn.getExecutionInfo())
         .thenReturn(ImmutableMap.of(ExecutionRequirements.SUPPORTS_WORKER_CANCELLATION, "1"));
-    when(worker.isSandboxed()).thenReturn(true);
+    when(worker.isSandboxed).thenReturn(true);
     WorkerSpawnRunner runner = createWorkerSpawnRunner(workerOptions);
     WorkerKey key = createWorkerKey(fs, "mnem", false);
     Path logFile = fs.getPath("/worker.log");
@@ -277,8 +277,8 @@ public class WorkerSpawnRunnerTest {
   @Test
   public void testExecInWorker_unsandboxedDiesOnInterrupt() throws Exception {
     WorkerOptions workerOptions = Options.getDefaults(WorkerOptions.class);
-    workerOptions.setWorkerCancellation(true);
-    workerOptions.setWorkerSandboxing(false);
+    workerOptions.workerCancellation = true;
+    workerOptions.workerSandboxing = false;
     when(spawn.getExecutionInfo())
         .thenReturn(ImmutableMap.of(ExecutionRequirements.SUPPORTS_WORKER_CANCELLATION, "1"));
     WorkerSpawnRunner runner = createWorkerSpawnRunner(workerOptions);
@@ -313,7 +313,7 @@ public class WorkerSpawnRunnerTest {
   @Test
   public void testExecInWorker_noMultiplexWithDynamic() throws Exception {
     WorkerOptions workerOptions = Options.getDefaults(WorkerOptions.class);
-    workerOptions.setWorkerMultiplex(true);
+    workerOptions.workerMultiplex = true;
     WorkerSpawnRunner runner = createWorkerSpawnRunner(workerOptions);
     // This worker key just so happens to be multiplex and require sandboxing.
     WorkerKey key = createWorkerKey(WorkerProtocolFormat.JSON, fs, true);
@@ -351,8 +351,8 @@ public class WorkerSpawnRunnerTest {
     Path logFile = fs.getPath("/worker.log");
     when(worker.getLogFile()).thenReturn(logFile);
     when(worker.getResponse(0)).thenThrow(new IOException("Bad protobuf"));
-    when(worker.getRecordingStreamMessage()).thenReturn(recordedResponse);
-    when(worker.getExitValue()).thenReturn(Optional.of(2));
+    when(worker.recordingStreamMessage).thenReturn(recordedResponse);
+    when(worker.exitValue).thenReturn(Optional.of(2));
     String workerLog = "Log from worker\n";
     FileSystemUtils.writeIsoLatin1(logFile, workerLog);
     UserExecException execException =

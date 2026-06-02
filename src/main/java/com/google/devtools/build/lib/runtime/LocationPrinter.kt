@@ -11,70 +11,64 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.pkgcache.PathPackageLocator;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import java.util.concurrent.atomic.AtomicReference;
-import javax.annotation.Nullable;
-import net.starlark.java.syntax.Location;
+import com.google.devtools.build.lib.pkgcache.PathPackageLocator
 
-/** Converts {@link Location} objects to a human-friendly string. */
-public final class LocationPrinter {
-  private final boolean attemptToPrintRelativePaths;
-  @Nullable private final PathFragment workspacePathFragment;
-  private final AtomicReference<ImmutableList<Root>> packagePathRootsRef =
-      new AtomicReference<>(ImmutableList.of());
+/** Converts [Location] objects to a human-friendly string.  */
+class LocationPrinter(private val attemptToPrintRelativePaths: Boolean, workspacePathFragment: PathFragment?) {
+    private val workspacePathFragment: PathFragment?
+    private val packagePathRootsRef: AtomicReference<com.google.common.collect.ImmutableList<Root?>?> =
+        AtomicReference<com.google.common.collect.ImmutableList<Root?>?>(com.google.common.collect.ImmutableList.of<Root?>())
 
-  public LocationPrinter(
-      boolean attemptToPrintRelativePaths, @Nullable PathFragment workspacePathFragment) {
-    this.attemptToPrintRelativePaths = attemptToPrintRelativePaths;
-    this.workspacePathFragment = workspacePathFragment;
-  }
+    init {
+        this.workspacePathFragment = workspacePathFragment
+    }
 
-  public void packageLocatorCreated(PathPackageLocator packageLocator) {
-    packagePathRootsRef.set(packageLocator.getPathEntries());
-  }
+    fun packageLocatorCreated(packageLocator: PathPackageLocator) {
+        packagePathRootsRef.set(packageLocator.getPathEntries())
+    }
 
-  public String getLocationString(Location location) {
-    return attemptToPrintRelativePaths
-        ? getRelativeLocationString(location, workspacePathFragment, packagePathRootsRef.get())
-        : location.toString();
-  }
+    fun getLocationString(location: net.starlark.java.syntax.Location): String {
+        return if (attemptToPrintRelativePaths)
+            getRelativeLocationString(location, workspacePathFragment, packagePathRootsRef.get())
+        else
+            location.toString()
+    }
 
-  @VisibleForTesting
-  static String getRelativeLocationString(
-      Location location,
-      @Nullable PathFragment workspacePathFragment,
-      ImmutableList<Root> packagePathRoots) {
-    PathFragment relativePathToUse = null;
-    PathFragment locationPathFragment = PathFragment.create(location.file());
-    if (locationPathFragment.isAbsolute()) {
-      if (workspacePathFragment != null && locationPathFragment.startsWith(workspacePathFragment)) {
-        relativePathToUse = locationPathFragment.relativeTo(workspacePathFragment);
-      } else {
-        for (Root packagePathRoot : packagePathRoots) {
-          if (packagePathRoot.contains(locationPathFragment)) {
-            relativePathToUse = packagePathRoot.relativize(locationPathFragment);
-            break;
-          }
+    companion object {
+        @com.google.common.annotations.VisibleForTesting
+        fun getRelativeLocationString(
+            location: net.starlark.java.syntax.Location,
+            workspacePathFragment: PathFragment?,
+            packagePathRoots: com.google.common.collect.ImmutableList<Root>
+        ): String {
+            var relativePathToUse: PathFragment? = null
+            val locationPathFragment: PathFragment = PathFragment.create(location.file())
+            if (locationPathFragment.isAbsolute()) {
+                if (workspacePathFragment != null && locationPathFragment.startsWith(workspacePathFragment)) {
+                    relativePathToUse = locationPathFragment.relativeTo(workspacePathFragment)
+                } else {
+                    for (packagePathRoot in packagePathRoots) {
+                        if (packagePathRoot.contains(locationPathFragment)) {
+                            relativePathToUse = packagePathRoot.relativize(locationPathFragment)
+                            break
+                        }
+                    }
+                }
+            }
+
+            val b: java.lang.StringBuilder = java.lang.StringBuilder()
+            b.append(if (relativePathToUse != null) relativePathToUse else locationPathFragment)
+            val line: Int = location.line()
+            if (line != 0) {
+                b.append(':').append(line)
+                val column: Int = location.column()
+                if (column != 0) {
+                    b.append(':').append(column)
+                }
+            }
+            return b.toString()
         }
-      }
     }
-
-    StringBuilder b = new StringBuilder();
-    b.append(relativePathToUse != null ? relativePathToUse : locationPathFragment);
-    int line = location.line();
-    if (line != 0) {
-      b.append(':').append(line);
-      int column = location.column();
-      if (column != 0) {
-        b.append(':').append(column);
-      }
-    }
-    return b.toString();
-  }
 }

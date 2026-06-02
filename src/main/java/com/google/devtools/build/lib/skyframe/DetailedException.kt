@@ -11,19 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.util.DetailedExitCode
 
-/** An interface for Exceptions that will contain a {@link DetailedExitCode} */
-public interface DetailedException {
-  DetailedExitCode getDetailedExitCode();
+/** An interface for Exceptions that will contain a [DetailedExitCode]  */
+interface DetailedException {
+    @kotlin.jvm.JvmField
+    val detailedExitCode: DetailedExitCode?
 
-  @Nullable
-  static DetailedExitCode getDetailedExitCode(Exception exception) {
-    return exception instanceof DetailedException detailedException
-        ? detailedException.getDetailedExitCode()
-        : null;
-  }
+    companion object {
+        fun getDetailedExitCode(exception: java.lang.Exception?): DetailedExitCode? {
+            return if (exception is DetailedException)
+                exception.detailedExitCode
+            else
+                null
+        }
+    }
 }

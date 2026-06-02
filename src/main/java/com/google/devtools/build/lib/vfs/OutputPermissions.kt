@@ -11,20 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-/** File permissions of output file(s). */
-public enum OutputPermissions {
-  READONLY(0555),
-  WRITABLE(0755);
-
-  private final int permissionsMode;
-
-  private OutputPermissions(int permissionsMode) {
-    this.permissionsMode = permissionsMode;
-  }
-
-  public int getPermissionsMode() {
-    return permissionsMode;
-  }
+/** File permissions of output file(s).  */
+enum class OutputPermissions(val permissionsMode: Int) {
+    READONLY(365),
+    WRITABLE(493)
 }

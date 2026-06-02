@@ -11,217 +11,207 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
 
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.util.StringEncoding;
-import com.google.devtools.build.lib.vfs.ModifiedFileSet;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsProvider;
-import java.io.IOException;
-import java.nio.file.Path;
-import java.util.Set;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories
 
 /**
  * File system watcher for local filesystems. It's able to provide a list of changed files between
  * two consecutive calls. On Linux, uses the standard Java WatchService, which uses 'inotify' and,
- * on OS X, uses {@link MacOSXFsEventsDiffAwareness}, which use FSEvents.
- *
- * <p>
- * This is an abstract class, specialized by {@link MacOSXFsEventsDiffAwareness} and
- * {@link WatchServiceDiffAwareness}.
+ * on OS X, uses [MacOSXFsEventsDiffAwareness], which use FSEvents.
+ * 
+ * 
+ * 
+ * This is an abstract class, specialized by [MacOSXFsEventsDiffAwareness] and
+ * [WatchServiceDiffAwareness].
  */
-public abstract class LocalDiffAwareness implements DiffAwareness {
-  /** Option to enable / disable local diff awareness. */
-  @OptionsClass
-  public abstract static class Options extends OptionsBase {
-    @Option(
-        name = "watchfs",
-        defaultValue = "false",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.UNKNOWN},
-        help =
-            "On Linux/macOS: If true, %{product} tries to use the operating system's file watch "
-                + "service for local changes instead of scanning every file for a change. On "
-                + "Windows: this flag currently is a non-op but can be enabled in conjunction "
-                + "with --experimental_windows_watchfs. On any OS: The behavior is undefined "
-                + "if your workspace is on a network file system, and files are edited on a "
-                + "remote machine.")
-    public abstract boolean getWatchFS();
+abstract class LocalDiffAwareness protected constructor(watchRoot: java.nio.file.Path) : DiffAwareness {
+    /** Option to enable / disable local diff awareness.  */
+    @com.google.devtools.common.options.OptionsClass
+    abstract class Options : com.google.devtools.common.options.OptionsBase() {
+        @kotlin.jvm.JvmField
+        @get:com.google.devtools.common.options.Option(
+            name = "watchfs",
+            defaultValue = "false",
+            documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+            help = ("On Linux/macOS: If true, %{product} tries to use the operating system's file watch "
+                    + "service for local changes instead of scanning every file for a change. On "
+                    + "Windows: this flag currently is a non-op but can be enabled in conjunction "
+                    + "with --experimental_windows_watchfs. On any OS: The behavior is undefined "
+                    + "if your workspace is on a network file system, and files are edited on a "
+                    + "remote machine.")
+        )
+        abstract var watchFS: Boolean
 
-    public abstract void setWatchFS(boolean value);
+        @get:com.google.devtools.common.options.Option(
+            name = "experimental_windows_watchfs",
+            defaultValue = "false",
+            documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [com.google.devtools.common.options.OptionEffectTag.UNKNOWN],
+            help = ("If true, experimental Windows support for --watchfs is enabled. Otherwise --watchfs"
+                    + "is a non-op on Windows. Make sure to also enable --watchfs.")
+        )
+        abstract val windowsWatchFS: Boolean
+    }
 
-    @Option(
-        name = "experimental_windows_watchfs",
-        defaultValue = "false",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.UNKNOWN},
-        help =
-            "If true, experimental Windows support for --watchfs is enabled. Otherwise --watchfs"
-                + "is a non-op on Windows. Make sure to also enable --watchfs.")
-    public abstract boolean getWindowsWatchFS();
-  }
+    /** Factory for creating [LocalDiffAwareness] instances.  */
+    class Factory(
+        excludedNetworkFileSystemsPrefixes: com.google.common.collect.ImmutableList<String?>,
+        fsEventsNativeDepsService: FsEventsNativeDepsService?
+    ) : DiffAwareness.Factory {
+        private val excludedNetworkFileSystemsPrefixes: com.google.common.collect.ImmutableList<String?>
+        private val fsEventsNativeDepsService: FsEventsNativeDepsService?
 
-  /** Factory for creating {@link LocalDiffAwareness} instances. */
-  public static class Factory implements DiffAwareness.Factory {
-    private final ImmutableList<String> excludedNetworkFileSystemsPrefixes;
-    private final FsEventsNativeDepsService fsEventsNativeDepsService;
+        /**
+         * Creates a new factory; the file system watcher may not work on all file systems, particularly
+         * for network file systems. The prefix list can be used to exclude known paths that point to
+         * network file systems.
+         */
+        init {
+            this.excludedNetworkFileSystemsPrefixes = excludedNetworkFileSystemsPrefixes
+            this.fsEventsNativeDepsService = fsEventsNativeDepsService
+        }
+
+        public override fun maybeCreate(
+            pathEntry: Root,
+            ignoredPaths: IgnoredSubdirectories?,
+            optionsProvider: com.google.devtools.common.options.OptionsProvider?
+        ): DiffAwareness? {
+            val resolvedPathEntry: com.google.devtools.build.lib.vfs.Path
+            try {
+                resolvedPathEntry = pathEntry.asPath().resolveSymbolicLinks()
+            } catch (e: IOException) {
+                return null
+            }
+            val resolvedPathEntryFragment: PathFragment = resolvedPathEntry.asFragment()
+            // There's no good way to automatically detect network file systems. We rely on a list of
+            // paths to exclude for now (and maybe add a command-line option in the future?).
+            for (prefix in excludedNetworkFileSystemsPrefixes) {
+                if (resolvedPathEntryFragment.startsWith(PathFragment.create(prefix))) {
+                    return null
+                }
+            }
+            val watchRoot: java.nio.file.Path? =
+                java.nio.file.Path.of(StringEncoding.internalToPlatform(resolvedPathEntryFragment.getPathString()))
+            // On OSX uses FsEvents due to https://bugs.openjdk.java.net/browse/JDK-7133447
+            if (com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.DARWIN) {
+                return MacOSXFsEventsDiffAwareness(watchRoot, ignoredPaths, fsEventsNativeDepsService)
+            }
+
+            return WatchServiceDiffAwareness(watchRoot, ignoredPaths)
+        }
+    }
+
+    private var numGetCurrentViewCalls = 0
+
+    /** Root directory to watch. This is an absolute path.  */
+    protected val watchRoot: java.nio.file.Path
+
+    init {
+        this.watchRoot = watchRoot
+    }
 
     /**
-     * Creates a new factory; the file system watcher may not work on all file systems, particularly
-     * for network file systems. The prefix list can be used to exclude known paths that point to
-     * network file systems.
+     * The WatchService is inherently sequential and side-effectful, so we enforce this by only
+     * supporting [.getDiff] calls that happen to be sequential.
      */
-    public Factory(
-        ImmutableList<String> excludedNetworkFileSystemsPrefixes,
-        FsEventsNativeDepsService fsEventsNativeDepsService) {
-      this.excludedNetworkFileSystemsPrefixes = excludedNetworkFileSystemsPrefixes;
-      this.fsEventsNativeDepsService = fsEventsNativeDepsService;
-    }
+    @com.google.common.annotations.VisibleForTesting
+    internal class SequentialView(
+        private val owner: LocalDiffAwareness?,
+        private val position: Int,
+        modifiedAbsolutePaths: MutableSet<java.nio.file.Path>
+    ) : DiffAwareness.View {
+        private val modifiedAbsolutePaths: MutableSet<java.nio.file.Path>
 
-    @Override
-    @Nullable
-    public DiffAwareness maybeCreate(
-        Root pathEntry, IgnoredSubdirectories ignoredPaths, OptionsProvider optionsProvider) {
-      com.google.devtools.build.lib.vfs.Path resolvedPathEntry;
-      try {
-        resolvedPathEntry = pathEntry.asPath().resolveSymbolicLinks();
-      } catch (IOException e) {
-        return null;
-      }
-      PathFragment resolvedPathEntryFragment = resolvedPathEntry.asFragment();
-      // There's no good way to automatically detect network file systems. We rely on a list of
-      // paths to exclude for now (and maybe add a command-line option in the future?).
-      for (String prefix : excludedNetworkFileSystemsPrefixes) {
-        if (resolvedPathEntryFragment.startsWith(PathFragment.create(prefix))) {
-          return null;
+        init {
+            this.modifiedAbsolutePaths = modifiedAbsolutePaths
         }
-      }
-      Path watchRoot =
-          Path.of(StringEncoding.internalToPlatform(resolvedPathEntryFragment.getPathString()));
-      // On OSX uses FsEvents due to https://bugs.openjdk.java.net/browse/JDK-7133447
-      if (OS.getCurrent() == OS.DARWIN) {
-        return new MacOSXFsEventsDiffAwareness(watchRoot, ignoredPaths, fsEventsNativeDepsService);
-      }
 
-      return new WatchServiceDiffAwareness(watchRoot, ignoredPaths);
-    }
-  }
-
-  /**
-   * A view that results in any subsequent getDiff calls returning
-   * {@link ModifiedFileSet#EVERYTHING_MODIFIED}. Use this if --watchFs is disabled.
-   *
-   * <p>The position is set to -2 in order for {@link #areInSequence} below to always return false
-   * if this view is passed to it. Any negative number would work; we don't use -1 as the other
-   * view may have a position of 0.
-   */
-  protected static final View EVERYTHING_MODIFIED =
-      new SequentialView(/*owner=*/null, /*position=*/-2, ImmutableSet.<Path>of());
-
-  public static boolean areInSequence(SequentialView oldView, SequentialView newView) {
-    // Keep this in sync with the EVERYTHING_MODIFIED View above.
-    return oldView.owner == newView.owner && (oldView.position + 1) == newView.position;
-  }
-
-  private int numGetCurrentViewCalls = 0;
-
-  /** Root directory to watch. This is an absolute path. */
-  protected final Path watchRoot;
-
-  protected LocalDiffAwareness(Path watchRoot) {
-    this.watchRoot = watchRoot;
-  }
-
-  /**
-   * The WatchService is inherently sequential and side-effectful, so we enforce this by only
-   * supporting {@link #getDiff} calls that happen to be sequential.
-   */
-  @VisibleForTesting
-  static class SequentialView implements DiffAwareness.View {
-    private final LocalDiffAwareness owner;
-    private final int position;
-    private final Set<Path> modifiedAbsolutePaths;
-
-    public SequentialView(LocalDiffAwareness owner, int position, Set<Path> modifiedAbsolutePaths) {
-      this.owner = owner;
-      this.position = position;
-      this.modifiedAbsolutePaths = modifiedAbsolutePaths;
+        override fun toString(): String {
+            return String.format(
+                "SequentialView[owner=%s, position=%d, modifiedAbsolutePaths=%s]", owner,
+                position, modifiedAbsolutePaths
+            )
+        }
     }
 
-    @Override
-    public String toString() {
-      return String.format("SequentialView[owner=%s, position=%d, modifiedAbsolutePaths=%s]", owner,
-          position, modifiedAbsolutePaths);
-    }
-  }
+    protected val isFirstCall: Boolean
+        /**
+         * Returns true on any call before first call to [.newView].
+         */
+        get() = numGetCurrentViewCalls == 0
 
-  /**
-   * Returns true on any call before first call to {@link #newView}.
-   */
-  protected boolean isFirstCall() {
-    return numGetCurrentViewCalls == 0;
-  }
-
-  /**
-   * Create a new views using a list of modified absolute paths. This will increase the view
-   * counter.
-   */
-  protected SequentialView newView(Set<Path> modifiedAbsolutePaths) {
-    numGetCurrentViewCalls++;
-    return new SequentialView(this, numGetCurrentViewCalls, modifiedAbsolutePaths);
-  }
-
-  @Override
-  public ModifiedFileSet getDiff(@Nullable View oldView, View newView)
-      throws IncompatibleViewException, BrokenDiffAwarenessException {
-    if (oldView == null) {
-      return ModifiedFileSet.EVERYTHING_MODIFIED;
+    /**
+     * Create a new views using a list of modified absolute paths. This will increase the view
+     * counter.
+     */
+    protected fun newView(modifiedAbsolutePaths: MutableSet<java.nio.file.Path>): SequentialView {
+        numGetCurrentViewCalls++
+        return SequentialView(this, numGetCurrentViewCalls, modifiedAbsolutePaths)
     }
 
-    SequentialView oldSequentialView;
-    SequentialView newSequentialView;
-    try {
-      oldSequentialView = (SequentialView) oldView;
-      newSequentialView = (SequentialView) newView;
-    } catch (ClassCastException e) {
-      throw new IncompatibleViewException("Given views are not from LocalDiffAwareness");
-    }
-    if (!areInSequence(oldSequentialView, newSequentialView)) {
-      return ModifiedFileSet.EVERYTHING_MODIFIED;
+    @Throws(IncompatibleViewException::class, BrokenDiffAwarenessException::class)
+    public override fun getDiff(oldView: View?, newView: View?): ModifiedFileSet {
+        if (oldView == null) {
+            return ModifiedFileSet.EVERYTHING_MODIFIED
+        }
+
+        val oldSequentialView: SequentialView
+        val newSequentialView: SequentialView
+        try {
+            oldSequentialView = oldView as SequentialView
+            newSequentialView = newView as SequentialView
+        } catch (e: java.lang.ClassCastException) {
+            throw IncompatibleViewException("Given views are not from LocalDiffAwareness")
+        }
+        if (!areInSequence(oldSequentialView, newSequentialView)) {
+            return ModifiedFileSet.EVERYTHING_MODIFIED
+        }
+
+        val resultBuilder: ModifiedFileSet.Builder = ModifiedFileSet.builder()
+        for (modifiedPath in newSequentialView.modifiedAbsolutePaths) {
+            if (!modifiedPath.startsWith(watchRoot)) {
+                throw BrokenDiffAwarenessException(
+                    String.format("%s is not under %s", modifiedPath, watchRoot)
+                )
+            }
+            val relativePath: PathFragment =
+                PathFragment.create(
+                    StringEncoding.platformToInternal(watchRoot.relativize(modifiedPath).toString())
+                )
+            if (!relativePath.isEmpty()) {
+                resultBuilder.modify(relativePath)
+            }
+        }
+        return resultBuilder.build()
     }
 
-    ModifiedFileSet.Builder resultBuilder = ModifiedFileSet.builder();
-    for (Path modifiedPath : newSequentialView.modifiedAbsolutePaths) {
-      if (!modifiedPath.startsWith(watchRoot)) {
-        throw new BrokenDiffAwarenessException(
-            String.format("%s is not under %s", modifiedPath, watchRoot));
-      }
-      PathFragment relativePath =
-          PathFragment.create(
-              StringEncoding.platformToInternal(watchRoot.relativize(modifiedPath).toString()));
-      if (!relativePath.isEmpty()) {
-        resultBuilder.modify(relativePath);
-      }
+    public override fun name(): String {
+        return "local"
     }
-    return resultBuilder.build();
-  }
 
-  @Override
-  public String name() {
-    return "local";
-  }
+    companion object {
+        /**
+         * A view that results in any subsequent getDiff calls returning
+         * [ModifiedFileSet.EVERYTHING_MODIFIED]. Use this if --watchFs is disabled.
+         * 
+         * 
+         * The position is set to -2 in order for [.areInSequence] below to always return false
+         * if this view is passed to it. Any negative number would work; we don't use -1 as the other
+         * view may have a position of 0.
+         */
+        @kotlin.jvm.JvmField
+        val EVERYTHING_MODIFIED: View = SequentialView( /*owner=*/null,  /*position=*/
+            -2,
+            com.google.common.collect.ImmutableSet.of<java.nio.file.Path?>()
+        )
+
+        @kotlin.jvm.JvmStatic
+        fun areInSequence(oldView: SequentialView, newView: SequentialView): Boolean {
+            // Keep this in sync with the EVERYTHING_MODIFIED View above.
+            return oldView.owner === newView.owner && (oldView.position + 1) == newView.position
+        }
+    }
 }

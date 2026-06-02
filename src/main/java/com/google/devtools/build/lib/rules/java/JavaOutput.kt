@@ -11,259 +11,291 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.java;
+package com.google.devtools.build.lib.rules.java
 
-import static java.util.Objects.requireNonNull;
-
-import com.google.auto.value.AutoBuilder;
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.RuleClass.ConfiguredTargetFactory.RuleErrorException;
-import com.google.devtools.build.lib.packages.StructImpl;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.starlarkbuildapi.java.JavaOutputApi;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.Collection;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Sequence;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkSemantics;
+import com.google.common.annotations.VisibleForTesting
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.Iterables
+import com.google.devtools.build.lib.actions.Artifact
+import com.google.devtools.build.lib.concurrent.ThreadSafety
+import com.google.errorprone.annotations.CanIgnoreReturnValue
+import net.starlark.java.eval.EvalException
+import net.starlark.java.eval.Sequence
+import net.starlark.java.eval.Starlark
+import net.starlark.java.eval.StarlarkSemantics
+import java.util.*
 
 /**
  * A collection of artifacts associated with a jar output.
- *
- * @param sourceJars A {@link NestedSet} of sources archive files.
+ * 
+ * @param sourceJars A [NestedSet] of sources archive files.
  */
-@Immutable
+@ThreadSafety.Immutable
 @AutoCodec
-public record JavaOutput(
-    Artifact classJar,
-    @Nullable Artifact compileJar,
-    @Nullable Artifact headerCompilationJar,
-    @Nullable Artifact compileJdeps,
-    @Nullable Artifact generatedClassJar,
-    @Nullable Artifact generatedSourceJar,
-    @Nullable Artifact nativeHeadersJar,
-    @Nullable Artifact manifestProto,
-    @Nullable Artifact jdeps,
-    NestedSet<Artifact> sourceJars)
-    implements JavaOutputApi<Artifact> {
-  public JavaOutput {
-    requireNonNull(classJar, "classJar");
-    requireNonNull(sourceJars, "sourceJars");
-  }
-
-  @Override
-  public Artifact getClassJar() {
-    return classJar();
-  }
-
-  @Nullable
-  @Override
-  public Artifact getCompileJar() {
-    return compileJar();
-  }
-
-  @Nullable
-  @Override
-  public Artifact getHeaderCompilationJar() {
-    return headerCompilationJar;
-  }
-
-  @Nullable
-  @Override
-  public Artifact getCompileJdeps() {
-    return compileJdeps();
-  }
-
-  @Nullable
-  @Override
-  public Artifact getGeneratedClassJar() {
-    return generatedClassJar();
-  }
-
-  @Nullable
-  @Override
-  public Artifact getGeneratedSourceJar() {
-    return generatedSourceJar();
-  }
-
-  @Nullable
-  @Override
-  public Artifact getNativeHeadersJar() {
-    return nativeHeadersJar();
-  }
-
-  @Nullable
-  @Override
-  public Artifact getManifestProto() {
-    return manifestProto();
-  }
-
-  @Nullable
-  @Override
-  public Artifact getJdeps() {
-    return jdeps();
-  }
-
-  /**
-   * Translates a collection of {@link JavaOutput} for use in native code.
-   *
-   * @param outputs the collection of translate
-   * @return an immutable list of {@link JavaOutput} instances
-   * @throws EvalException if there were errors reading fields from the {@code Starlark} object
-   * @throws RuleErrorException if any item in the supplied collection is not a valid {@link
-   *     JavaOutput}
-   */
-  @VisibleForTesting
-  public static ImmutableList<JavaOutput> wrapSequence(Collection<?> outputs)
-      throws EvalException, RuleErrorException {
-    ImmutableList.Builder<JavaOutput> result = ImmutableList.builder();
-    for (Object info : outputs) {
-      if (info instanceof JavaOutput javaOutput) {
-        result.add(javaOutput);
-      } else if (info instanceof StructImpl structImpl) {
-        result.add(fromStarlarkJavaOutput(structImpl));
-      } else {
-        throw new RuleErrorException("expected JavaOutput, got: " + Starlark.type(info));
-      }
-    }
-    return result.build();
-  }
-
-  @Override
-  public boolean isImmutable() {
-    return true; // immutable and Starlark-hashable
-  }
-
-  @Nullable
-  @Deprecated
-  @Override
-  public Artifact getIJar() {
-    return compileJar();
-  }
-
-  @Nullable
-  @Deprecated
-  @Override
-  public Artifact getSrcJar() {
-    return Iterables.getOnlyElement(getSourceJarsAsList(), null);
-  }
-
-  public ImmutableList<Artifact> getSourceJarsAsList() {
-    return sourceJars().toList();
-  }
-
-  @Nullable
-  @Override
-  public Depset getSrcJarsStarlark(StarlarkSemantics semantics) {
-    return Depset.of(Artifact.class, sourceJars());
-  }
-
-  public static JavaOutput fromStarlarkJavaOutput(StructImpl struct) throws EvalException {
-    NestedSet<Artifact> sourceJars;
-    Object starlarkSourceJars = struct.getValue("source_jars");
-    if (starlarkSourceJars == Starlark.NONE || starlarkSourceJars instanceof Depset) {
-      sourceJars = Depset.noneableCast(starlarkSourceJars, Artifact.class, "source_jars");
-    } else {
-      sourceJars =
-          NestedSetBuilder.wrap(
-              Order.STABLE_ORDER, Sequence.cast(starlarkSourceJars, Artifact.class, "source_jars"));
-    }
-    return JavaOutput.builder()
-        .setClassJar(nullIfNone(struct.getValue("class_jar"), Artifact.class))
-        .setCompileJar(nullIfNone(struct.getValue("compile_jar"), Artifact.class))
-        .setHeaderCompilationJar(
-            nullIfNone(struct.getValue("header_compilation_jar"), Artifact.class))
-        .setCompileJdeps(nullIfNone(struct.getValue("compile_jdeps"), Artifact.class))
-        .setGeneratedClassJar(nullIfNone(struct.getValue("generated_class_jar"), Artifact.class))
-        .setGeneratedSourceJar(nullIfNone(struct.getValue("generated_source_jar"), Artifact.class))
-        .setNativeHeadersJar(nullIfNone(struct.getValue("native_headers_jar"), Artifact.class))
-        .setManifestProto(nullIfNone(struct.getValue("manifest_proto"), Artifact.class))
-        .setJdeps(nullIfNone(struct.getValue("jdeps"), Artifact.class))
-        .addSourceJars(sourceJars)
-        .build();
-  }
-
-  @Nullable
-  static <T> T nullIfNone(Object object, Class<T> type) {
-    return object != Starlark.NONE ? type.cast(object) : null;
-  }
-
-  /** Builder for OutputJar. */
-  @AutoBuilder
-  public abstract static class Builder {
-    private final NestedSetBuilder<Artifact> sourceJarsBuilder = NestedSetBuilder.stableOrder();
-
-    public abstract Builder setClassJar(Artifact value);
-
-    public abstract Builder setCompileJar(Artifact value);
-
-    public abstract Builder setHeaderCompilationJar(Artifact value);
-
-    public abstract Builder setCompileJdeps(Artifact value);
-
-    public abstract Builder setGeneratedClassJar(Artifact value);
-
-    public abstract Builder setGeneratedSourceJar(Artifact value);
-
-    public abstract Builder setNativeHeadersJar(Artifact value);
-
-    public abstract Builder setManifestProto(Artifact value);
-
-    public abstract Builder setJdeps(Artifact value);
-
-    @CanIgnoreReturnValue
-    abstract Builder setSourceJars(NestedSet<Artifact> value);
-
-    public Builder addSourceJar(@Nullable Artifact value) {
-      if (value != null) {
-        sourceJarsBuilder.add(value);
-      }
-      return this;
+class JavaOutput(
+    classJar: Artifact?,
+    compileJar: Artifact?,
+    headerCompilationJar: Artifact?,
+    compileJdeps: Artifact?,
+    generatedClassJar: Artifact?,
+    generatedSourceJar: Artifact?,
+    nativeHeadersJar: Artifact?,
+    manifestProto: Artifact?,
+    jdeps: Artifact?,
+    sourceJars: NestedSet<Artifact?>?
+) : JavaOutputApi<Artifact?> {
+    override fun getClassJar(): Artifact? {
+        return this.classJar
     }
 
-    public Builder addSourceJars(NestedSet<Artifact> values) {
-      sourceJarsBuilder.addTransitive(values);
-      return this;
+    override fun getCompileJar(): Artifact? {
+        return this.compileJar
     }
 
-    /** Populates the builder with outputs from {@link JavaCompileOutputs}. */
-    public Builder fromJavaCompileOutputs(JavaCompileOutputs<Artifact> value) {
-      return fromJavaCompileOutputs(value, true);
+    override fun getHeaderCompilationJar(): Artifact? {
+        return headerCompilationJar
     }
 
-    @CanIgnoreReturnValue
-    public Builder fromJavaCompileOutputs(
-        JavaCompileOutputs<Artifact> value, boolean includeJdeps) {
-      setClassJar(value.output());
-      if (includeJdeps) {
-        setJdeps(value.depsProto());
-      }
-      setGeneratedClassJar(value.genClass());
-      setGeneratedSourceJar(value.genSource());
-      setNativeHeadersJar(value.nativeHeader());
-      setManifestProto(value.manifestProto());
-      return this;
+    override fun getCompileJdeps(): Artifact? {
+        return this.compileJdeps
     }
 
-    abstract JavaOutput autoBuild();
-
-    public JavaOutput build() {
-      setSourceJars(sourceJarsBuilder.build());
-      return autoBuild();
+    override fun getGeneratedClassJar(): Artifact? {
+        return this.generatedClassJar
     }
-  }
 
-  public static Builder builder() {
-    return new AutoBuilder_JavaOutput_Builder();
-  }
+    override fun getGeneratedSourceJar(): Artifact? {
+        return this.generatedSourceJar
+    }
+
+    override fun getNativeHeadersJar(): Artifact? {
+        return this.nativeHeadersJar
+    }
+
+    override fun getManifestProto(): Artifact? {
+        return this.manifestProto
+    }
+
+    override fun getJdeps(): Artifact? {
+        return this.jdeps
+    }
+
+    val isImmutable: Boolean
+        get() = true // immutable and Starlark-hashable
+
+    @get:Deprecated("")
+    val iJar: Artifact?
+        get() = this.compileJar
+
+    @get:Deprecated("")
+    val srcJar: Artifact?
+        get() = Iterables.getOnlyElement<Artifact?>(this.sourceJarsAsList, null)
+
+    val sourceJarsAsList: ImmutableList<Artifact>
+        get() = this.sourceJars.toList()
+
+    override fun getSrcJarsStarlark(semantics: StarlarkSemantics?): Depset? {
+        return Depset.of(Artifact::class.java, this.sourceJars)
+    }
+
+    /** Builder for OutputJar.  */
+    @AutoBuilder
+    abstract class Builder {
+        private val sourceJarsBuilder: NestedSetBuilder<Artifact?> = NestedSetBuilder.stableOrder()
+
+        abstract fun setClassJar(value: Artifact?): Builder?
+
+        abstract fun setCompileJar(value: Artifact?): Builder?
+
+        abstract fun setHeaderCompilationJar(value: Artifact?): Builder?
+
+        abstract fun setCompileJdeps(value: Artifact?): Builder?
+
+        abstract fun setGeneratedClassJar(value: Artifact?): Builder?
+
+        abstract fun setGeneratedSourceJar(value: Artifact?): Builder?
+
+        abstract fun setNativeHeadersJar(value: Artifact?): Builder?
+
+        abstract fun setManifestProto(value: Artifact?): Builder?
+
+        abstract fun setJdeps(value: Artifact?): Builder?
+
+        @CanIgnoreReturnValue
+        abstract fun setSourceJars(value: NestedSet<Artifact?>?): Builder?
+
+        fun addSourceJar(value: Artifact?): Builder {
+            if (value != null) {
+                sourceJarsBuilder.add(value)
+            }
+            return this
+        }
+
+        fun addSourceJars(values: NestedSet<Artifact?>?): Builder {
+            sourceJarsBuilder.addTransitive(values)
+            return this
+        }
+
+        /** Populates the builder with outputs from [JavaCompileOutputs].  */
+        fun fromJavaCompileOutputs(value: JavaCompileOutputs<Artifact?>): Builder {
+            return fromJavaCompileOutputs(value, true)
+        }
+
+        @CanIgnoreReturnValue
+        fun fromJavaCompileOutputs(
+            value: JavaCompileOutputs<Artifact?>, includeJdeps: Boolean
+        ): Builder {
+            setClassJar(value.output())
+            if (includeJdeps) {
+                setJdeps(value.depsProto())
+            }
+            setGeneratedClassJar(value.genClass())
+            setGeneratedSourceJar(value.genSource())
+            setNativeHeadersJar(value.nativeHeader())
+            setManifestProto(value.manifestProto())
+            return this
+        }
+
+        abstract fun autoBuild(): JavaOutput?
+
+        fun build(): JavaOutput? {
+            setSourceJars(sourceJarsBuilder.build())
+            return autoBuild()
+        }
+    }
+
+    val classJar: Artifact?
+    val compileJar: Artifact?
+    val headerCompilationJar: Artifact?
+    val compileJdeps: Artifact?
+    val generatedClassJar: Artifact?
+    val generatedSourceJar: Artifact?
+    val nativeHeadersJar: Artifact?
+    val manifestProto: Artifact?
+    val jdeps: Artifact?
+    val sourceJars: NestedSet<Artifact?>?
+
+    init {
+        this.sourceJars = sourceJars
+        this.jdeps = jdeps
+        this.manifestProto = manifestProto
+        this.nativeHeadersJar = nativeHeadersJar
+        this.generatedSourceJar = generatedSourceJar
+        this.generatedClassJar = generatedClassJar
+        this.compileJdeps = compileJdeps
+        this.headerCompilationJar = headerCompilationJar
+        this.compileJar = compileJar
+        this.classJar = classJar
+        Objects.requireNonNull<Any?>(classJar, "classJar")
+        Objects.requireNonNull<Any?>(sourceJars, "sourceJars")
+    }
+
+    companion object {
+        /**
+         * Translates a collection of [JavaOutput] for use in native code.
+         * 
+         * @param outputs the collection of translate
+         * @return an immutable list of [JavaOutput] instances
+         * @throws EvalException if there were errors reading fields from the `Starlark` object
+         * @throws RuleErrorException if any item in the supplied collection is not a valid [     ]
+         */
+        @VisibleForTesting
+        @Throws(EvalException::class, RuleErrorException::class)
+        fun wrapSequence(outputs: MutableCollection<*>): ImmutableList<JavaOutput?> {
+            val result = ImmutableList.builder<JavaOutput?>()
+            for (info in outputs) {
+                if (info is JavaOutput) {
+                    result.add(info)
+                } else if (info is StructImpl) {
+                    result.add(fromStarlarkJavaOutput(info))
+                } else {
+                    throw RuleErrorException("expected JavaOutput, got: " + Starlark.type(info))
+                }
+            }
+            return result.build()
+        }
+
+        @Throws(EvalException::class)
+        fun fromStarlarkJavaOutput(struct: StructImpl): JavaOutput? {
+            val sourceJars: NestedSet<Artifact?>?
+            val starlarkSourceJars: Any? = struct.getValue("source_jars")
+            if (starlarkSourceJars === Starlark.NONE || starlarkSourceJars is Depset) {
+                sourceJars = Depset.noneableCast(starlarkSourceJars, Artifact::class.java, "source_jars")
+            } else {
+                sourceJars =
+                    NestedSetBuilder.wrap(
+                        Order.STABLE_ORDER, Sequence.cast<T?>(starlarkSourceJars, Artifact::class.java, "source_jars")
+                    )
+            }
+            return builder()
+                .setClassJar(
+                    com.google.devtools.build.lib.rules.java.JavaOutput.Companion.nullIfNone<T?>(
+                        struct.getValue("class_jar"),
+                        Artifact::class.java
+                    )
+                )!!
+                .setCompileJar(
+                    com.google.devtools.build.lib.rules.java.JavaOutput.Companion.nullIfNone<T?>(
+                        struct.getValue("compile_jar"),
+                        Artifact::class.java
+                    )
+                )!!
+                .setHeaderCompilationJar(
+                    com.google.devtools.build.lib.rules.java.JavaOutput.Companion.nullIfNone<T?>(
+                        struct.getValue("header_compilation_jar"),
+                        Artifact::class.java
+                    )
+                )!!
+                .setCompileJdeps(
+                    com.google.devtools.build.lib.rules.java.JavaOutput.Companion.nullIfNone<T?>(
+                        struct.getValue("compile_jdeps"),
+                        Artifact::class.java
+                    )
+                )!!
+                .setGeneratedClassJar(
+                    com.google.devtools.build.lib.rules.java.JavaOutput.Companion.nullIfNone<T?>(
+                        struct.getValue(
+                            "generated_class_jar"
+                        ), Artifact::class.java
+                    )
+                )!!
+                .setGeneratedSourceJar(
+                    com.google.devtools.build.lib.rules.java.JavaOutput.Companion.nullIfNone<T?>(
+                        struct.getValue(
+                            "generated_source_jar"
+                        ), Artifact::class.java
+                    )
+                )!!
+                .setNativeHeadersJar(
+                    com.google.devtools.build.lib.rules.java.JavaOutput.Companion.nullIfNone<T?>(
+                        struct.getValue(
+                            "native_headers_jar"
+                        ), Artifact::class.java
+                    )
+                )!!
+                .setManifestProto(
+                    com.google.devtools.build.lib.rules.java.JavaOutput.Companion.nullIfNone<T?>(
+                        struct.getValue("manifest_proto"),
+                        Artifact::class.java
+                    )
+                )!!
+                .setJdeps(
+                    com.google.devtools.build.lib.rules.java.JavaOutput.Companion.nullIfNone<T?>(
+                        struct.getValue("jdeps"),
+                        Artifact::class.java
+                    )
+                )!!
+                .addSourceJars(sourceJars)
+                .build()
+        }
+
+        fun <T> nullIfNone(`object`: Any?, type: Class<T?>): T? {
+            return if (`object` !== Starlark.NONE) type.cast(`object`) else null
+        }
+
+        @kotlin.jvm.JvmStatic
+        fun builder(): Builder {
+            return AutoBuilder_JavaOutput_Builder()
+        }
+    }
 }

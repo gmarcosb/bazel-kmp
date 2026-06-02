@@ -11,312 +11,294 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.base.Throwables.throwIfInstanceOf;
-import static com.google.common.base.Throwables.throwIfUnchecked;
+import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.bugreport.BugReport;
-import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.cmdline.QueryExceptionMarkerInterface;
-import com.google.devtools.build.lib.cmdline.ResolvedTargets;
-import com.google.devtools.build.lib.cmdline.SignedTargetPattern;
-import com.google.devtools.build.lib.cmdline.TargetParsingException;
-import com.google.devtools.build.lib.cmdline.TargetPattern;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.io.InconsistentFilesystemException;
-import com.google.devtools.build.lib.io.ProcessPackageDirectoryException;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.pkgcache.FilteringPolicies;
-import com.google.devtools.build.lib.pkgcache.ParsingFailedEvent;
-import com.google.devtools.build.lib.pkgcache.RecursivePackageProvider.PackageBackedRecursivePackageProvider;
-import com.google.devtools.build.lib.pkgcache.TargetPatternPreloader;
-import com.google.devtools.build.lib.server.FailureDetails.TargetPatterns;
-import com.google.devtools.build.lib.skyframe.TargetPatternValue.TargetPatternKey;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.vfs.DetailedIOException;
-import com.google.devtools.build.skyframe.ErrorInfo;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.WalkableGraph;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.atomic.AtomicReference;
-import javax.annotation.Nullable;
+/** Skyframe-based target pattern parsing.  */
+class SkyframeTargetPatternEvaluator(skyframeExecutor: SkyframeExecutor) : TargetPatternPreloader {
+    private val skyframeExecutor: SkyframeExecutor
 
-/** Skyframe-based target pattern parsing. */
-public final class SkyframeTargetPatternEvaluator implements TargetPatternPreloader {
-  private final SkyframeExecutor skyframeExecutor;
-
-  public SkyframeTargetPatternEvaluator(SkyframeExecutor skyframeExecutor) {
-    this.skyframeExecutor = skyframeExecutor;
-  }
-
-  @Override
-  public Map<String, Collection<Target>> preloadTargetPatterns(
-      ExtendedEventHandler eventHandler,
-      TargetPattern.Parser mainRepoTargetParser,
-      Collection<String> patterns,
-      boolean keepGoing)
-      throws TargetParsingException, InterruptedException {
-    ImmutableMap.Builder<String, Collection<Target>> resultBuilder = ImmutableMap.builder();
-    List<PatternLookup> patternLookups = new ArrayList<>();
-    List<SkyKey> allKeys = new ArrayList<>();
-    for (String pattern : patterns) {
-      Preconditions.checkArgument(!pattern.startsWith("-"));
-      PatternLookup patternLookup =
-          createPatternLookup(mainRepoTargetParser, eventHandler, pattern, keepGoing);
-      if (patternLookup == null) {
-        resultBuilder.put(pattern, ImmutableSet.of());
-      } else {
-        patternLookups.add(patternLookup);
-        allKeys.add(patternLookup.skyKey);
-      }
+    init {
+        this.skyframeExecutor = skyframeExecutor
     }
 
-    EvaluationResult<SkyValue> result =
-        skyframeExecutor.targetPatterns(
-            allKeys, SkyframeExecutor.DEFAULT_THREAD_COUNT, keepGoing, eventHandler);
-    Exception catastrophe = result.getCatastrophe();
-    if (catastrophe != null) {
-      throwIfInstanceOf(catastrophe, TargetParsingException.class);
-      throwIfUnchecked(catastrophe);
-      throw wrapException(catastrophe, result);
-    }
-    WalkableGraph walkableGraph = Preconditions.checkNotNull(result.getWalkableGraph(), result);
-    for (PatternLookup patternLookup : patternLookups) {
-      SkyKey key = patternLookup.skyKey;
-      SkyValue resultValue = result.get(key);
-      if (resultValue != null) {
-        try {
-          Collection<Target> resolvedTargets =
-              patternLookup.process(eventHandler, resultValue, walkableGraph, keepGoing);
-          resultBuilder.put(patternLookup.pattern, resolvedTargets);
-        } catch (TargetParsingException e) {
-          if (!keepGoing) {
-            throw e;
-          }
-          eventHandler.handle(createPatternParsingError(e, patternLookup.pattern));
-          eventHandler.post(PatternExpandingError.skipped(patternLookup.pattern, e.getMessage()));
-          resultBuilder.put(patternLookup.pattern, ImmutableSet.of());
+    @Throws(TargetParsingException::class, java.lang.InterruptedException::class)
+    public override fun preloadTargetPatterns(
+        eventHandler: ExtendedEventHandler,
+        mainRepoTargetParser: TargetPattern.Parser?,
+        patterns: MutableCollection<String>,
+        keepGoing: Boolean
+    ): MutableMap<String?, MutableCollection<Target?>?> {
+        val resultBuilder: com.google.common.collect.ImmutableMap.Builder<String?, MutableCollection<Target?>?> =
+            com.google.common.collect.ImmutableMap.builder<String?, MutableCollection<Target?>?>()
+        val patternLookups: MutableList<PatternLookup> = java.util.ArrayList<PatternLookup>()
+        val allKeys: MutableList<SkyKey?> = java.util.ArrayList<SkyKey?>()
+        for (pattern in patterns) {
+            com.google.common.base.Preconditions.checkArgument(!pattern.startsWith("-"))
+            val patternLookup =
+                createPatternLookup(mainRepoTargetParser, eventHandler, pattern, keepGoing)
+            if (patternLookup == null) {
+                resultBuilder.put(pattern, com.google.common.collect.ImmutableSet.of<Target?>())
+            } else {
+                patternLookups.add(patternLookup)
+                allKeys.add(patternLookup.skyKey)
+            }
         }
-      } else {
-        String rawPattern = patternLookup.pattern;
-        ErrorInfo error = result.errorMap().get(key);
-        if (error == null) {
-          if (keepGoing) {
-            BugReport.sendBugReport(
-                new IllegalStateException(
-                    "No error for a non-catastrophic keep-going build: " + key + ", " + result));
-          }
-          continue;
+
+        val result: EvaluationResult<SkyValue?> =
+            skyframeExecutor.targetPatterns(
+                allKeys, SkyframeExecutor.Companion.DEFAULT_THREAD_COUNT, keepGoing, eventHandler
+            )
+        val catastrophe: java.lang.Exception? = result.getCatastrophe()
+        if (catastrophe != null) {
+            com.google.common.base.Throwables.throwIfInstanceOf<X?>(catastrophe, TargetParsingException::class.java)
+            com.google.common.base.Throwables.throwIfUnchecked(catastrophe)
+            throw wrapException(catastrophe, result)
         }
-        String errorMessage;
-        TargetParsingException targetParsingException;
-        if (error.getException() != null) {
-          // This exception could be a TargetParsingException for a target pattern, a
-          // NoSuchPackageException for a label (or package wildcard), or potentially a lower-level
-          // exception if there is a bug in error handling.
-          Exception exception = error.getException();
-          errorMessage = exception.getMessage();
-          if (exception instanceof TargetParsingException tpe) {
-            targetParsingException = tpe;
-          } else {
-            targetParsingException = wrapException(exception, key);
-          }
-        } else {
-          Preconditions.checkState(
-              !error.getCycleInfo().isEmpty(),
-              "No exception or cycle %s %s %s",
-              key,
-              error,
-              result);
-          errorMessage = "cycles detected during target parsing";
-          targetParsingException =
-              new TargetParsingException(errorMessage, TargetPatterns.Code.CYCLE);
-          skyframeExecutor
-              .getCyclesReporter()
-              .reportCycles(error.getCycleInfo(), key, eventHandler);
+        val walkableGraph: WalkableGraph =
+            com.google.common.base.Preconditions.checkNotNull<WalkableGraph>(result.getWalkableGraph(), result)
+        for (patternLookup in patternLookups) {
+            val key: SkyKey? = patternLookup.skyKey
+            val resultValue: SkyValue? = result.get(key)
+            if (resultValue != null) {
+                try {
+                    val resolvedTargets =
+                        patternLookup.process(eventHandler, resultValue, walkableGraph, keepGoing)
+                    resultBuilder.put(patternLookup.pattern, resolvedTargets)
+                } catch (e: TargetParsingException) {
+                    if (!keepGoing) {
+                        throw e
+                    }
+                    eventHandler.handle(createPatternParsingError(e, patternLookup.pattern))
+                    eventHandler.post(PatternExpandingError.skipped(patternLookup.pattern, e.getMessage()))
+                    resultBuilder.put(patternLookup.pattern, com.google.common.collect.ImmutableSet.of<Target?>())
+                }
+            } else {
+                val rawPattern = patternLookup.pattern
+                val error: com.google.devtools.build.skyframe.ErrorInfo? = result.errorMap().get(key)
+                if (error == null) {
+                    if (keepGoing) {
+                        BugReport.sendBugReport(
+                            java.lang.IllegalStateException(
+                                "No error for a non-catastrophic keep-going build: " + key + ", " + result
+                            )
+                        )
+                    }
+                    continue
+                }
+                val errorMessage: String?
+                val targetParsingException: TargetParsingException?
+                if (error.getException() != null) {
+                    // This exception could be a TargetParsingException for a target pattern, a
+                    // NoSuchPackageException for a label (or package wildcard), or potentially a lower-level
+                    // exception if there is a bug in error handling.
+                    val exception: java.lang.Exception? = error.getException()
+                    errorMessage = exception.getMessage()
+                    if (exception is TargetParsingException) {
+                        targetParsingException = exception
+                    } else {
+                        targetParsingException = wrapException(exception, key)
+                    }
+                } else {
+                    com.google.common.base.Preconditions.checkState(
+                        !error.getCycleInfo().isEmpty(),
+                        "No exception or cycle %s %s %s",
+                        key,
+                        error,
+                        result
+                    )
+                    errorMessage = "cycles detected during target parsing"
+                    targetParsingException =
+                        TargetParsingException(errorMessage, TargetPatterns.Code.CYCLE)
+                    skyframeExecutor
+                        .getCyclesReporter()
+                        .reportCycles(error.getCycleInfo(), key, eventHandler)
+                }
+                if (keepGoing) {
+                    eventHandler.handle(createPatternParsingError(targetParsingException, rawPattern))
+                    eventHandler.post(PatternExpandingError.skipped(rawPattern, errorMessage))
+                } else {
+                    eventHandler.post(PatternExpandingError.failed(patternLookup.pattern, errorMessage))
+                    throw targetParsingException
+                }
+                resultBuilder.put(patternLookup.pattern, com.google.common.collect.ImmutableSet.of<Target?>())
+            }
         }
-        if (keepGoing) {
-          eventHandler.handle(createPatternParsingError(targetParsingException, rawPattern));
-          eventHandler.post(PatternExpandingError.skipped(rawPattern, errorMessage));
-        } else {
-          eventHandler.post(PatternExpandingError.failed(patternLookup.pattern, errorMessage));
-          throw targetParsingException;
+        return resultBuilder.buildOrThrow()
+    }
+
+    private abstract class PatternLookup(val pattern: String?, skyKey: SkyKey?) {
+        private val skyKey: SkyKey?
+
+        init {
+            this.skyKey = skyKey
         }
-        resultBuilder.put(patternLookup.pattern, ImmutableSet.of());
-      }
-    }
-    return resultBuilder.buildOrThrow();
-  }
 
-  private static TargetParsingException wrapException(Exception exception, Object debugging) {
-    if (exception instanceof NoSuchPackageException noSuchPackageException) {
-      // Transform NoSuchPackageException into TargetParsingException to avoid triggering
-      // non-fatal bug reports on user errors (e.g. broken BUILD files).
-      return new TargetParsingException(
-          exception.getMessage(), exception, noSuchPackageException.getDetailedExitCode());
-    }
-    if (exception instanceof DetailedIOException detailedException) {
-      return new TargetParsingException(
-          detailedException.getMessage(), exception, detailedException.getDetailedExitCode());
-    }
-    BugReport.sendNonFatalBugReport(
-        new IllegalStateException("Unexpected exception: " + debugging, exception));
-    String message = "Target parsing failed due to unexpected exception: " + exception.getMessage();
-    DetailedExitCode detailedExitCode = DetailedException.getDetailedExitCode(exception);
-    return detailedExitCode != null
-        ? new TargetParsingException(message, exception, detailedExitCode)
-        : new TargetParsingException(message, exception, TargetPatterns.Code.CANNOT_PRELOAD_TARGET);
-  }
-
-  @Nullable
-  private static PatternLookup createPatternLookup(
-      TargetPattern.Parser mainRepoTargetParser,
-      ExtendedEventHandler eventHandler,
-      String targetPattern,
-      boolean keepGoing)
-      throws TargetParsingException {
-    try {
-      TargetPatternKey key =
-          TargetPatternValue.key(
-              SignedTargetPattern.parse(targetPattern, mainRepoTargetParser),
-              FilteringPolicies.NO_FILTER);
-      return isSimple(key.getParsedPattern())
-          ? new SimpleLookup(targetPattern, key)
-          : new NormalLookup(targetPattern, key);
-    } catch (TargetParsingException e) {
-      // We report a parsing failed exception to the event bus here in case the pattern did not
-      // successfully parse (which happens before the SkyKey is created). Otherwise the
-      // TargetPatternFunction posts the event.
-      eventHandler.post(new ParsingFailedEvent(targetPattern, e.getMessage()));
-      if (!keepGoing) {
-        throw e;
-      }
-      eventHandler.handle(createPatternParsingError(e, targetPattern));
-      return null;
-    }
-  }
-
-  /** Returns true for patterns that can be resolved from a single PackageValue. */
-  private static boolean isSimple(TargetPattern targetPattern) {
-    switch (targetPattern.type) {
-      case SINGLE_TARGET:
-      case TARGETS_IN_PACKAGE:
-        return true;
-      case PATH_AS_TARGET:
-      case TARGETS_BELOW_DIRECTORY:
-        // Both of these require multiple package lookups. PATH_AS_TARGET needs to find the
-        // enclosing package, and TARGETS_BELOW_DIRECTORY recursively looks for all packages under a
-        // specified directory.
-        return false;
-    }
-    throw new AssertionError();
-  }
-
-  private static Event createPatternParsingError(TargetParsingException e, String pattern) {
-    return Event.error("Skipping '" + pattern + "': " + e.getMessage())
-        .withProperty(DetailedExitCode.class, e.getDetailedExitCode());
-  }
-
-  private abstract static class PatternLookup {
-    protected final String pattern;
-    @Nullable private final SkyKey skyKey;
-
-    private PatternLookup(String pattern, SkyKey skyKey) {
-      this.pattern = pattern;
-      this.skyKey = skyKey;
+        @Throws(java.lang.InterruptedException::class, TargetParsingException::class)
+        abstract fun process(
+            eventHandler: ExtendedEventHandler?,
+            value: SkyValue?,
+            walkableGraph: WalkableGraph?,
+            keepGoing: Boolean
+        ): MutableCollection<Target?>?
     }
 
-    public abstract Collection<Target> process(
-        ExtendedEventHandler eventHandler,
-        SkyValue value,
-        WalkableGraph walkableGraph,
-        boolean keepGoing)
-        throws InterruptedException, TargetParsingException;
-  }
+    private class NormalLookup(targetPattern: String?, key: TargetPatternKey?) : PatternLookup(targetPattern, key) {
+        private val resultBuilder: TargetPatternsResultBuilder
 
-  private static class NormalLookup extends PatternLookup {
-    private final TargetPatternsResultBuilder resultBuilder;
+        init {
+            this.resultBuilder = TargetPatternsResultBuilder()
+        }
 
-    private NormalLookup(String targetPattern, TargetPatternKey key) {
-      super(targetPattern, key);
-      this.resultBuilder = new TargetPatternsResultBuilder();
+        @Throws(java.lang.InterruptedException::class, TargetParsingException::class)
+        override fun process(
+            eventHandler: ExtendedEventHandler?,
+            value: SkyValue?,
+            walkableGraph: WalkableGraph?,
+            keepGoing: Boolean
+        ): MutableCollection<Target?>? {
+            val resultValue: TargetPatternValue = value as TargetPatternValue
+            val results: ResolvedTargets<Label?> = resultValue.getTargets()
+            resultBuilder.addLabelsOfPositivePattern(results)
+            return resultBuilder.build(walkableGraph)
+        }
     }
 
-    @Override
-    public Collection<Target> process(
-        ExtendedEventHandler eventHandler,
-        SkyValue value,
-        WalkableGraph walkableGraph,
-        boolean keepGoing)
-        throws InterruptedException, TargetParsingException {
-      TargetPatternValue resultValue = (TargetPatternValue) value;
-      ResolvedTargets<Label> results = resultValue.getTargets();
-      resultBuilder.addLabelsOfPositivePattern(results);
-      return resultBuilder.build(walkableGraph);
-    }
-  }
+    private class SimpleLookup(pattern: String?, key: PackageIdentifier?, targetPattern: TargetPattern) :
+        PatternLookup(pattern, key) {
+        private val targetPattern: TargetPattern
 
-  private static class SimpleLookup extends PatternLookup {
-    private final TargetPattern targetPattern;
+        private constructor(pattern: String?, key: TargetPatternKey) : this(
+            pattern,
+            key.getParsedPattern().getDirectory(),
+            key.getParsedPattern()
+        )
 
-    private SimpleLookup(String pattern, TargetPatternKey key) {
-      this(pattern, key.getParsedPattern().getDirectory(), key.getParsedPattern());
+        init {
+            this.targetPattern = targetPattern
+        }
+
+        @Throws(java.lang.InterruptedException::class, TargetParsingException::class)
+        override fun process(
+            eventHandler: ExtendedEventHandler?,
+            value: SkyValue,
+            walkableGraph: WalkableGraph?,
+            keepGoing: Boolean
+        ): MutableCollection<Target?>? {
+            val pkg: Package = (value as PackageValue).getPackage()
+            val resolver: RecursivePackageProviderBackedTargetPatternResolver =
+                RecursivePackageProviderBackedTargetPatternResolver(
+                    PackageBackedRecursivePackageProvider(
+                        com.google.common.collect.ImmutableMap.of<K?, V?>(pkg.getPackageIdentifier(), pkg)
+                    ),
+                    eventHandler,
+                    FilteringPolicies.NO_FILTER,  /* packageSemaphore= */
+                    null,  /* maxConcurrentGetTargetsTasks= */
+                    java.util.Optional.empty<T?>(),
+                    { SimplePackageIdentifierBatchingCallback() })
+            val result: AtomicReference<MutableCollection<Target?>?> = AtomicReference<MutableCollection<Target?>?>()
+            try {
+                targetPattern.eval(
+                    resolver,  /* ignoredSubdirectories= */
+                    { IgnoredSubdirectories.EMPTY },  /* excludedSubdirectories= */
+                    com.google.common.collect.ImmutableSet.of<E?>(),
+                    { partialResult ->
+                        result.set(
+                            if (partialResult is MutableCollection<*>)
+                                partialResult as MutableCollection<Target?>
+                            else
+                                com.google.common.collect.ImmutableSet.copyOf(partialResult)
+                        )
+                    },
+                    MarkerRuntimeException::class.java
+                )
+            } catch (e: ProcessPackageDirectoryException) {
+                throw java.lang.IllegalStateException(
+                    "PackageBackedRecursivePackageProvider doesn't throw for " + targetPattern, e
+                )
+            } catch (e: InconsistentFilesystemException) {
+                throw java.lang.IllegalStateException(
+                    "PackageBackedRecursivePackageProvider doesn't throw for " + targetPattern, e
+                )
+            }
+            return result.get()
+        }
     }
 
-    private SimpleLookup(String pattern, PackageIdentifier key, TargetPattern targetPattern) {
-      super(pattern, key);
-      this.targetPattern = targetPattern;
-    }
+    companion object {
+        private fun wrapException(exception: java.lang.Exception, debugging: Any?): TargetParsingException {
+            if (exception is NoSuchPackageException) {
+                // Transform NoSuchPackageException into TargetParsingException to avoid triggering
+                // non-fatal bug reports on user errors (e.g. broken BUILD files).
+                return TargetParsingException(
+                    exception.getMessage(), exception, exception.getDetailedExitCode()
+                )
+            }
+            if (exception is DetailedIOException) {
+                return TargetParsingException(
+                    exception.getMessage(), exception, exception.getDetailedExitCode()
+                )
+            }
+            BugReport.sendNonFatalBugReport(
+                java.lang.IllegalStateException("Unexpected exception: " + debugging, exception)
+            )
+            val message = "Target parsing failed due to unexpected exception: " + exception.getMessage()
+            val detailedExitCode: DetailedExitCode? = DetailedException.getDetailedExitCode(exception)
+            return if (detailedExitCode != null)
+                TargetParsingException(message, exception, detailedExitCode)
+            else
+                TargetParsingException(message, exception, TargetPatterns.Code.CANNOT_PRELOAD_TARGET)
+        }
 
-    @Override
-    public Collection<Target> process(
-        ExtendedEventHandler eventHandler,
-        SkyValue value,
-        WalkableGraph walkableGraph,
-        boolean keepGoing)
-        throws InterruptedException, TargetParsingException {
-      Package pkg = ((PackageValue) value).getPackage();
-      RecursivePackageProviderBackedTargetPatternResolver resolver =
-          new RecursivePackageProviderBackedTargetPatternResolver(
-              new PackageBackedRecursivePackageProvider(
-                  ImmutableMap.of(pkg.getPackageIdentifier(), pkg)),
-              eventHandler,
-              FilteringPolicies.NO_FILTER,
-              /* packageSemaphore= */ null,
-              /* maxConcurrentGetTargetsTasks= */ Optional.empty(),
-              SimplePackageIdentifierBatchingCallback::new);
-      AtomicReference<Collection<Target>> result = new AtomicReference<>();
-      try {
-        targetPattern.eval(
-            resolver,
-            /* ignoredSubdirectories= */ () -> IgnoredSubdirectories.EMPTY,
-            /* excludedSubdirectories= */ ImmutableSet.of(),
-            partialResult ->
-                result.set(
-                    partialResult instanceof Collection
-                        ? (Collection<Target>) partialResult
-                        : ImmutableSet.copyOf(partialResult)),
-            QueryExceptionMarkerInterface.MarkerRuntimeException.class);
-      } catch (ProcessPackageDirectoryException | InconsistentFilesystemException e) {
-        throw new IllegalStateException(
-            "PackageBackedRecursivePackageProvider doesn't throw for " + targetPattern, e);
-      }
-      return result.get();
+        @Throws(TargetParsingException::class)
+        private fun createPatternLookup(
+            mainRepoTargetParser: TargetPattern.Parser?,
+            eventHandler: ExtendedEventHandler,
+            targetPattern: String?,
+            keepGoing: Boolean
+        ): PatternLookup? {
+            try {
+                val key: TargetPatternKey =
+                    TargetPatternValue.Companion.key(
+                        SignedTargetPattern.parse(targetPattern, mainRepoTargetParser),
+                        FilteringPolicies.NO_FILTER
+                    )
+                return if (isSimple(key.getParsedPattern()))
+                    SimpleLookup(targetPattern, key)
+                else
+                    NormalLookup(targetPattern, key)
+            } catch (e: TargetParsingException) {
+                // We report a parsing failed exception to the event bus here in case the pattern did not
+                // successfully parse (which happens before the SkyKey is created). Otherwise the
+                // TargetPatternFunction posts the event.
+                eventHandler.post(ParsingFailedEvent(targetPattern, e.getMessage()))
+                if (!keepGoing) {
+                    throw e
+                }
+                eventHandler.handle(createPatternParsingError(e, targetPattern))
+                return null
+            }
+        }
+
+        /** Returns true for patterns that can be resolved from a single PackageValue.  */
+        private fun isSimple(targetPattern: TargetPattern): Boolean {
+            when (targetPattern.type) {
+                SINGLE_TARGET, TARGETS_IN_PACKAGE -> return true
+                PATH_AS_TARGET, TARGETS_BELOW_DIRECTORY ->         // Both of these require multiple package lookups. PATH_AS_TARGET needs to find the
+                    // enclosing package, and TARGETS_BELOW_DIRECTORY recursively looks for all packages under a
+                    // specified directory.
+                    return false
+            }
+            throw java.lang.AssertionError()
+        }
+
+        private fun createPatternParsingError(
+            e: TargetParsingException,
+            pattern: String?
+        ): com.google.devtools.build.lib.events.Event? {
+            return com.google.devtools.build.lib.events.Event.error("Skipping '" + pattern + "': " + e.getMessage())
+                .withProperty<T?>(DetailedExitCode::class.java, e.getDetailedExitCode())
+        }
     }
-  }
 }

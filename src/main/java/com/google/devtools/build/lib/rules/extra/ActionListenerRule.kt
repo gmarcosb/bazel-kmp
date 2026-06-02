@@ -11,25 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.extra;
+package com.google.devtools.build.lib.rules.extra
 
-import static com.google.devtools.build.lib.packages.Attribute.attr;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL_LIST;
-import static com.google.devtools.build.lib.packages.Types.STRING_LIST;
-
-import com.google.devtools.build.lib.analysis.BaseRuleClasses;
-import com.google.devtools.build.lib.analysis.RuleDefinition;
-import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment;
-import com.google.devtools.build.lib.packages.RuleClass;
+import com.google.devtools.build.lib.packages.Attribute.attr
 
 /**
  * Rule definition for action_listener rule.
  */
-public final class ActionListenerRule implements RuleDefinition {
-  @Override
-  public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment environment) {
-    return builder
-        /*<!-- #BLAZE_RULE(action_listener).ATTRIBUTE(mnemonics) -->
+class ActionListenerRule : RuleDefinition {
+    public override fun build(builder: RuleClass.Builder, environment: RuleDefinitionEnvironment?): RuleClass {
+        return builder /*<!-- #BLAZE_RULE(action_listener).ATTRIBUTE(mnemonics) -->
         A list of action mnemonics this <code>action_listener</code> should listen
         for, e.g. <code>[ "Javac" ]</code>.
         <p>
@@ -37,32 +28,29 @@ public final class ActionListenerRule implements RuleDefinition {
           There's no guarantee that the mnemonics and their actions don't change.
         </p>
         <!-- #END_BLAZE_RULE.ATTRIBUTE -->*/
-        .add(attr("mnemonics", STRING_LIST).mandatory())
-        /*<!-- #BLAZE_RULE(action_listener).ATTRIBUTE(extra_actions) -->
+            .add(attr("mnemonics", STRING_LIST).mandatory()) /*<!-- #BLAZE_RULE(action_listener).ATTRIBUTE(extra_actions) -->
         A list of <code><a href="${link extra_action}">extra_action</a></code> targets
         this <code>action_listener</code> should add to the build graph.
         E.g. <code>[ "//my/tools:analyzer" ]</code>.
         <!-- #END_BLAZE_RULE.ATTRIBUTE -->*/
-        .add(attr("extra_actions", LABEL_LIST).mandatory()
-            .allowedRuleClasses("extra_action")
-            .allowedFileTypes())
-        .removeAttribute("deps")
-        .removeAttribute("data")
-        .removeAttribute(":action_listener")
-        .build();
-  }
+            .add(
+                attr("extra_actions", LABEL_LIST).mandatory()
+                    .allowedRuleClasses("extra_action")
+                    .allowedFileTypes()
+            )
+            .removeAttribute("deps")
+            .removeAttribute("data")
+            .removeAttribute(":action_listener")
+            .build()
+    }
 
-  @Override
-  public Metadata getMetadata() {
-    return RuleDefinition.Metadata.builder()
-        .name("action_listener")
-        .ancestors(BaseRuleClasses.NativeActionCreatingRule.class)
-        .factoryClass(ActionListener.class)
-        .build();
-  }
-}
-
-/*<!-- #BLAZE_RULE (NAME = action_listener, FAMILY = Extra Actions)[GENERIC_RULE] -->
+    val metadata: Metadata
+        get() = RuleDefinition.Metadata.builder()
+            .name("action_listener")
+            .ancestors(BaseRuleClasses.NativeActionCreatingRule::class.java)
+            .factoryClass(com.google.devtools.build.lib.rules.extra.ActionListener::class.java)
+            .build()
+} /*<!-- #BLAZE_RULE (NAME = action_listener, FAMILY = Extra Actions)[GENERIC_RULE] -->
 
 <p>
   <b>WARNING:</b> Extra actions are deprecated. Use
@@ -117,3 +105,4 @@ extra_action(
 </pre>
 
 <!-- #END_BLAZE_RULE -->*/
+

@@ -11,128 +11,118 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
-
-import java.util.Objects;
-import java.util.function.Consumer;
-import java.util.function.Function;
+package com.google.devtools.build.lib.util
 
 /**
- * A container wrapping a value of one of two types. An {@code Either<A, B>} instance either wraps
- * an instance of {@code A} or a instance of {@code B}.
- *
- * <p>Just as with {@link Pair}, this class is immutable, supports nullable values, and is
+ * A container wrapping a value of one of two types. An `Either<A, B>` instance either wraps
+ * an instance of `A` or a instance of `B`.
+ * 
+ * 
+ * Just as with [Pair], this class is immutable, supports nullable values, and is
  * completely devoid of Bazel-business-logic-specific semantics. Avoid using it in public APIs.
- *
- * <p>This class is a simple implementation of a general purpose "sum" type. In type theory, sum
- * types are the duals of product types -- the corresponding observation here is that {@link Either}
- * is the dual of {@link Pair}.
+ * 
+ * 
+ * This class is a simple implementation of a general purpose "sum" type. In type theory, sum
+ * types are the duals of product types -- the corresponding observation here is that [Either]
+ * is the dual of [Pair].
  */
-public abstract class Either<A, B> {
-  // Disallow subclasses outside of this file.
-  private Either() {
-  }
+abstract class Either<A, B>  // Disallow subclasses outside of this file.
+private constructor() {
+    /**
+     * Consumes the value injected into this [Either]. A left injection is consumed using
+     * `leftConsumer` and a right injection is consumed using `rightConsumer`.
+     */
+    abstract fun consume(
+        leftConsumer: java.util.function.Consumer<A?>?,
+        rightConsumer: java.util.function.Consumer<B?>?
+    )
 
-  /** Constructs a {@link Either} representing the left injection of {@code a}. */
-  public static <A, B> Either<A, B> ofLeft(A a) {
-    return new LeftEither<>(a);
-  }
+    /**
+     * Maps the value injected into this [Either]. A left injection is mapped using
+     * `leftFunction` and a right injection is mapped using `rightFunction`.
+     */
+    abstract fun <C> map(
+        leftFunction: java.util.function.Function<A?, C?>?,
+        rightFunction: java.util.function.Function<B?, C?>?
+    ): C?
 
-  /** Constructs a {@link Either} representing the right injection of {@code b}. */
-  public static <A, B> Either<A, B> ofRight(B b) {
-    return new RightEither<>(b);
-  }
+    abstract override fun hashCode(): Int
 
-  /**
-   * Consumes the value injected into this {@link Either}. A left injection is consumed using
-   * {@code leftConsumer} and a right injection is consumed using {@code rightConsumer}.
-   */
-  public abstract void consume(Consumer<A> leftConsumer, Consumer<B> rightConsumer);
+    abstract override fun equals(other: Any?): Boolean
 
-  /**
-   * Maps the value injected into this {@link Either}. A left injection is mapped using
-   * {@code leftFunction} and a right injection is mapped using {@code rightFunction}.
-   */
-  public abstract <C> C map(Function<A, C> leftFunction, Function<B, C> rightFunction);
+    abstract override fun toString(): String
 
-  @Override
-  public abstract int hashCode();
+    private class LeftEither<A, B>(private val a: A?) : Either<A?, B?>() {
+        override fun consume(
+            leftConsumer: java.util.function.Consumer<A?>,
+            rightConsumer: java.util.function.Consumer<B?>?
+        ) {
+            leftConsumer.accept(a)
+        }
 
-  @Override
-  public abstract boolean equals(Object other);
+        override fun <C> map(
+            leftFunction: java.util.function.Function<A?, C?>,
+            rightFunction: java.util.function.Function<B?, C?>?
+        ): C? {
+            return leftFunction.apply(a)
+        }
 
-  @Override
-  public abstract String toString();
+        override fun hashCode(): Int {
+            return java.util.Objects.hashCode(a)
+        }
 
-  private static class LeftEither<A, B> extends Either<A, B> {
-    private final A a;
+        override fun equals(other: Any?): Boolean {
+            if (other !is LeftEither<*, *>) {
+                return false
+            }
+            return this.a == other.a
+        }
 
-    private LeftEither(A a) {
-      this.a = a;
+        override fun toString(): String {
+            return "left injection of " + a
+        }
     }
 
-    @Override
-    public void consume(Consumer<A> leftConsumer, Consumer<B> rightConsumer) {
-      leftConsumer.accept(a);
+    private class RightEither<A, B>(private val b: B?) : Either<A?, B?>() {
+        override fun consume(
+            leftConsumer: java.util.function.Consumer<A?>?,
+            rightConsumer: java.util.function.Consumer<B?>
+        ) {
+            rightConsumer.accept(b)
+        }
+
+        override fun <C> map(
+            leftFunction: java.util.function.Function<A?, C?>?,
+            rightFunction: java.util.function.Function<B?, C?>
+        ): C? {
+            return rightFunction.apply(b)
+        }
+
+        override fun hashCode(): Int {
+            return java.util.Objects.hashCode(b)
+        }
+
+        override fun equals(other: Any?): Boolean {
+            if (other !is RightEither<*, *>) {
+                return false
+            }
+            return this.b == other.b
+        }
+
+        override fun toString(): String {
+            return "right injection of " + b
+        }
     }
 
-    @Override
-    public <C> C map(Function<A, C> leftFunction, Function<B, C> rightFunction) {
-      return leftFunction.apply(a);
-    }
+    companion object {
+        /** Constructs a [Either] representing the left injection of `a`.  */
+        fun <A, B> ofLeft(a: A?): Either<A?, B?> {
+            return LeftEither<A?, B?>(a)
+        }
 
-    @Override
-    public int hashCode() {
-      return Objects.hashCode(a);
+        /** Constructs a [Either] representing the right injection of `b`.  */
+        fun <A, B> ofRight(b: B?): Either<A?, B?> {
+            return RightEither<A?, B?>(b)
+        }
     }
-
-    @Override
-    public boolean equals(Object other) {
-      if (!(other instanceof LeftEither)) {
-        return false;
-      }
-      return Objects.equals(this.a, ((LeftEither) other).a);
-    }
-
-    @Override
-    public String toString() {
-      return "left injection of " + a;
-    }
-  }
-
-  private static class RightEither<A, B> extends Either<A, B> {
-    private final B b;
-
-    private RightEither(B b) {
-      this.b = b;
-    }
-
-    @Override
-    public void consume(Consumer<A> leftConsumer, Consumer<B> rightConsumer) {
-      rightConsumer.accept(b);
-    }
-
-    @Override
-    public <C> C map(Function<A, C> leftFunction, Function<B, C> rightFunction) {
-      return rightFunction.apply(b);
-    }
-
-    @Override
-    public int hashCode() {
-      return Objects.hashCode(b);
-    }
-
-    @Override
-    public boolean equals(Object other) {
-      if (!(other instanceof RightEither)) {
-        return false;
-      }
-      return Objects.equals(this.b, ((RightEither) other).b);
-    }
-
-    @Override
-    public String toString() {
-      return "right injection of " + b;
-    }
-  }
 }

@@ -11,83 +11,77 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.auto.value.AutoValue;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.TopLevelArtifactContext;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Collection;
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
 
 /**
  * A test completion value represents the completion of a test target. This includes the execution
  * of all test shards and repeated runs, if applicable.
  */
-public final class TestCompletionValue implements SkyValue {
-  static final TestCompletionValue TEST_COMPLETION_MARKER = new TestCompletionValue();
+object TestCompletionValue : SkyValue {
+    val TEST_COMPLETION_MARKER: TestCompletionValue = TestCompletionValue()
 
-  private TestCompletionValue() { }
-
-  public static SkyKey key(
-      ConfiguredTargetKey lac,
-      TopLevelArtifactContext topLevelArtifactContext,
-      boolean exclusiveTesting) {
-    return TestCompletionKey.create(lac, topLevelArtifactContext, exclusiveTesting);
-  }
-
-  public static Iterable<SkyKey> keys(
-      Collection<ConfiguredTarget> targets,
-      TopLevelArtifactContext topLevelArtifactContext,
-      boolean exclusiveTesting) {
-    return Iterables.transform(
-        targets,
-        ct ->
-            TestCompletionKey.create(
-                ConfiguredTargetKey.fromConfiguredTarget(ct),
-                topLevelArtifactContext,
-                exclusiveTesting));
-  }
-
-  /** Key for {@link TestCompletionValue} nodes. */
-  @AutoCodec
-  @AutoValue
-  public abstract static class TestCompletionKey implements SkyKey {
-    private static final SkyKeyInterner<TestCompletionKey> interner = SkyKey.newInterner();
-
-    @VisibleForSerialization
-    @AutoCodec.Instantiator
-    static TestCompletionKey create(
-        ConfiguredTargetKey configuredTargetKey,
-        TopLevelArtifactContext topLevelArtifactContext,
-        boolean exclusiveTesting) {
-      return interner.intern(
-          new AutoValue_TestCompletionValue_TestCompletionKey(
-              configuredTargetKey, topLevelArtifactContext, exclusiveTesting));
+    fun key(
+        lac: ConfiguredTargetKey?,
+        topLevelArtifactContext: TopLevelArtifactContext?,
+        exclusiveTesting: Boolean
+    ): SkyKey {
+        return TestCompletionKey.Companion.create(lac, topLevelArtifactContext, exclusiveTesting)
     }
 
-    abstract ConfiguredTargetKey configuredTargetKey();
-
-    public abstract TopLevelArtifactContext topLevelArtifactContext();
-    public abstract boolean exclusiveTesting();
-
-    @Override
-    public final SkyFunctionName functionName() {
-      return SkyFunctions.TEST_COMPLETION;
+    fun keys(
+        targets: MutableCollection<ConfiguredTarget?>,
+        topLevelArtifactContext: TopLevelArtifactContext?,
+        exclusiveTesting: Boolean
+    ): Iterable<SkyKey?> {
+        return com.google.common.collect.Iterables.transform<ConfiguredTarget?, SkyKey?>(
+            targets,
+            com.google.common.base.Function { ct: ConfiguredTarget? ->
+                TestCompletionKey.Companion.create(
+                    ConfiguredTargetKey.fromConfiguredTarget(ct),
+                    topLevelArtifactContext,
+                    exclusiveTesting
+                )
+            })
     }
 
-    @Override
-    public final boolean valueIsShareable() {
-      return false;
-    }
+    /** Key for [TestCompletionValue] nodes.  */
+    @AutoCodec
+    @AutoValue
+    abstract class TestCompletionKey : SkyKey {
+        abstract fun configuredTargetKey(): ConfiguredTargetKey?
 
-    @Override
-    public final SkyKeyInterner<TestCompletionKey> getSkyKeyInterner() {
-      return interner;
+        abstract fun topLevelArtifactContext(): TopLevelArtifactContext?
+        abstract fun exclusiveTesting(): Boolean
+
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.TEST_COMPLETION
+        }
+
+        override fun valueIsShareable(): Boolean {
+            return false
+        }
+
+        val skyKeyInterner: SkyKeyInterner<TestCompletionKey?>
+            get() = interner
+
+        companion object {
+            private val interner: SkyKeyInterner<TestCompletionKey?> = SkyKey.newInterner<TestCompletionKey?>()
+
+            @VisibleForSerialization
+            @AutoCodec.Instantiator
+            fun create(
+                configuredTargetKey: ConfiguredTargetKey?,
+                topLevelArtifactContext: TopLevelArtifactContext?,
+                exclusiveTesting: Boolean
+            ): TestCompletionKey {
+                return interner.intern(
+                    AutoValue_TestCompletionValue_TestCompletionKey(
+                        configuredTargetKey, topLevelArtifactContext, exclusiveTesting
+                    )
+                )
+            }
+        }
     }
-  }
 }

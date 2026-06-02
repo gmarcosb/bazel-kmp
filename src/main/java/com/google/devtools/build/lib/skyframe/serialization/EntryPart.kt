@@ -11,21 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-/** A part of a serialization entry. */
-public enum EntryPart implements ProfilerLocationProvider {
-  KEY("[KEY]"),
-  VALUE("[VALUE]");
+import com.google.devtools.build.lib.skyframe.serialization.ProfilerLocationProvider
 
-  private final String text;
+/** A part of a serialization entry.  */
+enum class EntryPart(text: String) : ProfilerLocationProvider {
+    KEY("[KEY]"),
+    VALUE("[VALUE]");
 
-  EntryPart(String text) {
-    this.text = text;
-  }
+    private val text: String?
 
-  @Override
-  public String getLocationText() {
-    return text;
-  }
+    init {
+        this.text = text
+    }
+
+    override fun getLocationText(): String? {
+        return text
+    }
 }

@@ -11,57 +11,50 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant
 
 /**
  * A value that represents "error transience", i.e. anything which may have caused an unexpected
  * failure. Is not equal to anything, including itself, in order to force re-evaluation.
  */
-public final class ErrorTransienceValue implements SkyValue {
+class ErrorTransienceValue private constructor() : SkyValue {
+    override fun hashCode(): Int {
+        // Not the prettiest, but since we always return false for equals throw exception here to catch
+        // any errors related to hash-based collections quickly.
+        throw java.lang.UnsupportedOperationException()
+    }
 
-  private static final SkyFunctionName FUNCTION_NAME =
-      SkyFunctionName.createNonHermetic("ERROR_TRANSIENCE");
+    override fun equals(other: Any?): Boolean {
+        return false
+    }
 
-  @SerializationConstant
-  public static final SkyKey KEY =
-      new SkyKey() {
-        @Override
-        public SkyFunctionName functionName() {
-          return FUNCTION_NAME;
+    override fun toString(): String {
+        return "ErrorTransienceValue"
+    }
+
+    companion object {
+        private val FUNCTION_NAME: SkyFunctionName = SkyFunctionName.Companion.createNonHermetic("ERROR_TRANSIENCE")
+
+        @kotlin.jvm.JvmField
+        @SerializationConstant
+        val KEY: SkyKey = object : SkyKey {
+            override fun functionName(): SkyFunctionName {
+                return FUNCTION_NAME
+            }
+
+            override fun valueIsShareable(): Boolean {
+                return false
+            }
+
+            override fun toString(): String {
+                return "ErrorTransienceValue.KEY"
+            }
         }
 
-        @Override
-        public boolean valueIsShareable() {
-          return false;
-        }
-
-        @Override
-        public String toString() {
-          return "ErrorTransienceValue.KEY";
-        }
-      };
-
-  @SerializationConstant
-  public static final ErrorTransienceValue INSTANCE = new ErrorTransienceValue();
-
-  private ErrorTransienceValue() {}
-
-  @Override
-  public int hashCode() {
-    // Not the prettiest, but since we always return false for equals throw exception here to catch
-    // any errors related to hash-based collections quickly.
-    throw new UnsupportedOperationException();
-  }
-
-  @Override
-  public boolean equals(Object other) {
-    return false;
-  }
-
-  @Override
-  public String toString() {
-    return "ErrorTransienceValue";
-  }
+        @kotlin.jvm.JvmField
+        @SerializationConstant
+        val INSTANCE: ErrorTransienceValue = ErrorTransienceValue()
+    }
 }

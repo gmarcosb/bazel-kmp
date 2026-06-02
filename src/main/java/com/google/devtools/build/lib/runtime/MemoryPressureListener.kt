@@ -11,185 +11,182 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
-
-import static com.google.common.collect.ImmutableList.toImmutableList;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.common.eventbus.EventBus;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.metrics.GarbageCollectionMetricsUtils;
-import com.google.devtools.build.lib.runtime.MemoryPressure.MemoryPressureStats;
-import com.sun.management.GarbageCollectionNotificationInfo;
-import java.lang.management.GarbageCollectorMXBean;
-import java.lang.management.ManagementFactory;
-import java.lang.management.MemoryUsage;
-import java.time.Duration;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicReference;
-import javax.management.Notification;
-import javax.management.NotificationEmitter;
-import javax.management.NotificationListener;
-import javax.management.openmbean.CompositeData;
+import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
 
 @ThreadSafe
-final class MemoryPressureListener implements NotificationListener {
+internal class MemoryPressureListener private constructor(executor: java.util.concurrent.Executor) :
+    NotificationListener {
+    private val eventBus: AtomicReference<com.google.common.eventbus.EventBus?> =
+        AtomicReference<com.google.common.eventbus.EventBus?>()
+    private val gcThrashingDetector: AtomicReference<GcThrashingDetector?> = AtomicReference<GcThrashingDetector?>()
+    private val gcChurnDetector: AtomicReference<GcChurningDetector?> = AtomicReference<GcChurningDetector?>()
+    private val executor: java.util.concurrent.Executor
 
-  private final AtomicReference<EventBus> eventBus = new AtomicReference<>();
-  private final AtomicReference<GcThrashingDetector> gcThrashingDetector = new AtomicReference<>();
-  private final AtomicReference<GcChurningDetector> gcChurnDetector = new AtomicReference<>();
-  private final Executor executor;
-
-  private MemoryPressureListener(Executor executor) {
-    this.executor = executor;
-  }
-
-  static MemoryPressureListener create() {
-    return createFromBeans(
-        ManagementFactory.getGarbageCollectorMXBeans(),
-        // Use a dedicated thread to broadcast memory pressure events. The service thread that calls
-        // handleNotification for GC events is not a typical Java thread - it doesn't work with
-        // debugger breakpoints and may not show up in thread dumps.
-        Executors.newSingleThreadExecutor(
-            new ThreadFactoryBuilder().setNameFormat("memory-pressure-listener-%d").build()));
-  }
-
-  @VisibleForTesting
-  static MemoryPressureListener createFromBeans(
-      List<GarbageCollectorMXBean> gcBeans, Executor executor) {
-    ImmutableList<NotificationEmitter> tenuredGcEmitters = findTenuredCollectorBeans(gcBeans);
-    if (tenuredGcEmitters.isEmpty()) {
-      var names =
-          gcBeans.stream()
-              .map(GarbageCollectorMXBean::getMemoryPoolNames)
-              .map(Arrays::asList)
-              .collect(toImmutableList());
-      throw new IllegalStateException(
-          String.format(
-              "Unable to find tenured collector from %s: names were %s.", gcBeans, names));
+    init {
+        this.executor = executor
     }
 
-    MemoryPressureListener memoryPressureListener = new MemoryPressureListener(executor);
-    tenuredGcEmitters.forEach(e -> e.addNotificationListener(memoryPressureListener, null, null));
-    return memoryPressureListener;
-  }
-
-  @VisibleForTesting
-  static ImmutableList<NotificationEmitter> findTenuredCollectorBeans(
-      List<GarbageCollectorMXBean> gcBeans) {
-    ImmutableList.Builder<NotificationEmitter> builder = ImmutableList.builder();
-    // Examine all collectors and register for notifications from those which collect the tenured
-    // space. Normally there is one such collector.
-    for (GarbageCollectorMXBean gcBean : gcBeans) {
-      for (String name : gcBean.getMemoryPoolNames()) {
-        if (GarbageCollectionMetricsUtils.isTenuredSpace(name)) {
-          builder.add((NotificationEmitter) gcBean);
+    override fun handleNotification(notification: javax.management.Notification, handback: Any?) {
+        if (notification
+                .getType()
+            != GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION
+        ) {
+            return
         }
-      }
-    }
-    return builder.build();
-  }
 
-  @Override
-  public void handleNotification(Notification notification, Object handback) {
-    if (!notification
-        .getType()
-        .equals(GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION)) {
-      return;
-    }
+        val gcInfo: GarbageCollectionNotificationInfo =
+            GarbageCollectionNotificationInfo.from(notification.getUserData() as CompositeData?)
 
-    GarbageCollectionNotificationInfo gcInfo =
-        GarbageCollectionNotificationInfo.from((CompositeData) notification.getUserData());
+        var tenuredSpaceUsedBytes = 0L
+        var tenuredSpaceMaxBytes = 0L
+        for (memoryUsageEntry in gcInfo.getGcInfo().getMemoryUsageAfterGc().entrySet()) {
+            if (!GarbageCollectionMetricsUtils.isTenuredSpace(memoryUsageEntry.getKey())) {
+                continue
+            }
+            val space: java.lang.management.MemoryUsage = memoryUsageEntry.getValue()
+            if (space.getMax() == 0L) {
+                // The collector sometimes passes us nonsense stats.
+                continue
+            }
+            tenuredSpaceUsedBytes = space.getUsed()
+            tenuredSpaceMaxBytes = space.getMax()
+            break
+        }
+        if (tenuredSpaceMaxBytes == 0L) {
+            return
+        }
 
-    long tenuredSpaceUsedBytes = 0L;
-    long tenuredSpaceMaxBytes = 0L;
-    for (Map.Entry<String, MemoryUsage> memoryUsageEntry :
-        gcInfo.getGcInfo().getMemoryUsageAfterGc().entrySet()) {
-      if (!GarbageCollectionMetricsUtils.isTenuredSpace(memoryUsageEntry.getKey())) {
-        continue;
-      }
-      MemoryUsage space = memoryUsageEntry.getValue();
-      if (space.getMax() == 0L) {
-        // The collector sometimes passes us nonsense stats.
-        continue;
-      }
-      tenuredSpaceUsedBytes = space.getUsed();
-      tenuredSpaceMaxBytes = space.getMax();
-      break;
-    }
-    if (tenuredSpaceMaxBytes == 0L) {
-      return;
-    }
-
-    MemoryPressureEvent event =
-        MemoryPressureEvent.newBuilder()
-            .setWasManualGc(gcInfo.getGcCause().equals("System.gc()"))
-            .setWasGcLockerInitiatedGc(gcInfo.getGcCause().equals("GCLocker Initiated GC"))
-            .setWasFullGc(GarbageCollectionMetricsUtils.isFullGc(gcInfo))
-            .setTenuredSpaceUsedBytes(tenuredSpaceUsedBytes)
-            .setTenuredSpaceMaxBytes(tenuredSpaceMaxBytes)
-            .setDuration(Duration.ofMillis(gcInfo.getGcInfo().getDuration()))
-            .build();
-    executor.execute(() -> broadcast(event));
-  }
-
-  private void broadcast(MemoryPressureEvent event) {
-    GcThrashingDetector gcThrashingDetector = this.gcThrashingDetector.get();
-    if (gcThrashingDetector != null) {
-      // Invoke the GcThrashingDetector directly instead of through the EventBus. This is because
-      // the point of GcThrashingDetector is to [conditionally] crash Blaze, but if we crash in a
-      // EventBus subscriber that means that CrashEvent and CommandCompleteEvent posted by
-      // BugReporter#handleCrash never get handled because EventBus defers recursive posts until
-      // after the posting subscriber has returned, but GcThrashingDetector halts the JVM and never
-      // returns.
-      gcThrashingDetector.handle(event);
-    }
-    GcChurningDetector gcChurningDetector = this.gcChurnDetector.get();
-    if (gcChurningDetector != null) {
-      // Same reasoning as above for invoking GcChurningDetector directly.
-      gcChurningDetector.handle(event);
+        val event: MemoryPressureEvent =
+            MemoryPressureEvent.Companion.newBuilder()
+                .setWasManualGc(gcInfo.getGcCause() == "System.gc()")
+                .setWasGcLockerInitiatedGc(gcInfo.getGcCause() == "GCLocker Initiated GC")
+                .setWasFullGc(GarbageCollectionMetricsUtils.isFullGc(gcInfo))
+                .setTenuredSpaceUsedBytes(tenuredSpaceUsedBytes)
+                .setTenuredSpaceMaxBytes(tenuredSpaceMaxBytes)
+                .setDuration(java.time.Duration.ofMillis(gcInfo.getGcInfo().getDuration()))
+                .build()
+        executor.execute(java.lang.Runnable { broadcast(event) })
     }
 
-    // A null EventBus implies memory pressure event between commands with no active EventBus.
-    EventBus eventBus = this.eventBus.get();
-    if (eventBus != null) {
-      eventBus.post(event);
+    private fun broadcast(event: MemoryPressureEvent) {
+        val gcThrashingDetector: GcThrashingDetector? = this.gcThrashingDetector.get()
+        if (gcThrashingDetector != null) {
+            // Invoke the GcThrashingDetector directly instead of through the EventBus. This is because
+            // the point of GcThrashingDetector is to [conditionally] crash Blaze, but if we crash in a
+            // EventBus subscriber that means that CrashEvent and CommandCompleteEvent posted by
+            // BugReporter#handleCrash never get handled because EventBus defers recursive posts until
+            // after the posting subscriber has returned, but GcThrashingDetector halts the JVM and never
+            // returns.
+            gcThrashingDetector.handle(event)
+        }
+        val gcChurningDetector: GcChurningDetector? = this.gcChurnDetector.get()
+        if (gcChurningDetector != null) {
+            // Same reasoning as above for invoking GcChurningDetector directly.
+            gcChurningDetector.handle(event)
+        }
+
+        // A null EventBus implies memory pressure event between commands with no active EventBus.
+        val eventBus: com.google.common.eventbus.EventBus? = this.eventBus.get()
+        if (eventBus != null) {
+            eventBus.post(event)
+        }
     }
-  }
 
-  void initForInvocation(
-      EventBus eventBus,
-      GcThrashingDetector gcThrashingDetector,
-      GcChurningDetector gcChurningDetector) {
-    this.eventBus.set(eventBus);
-    this.gcThrashingDetector.set(gcThrashingDetector);
-    this.gcChurnDetector.set(gcChurningDetector);
-  }
-
-  void targetParsingComplete(int numTopLevelTargets) {
-    GcChurningDetector gcChurningDetector = gcChurnDetector.get();
-    if (gcChurningDetector != null) {
-      gcChurningDetector.targetParsingComplete(numTopLevelTargets);
+    fun initForInvocation(
+        eventBus: com.google.common.eventbus.EventBus?,
+        gcThrashingDetector: GcThrashingDetector?,
+        gcChurningDetector: GcChurningDetector?
+    ) {
+        this.eventBus.set(eventBus)
+        this.gcThrashingDetector.set(gcThrashingDetector)
+        this.gcChurnDetector.set(gcChurningDetector)
     }
-  }
 
-  void populateStats(MemoryPressureStats.Builder memoryPressureStatsBuilder) {
-    GcChurningDetector gcChurningDetector = gcChurnDetector.get();
-    if (gcChurningDetector != null) {
-      gcChurningDetector.populateStats(memoryPressureStatsBuilder);
+    fun targetParsingComplete(numTopLevelTargets: Int) {
+        val gcChurningDetector: GcChurningDetector? = gcChurnDetector.get()
+        if (gcChurningDetector != null) {
+            gcChurningDetector.targetParsingComplete(numTopLevelTargets)
+        }
     }
-  }
 
-  void reset() {
-    eventBus.set(null);
-    gcThrashingDetector.set(null);
-    gcChurnDetector.set(null);
-  }
+    fun populateStats(memoryPressureStatsBuilder: MemoryPressureStats.Builder) {
+        val gcChurningDetector: GcChurningDetector? = gcChurnDetector.get()
+        if (gcChurningDetector != null) {
+            gcChurningDetector.populateStats(memoryPressureStatsBuilder)
+        }
+    }
+
+    fun reset() {
+        eventBus.set(null)
+        gcThrashingDetector.set(null)
+        gcChurnDetector.set(null)
+    }
+
+    companion object {
+        fun create(): MemoryPressureListener {
+            return createFromBeans(
+                java.lang.management.ManagementFactory.getGarbageCollectorMXBeans(),  // Use a dedicated thread to broadcast memory pressure events. The service thread that calls
+                // handleNotification for GC events is not a typical Java thread - it doesn't work with
+                // debugger breakpoints and may not show up in thread dumps.
+                Executors.newSingleThreadExecutor(
+                    com.google.common.util.concurrent.ThreadFactoryBuilder()
+                        .setNameFormat("memory-pressure-listener-%d").build()
+                )
+            )
+        }
+
+        @com.google.common.annotations.VisibleForTesting
+        fun createFromBeans(
+            gcBeans: MutableList<java.lang.management.GarbageCollectorMXBean>, executor: java.util.concurrent.Executor
+        ): MemoryPressureListener {
+            val tenuredGcEmitters: com.google.common.collect.ImmutableList<NotificationEmitter?> =
+                findTenuredCollectorBeans(gcBeans)
+            if (tenuredGcEmitters.isEmpty()) {
+                val names: com.google.common.collect.ImmutableList<MutableList<String?>?> =
+                    gcBeans.stream()
+                        .map<Array<String?>?>(java.util.function.Function { obj: java.lang.management.GarbageCollectorMXBean? -> obj.getMemoryPoolNames() })
+                        .map<MutableList<String?>?>(java.util.function.Function { a: Array<String?>? ->
+                            java.util.Arrays.asList(
+                                a
+                            )
+                        })
+                        .collect(com.google.common.collect.ImmutableList.toImmutableList<MutableList<String?>?>())
+                throw java.lang.IllegalStateException(
+                    java.lang.String.format(
+                        "Unable to find tenured collector from %s: names were %s.", gcBeans, names
+                    )
+                )
+            }
+
+            val memoryPressureListener = MemoryPressureListener(executor)
+            tenuredGcEmitters.forEach(java.util.function.Consumer { e: NotificationEmitter? ->
+                e.addNotificationListener(
+                    memoryPressureListener,
+                    null,
+                    null
+                )
+            })
+            return memoryPressureListener
+        }
+
+        @com.google.common.annotations.VisibleForTesting
+        fun findTenuredCollectorBeans(
+            gcBeans: MutableList<java.lang.management.GarbageCollectorMXBean>
+        ): com.google.common.collect.ImmutableList<NotificationEmitter?> {
+            val builder: com.google.common.collect.ImmutableList.Builder<NotificationEmitter?> =
+                com.google.common.collect.ImmutableList.builder<NotificationEmitter?>()
+            // Examine all collectors and register for notifications from those which collect the tenured
+            // space. Normally there is one such collector.
+            for (gcBean in gcBeans) {
+                for (name in gcBean.getMemoryPoolNames()) {
+                    if (GarbageCollectionMetricsUtils.isTenuredSpace(name)) {
+                        builder.add(gcBean as NotificationEmitter)
+                    }
+                }
+            }
+            return builder.build()
+        }
+    }
 }

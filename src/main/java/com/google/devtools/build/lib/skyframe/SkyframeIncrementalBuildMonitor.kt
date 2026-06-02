@@ -11,61 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.collect.ImmutableSet;
-import com.google.common.eventbus.EventBus;
-import com.google.devtools.build.lib.actions.ChangedFilesMessage;
-import com.google.devtools.build.lib.concurrent.ThreadSafety;
-import com.google.devtools.build.lib.vfs.FileStateKey;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.concurrent.atomic.LongAdder;
+import com.google.devtools.build.lib.actions.ChangedFilesMessage
 
 /**
  * A package-private class intended to track a small number of modified files during the build. This
  * class should stop recording changed files if there are too many of them, instead of holding onto
  * a large collection of files.
  */
-@ThreadSafety.ThreadCompatible
-class SkyframeIncrementalBuildMonitor {
-  private static final int MAX_FILES = 100;
+@ThreadCompatible
+internal class SkyframeIncrementalBuildMonitor {
+    private var files: MutableSet<PathFragment?>? = HashSet<PathFragment?>()
+    private var fileCount = 0
+    private val invalidatedFileValueCount: java.util.concurrent.atomic.LongAdder =
+        java.util.concurrent.atomic.LongAdder()
 
-  private Set<PathFragment> files = new HashSet<>();
-  private int fileCount;
-  private final LongAdder invalidatedFileValueCount = new LongAdder();
-
-  public void accrue(Iterable<SkyKey> invalidatedValues) {
-    for (SkyKey skyKey : invalidatedValues) {
-      if (skyKey.functionName().equals(FileStateKey.FILE_STATE)) {
-        RootedPath file = (RootedPath) skyKey.argument();
-        maybeAddFile(file.getRootRelativePath());
-      }
-    }
-  }
-
-  private void maybeAddFile(PathFragment path) {
-    if (files != null) {
-      files.add(path);
-      if (files.size() >= MAX_FILES) {
-        files = null;
-      }
+    fun accrue(invalidatedValues: Iterable<SkyKey>) {
+        for (skyKey in invalidatedValues) {
+            if (skyKey.functionName() == FileStateKey.FILE_STATE) {
+                val file: RootedPath = skyKey.argument() as RootedPath
+                maybeAddFile(file.getRootRelativePath())
+            }
+        }
     }
 
-    fileCount++;
-  }
+    private fun maybeAddFile(path: PathFragment?) {
+        if (files != null) {
+            files!!.add(path)
+            if (files.size() >= MAX_FILES) {
+                files = null
+            }
+        }
 
-  @ThreadSafety.ThreadSafe
-  public void reportInvalidatedFileValue() {
-    invalidatedFileValueCount.increment();
-  }
+        fileCount++
+    }
 
-  public void alertListeners(EventBus eventBus) {
-    Set<PathFragment> changedFiles = (files != null) ? files : ImmutableSet.of();
-    eventBus.post(
-        ChangedFilesMessage.create(changedFiles, fileCount, invalidatedFileValueCount.intValue()));
-  }
+    @ThreadSafety.ThreadSafe
+    fun reportInvalidatedFileValue() {
+        invalidatedFileValueCount.increment()
+    }
+
+    fun alertListeners(eventBus: com.google.common.eventbus.EventBus) {
+        val changedFiles: MutableSet<PathFragment?> =
+            if (files != null) files else com.google.common.collect.ImmutableSet.of<PathFragment?>()
+        eventBus.post(
+            ChangedFilesMessage.create(changedFiles, fileCount, invalidatedFileValueCount.intValue())
+        )
+    }
+
+    companion object {
+        private const val MAX_FILES = 100
+    }
 }

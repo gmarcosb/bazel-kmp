@@ -11,306 +11,292 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.base.Preconditions;
-import com.google.common.base.Throwables;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Sets;
-import com.google.common.collect.Sets.SetView;
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.cmdline.BatchCallback.SafeBatchCallback;
-import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.cmdline.TargetPattern;
-import com.google.devtools.build.lib.cmdline.TargetPattern.TargetsBelowDirectory;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.packages.BuildFileNotFoundException;
-import com.google.devtools.build.lib.packages.InputFile;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.NoSuchPackagePieceException;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.PackagePieceIdentifier;
-import com.google.devtools.build.lib.pkgcache.AbstractRecursivePackageProvider;
-import com.google.devtools.build.lib.pkgcache.PathPackageLocator;
-import com.google.devtools.build.lib.query2.engine.QueryException;
-import com.google.devtools.build.lib.rules.repository.RepositoryDirectoryValue;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.WalkableGraph;
-import java.util.Map;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.BatchCallback.SafeBatchCallback
 
 /**
- * A {@link com.google.devtools.build.lib.pkgcache.RecursivePackageProvider} backed by a {@link
- * WalkableGraph}, used by {@code SkyQueryEnvironment} to look up the packages and targets matching
- * the universe that's been preloaded in {@code graph}.
+ * A [com.google.devtools.build.lib.pkgcache.RecursivePackageProvider] backed by a [ ], used by `SkyQueryEnvironment` to look up the packages and targets matching
+ * the universe that's been preloaded in `graph`.
  */
 @ThreadSafe
-public final class GraphBackedRecursivePackageProvider extends AbstractRecursivePackageProvider {
+class GraphBackedRecursivePackageProvider(
+    graph: WalkableGraph?,
+    universeTargetPatterns: UniverseTargetPattern?,
+    pkgPath: PathPackageLocator,
+    rootPackageExtractor: RootPackageExtractor
+) : AbstractRecursivePackageProvider() {
+    /**
+     * Helper interface for clients of GraphBackedRecursivePackageProvider to indicate what universe
+     * packages should be resolved in.
+     * 
+     * 
+     * Client can either specify a fixed set of target patterns (using [.of]), or specify
+     * that all targets are valid (using [.all]).
+     */
+    interface UniverseTargetPattern {
+        fun patterns(): com.google.common.collect.ImmutableList<TargetPattern>?
 
-  /**
-   * Helper interface for clients of GraphBackedRecursivePackageProvider to indicate what universe
-   * packages should be resolved in.
-   *
-   * <p>Client can either specify a fixed set of target patterns (using {@link #of}), or specify
-   * that all targets are valid (using {@link #all}).
-   */
-  public interface UniverseTargetPattern {
-    ImmutableList<TargetPattern> patterns();
+        fun allowAll(): Boolean
 
-    boolean allowAll();
+        companion object {
+            fun of(patterns: com.google.common.collect.ImmutableList<TargetPattern?>): UniverseTargetPattern {
+                return object : UniverseTargetPattern {
+                    override fun patterns(): com.google.common.collect.ImmutableList<TargetPattern?> {
+                        return patterns
+                    }
 
-    static UniverseTargetPattern of(ImmutableList<TargetPattern> patterns) {
-      return new UniverseTargetPattern() {
-        @Override
-        public ImmutableList<TargetPattern> patterns() {
-          return patterns;
+                    override fun allowAll(): Boolean {
+                        return false
+                    }
+                }
+            }
+
+            @kotlin.jvm.JvmStatic
+            fun all(): UniverseTargetPattern {
+                return object : UniverseTargetPattern {
+                    override fun patterns(): com.google.common.collect.ImmutableList<TargetPattern?> {
+                        return com.google.common.collect.ImmutableList.of<TargetPattern?>()
+                    }
+
+                    override fun allowAll(): Boolean {
+                        return true
+                    }
+                }
+            }
+        }
+    }
+
+    private val graph: WalkableGraph
+    private val pkgRoots: com.google.common.collect.ImmutableList<Root?>?
+    private val rootPackageExtractor: RootPackageExtractor
+    private val universeTargetPatterns: UniverseTargetPattern
+
+    init {
+        this.graph = com.google.common.base.Preconditions.checkNotNull<WalkableGraph>(graph)
+        this.pkgRoots = pkgPath.getPathEntries()
+        this.universeTargetPatterns =
+            com.google.common.base.Preconditions.checkNotNull<UniverseTargetPattern>(universeTargetPatterns)
+        this.rootPackageExtractor = rootPackageExtractor
+    }
+
+    @Throws(NoSuchPackageException::class, java.lang.InterruptedException::class)
+    public override fun getPackage(eventHandler: ExtendedEventHandler?, packageName: PackageIdentifier?): Package {
+        val pkg: Package? = getPackageInternal(packageName)
+        if (pkg != null) {
+            return pkg
+        }
+        // If the package key does not exist in the graph, then it must not correspond to any package,
+        // because the SkyQuery environment has already loaded the universe.
+        throw BuildFileNotFoundException(packageName, "BUILD file not found on package path")
+    }
+
+    @Throws(NoSuchPackageException::class, java.lang.InterruptedException::class)
+    private fun getPackageInternal(packageName: PackageIdentifier?): Package? {
+        val pkgValue: PackageValue? = graph.getValue(packageName) as PackageValue?
+        if (pkgValue != null) {
+            return pkgValue.getPackage()
+        }
+        val nspe: NoSuchPackageException? = graph.getException(packageName) as NoSuchPackageException?
+        if (nspe != null) {
+            throw nspe
+        }
+        if (graph.isCycle(packageName)) {
+            throw NoSuchPackageException(packageName, "Package depends on a cycle")
+        }
+        return null
+    }
+
+    @Throws(NoSuchPackageException::class, NoSuchPackagePieceException::class, java.lang.InterruptedException::class)
+    public override fun getBuildFile(eventHandler: ExtendedEventHandler?, packageName: PackageIdentifier?): InputFile {
+        // Do we have a full package?
+        val pkg: Package? = getPackageInternal(packageName)
+        if (pkg != null) {
+            return pkg.getBuildFile()
         }
 
-        @Override
-        public boolean allowAll() {
-          return false;
+        // Do we have a PackagePiece.ForBuildFile?
+        val packagePieceIdentifier: ForBuildFile =
+            ForBuildFile(packageName)
+        val packagePieceValue: ForBuildFile? =
+            graph.getValue(packagePieceIdentifier) as ForBuildFile?
+        if (packagePieceValue != null) {
+            return packagePieceValue.getPackagePiece().getBuildFile()
         }
-      };
-    }
-
-    static UniverseTargetPattern all() {
-      return new UniverseTargetPattern() {
-        @Override
-        public ImmutableList<TargetPattern> patterns() {
-          return ImmutableList.of();
+        val exception: java.lang.Exception? = graph.getException(packagePieceIdentifier)
+        if (exception != null) {
+            com.google.common.base.Throwables.throwIfInstanceOf<X?>(exception, NoSuchPackageException::class.java)
+            com.google.common.base.Throwables.throwIfInstanceOf<X?>(exception, NoSuchPackagePieceException::class.java)
+        }
+        if (graph.isCycle(packagePieceIdentifier)) {
+            throw NoSuchPackageException(packageName, "Package depends on a cycle")
         }
 
-        @Override
-        public boolean allowAll() {
-          return true;
+        // If both the package key and the package piece for BUILD file key do not exist in the graph,
+        // then packageName must not correspond to any package, because the SkyQuery environment has
+        // already loaded the universe.
+        throw BuildFileNotFoundException(packageName, "BUILD file not found on package path")
+    }
+
+    @Throws(NoSuchPackageException::class, java.lang.InterruptedException::class)
+    public override fun bulkGetPackages(
+        eventHandler: ExtendedEventHandler?, pkgIds: Iterable<PackageIdentifier?>?
+    ): com.google.common.collect.ImmutableMap<PackageIdentifier?, Package?> {
+        val pkgKeys: com.google.common.collect.ImmutableSet<SkyKey> =
+            com.google.common.collect.ImmutableSet.< E > copyOf < E >(pkgIds)
+
+        val pkgResults: com.google.common.collect.ImmutableMap.Builder<PackageIdentifier?, Package?> =
+            com.google.common.collect.ImmutableMap.builder<PackageIdentifier?, Package?>()
+        val packages: MutableMap<SkyKey?, SkyValue?> = graph.getSuccessfulValues(pkgKeys)
+        for (pkgEntry in packages.entries) {
+            val pkgId: PackageIdentifier? = pkgEntry.key.argument() as PackageIdentifier?
+            val pkgValue: PackageValue = pkgEntry.value as PackageValue
+            pkgResults.put(
+                pkgId,
+                com.google.common.base.Preconditions.checkNotNull<Package?>(pkgValue.getPackage(), pkgId)
+            )
         }
-      };
-    }
-  }
 
-  private final WalkableGraph graph;
-  private final ImmutableList<Root> pkgRoots;
-  private final RootPackageExtractor rootPackageExtractor;
-  private final UniverseTargetPattern universeTargetPatterns;
-
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
-
-  public GraphBackedRecursivePackageProvider(
-      WalkableGraph graph,
-      UniverseTargetPattern universeTargetPatterns,
-      PathPackageLocator pkgPath,
-      RootPackageExtractor rootPackageExtractor) {
-    this.graph = Preconditions.checkNotNull(graph);
-    this.pkgRoots = pkgPath.getPathEntries();
-    this.universeTargetPatterns = Preconditions.checkNotNull(universeTargetPatterns);
-    this.rootPackageExtractor = rootPackageExtractor;
-  }
-
-  @Override
-  public Package getPackage(ExtendedEventHandler eventHandler, PackageIdentifier packageName)
-      throws NoSuchPackageException, InterruptedException {
-    Package pkg = getPackageInternal(packageName);
-    if (pkg != null) {
-      return pkg;
-    }
-    // If the package key does not exist in the graph, then it must not correspond to any package,
-    // because the SkyQuery environment has already loaded the universe.
-    throw new BuildFileNotFoundException(packageName, "BUILD file not found on package path");
-  }
-
-  @Nullable
-  private Package getPackageInternal(PackageIdentifier packageName)
-      throws NoSuchPackageException, InterruptedException {
-    PackageValue pkgValue = (PackageValue) graph.getValue(packageName);
-    if (pkgValue != null) {
-      return pkgValue.getPackage();
-    }
-    NoSuchPackageException nspe = (NoSuchPackageException) graph.getException(packageName);
-    if (nspe != null) {
-      throw nspe;
-    }
-    if (graph.isCycle(packageName)) {
-      throw new NoSuchPackageException(packageName, "Package depends on a cycle");
-    }
-    return null;
-  }
-
-  @Override
-  public InputFile getBuildFile(ExtendedEventHandler eventHandler, PackageIdentifier packageName)
-      throws NoSuchPackageException, NoSuchPackagePieceException, InterruptedException {
-    // Do we have a full package?
-    Package pkg = getPackageInternal(packageName);
-    if (pkg != null) {
-      return pkg.getBuildFile();
-    }
-
-    // Do we have a PackagePiece.ForBuildFile?
-    PackagePieceIdentifier.ForBuildFile packagePieceIdentifier =
-        new PackagePieceIdentifier.ForBuildFile(packageName);
-    PackagePieceValue.ForBuildFile packagePieceValue =
-        (PackagePieceValue.ForBuildFile) graph.getValue(packagePieceIdentifier);
-    if (packagePieceValue != null) {
-      return packagePieceValue.getPackagePiece().getBuildFile();
-    }
-    Exception exception = graph.getException(packagePieceIdentifier);
-    if (exception != null) {
-      Throwables.throwIfInstanceOf(exception, NoSuchPackageException.class);
-      Throwables.throwIfInstanceOf(exception, NoSuchPackagePieceException.class);
-    }
-    if (graph.isCycle(packagePieceIdentifier)) {
-      throw new NoSuchPackageException(packageName, "Package depends on a cycle");
-    }
-
-    // If both the package key and the package piece for BUILD file key do not exist in the graph,
-    // then packageName must not correspond to any package, because the SkyQuery environment has
-    // already loaded the universe.
-    throw new BuildFileNotFoundException(packageName, "BUILD file not found on package path");
-  }
-
-  @Override
-  public ImmutableMap<PackageIdentifier, Package> bulkGetPackages(
-      ExtendedEventHandler eventHandler, Iterable<PackageIdentifier> pkgIds)
-      throws NoSuchPackageException, InterruptedException {
-    ImmutableSet<SkyKey> pkgKeys = ImmutableSet.copyOf(pkgIds);
-
-    ImmutableMap.Builder<PackageIdentifier, Package> pkgResults = ImmutableMap.builder();
-    Map<SkyKey, SkyValue> packages = graph.getSuccessfulValues(pkgKeys);
-    for (Map.Entry<SkyKey, SkyValue> pkgEntry : packages.entrySet()) {
-      PackageIdentifier pkgId = (PackageIdentifier) pkgEntry.getKey().argument();
-      PackageValue pkgValue = (PackageValue) pkgEntry.getValue();
-      pkgResults.put(pkgId, Preconditions.checkNotNull(pkgValue.getPackage(), pkgId));
-    }
-
-    SetView<SkyKey> unknownKeys = Sets.difference(pkgKeys, packages.keySet());
-    if (!Iterables.isEmpty(unknownKeys)) {
-      logger.atWarning().log(
-          "Unable to find %s in the batch lookup of %s. Successfully looked up %s",
-          unknownKeys, pkgKeys, packages.keySet());
-    }
-    for (Map.Entry<SkyKey, Exception> missingOrExceptionEntry :
-        graph.getMissingAndExceptions(unknownKeys).entrySet()) {
-      PackageIdentifier pkgIdentifier =
-          (PackageIdentifier) missingOrExceptionEntry.getKey().argument();
-      Exception exception = missingOrExceptionEntry.getValue();
-      if (exception == null) {
-        // If the package key does not exist in the graph, then it must not correspond to any
-        // package, because the SkyQuery environment has already loaded the universe.
-        throw new BuildFileNotFoundException(pkgIdentifier, "Package not found");
-      }
-      Throwables.propagateIfInstanceOf(exception, NoSuchPackageException.class);
-      Throwables.propagate(exception);
-    }
-    return pkgResults.buildOrThrow();
-  }
-
-  @Override
-  public ImmutableSet<PackageIdentifier> bulkIsPackage(
-      ExtendedEventHandler eventHandler, Iterable<PackageIdentifier> pkgIds)
-      throws InterruptedException {
-    ImmutableSet.Builder<PackageIdentifier> resultBuilder = ImmutableSet.builder();
-
-    ImmutableList<SkyKey> packageLookupKeys =
-        ImmutableList.copyOf(Iterables.transform(pkgIds, PackageLookupValue::key));
-    Map<SkyKey, SkyValue> successfulPackageLookupValues =
-        graph.getSuccessfulValues(packageLookupKeys);
-    ImmutableList.Builder<SkyKey> nonSuccessfulPackageLookupKeysBuilder = ImmutableList.builder();
-    for (SkyKey packageLookupKey : packageLookupKeys) {
-      PackageLookupValue packageLookupValue =
-          (PackageLookupValue) successfulPackageLookupValues.get(packageLookupKey);
-      if (packageLookupValue == null) {
-        // Could be because the node legitimately isn't in the graph (which definitely implies the
-        // package doesn't exist) but could also be because the node exists but is in error. In the
-        // latter case, we want to print that error message out.
-        nonSuccessfulPackageLookupKeysBuilder.add(packageLookupKey);
-      } else if (packageLookupValue.packageExists()) {
-        resultBuilder.add((PackageIdentifier) packageLookupKey.argument());
-      }
-    }
-    ImmutableList<SkyKey> nonSuccessfulPackageLookupKeys =
-        nonSuccessfulPackageLookupKeysBuilder.build();
-    if (!nonSuccessfulPackageLookupKeys.isEmpty()) {
-      Map<SkyKey, Exception> exceptions =
-          graph.getMissingAndExceptions(nonSuccessfulPackageLookupKeys);
-      for (Exception exception : exceptions.values()) {
-        if (exception instanceof NoSuchPackageException) {
-          eventHandler.handle(Event.error(exception.getMessage()));
+        val unknownKeys: com.google.common.collect.Sets.SetView<SkyKey?> =
+            com.google.common.collect.Sets.difference<SkyKey?>(pkgKeys, packages.keys)
+        if (!com.google.common.collect.Iterables.isEmpty(unknownKeys)) {
+            logger.atWarning().log(
+                "Unable to find %s in the batch lookup of %s. Successfully looked up %s",
+                unknownKeys, pkgKeys, packages.keys
+            )
         }
-      }
-    }
-    return resultBuilder.build();
-  }
-
-  @Override
-  public boolean isPackage(ExtendedEventHandler eventHandler, PackageIdentifier packageName)
-      throws InterruptedException {
-    return !bulkIsPackage(eventHandler, ImmutableList.of(packageName)).isEmpty();
-  }
-
-  private ImmutableList<Root> checkValidDirectoryAndGetRoots(
-      RepositoryName repository, PathFragment directory) throws InterruptedException {
-
-    // Check that this package is covered by at least one of our universe patterns.
-    boolean inUniverse = false;
-    if (universeTargetPatterns.allowAll()) {
-      inUniverse = true;
-    } else {
-      for (TargetPattern pattern : universeTargetPatterns.patterns()) {
-        if (!pattern.type.equals(TargetPattern.Type.TARGETS_BELOW_DIRECTORY)) {
-          continue;
+        for (missingOrExceptionEntry in graph.getMissingAndExceptions(unknownKeys).entries) {
+            val pkgIdentifier: PackageIdentifier? =
+                missingOrExceptionEntry.key.argument() as PackageIdentifier?
+            val exception: java.lang.Exception = missingOrExceptionEntry.value
+            if (exception == null) {
+                // If the package key does not exist in the graph, then it must not correspond to any
+                // package, because the SkyQuery environment has already loaded the universe.
+                throw BuildFileNotFoundException(pkgIdentifier, "Package not found")
+            }
+            com.google.common.base.Throwables.propagateIfInstanceOf<X?>(exception, NoSuchPackageException::class.java)
+            com.google.common.base.Throwables.propagate(exception)
         }
-        PackageIdentifier packageIdentifier = PackageIdentifier.create(repository, directory);
-        if (((TargetsBelowDirectory) pattern)
-            .containsAllTransitiveSubdirectories(packageIdentifier)) {
-          inUniverse = true;
-          break;
+        return pkgResults.buildOrThrow()
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    public override fun bulkIsPackage(
+        eventHandler: ExtendedEventHandler, pkgIds: Iterable<PackageIdentifier?>
+    ): com.google.common.collect.ImmutableSet<PackageIdentifier?> {
+        val resultBuilder: com.google.common.collect.ImmutableSet.Builder<PackageIdentifier?> =
+            com.google.common.collect.ImmutableSet.builder<PackageIdentifier?>()
+
+        val packageLookupKeys: com.google.common.collect.ImmutableList<SkyKey> =
+            com.google.common.collect.ImmutableList.copyOf<SkyKey?>(
+                com.google.common.collect.Iterables.transform<PackageIdentifier?, com.google.devtools.build.lib.skyframe.PackageLookupValue.Key?>(
+                    pkgIds,
+                    com.google.common.base.Function { pkgIdentifier: PackageIdentifier? ->
+                        PackageLookupValue.Companion.key(pkgIdentifier)
+                    })
+            )
+        val successfulPackageLookupValues: MutableMap<SkyKey?, SkyValue?> =
+            graph.getSuccessfulValues(packageLookupKeys)
+        val nonSuccessfulPackageLookupKeysBuilder: com.google.common.collect.ImmutableList.Builder<SkyKey?> =
+            com.google.common.collect.ImmutableList.builder<SkyKey?>()
+        for (packageLookupKey in packageLookupKeys) {
+            val packageLookupValue: PackageLookupValue? =
+                successfulPackageLookupValues.get(packageLookupKey) as PackageLookupValue?
+            if (packageLookupValue == null) {
+                // Could be because the node legitimately isn't in the graph (which definitely implies the
+                // package doesn't exist) but could also be because the node exists but is in error. In the
+                // latter case, we want to print that error message out.
+                nonSuccessfulPackageLookupKeysBuilder.add(packageLookupKey)
+            } else if (packageLookupValue.packageExists()) {
+                resultBuilder.add(packageLookupKey.argument() as PackageIdentifier?)
+            }
         }
-      }
+        val nonSuccessfulPackageLookupKeys: com.google.common.collect.ImmutableList<SkyKey?> =
+            nonSuccessfulPackageLookupKeysBuilder.build()
+        if (!nonSuccessfulPackageLookupKeys.isEmpty()) {
+            val exceptions: MutableMap<SkyKey?, java.lang.Exception> =
+                graph.getMissingAndExceptions(nonSuccessfulPackageLookupKeys)
+            for (exception in exceptions.values) {
+                if (exception is NoSuchPackageException) {
+                    eventHandler.handle(Event.error(exception.message))
+                }
+            }
+        }
+        return resultBuilder.build()
     }
 
-    if (!inUniverse) {
-      return ImmutableList.of();
+    @Throws(java.lang.InterruptedException::class)
+    public override fun isPackage(eventHandler: ExtendedEventHandler, packageName: PackageIdentifier): Boolean {
+        return !bulkIsPackage(
+            eventHandler,
+            com.google.common.collect.ImmutableList.of<PackageIdentifier?>(packageName)
+        ).isEmpty()
     }
 
-    if (repository.isMain()) {
-      return pkgRoots;
-    } else {
-      if (graph.getValue(RepositoryDirectoryValue.key(repository))
-          instanceof RepositoryDirectoryValue.Success success) {
-        return ImmutableList.of(success.root());
-      }
-      // If this key doesn't exist, the repository is outside the universe, so we return
-      // "nothing".
-      return ImmutableList.of();
-    }
-  }
+    @Throws(java.lang.InterruptedException::class)
+    private fun checkValidDirectoryAndGetRoots(
+        repository: RepositoryName, directory: PathFragment?
+    ): com.google.common.collect.ImmutableList<Root?>? {
+        // Check that this package is covered by at least one of our universe patterns.
 
-  @Override
-  public void streamPackagesUnderDirectory(
-      SafeBatchCallback<PackageIdentifier> results,
-      ExtendedEventHandler eventHandler,
-      RepositoryName repository,
-      PathFragment directory,
-      IgnoredSubdirectories ignoredSubdirectories,
-      ImmutableSet<PathFragment> excludedSubdirectories)
-      throws InterruptedException, QueryException {
-    rootPackageExtractor.streamPackagesFromRoots(
-        results,
-        graph,
-        checkValidDirectoryAndGetRoots(repository, directory),
-        eventHandler,
-        repository,
-        directory,
-        ignoredSubdirectories,
-        excludedSubdirectories);
-  }
+        var inUniverse = false
+        if (universeTargetPatterns.allowAll()) {
+            inUniverse = true
+        } else {
+            for (pattern in universeTargetPatterns.patterns()) {
+                if (!pattern.type.equals(TargetPattern.Type.TARGETS_BELOW_DIRECTORY)) {
+                    continue
+                }
+                val packageIdentifier: PackageIdentifier? = PackageIdentifier.create(repository, directory)
+                if ((pattern as TargetsBelowDirectory)
+                        .containsAllTransitiveSubdirectories(packageIdentifier)
+                ) {
+                    inUniverse = true
+                    break
+                }
+            }
+        }
+
+        if (!inUniverse) {
+            return com.google.common.collect.ImmutableList.of<Root?>()
+        }
+
+        if (repository.isMain()) {
+            return pkgRoots
+        } else {
+            if (graph.getValue(RepositoryDirectoryValue.key(repository))
+                        is Success
+            ) {
+                return com.google.common.collect.ImmutableList.of<E?>(success.root())
+            }
+            // If this key doesn't exist, the repository is outside the universe, so we return
+            // "nothing".
+            return com.google.common.collect.ImmutableList.of<Root?>()
+        }
+    }
+
+    @Throws(java.lang.InterruptedException::class, com.google.devtools.build.lib.query2.engine.QueryException::class)
+    public override fun streamPackagesUnderDirectory(
+        results: SafeBatchCallback<PackageIdentifier?>?,
+        eventHandler: ExtendedEventHandler?,
+        repository: RepositoryName,
+        directory: PathFragment?,
+        ignoredSubdirectories: IgnoredSubdirectories?,
+        excludedSubdirectories: com.google.common.collect.ImmutableSet<PathFragment?>?
+    ) {
+        rootPackageExtractor.streamPackagesFromRoots(
+            results,
+            graph,
+            checkValidDirectoryAndGetRoots(repository, directory),
+            eventHandler,
+            repository,
+            directory,
+            ignoredSubdirectories,
+            excludedSubdirectories
+        )
+    }
+
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+    }
 }

@@ -11,22 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.standalone;
+package com.google.devtools.build.lib.standalone
 
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.rules.cpp.CppCompileAction;
-import com.google.devtools.build.lib.rules.cpp.CppIncludeScanningContext;
-import com.google.devtools.build.lib.rules.cpp.IncludeScanner.IncludeScanningHeaderData;
-import java.util.List;
+import com.google.devtools.build.lib.actions.ActionExecutionContext
 
-/** A {@link CppIncludeScanningContext} that does not expect to be called. */
-final class DummyCppIncludeScanningContext implements CppIncludeScanningContext {
-  @Override
-  public List<Artifact> findAdditionalInputs(
-      CppCompileAction action,
-      ActionExecutionContext actionExecutionContext,
-      IncludeScanningHeaderData includeScanningHeaderData) {
-    throw new UnsupportedOperationException("Include scanning unexpected for " + action.describe());
-  }
+/** A [CppIncludeScanningContext] that does not expect to be called.  */
+internal class DummyCppIncludeScanningContext : CppIncludeScanningContext {
+    public override fun findAdditionalInputs(
+        action: CppCompileAction,
+        actionExecutionContext: ActionExecutionContext?,
+        includeScanningHeaderData: IncludeScanningHeaderData?
+    ): MutableList<Artifact?>? {
+        throw UnsupportedOperationException("Include scanning unexpected for " + action.describe())
+    }
 }

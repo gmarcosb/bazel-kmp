@@ -11,51 +11,47 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.Options;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
+import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryFunction.name
 
-/** Flags specific to test summary reporting. */
-@OptionsClass
-public abstract class TestSummaryOptions extends OptionsBase {
-  public static final TestSummaryOptions DEFAULTS = Options.getDefaults(TestSummaryOptions.class);
+/** Flags specific to test summary reporting.  */
+@com.google.devtools.common.options.OptionsClass
+abstract class TestSummaryOptions : com.google.devtools.common.options.OptionsBase() {
+    @get:com.google.devtools.common.options.Option(
+        name = "verbose_test_summary",
+        defaultValue = "true",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS],
+        help = ("If true, print additional information (timing, number of failed runs, etc) in the"
+                + " test summary.")
+    )
+    abstract var verboseSummary: Boolean
 
-  @Option(
-      name = "verbose_test_summary",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          "If true, print additional information (timing, number of failed runs, etc) in the"
-              + " test summary.")
-  public abstract boolean getVerboseSummary();
+    @get:com.google.devtools.common.options.Option(
+        name = "test_verbose_timeout_warnings",
+        defaultValue = "false",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS],
+        help = ("If true, print additional warnings when the actual test execution time does not "
+                + "match the timeout defined by the test (whether implied or explicit).")
+    )
+    abstract val testVerboseTimeoutWarnings: Boolean
 
-  public abstract void setVerboseSummary(boolean value);
+    @get:com.google.devtools.common.options.Option(
+        name = "print_relative_test_log_paths",
+        defaultValue = "false",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS],
+        help = ("If true, when printing the path to a test log, use relative path that makes use of "
+                + "the 'testlogs' convenience symlink. N.B. - A subsequent 'build'/'test'/etc "
+                + "invocation with a different configuration can cause the target of this symlink "
+                + "to change, making the path printed previously no longer useful.")
+    )
+    abstract val printRelativeTestLogPaths: Boolean
 
-  @Option(
-      name = "test_verbose_timeout_warnings",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          "If true, print additional warnings when the actual test execution time does not "
-              + "match the timeout defined by the test (whether implied or explicit).")
-  public abstract boolean getTestVerboseTimeoutWarnings();
-
-  @Option(
-      name = "print_relative_test_log_paths",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.LOGGING,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          "If true, when printing the path to a test log, use relative path that makes use of "
-              + "the 'testlogs' convenience symlink. N.B. - A subsequent 'build'/'test'/etc "
-              + "invocation with a different configuration can cause the target of this symlink "
-              + "to change, making the path printed previously no longer useful.")
-  public abstract boolean getPrintRelativeTestLogPaths();
+    companion object {
+        val DEFAULTS: TestSummaryOptions? =
+            com.google.devtools.common.options.Options.getDefaults<TestSummaryOptions?>(TestSummaryOptions::class.java)
+    }
 }

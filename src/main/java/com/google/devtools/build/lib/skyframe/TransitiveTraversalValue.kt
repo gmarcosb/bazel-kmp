@@ -11,198 +11,180 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.packages.AdvertisedProviderSet;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
- * A <i>transitive</i> target reference that, when built in skyframe, loads the entire transitive
+ * A *transitive* target reference that, when built in skyframe, loads the entire transitive
  * closure of a target. Retains the first error message found during the transitive traversal, the
- * kind of target, and a set of names of providers if the target is a {@link Rule}.
- *
- * <p>Interns values for error-free traversal nodes that correspond to built-in rules.
+ * kind of target, and a set of names of providers if the target is a [Rule].
+ * 
+ * 
+ * Interns values for error-free traversal nodes that correspond to built-in rules.
  */
 @Immutable
 @ThreadSafe
-public abstract class TransitiveTraversalValue implements SkyValue {
-  // A quick-lookup cache that allows us to get the value for a given target kind, assuming no error
-  // messages for the target. The number of built-in target kinds is limited, so memory bloat is not
-  // a concern.
-  private static final ConcurrentMap<String, TransitiveTraversalValue> VALUES_BY_TARGET_KIND =
-      new ConcurrentHashMap<>();
-  /**
-   * A strong interner of TransitiveTargetValue objects. Because we only wish to intern values for
-   * built-in non-Starlark targets, we need an interner with an additional method to return the
-   * canonical representative if it is present without interning our sample. This is only mutated in
-   * {@link #forTarget}, and read in {@link #forTarget} and {@link #create}.
-   */
-  private static final InternerWithPresenceCheck<TransitiveTraversalValue> VALUE_INTERNER =
-      new InternerWithPresenceCheck<>();
+abstract class TransitiveTraversalValue protected constructor(kind: String?) : SkyValue {
+    /** Returns the target kind.  */
+    val kind: String
 
-  private final String kind;
+    init {
+        this.kind = com.google.common.base.Preconditions.checkNotNull<String>(kind)
+    }
 
-  protected TransitiveTraversalValue(String kind) {
-    this.kind = Preconditions.checkNotNull(kind);
-  }
+    /**
+     * Returns the set of provider names from the target, if the target is a [Rule]. Otherwise
+     * returns the empty set.
+     */
+    abstract val providers: AdvertisedProviderSet?
 
-  static TransitiveTraversalValue unsuccessfulTransitiveTraversal(
-      String errorMessage, Target target) {
-    return new TransitiveTraversalValueWithError(
-        Preconditions.checkNotNull(errorMessage), target.getTargetKind());
-  }
+    /**
+     * Returns a deterministic error message, if any, from loading the target and its transitive
+     * dependencies.
+     */
+    @kotlin.jvm.JvmField
+    abstract val errorMessage: String?
 
-  static TransitiveTraversalValue forTarget(Target target, @Nullable String errorMessage) {
-    if (errorMessage == null) {
-      if (target instanceof Rule rule && ((Rule) target).getRuleClassObject().isStarlark) {
-        // Do not intern values for Starlark rules.
-        return TransitiveTraversalValue.create(
-            rule.getRuleClassObject().getAdvertisedProviders(), rule.getTargetKind(), errorMessage);
-      } else {
-        TransitiveTraversalValue value = VALUES_BY_TARGET_KIND.get(target.getTargetKind());
-        if (value != null) {
-          return value;
+    override fun equals(o: Any?): Boolean {
+        if (this === o) {
+            return true
+        }
+        if (o !is TransitiveTraversalValue) {
+            return false
+        }
+        return this.errorMessage == o.errorMessage
+                && this.kind == o.kind
+                && this.providers.equals(o.providers)
+    }
+
+    override fun hashCode(): Int {
+        return java.util.Objects.hash(this.errorMessage, this.kind, this.providers)
+    }
+
+    /** A transitive target reference without error.  */
+    class TransitiveTraversalValueWithoutError private constructor(providers: AdvertisedProviderSet?, kind: String?) :
+        TransitiveTraversalValue(kind) {
+        private val advertisedProviders: AdvertisedProviderSet
+
+        init {
+            this.advertisedProviders =
+                com.google.common.base.Preconditions.checkNotNull<AdvertisedProviderSet>(providers)
         }
 
-        AdvertisedProviderSet providers =
-            target instanceof Rule rule
-                ? rule.getRuleClassObject().getAdvertisedProviders()
-                : AdvertisedProviderSet.EMPTY;
+        override fun getProviders(): AdvertisedProviderSet {
+            return advertisedProviders
+        }
 
-        value = new TransitiveTraversalValueWithoutError(providers, target.getTargetKind());
-        // May already be there from another target or a concurrent put.
-        value = VALUE_INTERNER.intern(value);
-        // May already be there from a concurrent put.
-        VALUES_BY_TARGET_KIND.putIfAbsent(target.getTargetKind(), value);
-        return value;
-      }
-    } else {
-      return new TransitiveTraversalValueWithError(errorMessage, target.getTargetKind());
-    }
-  }
+        override fun getErrorMessage(): String? {
+            return null
+        }
 
-  public static TransitiveTraversalValue create(
-      AdvertisedProviderSet providers, String kind, @Nullable String errorMessage) {
-    TransitiveTraversalValue value =
-        errorMessage == null
-            ? new TransitiveTraversalValueWithoutError(providers, kind)
-            : new TransitiveTraversalValueWithError(errorMessage, kind);
-    if (errorMessage == null) {
-      TransitiveTraversalValue oldValue = VALUE_INTERNER.getCanonical(value);
-      return oldValue == null ? value : oldValue;
-    }
-    return value;
-  }
-
-  /**
-   * Returns the set of provider names from the target, if the target is a {@link Rule}. Otherwise
-   * returns the empty set.
-   */
-  public abstract AdvertisedProviderSet getProviders();
-
-  /** Returns the target kind. */
-  public String getKind() {
-    return kind;
-  }
-
-  /**
-   * Returns a deterministic error message, if any, from loading the target and its transitive
-   * dependencies.
-   */
-  @Nullable
-  public abstract String getErrorMessage();
-
-  @Override
-  public boolean equals(Object o) {
-    if (this == o) {
-      return true;
-    }
-    if (!(o instanceof TransitiveTraversalValue that)) {
-      return false;
-    }
-    return Objects.equals(this.getErrorMessage(), that.getErrorMessage())
-        && Objects.equals(this.getKind(), that.getKind())
-        && this.getProviders().equals(that.getProviders());
-  }
-
-  @Override
-  public int hashCode() {
-    return Objects.hash(getErrorMessage(), getKind(), getProviders());
-  }
-
-  @ThreadSafe
-  public static SkyKey key(Label label) {
-    return label;
-  }
-
-  /** A transitive target reference without error. */
-  public static final class TransitiveTraversalValueWithoutError extends TransitiveTraversalValue {
-    private final AdvertisedProviderSet advertisedProviders;
-
-    private TransitiveTraversalValueWithoutError(
-        AdvertisedProviderSet providers, @Nullable String kind) {
-      super(kind);
-      this.advertisedProviders = Preconditions.checkNotNull(providers);
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(this)
+                .add("kind", this.kind)
+                .add("providers", advertisedProviders)
+                .toString()
+        }
     }
 
-    @Override
-    public AdvertisedProviderSet getProviders() {
-      return advertisedProviders;
+    /** A transitive target reference with error.  */
+    class TransitiveTraversalValueWithError private constructor(errorMessage: String?, kind: String?) :
+        TransitiveTraversalValue(kind) {
+        private val errorMessage: String?
+
+        init {
+            this.errorMessage = com.google.common.base.Preconditions.checkNotNull<String?>(errorMessage).intern()
+        }
+
+        override fun getProviders(): AdvertisedProviderSet {
+            return AdvertisedProviderSet.EMPTY
+        }
+
+        override fun getErrorMessage(): String? {
+            return errorMessage
+        }
+
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(this)
+                .add("error", errorMessage)
+                .add("kind", this.kind)
+                .toString()
+        }
     }
 
-    @Override
-    @Nullable
-    public String getErrorMessage() {
-      return null;
-    }
+    companion object {
+        // A quick-lookup cache that allows us to get the value for a given target kind, assuming no error
+        // messages for the target. The number of built-in target kinds is limited, so memory bloat is not
+        // a concern.
+        private val VALUES_BY_TARGET_KIND: ConcurrentMap<String?, TransitiveTraversalValue?> =
+            ConcurrentHashMap<String?, TransitiveTraversalValue?>()
 
-    @Override
-    public String toString() {
-      return MoreObjects.toStringHelper(this)
-          .add("kind", getKind())
-          .add("providers", advertisedProviders)
-          .toString();
-    }
-  }
+        /**
+         * A strong interner of TransitiveTargetValue objects. Because we only wish to intern values for
+         * built-in non-Starlark targets, we need an interner with an additional method to return the
+         * canonical representative if it is present without interning our sample. This is only mutated in
+         * [.forTarget], and read in [.forTarget] and [.create].
+         */
+        private val VALUE_INTERNER: InternerWithPresenceCheck<TransitiveTraversalValue?> = InternerWithPresenceCheck()
 
-  /** A transitive target reference with error. */
-  public static final class TransitiveTraversalValueWithError extends TransitiveTraversalValue {
-    private final String errorMessage;
+        fun unsuccessfulTransitiveTraversal(
+            errorMessage: String?, target: Target
+        ): TransitiveTraversalValue {
+            return TransitiveTraversalValueWithError(
+                com.google.common.base.Preconditions.checkNotNull<String?>(errorMessage), target.getTargetKind()
+            )
+        }
 
-    private TransitiveTraversalValueWithError(String errorMessage, String kind) {
-      super(kind);
-      this.errorMessage = Preconditions.checkNotNull(errorMessage).intern();
-    }
+        fun forTarget(target: Target, errorMessage: String?): TransitiveTraversalValue? {
+            if (errorMessage == null) {
+                if (target is Rule && (target as Rule).getRuleClassObject().isStarlark) {
+                    // Do not intern values for Starlark rules.
+                    return create(
+                        target.getRuleClassObject().getAdvertisedProviders(), target.getTargetKind(), errorMessage
+                    )
+                } else {
+                    var value: TransitiveTraversalValue? = VALUES_BY_TARGET_KIND.get(target.getTargetKind())
+                    if (value != null) {
+                        return value
+                    }
 
-    @Override
-    public AdvertisedProviderSet getProviders() {
-      return AdvertisedProviderSet.EMPTY;
-    }
+                    val providers: AdvertisedProviderSet? =
+                        if (target is Rule)
+                            target.getRuleClassObject().getAdvertisedProviders()
+                        else
+                            AdvertisedProviderSet.EMPTY
 
-    @Override
-    @Nullable
-    public String getErrorMessage() {
-      return errorMessage;
-    }
+                    value = TransitiveTraversalValueWithoutError(providers, target.getTargetKind())
+                    // May already be there from another target or a concurrent put.
+                    value = VALUE_INTERNER.intern(value)
+                    // May already be there from a concurrent put.
+                    VALUES_BY_TARGET_KIND.putIfAbsent(target.getTargetKind(), value)
+                    return value
+                }
+            } else {
+                return TransitiveTraversalValueWithError(errorMessage, target.getTargetKind())
+            }
+        }
 
-    @Override
-    public String toString() {
-      return MoreObjects.toStringHelper(this)
-          .add("error", errorMessage)
-          .add("kind", getKind())
-          .toString();
+        fun create(
+            providers: AdvertisedProviderSet?, kind: String?, errorMessage: String?
+        ): TransitiveTraversalValue {
+            val value =
+                if (errorMessage == null)
+                    TransitiveTraversalValueWithoutError(providers, kind)
+                else
+                    TransitiveTraversalValueWithError(errorMessage, kind)
+            if (errorMessage == null) {
+                val oldValue: TransitiveTraversalValue? = VALUE_INTERNER.getCanonical(value)
+                return if (oldValue == null) value else oldValue
+            }
+            return value
+        }
+
+        @ThreadSafe
+        fun key(label: Label?): SkyKey? {
+            return label
+        }
     }
-  }
 }

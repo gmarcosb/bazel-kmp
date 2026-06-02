@@ -11,8 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-/** A SkyValue which, after a fresh evaluation, can never be equal to its last value. */
-public interface NotComparableSkyValue extends SkyValue {
-}
+import com.google.devtools.build.skyframe.SkyValue
+
+/** A SkyValue which, after a fresh evaluation, can never be equal to its last value.  */
+interface NotComparableSkyValue : SkyValue

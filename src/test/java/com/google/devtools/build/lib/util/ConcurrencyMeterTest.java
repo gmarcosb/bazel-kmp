@@ -245,7 +245,7 @@ public final class ConcurrencyMeterTest {
     clock.advance(Duration.ofMillis(1));
 
     var stats = meter.getStats();
-    assertThat(stats.maxLeasedTimeMs()).isEqualTo(timeOfLastMax.toEpochMilli());
+    assertThat(stats.maxLeasedTimeMs).isEqualTo(timeOfLastMax.toEpochMilli());
   }
 
   @Test
@@ -265,7 +265,7 @@ public final class ConcurrencyMeterTest {
     ConcurrencyMeter meter = new ConcurrencyMeter("meter", 1, throwingClock);
 
     var stats = meter.getStats();
-    assertThat(stats.maxLeased()).isEqualTo(0);
-    assertThat(stats.maxLeasedTimeMs()).isEqualTo(0);
+    assertThat(stats.maxLeased).isEqualTo(0);
+    assertThat(stats.maxLeasedTimeMs).isEqualTo(0);
   }
 }

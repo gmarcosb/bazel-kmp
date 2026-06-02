@@ -11,93 +11,70 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.genquery
 
-package com.google.devtools.build.lib.rules.genquery;
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.packages.CachingPackageLocator;
-import com.google.devtools.build.lib.packages.InputFile;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.NoSuchTargetException;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.pkgcache.PackageProvider;
-import com.google.devtools.build.lib.vfs.Path;
-import javax.annotation.Nullable;
+/** Provide packages and targets to the query operations using precomputed transitive closure.  */
+internal class GenQueryPackageProvider(
+    pkgMap: com.google.common.collect.ImmutableMap<PackageIdentifier?, Package?>,
+    labelToTarget: com.google.common.collect.ImmutableMap<Label?, Target?>
+) : PackageProvider, CachingPackageLocator {
+    private val pkgMap: com.google.common.collect.ImmutableMap<PackageIdentifier?, Package?>
+    private val labelToTarget: com.google.common.collect.ImmutableMap<Label?, Target?>
 
-/** Provide packages and targets to the query operations using precomputed transitive closure. */
-final class GenQueryPackageProvider implements PackageProvider, CachingPackageLocator {
-
-  private final ImmutableMap<PackageIdentifier, Package> pkgMap;
-  private final ImmutableMap<Label, Target> labelToTarget;
-
-  GenQueryPackageProvider(
-      ImmutableMap<PackageIdentifier, Package> pkgMap, ImmutableMap<Label, Target> labelToTarget) {
-    this.pkgMap = pkgMap;
-    this.labelToTarget = labelToTarget;
-  }
-
-  Predicate<Label> getValidTargetPredicate() {
-    return Predicates.in(labelToTarget.keySet());
-  }
-
-  @Override
-  public Package getPackage(ExtendedEventHandler eventHandler, PackageIdentifier packageId)
-      throws NoSuchPackageException {
-    Package pkg = pkgMap.get(packageId);
-    if (pkg != null) {
-      return pkg;
+    init {
+        this.pkgMap = pkgMap
+        this.labelToTarget = labelToTarget
     }
-    // Prefer to throw a checked exception on error; malformed genquery should not crash.
-    throw new NoSuchPackageException(packageId, "is not within the scope of the query");
-  }
 
-  @Override
-  public InputFile getBuildFile(ExtendedEventHandler eventHandler, PackageIdentifier packageId)
-      throws NoSuchPackageException {
-    return getPackage(eventHandler, packageId).getBuildFile();
-  }
+    val validTargetPredicate: com.google.common.base.Predicate<Label?>
+        get() = com.google.common.base.Predicates.`in`<Label?>(labelToTarget.keySet())
 
-  @Override
-  public Target getTarget(ExtendedEventHandler eventHandler, Label label)
-      throws NoSuchPackageException, NoSuchTargetException {
-    // Try to perform only one map lookup in the common case.
-    Target target = labelToTarget.get(label);
-    if (target != null) {
-      return target;
+    @Throws(NoSuchPackageException::class)
+    public override fun getPackage(eventHandler: ExtendedEventHandler?, packageId: PackageIdentifier?): Package {
+        val pkg: Package? = pkgMap.get(packageId)
+        if (pkg != null) {
+            return pkg
+        }
+        // Prefer to throw a checked exception on error; malformed genquery should not crash.
+        throw NoSuchPackageException(packageId, "is not within the scope of the query")
     }
-    // Prefer to throw a checked exception on error; malformed genquery should not crash.
-    // Because it'd be more valuable, see if NoSuchPackageException should be thrown:
-    Package unused = getPackage(eventHandler, label.getPackageIdentifier());
-    throw new NoSuchTargetException(label, "is not within the scope of the query");
-  }
 
-  @Override
-  public boolean isPackage(ExtendedEventHandler eventHandler, PackageIdentifier packageName) {
-    throw new UnsupportedOperationException();
-  }
-
-  @Nullable
-  @Override
-  public Path getBuildFileForPackage(PackageIdentifier packageId) {
-    Package pkg = pkgMap.get(packageId);
-    if (pkg == null) {
-      return null;
+    @Throws(NoSuchPackageException::class)
+    public override fun getBuildFile(eventHandler: ExtendedEventHandler?, packageId: PackageIdentifier?): InputFile {
+        return getPackage(eventHandler, packageId).getBuildFile()
     }
-    return pkg.getBuildFile().getPath();
-  }
 
-  @Nullable
-  @Override
-  public String getBaseNameForLoadedPackage(PackageIdentifier packageName) {
-    // TODO(b/123795023): we should have the data here but we don't have all packages for Starlark
-    //  loads present here.
-    Package pkg = pkgMap.get(packageName);
-    return pkg == null ? null : pkg.getBuildFileLabel().name;
-  }
+    @Throws(NoSuchPackageException::class, NoSuchTargetException::class)
+    public override fun getTarget(eventHandler: ExtendedEventHandler?, label: Label): Target {
+        // Try to perform only one map lookup in the common case.
+        val target: Target? = labelToTarget.get(label)
+        if (target != null) {
+            return target
+        }
+        // Prefer to throw a checked exception on error; malformed genquery should not crash.
+        // Because it'd be more valuable, see if NoSuchPackageException should be thrown:
+        val unused: Package = getPackage(eventHandler, label.getPackageIdentifier())
+        throw NoSuchTargetException(label, "is not within the scope of the query")
+    }
+
+    public override fun isPackage(eventHandler: ExtendedEventHandler?, packageName: PackageIdentifier?): Boolean {
+        throw java.lang.UnsupportedOperationException()
+    }
+
+    public override fun getBuildFileForPackage(packageId: PackageIdentifier?): com.google.devtools.build.lib.vfs.Path? {
+        val pkg: Package? = pkgMap.get(packageId)
+        if (pkg == null) {
+            return null
+        }
+        return pkg.getBuildFile().getPath()
+    }
+
+    public override fun getBaseNameForLoadedPackage(packageName: PackageIdentifier?): String? {
+        // TODO(b/123795023): we should have the data here but we don't have all packages for Starlark
+        //  loads present here.
+        val pkg: Package? = pkgMap.get(packageName)
+        return if (pkg == null) null else pkg.getBuildFileLabel().name
+    }
 }

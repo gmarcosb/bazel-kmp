@@ -11,75 +11,84 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.proto.TopLevelTargetsMatchStatus
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.proto.TopLevelTargetsMatchStatus;
-import com.google.devtools.build.lib.util.Bucket;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import com.google.protobuf.ByteString;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeoutException;
+/** Interface to the remote analysis cache.  */
+interface RemoteAnalysisCacheClient {
+    /** The key for memoizing top-level targets lookup results.  */
+    @kotlin.jvm.JvmRecord
+    data class TopLevelTargetsCacheKey(
+        val evaluatingVersion: Long,
+        val configurationHash: String?,
+        val useFakeStampData: Boolean,
+        val blazeVersion: String?
+    )
 
-/** Interface to the remote analysis cache. */
-public interface RemoteAnalysisCacheClient {
+    /** Usage statistics.  */
+    class Stats(
+        val bytesSent: Long,
+        val bytesReceived: Long,
+        val requestsSent: Long,
+        val batches: Long,
+        latencyMicros: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.util.Bucket?>?,
+        batchLatencyMicros: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.util.Bucket?>?,
+        matchStatus: TopLevelTargetsMatchStatus?
+    ) {
+        val latencyMicros: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.util.Bucket?>?
+        val batchLatencyMicros: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.util.Bucket?>?
+        val matchStatus: TopLevelTargetsMatchStatus?
 
-  /** Timeout when accessing the future in order to shutdown the client. */
-  int SHUTDOWN_TIMEOUT_IN_SECONDS = 5;
+        init {
+            this.latencyMicros = latencyMicros
+            this.batchLatencyMicros = batchLatencyMicros
+            this.matchStatus = matchStatus
+        }
+    }
+
+    /** Looks up an entry in the remote analysis cache based on a serialized key.  */
+    fun lookup(key: ByteString?): com.google.common.util.concurrent.ListenableFuture<com.google.devtools.build.lib.skyframe.serialization.analysis.LookupResult?>?
+
+    /** Returns the usage statistics.  */
+    val stats: Stats?
+
+    /** Looks up the targets in the metadata table  */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(
+        ExecutionException::class,
+        java.util.concurrent.TimeoutException::class,
+        java.lang.InterruptedException::class
+    )
+    fun lookupTopLevelTargets(
+        evaluatingVersion: Long,
+        configurationHash: String?,
+        useFakeStampData: Boolean,
+        bazelVersion: String?
+    ): LookupTopLevelTargetsResult?
+
+    /**
+     * Sets the status of the metadata result to MATCH_STATUS_MISSING_FINGERPRINT. This signals that
+     * the build bailed out due to a missing fingerprint during deserialization. This can happen after
+     * having started in Skycache mode and having confirmed with metadata that cache hits were
+     * possible.
+     */
+    fun bailOutDueToMissingFingerprint()
+
+    companion object {
+        /** Timeout when accessing the future in order to shutdown the client.  */
+        const val SHUTDOWN_TIMEOUT_IN_SECONDS: Int = 5
 
 
-
-  /** The key for memoizing top-level targets lookup results. */
-  record TopLevelTargetsCacheKey(
-      long evaluatingVersion,
-      String configurationHash,
-      boolean useFakeStampData,
-      String blazeVersion) {}
-
-  /** Usage statistics. */
-  record Stats(
-      long bytesSent,
-      long bytesReceived,
-      long requestsSent,
-      long batches,
-      ImmutableList<Bucket> latencyMicros,
-      ImmutableList<Bucket> batchLatencyMicros,
-      TopLevelTargetsMatchStatus matchStatus) {}
-
-  Stats EMPTY_STATS =
-      new Stats(
-          0,
-          0,
-          0,
-          0,
-          ImmutableList.of(),
-          ImmutableList.of(),
-          TopLevelTargetsMatchStatus.MATCH_STATUS_UNSPECIFIED);
-
-
-
-  /** Looks up an entry in the remote analysis cache based on a serialized key. */
-  ListenableFuture<LookupResult> lookup(ByteString key);
-
-  /** Returns the usage statistics. */
-  Stats getStats();
-
-  /** Looks up the targets in the metadata table */
-  @CanIgnoreReturnValue
-  LookupTopLevelTargetsResult lookupTopLevelTargets(
-      long evaluatingVersion,
-      String configurationHash,
-      boolean useFakeStampData,
-      String bazelVersion)
-      throws ExecutionException, TimeoutException, InterruptedException;
-
-  /**
-   * Sets the status of the metadata result to MATCH_STATUS_MISSING_FINGERPRINT. This signals that
-   * the build bailed out due to a missing fingerprint during deserialization. This can happen after
-   * having started in Skycache mode and having confirmed with metadata that cache hits were
-   * possible.
-   */
-  void bailOutDueToMissingFingerprint();
+        val EMPTY_STATS: Stats =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCacheClient.Stats(
+                0,
+                0,
+                0,
+                0,
+                com.google.common.collect.ImmutableList.of<com.google.devtools.build.lib.util.Bucket?>(),
+                com.google.common.collect.ImmutableList.of<com.google.devtools.build.lib.util.Bucket?>(),
+                TopLevelTargetsMatchStatus.MATCH_STATUS_UNSPECIFIED
+            )
+    }
 }

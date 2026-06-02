@@ -11,113 +11,89 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
+import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil.configurationId
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil.configurationId;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.MoreObjects;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.buildeventstream.BuildEventContext;
-import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventWithOrderConstraint;
-import com.google.devtools.build.lib.buildeventstream.GenericBuildEvent;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.view.test.TestStatus.BlazeTestStatus;
-import javax.annotation.Nullable;
-
-/** Event summarizing the building and testing (if applicable) of a given configured target. */
+/** Event summarizing the building and testing (if applicable) of a given configured target.  */
 @Immutable
-public final class TargetSummaryEvent implements BuildEventWithOrderConstraint {
+class TargetSummaryEvent private constructor(
+    id: BuildEventId,
+    overallBuildSuccess: Boolean,
+    overallTestStatus: BlazeTestStatus?,
+    postedAfter: com.google.common.collect.ImmutableList<BuildEventId?>?
+) : BuildEventWithOrderConstraint {
+    private val id: BuildEventId
 
-  static TargetSummaryEvent create(
-      ConfiguredTarget target,
-      boolean overallBuildSuccess,
-      boolean expectTestSummary,
-      @Nullable BlazeTestStatus overallTestStatus) {
-    Label label = target.getOriginalLabel();
-    BuildEventId configId = configurationId(target.getLookupKey().getConfigurationKey());
-    ImmutableList.Builder<BuildEventId> postAfter = ImmutableList.builder();
-    postAfter.add(BuildEventIdUtil.targetCompleted(label, configId));
-    if (expectTestSummary) {
-      // Always post after test summary, even if we get here without having seen it yet
-      postAfter.add(BuildEventIdUtil.testSummary(label, configId));
+    @get:com.google.common.annotations.VisibleForTesting
+    val isOverallBuildSuccess: Boolean
+    private val overallTestStatus: BlazeTestStatus?
+    private val postedAfter: com.google.common.collect.ImmutableList<BuildEventId?>?
+
+    init {
+        checkArgument(id.hasTargetSummary(), "Unexpected event id: %s", id)
+        this.id = id
+        this.isOverallBuildSuccess = overallBuildSuccess
+        this.overallTestStatus = overallTestStatus
+        this.postedAfter = postedAfter
     }
-    return new TargetSummaryEvent(
-        BuildEventIdUtil.targetSummary(label, configId),
-        overallBuildSuccess,
-        overallBuildSuccess && expectTestSummary ? overallTestStatus : null,
-        postAfter.build());
-  }
 
-  private final BuildEventId id;
-  private final boolean overallBuildSuccess;
-  @Nullable private final BlazeTestStatus overallTestStatus;
-  private final ImmutableList<BuildEventId> postedAfter;
-
-  private TargetSummaryEvent(
-      BuildEventId id,
-      boolean overallBuildSuccess,
-      @Nullable BlazeTestStatus overallTestStatus,
-      ImmutableList<BuildEventId> postedAfter) {
-    checkArgument(id.hasTargetSummary(), "Unexpected event id: %s", id);
-    this.id = id;
-    this.overallBuildSuccess = overallBuildSuccess;
-    this.overallTestStatus = overallTestStatus;
-    this.postedAfter = postedAfter;
-  }
-
-  @VisibleForTesting
-  boolean isOverallBuildSuccess() {
-    return overallBuildSuccess;
-  }
-
-  @Nullable
-  @VisibleForTesting
-  BlazeTestStatus getOverallTestStatus() {
-    return overallTestStatus;
-  }
-
-  @Override
-  public ImmutableList<BuildEventId> postedAfter() {
-    return postedAfter;
-  }
-
-  @Override
-  public BuildEvent asStreamProto(BuildEventContext context) {
-    BuildEventStreamProtos.TargetSummary.Builder summaryBuilder =
-        BuildEventStreamProtos.TargetSummary.newBuilder()
-            .setOverallBuildSuccess(overallBuildSuccess);
-    if (overallBuildSuccess && overallTestStatus != null) {
-      summaryBuilder.setOverallTestStatus(BuildEventStreamerUtils.bepStatus(overallTestStatus));
+    @com.google.common.annotations.VisibleForTesting
+    fun getOverallTestStatus(): BlazeTestStatus? {
+        return overallTestStatus
     }
-    return GenericBuildEvent.protoChaining(this).setTargetSummary(summaryBuilder.build()).build();
-  }
 
-  @Override
-  public BuildEventId getEventId() {
-    return id;
-  }
+    public override fun postedAfter(): com.google.common.collect.ImmutableList<BuildEventId?>? {
+        return postedAfter
+    }
 
-  @Override
-  public ImmutableList<BuildEventId> getChildrenEvents() {
-    return ImmutableList.of();
-  }
+    public override fun asStreamProto(context: BuildEventContext?): BuildEvent {
+        val summaryBuilder: BuildEventStreamProtos.TargetSummary.Builder =
+            BuildEventStreamProtos.TargetSummary.newBuilder()
+                .setOverallBuildSuccess(this.isOverallBuildSuccess)
+        if (this.isOverallBuildSuccess && overallTestStatus != null) {
+            summaryBuilder.setOverallTestStatus(BuildEventStreamerUtils.bepStatus(overallTestStatus))
+        }
+        return GenericBuildEvent.protoChaining(this).setTargetSummary(summaryBuilder.build()).build()
+    }
 
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("id", id)
-        .add("overallBuildSuccess", overallBuildSuccess)
-        .add("overallTestStatus", overallTestStatus)
-        .add("postedAfter", postedAfter)
-        .toString();
-  }
+    val eventId: BuildEventId
+        get() = id
+
+    val childrenEvents: com.google.common.collect.ImmutableList<BuildEventId?>
+        get() = com.google.common.collect.ImmutableList.of<BuildEventId?>()
+
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("id", id)
+            .add("overallBuildSuccess", this.isOverallBuildSuccess)
+            .add("overallTestStatus", overallTestStatus)
+            .add("postedAfter", postedAfter)
+            .toString()
+    }
+
+    companion object {
+        fun create(
+            target: ConfiguredTarget,
+            overallBuildSuccess: Boolean,
+            expectTestSummary: Boolean,
+            overallTestStatus: BlazeTestStatus?
+        ): TargetSummaryEvent {
+            val label: Label? = target.getOriginalLabel()
+            val configId: BuildEventId? = configurationId(target.getLookupKey().getConfigurationKey())
+            val postAfter: com.google.common.collect.ImmutableList.Builder<BuildEventId?> =
+                com.google.common.collect.ImmutableList.builder<BuildEventId?>()
+            postAfter.add(BuildEventIdUtil.targetCompleted(label, configId))
+            if (expectTestSummary) {
+                // Always post after test summary, even if we get here without having seen it yet
+                postAfter.add(BuildEventIdUtil.testSummary(label, configId))
+            }
+            return TargetSummaryEvent(
+                BuildEventIdUtil.targetSummary(label, configId),
+                overallBuildSuccess,
+                if (overallBuildSuccess && expectTestSummary) overallTestStatus else null,
+                postAfter.build()
+            )
+        }
+    }
 }

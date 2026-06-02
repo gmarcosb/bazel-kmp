@@ -11,743 +11,750 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.devtools.build.lib.skyframe.BuildDriverKey.TestType.EXCLUSIVE;
-import static com.google.devtools.build.lib.skyframe.BuildDriverKey.TestType.EXCLUSIVE_IF_LOCAL;
-import static com.google.devtools.build.lib.skyframe.BuildDriverKey.TestType.NOT_TEST;
-import static com.google.devtools.build.lib.skyframe.BuildDriverKey.TestType.PARALLEL;
-
-import com.google.auto.value.AutoValue;
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableCollection;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.ActionConflictException;
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.AspectConfiguredEvent;
-import com.google.devtools.build.lib.analysis.AspectValue;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.ConfiguredTargetValue;
-import com.google.devtools.build.lib.analysis.ExtraActionArtifactsProvider;
-import com.google.devtools.build.lib.analysis.TargetConfiguredEvent;
-import com.google.devtools.build.lib.analysis.TopLevelArtifactContext;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.constraints.RuleContextConstraintSemantics;
-import com.google.devtools.build.lib.analysis.constraints.TopLevelConstraintSemantics;
-import com.google.devtools.build.lib.analysis.constraints.TopLevelConstraintSemantics.EnvironmentCompatibility;
-import com.google.devtools.build.lib.analysis.constraints.TopLevelConstraintSemantics.PlatformCompatibility;
-import com.google.devtools.build.lib.analysis.constraints.TopLevelConstraintSemantics.TargetCompatibilityCheckException;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.packages.NoSuchTargetException;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.rules.AliasConfiguredTarget;
-import com.google.devtools.build.lib.server.FailureDetails.Analysis;
-import com.google.devtools.build.lib.server.FailureDetails.Analysis.Code;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.skyframe.AspectCompletionValue.AspectCompletionKey;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator.AspectKey;
-import com.google.devtools.build.lib.skyframe.BuildDriverKey.TestType;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.AspectAnalyzedEvent;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.SomeExecutionStartedEvent;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.TestAnalyzedEvent;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.TopLevelEntityAnalysisConcludedEvent;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.TopLevelStatusEventWithType;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.TopLevelTargetAnalyzedEvent;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.TopLevelTargetPendingExecutionEvent;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.TopLevelTargetReadyForSymlinkPlanting;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.TopLevelTargetSkippedEvent;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.lib.util.RegexFilter;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunction.Environment.SkyKeyComputeState;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.SkyframeLookupResult;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionAnalysisMetadata
 
 /**
  * Drives the analysis & execution of an ActionLookupKey, which is wrapped inside a BuildDriverKey.
  */
-public class BuildDriverFunction implements SkyFunction {
-  private final Supplier<IncrementalArtifactConflictFinder> incrementalArtifactConflictFinder;
-  private final Supplier<RuleContextConstraintSemantics> ruleContextConstraintSemantics;
-  private final Supplier<RegexFilter> extraActionFilterSupplier;
-  private final Supplier<TestTypeResolver> testTypeResolver;
-  final AdditionalPostAnalysisDepsRequestedAndAvailable
-      additionalPostAnalysisDepsRequestedAndAvailable;
+class BuildDriverFunction(
+    incrementalArtifactConflictFinder: java.util.function.Supplier<IncrementalArtifactConflictFinder?>,
+    ruleContextConstraintSemantics: java.util.function.Supplier<RuleContextConstraintSemantics?>,
+    extraActionFilterSupplier: java.util.function.Supplier<com.google.devtools.build.lib.util.RegexFilter?>,
+    testTypeResolver: java.util.function.Supplier<TestTypeResolver?>,
+    additionalPostAnalysisDepsRequestedAndAvailable: AdditionalPostAnalysisDepsRequestedAndAvailable
+) : SkyFunction {
+    private val incrementalArtifactConflictFinder: java.util.function.Supplier<IncrementalArtifactConflictFinder?>
+    private val ruleContextConstraintSemantics: java.util.function.Supplier<RuleContextConstraintSemantics?>
+    private val extraActionFilterSupplier: java.util.function.Supplier<com.google.devtools.build.lib.util.RegexFilter?>
+    private val testTypeResolver: java.util.function.Supplier<TestTypeResolver?>
+    val additionalPostAnalysisDepsRequestedAndAvailable: AdditionalPostAnalysisDepsRequestedAndAvailable
 
-  @Nullable private Supplier<Boolean> shouldCheckForConflictWithTraversal;
 
-  // A set of BuildDriverKeys that have been checked for conflicts.
-  // This gets cleared after each build.
-  // We can't use SkyKeyComputeState here since it doesn't guarantee that the same state for
-  // a previously requested SkyKey is retrieved. This could cause a correctness issue:
-  // - we clear the conflict checking states and shut down the Executors after all the analysis
-  //   work is done in the build
-  // - If the SkyKeyComputeState for this BuildDriverKey was cleared, an evaluation of this key
-  //   would attempt again to check for conflicts => we redo the work, or a race condition with the
-  //   shutting down of the Executors could lead to a RejectedExecutionException.
-  private Set<BuildDriverKey> checkedForConflicts = Sets.newConcurrentHashSet();
+    private var shouldCheckForConflictWithTraversal: java.util.function.Supplier<Boolean?>? = null
 
-  // Events coming from Skyframe may contain duplicates (because of resets). It would be better to
-  // de-duplicate at the source to avoid repeated work by each subscriber.
-  //
-  // Each top level key has at most 1 effective status event, e.g. a top level target can't be
-  // analyzed twice in a build. Therefore, to keep track of the posted events, we only need to keep
-  // the sent event types instead of the events themselves.
-  //
-  // We didn't use SkyKeyComputeState since it should only be used as a performance optimization,
-  // whereas in this situation the state determines the behavior of the SkyFunction.
-  private Map<BuildDriverKey, Set<TopLevelStatusEvents.Type>> keyToPostedEvents =
-      Maps.newConcurrentMap();
+    // A set of BuildDriverKeys that have been checked for conflicts.
+    // This gets cleared after each build.
+    // We can't use SkyKeyComputeState here since it doesn't guarantee that the same state for
+    // a previously requested SkyKey is retrieved. This could cause a correctness issue:
+    // - we clear the conflict checking states and shut down the Executors after all the analysis
+    //   work is done in the build
+    // - If the SkyKeyComputeState for this BuildDriverKey was cleared, an evaluation of this key
+    //   would attempt again to check for conflicts => we redo the work, or a race condition with the
+    //   shutting down of the Executors could lead to a RejectedExecutionException.
+    private var checkedForConflicts: MutableSet<BuildDriverKey?> =
+        com.google.common.collect.Sets.newConcurrentHashSet<BuildDriverKey?>()
 
-  public BuildDriverFunction(
-      Supplier<IncrementalArtifactConflictFinder> incrementalArtifactConflictFinder,
-      Supplier<RuleContextConstraintSemantics> ruleContextConstraintSemantics,
-      Supplier<RegexFilter> extraActionFilterSupplier,
-      Supplier<TestTypeResolver> testTypeResolver,
-      AdditionalPostAnalysisDepsRequestedAndAvailable
-          additionalPostAnalysisDepsRequestedAndAvailable) {
-    this.incrementalArtifactConflictFinder = incrementalArtifactConflictFinder;
-    this.ruleContextConstraintSemantics = ruleContextConstraintSemantics;
-    this.extraActionFilterSupplier = extraActionFilterSupplier;
-    this.testTypeResolver = testTypeResolver;
-    this.additionalPostAnalysisDepsRequestedAndAvailable =
-        additionalPostAnalysisDepsRequestedAndAvailable;
-  }
+    // Events coming from Skyframe may contain duplicates (because of resets). It would be better to
+    // de-duplicate at the source to avoid repeated work by each subscriber.
+    //
+    // Each top level key has at most 1 effective status event, e.g. a top level target can't be
+    // analyzed twice in a build. Therefore, to keep track of the posted events, we only need to keep
+    // the sent event types instead of the events themselves.
+    //
+    // We didn't use SkyKeyComputeState since it should only be used as a performance optimization,
+    // whereas in this situation the state determines the behavior of the SkyFunction.
+    private var keyToPostedEvents: MutableMap<BuildDriverKey?, MutableSet<com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.Type?>> =
+        com.google.common.collect.Maps.newConcurrentMap<BuildDriverKey?, MutableSet<com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.Type?>?>()
 
-  private static class State implements SkyKeyComputeState {
-    // It's only necessary to do this check once.
-    private boolean checkedForCompatibility = false;
-    private boolean checkedForPlatformCompatibility = false;
-
-    private TestType testType;
-  }
-
-  public void setShouldCheckForConflictWithTraversal(
-      Supplier<Boolean> shouldCheckForConflictWithTraversal) {
-    this.shouldCheckForConflictWithTraversal = shouldCheckForConflictWithTraversal;
-  }
-
-  /**
-   * From the ConfiguredTarget/Aspect keys, get the top-level artifacts. Then evaluate them together
-   * with the appropriate CompletionFunctions. This is the bridge between the conceptual analysis &
-   * execution phases.
-   */
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws SkyFunctionException, InterruptedException {
-    BuildDriverKey buildDriverKey = (BuildDriverKey) skyKey;
-    ActionLookupKey actionLookupKey = buildDriverKey.getActionLookupKey();
-    TopLevelArtifactContext topLevelArtifactContext = buildDriverKey.getTopLevelArtifactContext();
-    State state = env.getState(State::new);
-
-    // Register a dependency on the BUILD_ID. We do this to make sure BuildDriverFunction is
-    // reevaluated every build.
-    PrecomputedValue.BUILD_ID.get(env);
-
-    Set<TopLevelStatusEvents.Type> postedEventsTypes =
-        keyToPostedEvents.computeIfAbsent(buildDriverKey, (unused) -> new HashSet<>());
-    // Why SkyValue and not ActionLookupValue? The evaluation of some ActionLookupKey can result in
-    // classes that don't implement ActionLookupValue
-    // (e.g. ConfiguredTargetKey -> NonRuleConfiguredTargetValue).
-    SkyValue topLevelSkyValue;
-    try {
-      topLevelSkyValue = env.getValueOrThrow(actionLookupKey, AbstractSaneAnalysisException.class);
-    } catch (AbstractSaneAnalysisException e) {
-      signalAnalysisConclusionIfKeepGoing(
-          env, buildDriverKey, postedEventsTypes, /* success= */ false);
-      throw BuildDriverFunctionException.ofConfiguredTargetOrAspectEval(e);
+    init {
+        this.incrementalArtifactConflictFinder = incrementalArtifactConflictFinder
+        this.ruleContextConstraintSemantics = ruleContextConstraintSemantics
+        this.extraActionFilterSupplier = extraActionFilterSupplier
+        this.testTypeResolver = testTypeResolver
+        this.additionalPostAnalysisDepsRequestedAndAvailable =
+            additionalPostAnalysisDepsRequestedAndAvailable
     }
 
-    if (env.valuesMissing()) {
-      return null;
+    private class State : SkyKeyComputeState {
+        // It's only necessary to do this check once.
+        private var checkedForCompatibility = false
+        private var checkedForPlatformCompatibility = false
+
+        private var testType: com.google.devtools.build.lib.skyframe.BuildDriverKey.TestType? = null
     }
 
-    // At this point, the target is considered "analyzed". It's important that this event is sent
-    // before the TopLevelEntityAnalysisConcludedEvent: when the last of the analysis work is
-    // concluded, we need to have the complete list of analyzed targets ready in
-    // BuildResultListener.
-    if (topLevelSkyValue instanceof ConfiguredTargetValue) {
-      announceTopLevelConfiguredTargetAnalyzed(
-          env, (ConfiguredTargetValue) topLevelSkyValue, postedEventsTypes);
-    } else {
-      announceTopLevelAspectAnalyzed(
-          env, (TopLevelAspectsValue) topLevelSkyValue, postedEventsTypes);
+    fun setShouldCheckForConflictWithTraversal(
+        shouldCheckForConflictWithTraversal: java.util.function.Supplier<Boolean?>?
+    ) {
+        this.shouldCheckForConflictWithTraversal = shouldCheckForConflictWithTraversal
     }
 
-    // We only check for action conflict once per BuildDriverKey.
-    if (Preconditions.checkNotNull(shouldCheckForConflictWithTraversal).get()
-        && checkedForConflicts.add(buildDriverKey)) {
-      try (SilentCloseable c =
-          Profiler.instance().profile("BuildDriverFunction.checkActionConflicts")) {
-        ImmutableMap<ActionAnalysisMetadata, ActionConflictException> actionConflicts =
-            checkActionConflicts(actionLookupKey);
-        if (!actionConflicts.isEmpty()) {
-          // The analysis technically succeeded, even though the target/aspect can't be executed.
-          signalAnalysisConclusionIfKeepGoing(
-              env, buildDriverKey, postedEventsTypes, /* success= */ true);
-          throw new BuildDriverFunctionException(
-              new TopLevelConflictException(
-                  "Action conflict(s) detected while analyzing top-level target "
-                      + actionLookupKey.getLabel(),
-                  actionConflicts));
-        }
-      }
-    }
+    /**
+     * From the ConfiguredTarget/Aspect keys, get the top-level artifacts. Then evaluate them together
+     * with the appropriate CompletionFunctions. This is the bridge between the conceptual analysis &
+     * execution phases.
+     */
+    @Throws(SkyFunctionException::class, java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey?, env: SkyFunction.Environment): SkyValue? {
+        val buildDriverKey: BuildDriverKey = skyKey as BuildDriverKey
+        val actionLookupKey: ActionLookupKey = buildDriverKey.getActionLookupKey()
+        val topLevelArtifactContext: TopLevelArtifactContext? = buildDriverKey.getTopLevelArtifactContext()
+        val state: State =
+            env.getState<State>(java.util.function.Supplier { com.google.devtools.build.lib.skyframe.BuildDriverFunction.State() })
 
-    Preconditions.checkState(
-        topLevelSkyValue instanceof ConfiguredTargetValue
-            || topLevelSkyValue instanceof TopLevelAspectsValue);
-    if (state.testType == null) {
-      if (topLevelSkyValue instanceof ConfiguredTargetValue) {
-        state.testType =
-            testTypeResolver
-                .get()
-                .determineTestType(
-                    ((ConfiguredTargetValue) topLevelSkyValue).getConfiguredTarget());
-      } else {
-        state.testType = NOT_TEST;
-      }
-    }
+        // Register a dependency on the BUILD_ID. We do this to make sure BuildDriverFunction is
+        // reevaluated every build.
+        PrecomputedValue.BUILD_ID.get(env)
 
-    if (topLevelSkyValue instanceof ConfiguredTargetValue configuredTargetValue) {
-      ConfiguredTarget configuredTarget = configuredTargetValue.getConfiguredTarget();
-      // It's possible that this code path is triggered AFTER the analysis cache clean up and the
-      // transitive packages for package root resolution is already cleared. In such a case, the
-      // symlinks should have already been planted.
-      NestedSet<Package.Metadata> transitivePackagesForSymlinkPlanting =
-          configuredTargetValue.getTransitivePackages();
-      if (transitivePackagesForSymlinkPlanting != null) {
-        postEventIfNecessary(
-            postedEventsTypes,
-            env,
-            TopLevelTargetReadyForSymlinkPlanting.create(transitivePackagesForSymlinkPlanting));
-      }
-
-      BuildConfigurationValue buildConfigurationValue =
-          configuredTarget.getConfigurationKey() == null
-              ? null
-              : (BuildConfigurationValue) env.getValue(configuredTarget.getConfigurationKey());
-      if (env.valuesMissing()) {
-        return null;
-      }
-
-      if (!state.checkedForCompatibility) {
+        val postedEventsTypes: MutableSet<com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.Type?> =
+            keyToPostedEvents.computeIfAbsent(
+                buildDriverKey,
+                java.util.function.Function { unused: BuildDriverKey? -> HashSet<com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.Type?>() })
+        // Why SkyValue and not ActionLookupValue? The evaluation of some ActionLookupKey can result in
+        // classes that don't implement ActionLookupValue
+        // (e.g. ConfiguredTargetKey -> NonRuleConfiguredTargetValue).
+        val topLevelSkyValue: SkyValue?
         try {
-          Boolean isConfiguredTargetCompatible =
-              isConfiguredTargetCompatible(
-                  env,
-                  state,
-                  configuredTarget,
-                  buildConfigurationValue,
-                  buildDriverKey.isExplicitlyRequested(),
-                  buildDriverKey.shouldSkipIncompatibleExplicitTargets());
-          if (isConfiguredTargetCompatible == null) {
-            return null;
-          }
+            topLevelSkyValue = env.getValueOrThrow<E?>(actionLookupKey, AbstractSaneAnalysisException::class.java)
+        } catch (e: AbstractSaneAnalysisException) {
+            signalAnalysisConclusionIfKeepGoing(
+                env, buildDriverKey, postedEventsTypes,  /* success= */false
+            )
+            throw BuildDriverFunctionException.Companion.ofConfiguredTargetOrAspectEval(e)
+        }
 
-          state.checkedForCompatibility = true;
-          if (!isConfiguredTargetCompatible) {
-            postEventIfNecessary(
-                postedEventsTypes, env, TopLevelTargetSkippedEvent.create(configuredTarget));
-            // We still record analyzed but skipped tests, as this information is needed for the
-            // result summary.
-            if (isTest(state.testType)) {
-              postEventIfNecessary(
-                  postedEventsTypes,
-                  env,
-                  TestAnalyzedEvent.create(
-                      configuredTarget,
-                      Preconditions.checkNotNull(buildConfigurationValue),
-                      /* isSkipped= */ true));
+        if (env.valuesMissing()) {
+            return null
+        }
+
+        // At this point, the target is considered "analyzed". It's important that this event is sent
+        // before the TopLevelEntityAnalysisConcludedEvent: when the last of the analysis work is
+        // concluded, we need to have the complete list of analyzed targets ready in
+        // BuildResultListener.
+        if (topLevelSkyValue is ConfiguredTargetValue) {
+            announceTopLevelConfiguredTargetAnalyzed(
+                env, topLevelSkyValue as ConfiguredTargetValue?, postedEventsTypes
+            )
+        } else {
+            announceTopLevelAspectAnalyzed(
+                env, topLevelSkyValue as TopLevelAspectsValue?, postedEventsTypes
+            )
+        }
+
+        // We only check for action conflict once per BuildDriverKey.
+        if (com.google.common.base.Preconditions.checkNotNull<java.util.function.Supplier<Boolean?>?>(
+                shouldCheckForConflictWithTraversal
+            ).get()
+            && checkedForConflicts.add(buildDriverKey)
+        ) {
+            Profiler.instance().profile("BuildDriverFunction.checkActionConflicts").use { c ->
+                val actionConflicts: com.google.common.collect.ImmutableMap<ActionAnalysisMetadata?, ActionConflictException?> =
+                    checkActionConflicts(actionLookupKey)
+                if (!actionConflicts.isEmpty()) {
+                    // The analysis technically succeeded, even though the target/aspect can't be executed.
+                    signalAnalysisConclusionIfKeepGoing(
+                        env, buildDriverKey, postedEventsTypes,  /* success= */true
+                    )
+                    throw BuildDriverFunctionException(
+                        TopLevelConflictException(
+                            "Action conflict(s) detected while analyzing top-level target "
+                                    + actionLookupKey.getLabel(),
+                            actionConflicts
+                        )
+                    )
+                }
             }
-            // Only send the event now to include the compatibility check in the measurement for
-            // time spent on analysis work.
+        }
+
+        com.google.common.base.Preconditions.checkState(
+            topLevelSkyValue is ConfiguredTargetValue
+                    || topLevelSkyValue is TopLevelAspectsValue
+        )
+        if (state.testType == null) {
+            if (topLevelSkyValue is ConfiguredTargetValue) {
+                state.testType =
+                    testTypeResolver
+                        .get()
+                        .determineTestType(
+                            (topLevelSkyValue as ConfiguredTargetValue).getConfiguredTarget()
+                        )
+            } else {
+                state.testType = com.google.devtools.build.lib.skyframe.BuildDriverKey.TestType.NOT_TEST
+            }
+        }
+
+        if (topLevelSkyValue is ConfiguredTargetValue) {
+            val configuredTarget: ConfiguredTarget = topLevelSkyValue.getConfiguredTarget()
+            // It's possible that this code path is triggered AFTER the analysis cache clean up and the
+            // transitive packages for package root resolution is already cleared. In such a case, the
+            // symlinks should have already been planted.
+            val transitivePackagesForSymlinkPlanting: NestedSet<Package.Metadata?>? =
+                topLevelSkyValue.getTransitivePackages()
+            if (transitivePackagesForSymlinkPlanting != null) {
+                postEventIfNecessary(
+                    postedEventsTypes,
+                    env,
+                    TopLevelTargetReadyForSymlinkPlanting.create(transitivePackagesForSymlinkPlanting)
+                )
+            }
+
+            val buildConfigurationValue: BuildConfigurationValue? =
+                if (configuredTarget.getConfigurationKey() == null)
+                    null
+                else
+                    env.getValue(configuredTarget.getConfigurationKey()) as BuildConfigurationValue?
+            if (env.valuesMissing()) {
+                return null
+            }
+
+            if (!state.checkedForCompatibility) {
+                try {
+                    val isConfiguredTargetCompatible =
+                        isConfiguredTargetCompatible(
+                            env,
+                            state,
+                            configuredTarget,
+                            buildConfigurationValue,
+                            buildDriverKey.isExplicitlyRequested(),
+                            buildDriverKey.shouldSkipIncompatibleExplicitTargets()
+                        )
+                    if (isConfiguredTargetCompatible == null) {
+                        return null
+                    }
+
+                    state.checkedForCompatibility = true
+                    if (!isConfiguredTargetCompatible) {
+                        postEventIfNecessary(
+                            postedEventsTypes, env, TopLevelTargetSkippedEvent.create(configuredTarget)
+                        )
+                        // We still record analyzed but skipped tests, as this information is needed for the
+                        // result summary.
+                        if (isTest(state.testType)) {
+                            postEventIfNecessary(
+                                postedEventsTypes,
+                                env,
+                                TestAnalyzedEvent.create(
+                                    configuredTarget,
+                                    com.google.common.base.Preconditions.checkNotNull<BuildConfigurationValue?>(
+                                        buildConfigurationValue
+                                    ),  /* isSkipped= */
+                                    true
+                                )
+                            )
+                        }
+                        // Only send the event now to include the compatibility check in the measurement for
+                        // time spent on analysis work.
+                        postEventIfNecessary(
+                            postedEventsTypes,
+                            env,
+                            TopLevelEntityAnalysisConcludedEvent.create(buildDriverKey,  /* succeeded= */true)
+                        )
+                        // We consider the evaluation of this BuildDriverKey successful at this point, even when
+                        // the target is skipped.
+                        removeStatesForKey(buildDriverKey)
+                        return BuildDriverValue(topLevelSkyValue,  /* skipped= */true)
+                    }
+                } catch (e: TargetCompatibilityCheckException) {
+                    // The analysis of the target technically succeeded, just that it was incompatible and
+                    // can't be executed.
+                    signalAnalysisConclusionIfKeepGoing(
+                        env, buildDriverKey, postedEventsTypes,  /* success= */true
+                    )
+                    throw BuildDriverFunctionException(e)
+                }
+            }
+
+            if (!additionalPostAnalysisDepsRequestedAndAvailable.request(env, actionLookupKey)) {
+                return null
+            }
+
             postEventIfNecessary(
                 postedEventsTypes,
                 env,
-                TopLevelEntityAnalysisConcludedEvent.create(buildDriverKey, /* succeeded= */ true));
-            // We consider the evaluation of this BuildDriverKey successful at this point, even when
-            // the target is skipped.
-            removeStatesForKey(buildDriverKey);
-            return new BuildDriverValue(topLevelSkyValue, /* skipped= */ true);
-          }
-        } catch (TargetCompatibilityCheckException e) {
-          // The analysis of the target technically succeeded, just that it was incompatible and
-          // can't be executed.
-          signalAnalysisConclusionIfKeepGoing(
-              env, buildDriverKey, postedEventsTypes, /* success= */ true);
-          throw new BuildDriverFunctionException(e);
+                TopLevelEntityAnalysisConcludedEvent.create(buildDriverKey,  /* succeeded= */true)
+            )
+            postEventIfNecessary(
+                postedEventsTypes,
+                env,
+                TopLevelTargetPendingExecutionEvent.create(configuredTarget, isTest(state.testType))
+            )
+            requestConfiguredTargetExecution(
+                configuredTarget,
+                buildDriverKey,
+                buildConfigurationValue,
+                env,
+                topLevelArtifactContext,
+                postedEventsTypes,
+                state.testType
+            )
+        } else {
+            val artifactsToBuild: com.google.common.collect.ImmutableSet.Builder<Artifact?> =
+                com.google.common.collect.ImmutableSet.builder<Artifact?>()
+            val aspectCompletionKeys: MutableList<SkyKey?> = java.util.ArrayList<SkyKey?>()
+
+            // Do not trigger Skyframe restarts in this loop (see comments below).
+            for (entry in (topLevelSkyValue as TopLevelAspectsValue).getTopLevelAspectsMap().entrySet()) {
+                val aspectKey: AspectKey? = entry.getKey()
+                val aspectValue: AspectValue = entry.getValue()
+                addExtraActionsIfRequested(
+                    aspectValue.getProvider(ExtraActionArtifactsProvider::class.java),
+                    artifactsToBuild,
+                    buildDriverKey.isExtraActionTopLevelOnly()
+                )
+
+                // It's possible that this code path is triggered AFTER the analysis cache clean up and the
+                // transitive packages for package root resolution is already cleared. In such a case, the
+                // symlinks should have already been planted.
+                val transitivePackagesForSymlinkPlanting: NestedSet<Package.Metadata?>? =
+                    aspectValue.getTransitivePackages()
+                if (transitivePackagesForSymlinkPlanting != null) {
+                    // This event should be sent out exactly once per aspect in this BuildDriverKey, even with
+                    // resets. We achieve this by marking the event type as sent only after sending the event
+                    // for all aspects, but must avoid triggering Skyframe restarts while doing so.
+                    if (!postedEventsTypes.contains(
+                            TopLevelStatusEvents.Type.TOP_LEVEL_TARGET_READY_FOR_SYMLINK_PLANTING
+                        )
+                    ) {
+                        env.getListener()
+                            .post(
+                                TopLevelTargetReadyForSymlinkPlanting.create(
+                                    transitivePackagesForSymlinkPlanting
+                                )
+                            )
+                    }
+                }
+                aspectCompletionKeys.add(AspectCompletionKey.Companion.create(aspectKey, topLevelArtifactContext))
+            }
+            postedEventsTypes.add(TopLevelStatusEvents.Type.TOP_LEVEL_TARGET_READY_FOR_SYMLINK_PLANTING)
+
+            if (!additionalPostAnalysisDepsRequestedAndAvailable.request(env, actionLookupKey)) {
+                return null
+            }
+
+            // Send the AspectAnalyzedEvents first to make sure the BuildResultListener is up-to-date
+            // before signaling that the analysis of this top level aspect has concluded.
+            postEventIfNecessary(
+                postedEventsTypes,
+                env,
+                TopLevelEntityAnalysisConcludedEvent.create(buildDriverKey,  /* succeeded= */true)
+            )
+
+            postEventIfNecessary(postedEventsTypes, env, SomeExecutionStartedEvent.create())
+            // Request the execution of the collected aspects.
+            declareDependenciesAndCheckValues(
+                env,
+                com.google.common.collect.Iterables.concat(
+                    Artifact.keys(artifactsToBuild.build()),
+                    aspectCompletionKeys
+                )
+            )
         }
-      }
 
-      if (!additionalPostAnalysisDepsRequestedAndAvailable.request(env, actionLookupKey)) {
-        return null;
-      }
+        if (env.valuesMissing()) {
+            return null
+        }
 
-      postEventIfNecessary(
-          postedEventsTypes,
-          env,
-          TopLevelEntityAnalysisConcludedEvent.create(buildDriverKey, /* succeeded= */ true));
-      postEventIfNecessary(
-          postedEventsTypes,
-          env,
-          TopLevelTargetPendingExecutionEvent.create(configuredTarget, isTest(state.testType)));
-      requestConfiguredTargetExecution(
-          configuredTarget,
-          buildDriverKey,
-          buildConfigurationValue,
-          env,
-          topLevelArtifactContext,
-          postedEventsTypes,
-          state.testType);
-    } else {
-      ImmutableSet.Builder<Artifact> artifactsToBuild = ImmutableSet.builder();
-      List<SkyKey> aspectCompletionKeys = new ArrayList<>();
+        // If we get to this point, the execution of this target/aspect succeeded.
+        if (state.testType == com.google.devtools.build.lib.skyframe.BuildDriverKey.TestType.EXCLUSIVE || state.testType == com.google.devtools.build.lib.skyframe.BuildDriverKey.TestType.EXCLUSIVE_IF_LOCAL) {
+            com.google.common.base.Preconditions.checkState(topLevelSkyValue is ConfiguredTargetValue)
+            removeStatesForKey(buildDriverKey)
+            return ExclusiveTestBuildDriverValue(
+                topLevelSkyValue, (topLevelSkyValue as ConfiguredTargetValue).getConfiguredTarget()
+            )
+        }
 
-      // Do not trigger Skyframe restarts in this loop (see comments below).
-      for (Map.Entry<AspectKey, AspectValue> entry :
-          ((TopLevelAspectsValue) topLevelSkyValue).getTopLevelAspectsMap().entrySet()) {
-        AspectKey aspectKey = entry.getKey();
-        AspectValue aspectValue = entry.getValue();
+        removeStatesForKey(buildDriverKey)
+        return BuildDriverValue(topLevelSkyValue,  /* skipped= */false)
+    }
+
+    fun resetStates() {
+        checkedForConflicts = com.google.common.collect.Sets.newConcurrentHashSet<BuildDriverKey?>()
+        keyToPostedEvents =
+            com.google.common.collect.Maps.newConcurrentMap<BuildDriverKey?, MutableSet<com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.Type?>?>()
+    }
+
+    private fun removeStatesForKey(key: BuildDriverKey?) {
+        checkedForConflicts.remove(key)
+        keyToPostedEvents.remove(key)
+    }
+
+    /**
+     * Checks if a ConfiguredTarget is compatible with the platform/environment. See [ ].
+     * 
+     * @return null if a value is missing in the environment.
+     */
+    @Throws(java.lang.InterruptedException::class, TargetCompatibilityCheckException::class)
+    private fun isConfiguredTargetCompatible(
+        env: SkyFunction.Environment,
+        state: State,
+        configuredTarget: ConfiguredTarget?,
+        buildConfigurationValue: BuildConfigurationValue?,
+        isExplicitlyRequested: Boolean,
+        skipIncompatibleExplicitTargets: Boolean
+    ): Boolean? {
+        if (!state.checkedForPlatformCompatibility) {
+            val platformCompatibility: PlatformCompatibility =
+                TopLevelConstraintSemantics.compatibilityWithPlatformRestrictions(
+                    configuredTarget,
+                    env.getListener(),  /* eagerlyThrowError= */
+                    true,
+                    isExplicitlyRequested,
+                    skipIncompatibleExplicitTargets
+                )
+            state.checkedForPlatformCompatibility = true
+            when (platformCompatibility) {
+                INCOMPATIBLE_EXPLICIT, INCOMPATIBLE_IMPLICIT -> return false
+                COMPATIBLE -> {}
+            }
+        }
+
+        val environmentCompatibility: EnvironmentCompatibility? =
+            TopLevelConstraintSemantics.compatibilityWithTargetEnvironment(
+                configuredTarget,
+                buildConfigurationValue,
+                { label -> getTarget(env, label) },
+                env.getListener()
+            )
+        if (env.valuesMissing() || environmentCompatibility == null) {
+            return null
+        }
+        if (environmentCompatibility.isCompatible) {
+            return true
+        }
+        if (environmentCompatibility.severeMissingEnvironments() == null) {
+            return false
+        }
+        val badTargetsUserMessage: String? =
+            TopLevelConstraintSemantics.getErrorMessageForTarget(
+                ruleContextConstraintSemantics.get(),
+                configuredTarget,
+                environmentCompatibility.severeMissingEnvironments()
+            )
+        throw TargetCompatibilityCheckException(
+            badTargetsUserMessage,
+            FailureDetail.newBuilder()
+                .setMessage(badTargetsUserMessage)
+                .setAnalysis(Analysis.newBuilder().setCode(Code.TARGETS_MISSING_ENVIRONMENTS))
+                .build()
+        )
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    private fun requestConfiguredTargetExecution(
+        configuredTarget: ConfiguredTarget,
+        buildDriverKey: BuildDriverKey,
+        buildConfigurationValue: BuildConfigurationValue?,
+        env: SkyFunction.Environment,
+        topLevelArtifactContext: TopLevelArtifactContext?,
+        postedEventsTypes: MutableSet<com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.Type?>,
+        testType: com.google.devtools.build.lib.skyframe.BuildDriverKey.TestType
+    ) {
+        val artifactsToBuild: com.google.common.collect.ImmutableSet.Builder<Artifact?> =
+            com.google.common.collect.ImmutableSet.builder<Artifact?>()
         addExtraActionsIfRequested(
-            aspectValue.getProvider(ExtraActionArtifactsProvider.class),
+            configuredTarget.getProvider(ExtraActionArtifactsProvider::class.java),
             artifactsToBuild,
-            buildDriverKey.isExtraActionTopLevelOnly());
-
-        // It's possible that this code path is triggered AFTER the analysis cache clean up and the
-        // transitive packages for package root resolution is already cleared. In such a case, the
-        // symlinks should have already been planted.
-        NestedSet<Package.Metadata> transitivePackagesForSymlinkPlanting =
-            aspectValue.getTransitivePackages();
-        if (transitivePackagesForSymlinkPlanting != null) {
-          // This event should be sent out exactly once per aspect in this BuildDriverKey, even with
-          // resets. We achieve this by marking the event type as sent only after sending the event
-          // for all aspects, but must avoid triggering Skyframe restarts while doing so.
-          if (!postedEventsTypes.contains(
-              TopLevelStatusEvents.Type.TOP_LEVEL_TARGET_READY_FOR_SYMLINK_PLANTING)) {
-            env.getListener()
-                .post(
-                    TopLevelTargetReadyForSymlinkPlanting.create(
-                        transitivePackagesForSymlinkPlanting));
-          }
+            buildDriverKey.isExtraActionTopLevelOnly()
+        )
+        val keysToRequest: com.google.common.collect.ImmutableSet.Builder<SkyKey?> =
+            com.google.common.collect.ImmutableSet.builder<SkyKey?>().addAll(Artifact.keys(artifactsToBuild.build()))
+        postEventIfNecessary(postedEventsTypes, env, SomeExecutionStartedEvent.create())
+        if (testType == com.google.devtools.build.lib.skyframe.BuildDriverKey.TestType.NOT_TEST) {
+            keysToRequest.add(
+                TargetCompletionValue.key(
+                    ConfiguredTargetKey.Companion.fromConfiguredTarget(configuredTarget),
+                    topLevelArtifactContext,  /* willTest= */
+                    false
+                )
+            )
+            declareDependenciesAndCheckValues(env, keysToRequest.build())
+            return
         }
-        aspectCompletionKeys.add(AspectCompletionKey.create(aspectKey, topLevelArtifactContext));
-      }
-      postedEventsTypes.add(TopLevelStatusEvents.Type.TOP_LEVEL_TARGET_READY_FOR_SYMLINK_PLANTING);
 
-      if (!additionalPostAnalysisDepsRequestedAndAvailable.request(env, actionLookupKey)) {
-        return null;
-      }
+        postEventIfNecessary(
+            postedEventsTypes,
+            env,
+            TestAnalyzedEvent.create(
+                configuredTarget,
+                com.google.common.base.Preconditions.checkNotNull<BuildConfigurationValue?>(buildConfigurationValue),  /* isSkipped= */
+                false
+            )
+        )
 
-      // Send the AspectAnalyzedEvents first to make sure the BuildResultListener is up-to-date
-      // before signaling that the analysis of this top level aspect has concluded.
-      postEventIfNecessary(
-          postedEventsTypes,
-          env,
-          TopLevelEntityAnalysisConcludedEvent.create(buildDriverKey, /* succeeded= */ true));
+        if (testType == com.google.devtools.build.lib.skyframe.BuildDriverKey.TestType.PARALLEL) {
+            // Only run non-exclusive tests here. Exclusive tests need to be run sequentially later.
+            keysToRequest.add(
+                TestCompletionValue.key(
+                    ConfiguredTargetKey.Companion.fromConfiguredTarget(configuredTarget),
+                    topLevelArtifactContext,  /* exclusiveTesting= */
+                    false
+                )
+            )
+            declareDependenciesAndCheckValues(env, keysToRequest.build())
+            return
+        }
 
-      postEventIfNecessary(postedEventsTypes, env, SomeExecutionStartedEvent.create());
-      // Request the execution of the collected aspects.
-      declareDependenciesAndCheckValues(
-          env, Iterables.concat(Artifact.keys(artifactsToBuild.build()), aspectCompletionKeys));
+        // Exclusive tests will be run with sequential Skyframe evaluations afterwards.
+        keysToRequest.add(
+            TargetCompletionValue.key(
+                ConfiguredTargetKey.Companion.fromConfiguredTarget(configuredTarget),
+                topLevelArtifactContext,  /* willTest= */
+                true
+            )
+        )
+        declareDependenciesAndCheckValues(env, keysToRequest.build())
     }
 
-    if (env.valuesMissing()) {
-      return null;
+    @com.google.common.annotations.VisibleForTesting
+    @Throws(java.lang.InterruptedException::class)
+    fun checkActionConflicts(
+        actionLookupKey: ActionLookupKey?
+    ): com.google.common.collect.ImmutableMap<ActionAnalysisMetadata?, ActionConflictException?> {
+        val localRef: IncrementalArtifactConflictFinder? = incrementalArtifactConflictFinder.get()
+        // a null value means that the conflict checker is shut down.
+        if (localRef == null) {
+            return com.google.common.collect.ImmutableMap.of<ActionAnalysisMetadata?, ActionConflictException?>()
+        }
+        return localRef.findArtifactConflicts(actionLookupKey).conflicts
     }
 
-    // If we get to this point, the execution of this target/aspect succeeded.
-
-    if (state.testType.equals(EXCLUSIVE) || state.testType.equals(EXCLUSIVE_IF_LOCAL)) {
-      Preconditions.checkState(topLevelSkyValue instanceof ConfiguredTargetValue);
-      removeStatesForKey(buildDriverKey);
-      return new ExclusiveTestBuildDriverValue(
-          topLevelSkyValue, ((ConfiguredTargetValue) topLevelSkyValue).getConfiguredTarget());
+    private fun addExtraActionsIfRequested(
+        provider: ExtraActionArtifactsProvider?,
+        artifactsToBuild: com.google.common.collect.ImmutableSet.Builder<Artifact?>,
+        extraActionTopLevelOnly: Boolean
+    ) {
+        if (provider != null) {
+            addArtifactsToBuilder(
+                if (extraActionTopLevelOnly)
+                    provider.getExtraActionArtifacts().toList()
+                else
+                    provider.getTransitiveExtraActionArtifacts().toList(),
+                artifactsToBuild,
+                extraActionFilterSupplier.get()
+            )
+        }
     }
 
-    removeStatesForKey(buildDriverKey);
-    return new BuildDriverValue(topLevelSkyValue, /* skipped= */ false);
-  }
+    /** A SkyFunctionException wrapper for the actual TopLevelConflictException.  */
+    private class BuildDriverFunctionException : SkyFunctionException {
+        private constructor(cause: java.lang.Exception?, transience: Transience?) : super(cause, transience)
 
-  /**
-   * Sends out a signal that no more analysis work will be done on this top level target/aspect.
-   *
-   * <p>Only do so in --keep_going mode. This is consistent with the legacy behavior where the
-   * analysis phase isn't considered "finished" if there's an error in --nokeep_going mode.
-   */
-  private static void signalAnalysisConclusionIfKeepGoing(
-      Environment env,
-      BuildDriverKey buildDriverKey,
-      Set<TopLevelStatusEvents.Type> postedEventsTypes,
-      boolean success) {
-    if (buildDriverKey.keepGoing()) {
-      postEventIfNecessary(
-          postedEventsTypes,
-          env,
-          TopLevelEntityAnalysisConcludedEvent.create(buildDriverKey, success));
-    }
-  }
+        // The exception is transient here since it could be caused by external factors (conflict with
+        // another target).
+        internal constructor(cause: TopLevelConflictException?) : super(cause, Transience.TRANSIENT)
 
-  /**
-   * {@link TopLevelTargetAnalyzedEvent}s should be sent out before conflict checking to be
-   * consistent with the non-skymeld code path.
-   */
-  private static void announceTopLevelConfiguredTargetAnalyzed(
-      Environment env,
-      ConfiguredTargetValue configuredTargetValue,
-      Set<TopLevelStatusEvents.Type> postedEventsTypes)
-      throws InterruptedException {
-    ConfiguredTarget configuredTarget = configuredTargetValue.getConfiguredTarget();
-    if (postedEventsTypes.add(TopLevelStatusEvents.Type.TOP_LEVEL_TARGET_CONFIGURED)) {
-      Target target;
-      try {
-        Label label = configuredTarget.getOriginalLabel();
-        target =
-            ((PackageValue) env.getValue(label.getPackageIdentifier()))
-                .getPackage()
-                .getTarget(label.name);
-      } catch (NoSuchTargetException e) {
-        throw new IllegalStateException(
-            "Target should already be verified and available for top level ConfiguredTarget: "
-                + configuredTarget,
-            e);
-      }
+        internal constructor(cause: TargetCompatibilityCheckException?) : super(cause, Transience.TRANSIENT)
 
-      Label actual =
-          (configuredTarget instanceof AliasConfiguredTarget alias)
-              ? alias.getActual().getLabel()
-              : null;
-
-      env.getListener()
-          .post(
-              new TargetConfiguredEvent(
-                  target,
-                  getConfigurationValue(env, configuredTarget.getConfigurationKey()),
-                  actual));
-    }
-    postEventIfNecessary(
-        postedEventsTypes, env, TopLevelTargetAnalyzedEvent.create(configuredTarget));
-  }
-
-  /**
-   * {@link AspectAnalyzedEvents} should be sent out before conflict checking to be consistent with
-   * the non-skymeld code path.
-   */
-  private static void announceTopLevelAspectAnalyzed(
-      Environment env,
-      TopLevelAspectsValue topLevelAspectsValue,
-      Set<TopLevelStatusEvents.Type> postedEventsTypes)
-      throws InterruptedException {
-    if (!postedEventsTypes.add(TopLevelStatusEvents.Type.ASPECT_ANALYZED)) {
-      return;
-    }
-    // The ConfiguredTargetKey in the AspectKey will vary from the TopLevelAspectKey's
-    // ConfiguredTargetKey due to rule transitions. See the implementation in
-    // ToplevelStarlarkAspectFunction#getConfiguredTargetKey().
-    // Keep this logic in-sync with SkyframeExecutor#configureTargets().
-    AspectKey firstAspectKey =
-        Iterables.getFirst(topLevelAspectsValue.getTopLevelAspectsMap().keySet(), null);
-    if (firstAspectKey == null) {
-      return;
-    }
-    ConfiguredTargetKey transitionedKey = firstAspectKey.getBaseConfiguredTargetKey();
-    int aspectCount = topLevelAspectsValue.getTopLevelAspectsMap().size();
-    env.getListener().post(new ToplevelAspectsIdentifiedEvent(transitionedKey, aspectCount));
-
-    for (Map.Entry<AspectKey, AspectValue> entry :
-        topLevelAspectsValue.getTopLevelAspectsMap().entrySet()) {
-      AspectKey aspectKey = entry.getKey();
-      env.getListener()
-          .post(
-              new AspectConfiguredEvent(
-                  aspectKey.getLabel(),
-                  /* aspectClassName= */ aspectKey.getAspectClass().getName(),
-                  aspectKey.getAspectDescriptor().getDescription(),
-                  getConfigurationValue(env, aspectKey.getConfigurationKey())));
-      env.getListener().post(AspectAnalyzedEvent.create(aspectKey, entry.getValue()));
-    }
-  }
-
-  @Nullable
-  private static BuildConfigurationValue getConfigurationValue(
-      Environment env, @Nullable BuildConfigurationKey key) throws InterruptedException {
-    if (key == null) {
-      return null;
-    }
-    return (BuildConfigurationValue) env.getValue(key);
-  }
-
-  public void resetStates() {
-    checkedForConflicts = Sets.newConcurrentHashSet();
-    keyToPostedEvents = Maps.newConcurrentMap();
-  }
-
-  private void removeStatesForKey(BuildDriverKey key) {
-    checkedForConflicts.remove(key);
-    keyToPostedEvents.remove(key);
-  }
-
-  private static void postEventIfNecessary(
-      Set<TopLevelStatusEvents.Type> postedEventsTypes,
-      Environment env,
-      TopLevelStatusEventWithType event) {
-    if (postedEventsTypes.add(event.getType())) {
-      env.getListener().post(event);
-    }
-  }
-
-  private static boolean isTest(TestType testType) {
-    return !testType.equals(NOT_TEST);
-  }
-
-  /**
-   * Checks if a ConfiguredTarget is compatible with the platform/environment. See {@link
-   * TopLevelConstraintSemantics}.
-   *
-   * @return null if a value is missing in the environment.
-   */
-  @Nullable
-  private Boolean isConfiguredTargetCompatible(
-      Environment env,
-      State state,
-      ConfiguredTarget configuredTarget,
-      BuildConfigurationValue buildConfigurationValue,
-      boolean isExplicitlyRequested,
-      boolean skipIncompatibleExplicitTargets)
-      throws InterruptedException, TargetCompatibilityCheckException {
-
-    if (!state.checkedForPlatformCompatibility) {
-      PlatformCompatibility platformCompatibility =
-          TopLevelConstraintSemantics.compatibilityWithPlatformRestrictions(
-              configuredTarget,
-              env.getListener(),
-              /* eagerlyThrowError= */ true,
-              isExplicitlyRequested,
-              skipIncompatibleExplicitTargets);
-      state.checkedForPlatformCompatibility = true;
-      switch (platformCompatibility) {
-        case INCOMPATIBLE_EXPLICIT:
-        case INCOMPATIBLE_IMPLICIT:
-          return false;
-        case COMPATIBLE:
-          break;
-      }
+        companion object {
+            fun ofConfiguredTargetOrAspectEval(
+                cause: AbstractSaneAnalysisException?
+            ): BuildDriverFunctionException {
+                return BuildDriverFunctionException(cause, Transience.PERSISTENT)
+            }
+        }
     }
 
-    EnvironmentCompatibility environmentCompatibility =
-        TopLevelConstraintSemantics.compatibilityWithTargetEnvironment(
-            configuredTarget,
-            buildConfigurationValue,
-            label -> getTarget(env, label),
-            env.getListener());
-    if (env.valuesMissing() || environmentCompatibility == null) {
-      return null;
-    }
-    if (environmentCompatibility.isCompatible) {
-      return true;
-    }
-    if (environmentCompatibility.severeMissingEnvironments() == null) {
-      return false;
-    }
-    String badTargetsUserMessage =
-        TopLevelConstraintSemantics.getErrorMessageForTarget(
-            ruleContextConstraintSemantics.get(),
-            configuredTarget,
-            environmentCompatibility.severeMissingEnvironments());
-    throw new TargetCompatibilityCheckException(
-        badTargetsUserMessage,
-        FailureDetail.newBuilder()
-            .setMessage(badTargetsUserMessage)
-            .setAnalysis(Analysis.newBuilder().setCode(Code.TARGETS_MISSING_ENVIRONMENTS))
-            .build());
-  }
-
-  @Nullable
-  private static Target getTarget(Environment env, Label label)
-      throws InterruptedException, NoSuchTargetException {
-    PackageValue packageValue = (PackageValue) env.getValue(label.getPackageIdentifier());
-    if (env.valuesMissing() || packageValue == null) {
-      return null;
-    }
-    Package pkg = packageValue.getPackage();
-    return pkg.getTarget(label.name);
-  }
-
-  private void requestConfiguredTargetExecution(
-      ConfiguredTarget configuredTarget,
-      BuildDriverKey buildDriverKey,
-      BuildConfigurationValue buildConfigurationValue,
-      Environment env,
-      TopLevelArtifactContext topLevelArtifactContext,
-      Set<TopLevelStatusEvents.Type> postedEventsTypes,
-      TestType testType)
-      throws InterruptedException {
-    ImmutableSet.Builder<Artifact> artifactsToBuild = ImmutableSet.builder();
-    addExtraActionsIfRequested(
-        configuredTarget.getProvider(ExtraActionArtifactsProvider.class),
-        artifactsToBuild,
-        buildDriverKey.isExtraActionTopLevelOnly());
-    ImmutableSet.Builder<SkyKey> keysToRequest =
-        ImmutableSet.<SkyKey>builder().addAll(Artifact.keys(artifactsToBuild.build()));
-    postEventIfNecessary(postedEventsTypes, env, SomeExecutionStartedEvent.create());
-    if (testType.equals(NOT_TEST)) {
-      keysToRequest.add(
-          TargetCompletionValue.key(
-              ConfiguredTargetKey.fromConfiguredTarget(configuredTarget),
-              topLevelArtifactContext,
-              /* willTest= */ false));
-      declareDependenciesAndCheckValues(env, keysToRequest.build());
-      return;
+    /** Helper to resolve the test type.  */
+    interface TestTypeResolver {
+        /** Determines the appropriate test type given a ConfiguredTarget.  */
+        fun determineTestType(target: ConfiguredTarget?): com.google.devtools.build.lib.skyframe.BuildDriverKey.TestType?
     }
 
-    postEventIfNecessary(
-        postedEventsTypes,
-        env,
-        TestAnalyzedEvent.create(
-            configuredTarget,
-            Preconditions.checkNotNull(buildConfigurationValue),
-            /* isSkipped= */ false));
+    /** Helper to request additional post analysis deps, if required.  */
+    fun interface AdditionalPostAnalysisDepsRequestedAndAvailable {
+        /** Returns whether the deps are requested and available.  */
+        @Throws(java.lang.InterruptedException::class)
+        fun request(env: SkyFunction.Environment?, key: ActionLookupKey?): Boolean
 
-    if (testType.equals(PARALLEL)) {
-      // Only run non-exclusive tests here. Exclusive tests need to be run sequentially later.
-      keysToRequest.add(
-          TestCompletionValue.key(
-              ConfiguredTargetKey.fromConfiguredTarget(configuredTarget),
-              topLevelArtifactContext,
-              /* exclusiveTesting= */ false));
-      declareDependenciesAndCheckValues(env, keysToRequest.build());
-      return;
+        companion object {
+            @kotlin.jvm.JvmField
+            val NO_OP: AdditionalPostAnalysisDepsRequestedAndAvailable =
+                AdditionalPostAnalysisDepsRequestedAndAvailable { env: SkyFunction.Environment?, key: ActionLookupKey? -> true }
+        }
     }
 
-    // Exclusive tests will be run with sequential Skyframe evaluations afterwards.
-    keysToRequest.add(
-        TargetCompletionValue.key(
-            ConfiguredTargetKey.fromConfiguredTarget(configuredTarget),
-            topLevelArtifactContext,
-            /* willTest= */ true));
-    declareDependenciesAndCheckValues(env, keysToRequest.build());
-  }
+    /** Contains the results of collecting ALVs.  */
+    @AutoValue
+    abstract class ActionLookupValuesCollectionResult {
+        abstract fun collectedValues(): com.google.common.collect.ImmutableCollection<SkyValue?>?
 
-  /**
-   * Declares dependencies and checks values for requested nodes in the graph.
-   *
-   * <p>Calls {@link SkyFunction.Environment#getValuesAndExceptions} and iterates over the result.
-   * If any node is not done, or during iteration any value has exception, {@link
-   * SkyFunction.Environment#valuesMissing} will return true.
-   */
-  private static void declareDependenciesAndCheckValues(
-      Environment env, Iterable<? extends SkyKey> skyKeys) throws InterruptedException {
-    SkyframeLookupResult result = env.getValuesAndExceptions(skyKeys);
-    for (SkyKey key : skyKeys) {
-      if (result.get(key) == null) {
-        return;
-      }
-    }
-  }
-
-  @VisibleForTesting
-  ImmutableMap<ActionAnalysisMetadata, ActionConflictException> checkActionConflicts(
-      ActionLookupKey actionLookupKey) throws InterruptedException {
-    IncrementalArtifactConflictFinder localRef = incrementalArtifactConflictFinder.get();
-    // a null value means that the conflict checker is shut down.
-    if (localRef == null) {
-      return ImmutableMap.of();
-    }
-    return localRef.findArtifactConflicts(actionLookupKey).conflicts();
-  }
-
-  private void addExtraActionsIfRequested(
-      ExtraActionArtifactsProvider provider,
-      ImmutableSet.Builder<Artifact> artifactsToBuild,
-      boolean extraActionTopLevelOnly) {
-    if (provider != null) {
-      addArtifactsToBuilder(
-          extraActionTopLevelOnly
-              ? provider.getExtraActionArtifacts().toList()
-              : provider.getTransitiveExtraActionArtifacts().toList(),
-          artifactsToBuild,
-          extraActionFilterSupplier.get());
-    }
-  }
-
-  private static void addArtifactsToBuilder(
-      List<? extends Artifact> artifacts,
-      ImmutableSet.Builder<Artifact> builder,
-      RegexFilter filter) {
-    for (Artifact artifact : artifacts) {
-      if (filter.isIncluded(artifact.getOwnerLabel().toString())) {
-        builder.add(artifact);
-      }
-    }
-  }
-
-  /** A SkyFunctionException wrapper for the actual TopLevelConflictException. */
-  private static final class BuildDriverFunctionException extends SkyFunctionException {
-    private BuildDriverFunctionException(Exception cause, Transience transience) {
-      super(cause, transience);
+        companion object {
+            fun create(
+                collectedValues: com.google.common.collect.ImmutableCollection<SkyValue?>?
+            ): ActionLookupValuesCollectionResult {
+                return AutoValue_BuildDriverFunction_ActionLookupValuesCollectionResult(collectedValues)
+            }
+        }
     }
 
-    // The exception is transient here since it could be caused by external factors (conflict with
-    // another target).
-    BuildDriverFunctionException(TopLevelConflictException cause) {
-      super(cause, Transience.TRANSIENT);
+    companion object {
+        /**
+         * Sends out a signal that no more analysis work will be done on this top level target/aspect.
+         * 
+         * 
+         * Only do so in --keep_going mode. This is consistent with the legacy behavior where the
+         * analysis phase isn't considered "finished" if there's an error in --nokeep_going mode.
+         */
+        private fun signalAnalysisConclusionIfKeepGoing(
+            env: SkyFunction.Environment,
+            buildDriverKey: BuildDriverKey,
+            postedEventsTypes: MutableSet<com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.Type?>,
+            success: Boolean
+        ) {
+            if (buildDriverKey.keepGoing()) {
+                postEventIfNecessary(
+                    postedEventsTypes,
+                    env,
+                    TopLevelEntityAnalysisConcludedEvent.create(buildDriverKey, success)
+                )
+            }
+        }
+
+        /**
+         * [TopLevelTargetAnalyzedEvent]s should be sent out before conflict checking to be
+         * consistent with the non-skymeld code path.
+         */
+        @Throws(java.lang.InterruptedException::class)
+        private fun announceTopLevelConfiguredTargetAnalyzed(
+            env: SkyFunction.Environment,
+            configuredTargetValue: ConfiguredTargetValue,
+            postedEventsTypes: MutableSet<com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.Type?>
+        ) {
+            val configuredTarget: ConfiguredTarget = configuredTargetValue.getConfiguredTarget()
+            if (postedEventsTypes.add(TopLevelStatusEvents.Type.TOP_LEVEL_TARGET_CONFIGURED)) {
+                val target: Target?
+                try {
+                    val label: Label = configuredTarget.getOriginalLabel()
+                    target =
+                        (env.getValue(label.getPackageIdentifier()) as PackageValue)
+                            .getPackage()
+                            .getTarget(label.name)
+                } catch (e: NoSuchTargetException) {
+                    throw java.lang.IllegalStateException(
+                        "Target should already be verified and available for top level ConfiguredTarget: "
+                                + configuredTarget,
+                        e
+                    )
+                }
+
+                val actual: Label? =
+                    if (configuredTarget is AliasConfiguredTarget)
+                        configuredTarget.getActual().getLabel()
+                    else
+                        null
+
+                env.getListener()
+                    .post(
+                        TargetConfiguredEvent(
+                            target,
+                            getConfigurationValue(env, configuredTarget.getConfigurationKey()),
+                            actual
+                        )
+                    )
+            }
+            postEventIfNecessary(
+                postedEventsTypes, env, TopLevelTargetAnalyzedEvent.create(configuredTarget)
+            )
+        }
+
+        /**
+         * [AspectAnalyzedEvents] should be sent out before conflict checking to be consistent with
+         * the non-skymeld code path.
+         */
+        @Throws(java.lang.InterruptedException::class)
+        private fun announceTopLevelAspectAnalyzed(
+            env: SkyFunction.Environment,
+            topLevelAspectsValue: TopLevelAspectsValue,
+            postedEventsTypes: MutableSet<com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.Type?>
+        ) {
+            if (!postedEventsTypes.add(TopLevelStatusEvents.Type.ASPECT_ANALYZED)) {
+                return
+            }
+            // The ConfiguredTargetKey in the AspectKey will vary from the TopLevelAspectKey's
+            // ConfiguredTargetKey due to rule transitions. See the implementation in
+            // ToplevelStarlarkAspectFunction#getConfiguredTargetKey().
+            // Keep this logic in-sync with SkyframeExecutor#configureTargets().
+            val firstAspectKey: AspectKey? =
+                com.google.common.collect.Iterables.getFirst<AspectKey?>(
+                    topLevelAspectsValue.getTopLevelAspectsMap().keySet(), null
+                )
+            if (firstAspectKey == null) {
+                return
+            }
+            val transitionedKey: ConfiguredTargetKey? = firstAspectKey.getBaseConfiguredTargetKey()
+            val aspectCount: Int = topLevelAspectsValue.getTopLevelAspectsMap().size()
+            env.getListener().post(ToplevelAspectsIdentifiedEvent(transitionedKey, aspectCount))
+
+            for (entry in topLevelAspectsValue.getTopLevelAspectsMap().entrySet()) {
+                val aspectKey: AspectKey = entry.getKey()
+                env.getListener()
+                    .post(
+                        AspectConfiguredEvent(
+                            aspectKey.getLabel(),  /* aspectClassName= */
+                            aspectKey.getAspectClass().getName(),
+                            aspectKey.getAspectDescriptor().getDescription(),
+                            getConfigurationValue(env, aspectKey.getConfigurationKey())
+                        )
+                    )
+                env.getListener().post(AspectAnalyzedEvent.create(aspectKey, entry.getValue()))
+            }
+        }
+
+        @Throws(java.lang.InterruptedException::class)
+        private fun getConfigurationValue(
+            env: SkyFunction.Environment, key: BuildConfigurationKey?
+        ): BuildConfigurationValue? {
+            if (key == null) {
+                return null
+            }
+            return env.getValue(key) as BuildConfigurationValue?
+        }
+
+        private fun postEventIfNecessary(
+            postedEventsTypes: MutableSet<com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.Type?>,
+            env: SkyFunction.Environment,
+            event: TopLevelStatusEventWithType
+        ) {
+            if (postedEventsTypes.add(event.getType())) {
+                env.getListener().post(event)
+            }
+        }
+
+        private fun isTest(testType: com.google.devtools.build.lib.skyframe.BuildDriverKey.TestType): Boolean {
+            return testType != com.google.devtools.build.lib.skyframe.BuildDriverKey.TestType.NOT_TEST
+        }
+
+        @Throws(java.lang.InterruptedException::class, NoSuchTargetException::class)
+        private fun getTarget(env: SkyFunction.Environment, label: Label): Target? {
+            val packageValue: PackageValue? = env.getValue(label.getPackageIdentifier()) as PackageValue?
+            if (env.valuesMissing() || packageValue == null) {
+                return null
+            }
+            val pkg: Package = packageValue.getPackage()
+            return pkg.getTarget(label.name)
+        }
+
+        /**
+         * Declares dependencies and checks values for requested nodes in the graph.
+         * 
+         * 
+         * Calls [SkyFunction.Environment.getValuesAndExceptions] and iterates over the result.
+         * If any node is not done, or during iteration any value has exception, [ ][SkyFunction.Environment.valuesMissing] will return true.
+         */
+        @Throws(java.lang.InterruptedException::class)
+        private fun declareDependenciesAndCheckValues(
+            env: SkyFunction.Environment, skyKeys: Iterable<out SkyKey?>
+        ) {
+            val result: SkyframeLookupResult = env.getValuesAndExceptions(skyKeys)
+            for (key in skyKeys) {
+                if (result.get(key) == null) {
+                    return
+                }
+            }
+        }
+
+        private fun addArtifactsToBuilder(
+            artifacts: MutableList<out Artifact>,
+            builder: com.google.common.collect.ImmutableSet.Builder<Artifact?>,
+            filter: com.google.devtools.build.lib.util.RegexFilter
+        ) {
+            for (artifact in artifacts) {
+                if (filter.isIncluded(artifact.getOwnerLabel().toString())) {
+                    builder.add(artifact)
+                }
+            }
+        }
     }
-
-    BuildDriverFunctionException(TargetCompatibilityCheckException cause) {
-      super(cause, Transience.TRANSIENT);
-    }
-
-    static BuildDriverFunctionException ofConfiguredTargetOrAspectEval(
-        AbstractSaneAnalysisException cause) {
-      return new BuildDriverFunctionException(cause, Transience.PERSISTENT);
-    }
-  }
-
-  /** Helper to resolve the test type. */
-  public interface TestTypeResolver {
-
-    /** Determines the appropriate test type given a ConfiguredTarget. */
-    TestType determineTestType(ConfiguredTarget target);
-  }
-
-  /** Helper to request additional post analysis deps, if required. */
-  @FunctionalInterface
-  public interface AdditionalPostAnalysisDepsRequestedAndAvailable {
-    AdditionalPostAnalysisDepsRequestedAndAvailable NO_OP = (env, key) -> true;
-
-    /** Returns whether the deps are requested and available. */
-    boolean request(Environment env, ActionLookupKey key) throws InterruptedException;
-  }
-
-  /** Contains the results of collecting ALVs. */
-  @AutoValue
-  public abstract static class ActionLookupValuesCollectionResult {
-    abstract ImmutableCollection<SkyValue> collectedValues();
-
-    static ActionLookupValuesCollectionResult create(
-        ImmutableCollection<SkyValue> collectedValues) {
-      return new AutoValue_BuildDriverFunction_ActionLookupValuesCollectionResult(collectedValues);
-    }
-  }
 }

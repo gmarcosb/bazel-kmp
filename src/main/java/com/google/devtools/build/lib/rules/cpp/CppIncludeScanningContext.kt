@@ -11,32 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.cpp;
+package com.google.devtools.build.lib.rules.cpp
 
-import com.google.devtools.build.lib.actions.ActionContext;
-import com.google.devtools.build.lib.actions.ActionContextMarker;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionException;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ExecException;
-import com.google.devtools.build.lib.rules.cpp.IncludeScanner.IncludeScanningHeaderData;
-import java.util.List;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionContext
 
 /**
  * Context for include scanning.
  */
 @ActionContextMarker(name = "IncludeScanning")
-public interface CppIncludeScanningContext extends ActionContext {
-  /**
-   * Does include scanning to find the list of files needed to execute the action.
-   *
-   * <p>Returns {@code null} if a skyframe restart is necessary.
-   */
-  @Nullable
-  List<Artifact> findAdditionalInputs(
-      CppCompileAction action,
-      ActionExecutionContext actionExecutionContext,
-      IncludeScanningHeaderData includeScanningHeaderData)
-      throws ExecException, InterruptedException, ActionExecutionException;
+interface CppIncludeScanningContext : ActionContext {
+    /**
+     * Does include scanning to find the list of files needed to execute the action.
+     * 
+     * 
+     * Returns `null` if a skyframe restart is necessary.
+     */
+    @Throws(ExecException::class, java.lang.InterruptedException::class, ActionExecutionException::class)
+    fun findAdditionalInputs(
+        action: CppCompileAction?,
+        actionExecutionContext: ActionExecutionContext?,
+        includeScanningHeaderData: IncludeScanningHeaderData?
+    ): MutableList<Artifact?>?
 }

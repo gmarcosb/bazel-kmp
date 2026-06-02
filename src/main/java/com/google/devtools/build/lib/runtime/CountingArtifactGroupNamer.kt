@@ -11,81 +11,68 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import com.google.common.util.concurrent.Uninterruptibles;
-import com.google.devtools.build.lib.buildeventstream.ArtifactGroupNamer;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId.NamedSetOfFilesId;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.CountDownLatch;
-import javax.annotation.Nullable;
-import javax.annotation.concurrent.ThreadSafe;
+import com.google.devtools.build.lib.buildeventstream.ArtifactGroupNamer
 
-/** Conversion of paths to URIs. */
-@ThreadSafe
-public class CountingArtifactGroupNamer implements ArtifactGroupNamer {
+/** Conversion of paths to URIs.  */
+@javax.annotation.concurrent.ThreadSafe
+class CountingArtifactGroupNamer : ArtifactGroupNamer {
+    private val nodeNames: ConcurrentMap<NestedSet.Node?, LatchedGroupName?> =
+        ConcurrentHashMap<NestedSet.Node?, LatchedGroupName?>()
 
-  private final ConcurrentMap<NestedSet.Node, LatchedGroupName> nodeNames =
-      new ConcurrentHashMap<>();
-
-  @Override
-  @Nullable
-  public NamedSetOfFilesId apply(NestedSet.Node id) {
-    LatchedGroupName name = nodeNames.get(id);
-    if (name == null) {
-      return null;
-    }
-    return NamedSetOfFilesId.newBuilder().setId(name.getName()).build();
-  }
-
-  /**
-   * If the {@link NestedSet} has no name already, return a new name for it. Return null otherwise.
-   */
-  @Nullable
-  public LatchedGroupName maybeName(NestedSet<?> set) {
-    NestedSet.Node id = set.toNode();
-    LatchedGroupName existingGroupName;
-    LatchedGroupName newGroupName;
-    // synchronized necessary only to ensure node names are chosen uniquely and compactly.
-    // TODO(adgar): consider dropping compactness and unconditionally increment an AtomicLong to
-    // pick unique node names.
-    synchronized (this) {
-      newGroupName = new LatchedGroupName(nodeNames.size());
-      existingGroupName = nodeNames.putIfAbsent(id, newGroupName);
-    }
-    if (existingGroupName != null) {
-      existingGroupName.waitUntilWritten();
-      return null;
-    }
-    return newGroupName;
-  }
-
-  /**
-   * A name for a {@code NestedSet<?>} that the constructor must {@link #close()} after the set is
-   * written, allowing all other consumers to {@link #waitUntilWritten()}.
-   */
-  public static class LatchedGroupName implements AutoCloseable {
-    private final CountDownLatch latch;
-    private final int name;
-
-    public LatchedGroupName(int name) {
-      this.latch = new CountDownLatch(1);
-      this.name = name;
+    public override fun apply(id: NestedSet.Node?): NamedSetOfFilesId? {
+        val name: LatchedGroupName? = nodeNames.get(id)
+        if (name == null) {
+            return null
+        }
+        return NamedSetOfFilesId.newBuilder().setId(name.getName()).build()
     }
 
-    @Override
-    public void close() {
-      latch.countDown();
+    /**
+     * If the [NestedSet] has no name already, return a new name for it. Return null otherwise.
+     */
+    fun maybeName(set: NestedSet<*>): LatchedGroupName? {
+        val id: NestedSet.Node? = set.toNode()
+        val existingGroupName: LatchedGroupName?
+        val newGroupName: LatchedGroupName?
+        // synchronized necessary only to ensure node names are chosen uniquely and compactly.
+        // TODO(adgar): consider dropping compactness and unconditionally increment an AtomicLong to
+        // pick unique node names.
+        synchronized(this) {
+            newGroupName = LatchedGroupName(nodeNames.size())
+            existingGroupName = nodeNames.putIfAbsent(id, newGroupName)
+        }
+        if (existingGroupName != null) {
+            existingGroupName.waitUntilWritten()
+            return null
+        }
+        return newGroupName
     }
 
-    String getName() {
-      return Integer.toString(name);
-    }
+    /**
+     * A name for a `NestedSet<?>` that the constructor must [.close] after the set is
+     * written, allowing all other consumers to [.waitUntilWritten].
+     */
+    class LatchedGroupName(name: Int) : java.lang.AutoCloseable {
+        private val latch: CountDownLatch
+        private val name: Int
 
-    private void waitUntilWritten() {
-      Uninterruptibles.awaitUninterruptibly(latch);
+        init {
+            this.latch = CountDownLatch(1)
+            this.name = name
+        }
+
+        override fun close() {
+            latch.countDown()
+        }
+
+        fun getName(): String {
+            return java.lang.Integer.toString(name)
+        }
+
+        private fun waitUntilWritten() {
+            com.google.common.util.concurrent.Uninterruptibles.awaitUninterruptibly(latch)
+        }
     }
-  }
 }

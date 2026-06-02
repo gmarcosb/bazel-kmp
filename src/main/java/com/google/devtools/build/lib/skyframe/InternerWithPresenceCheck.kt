@@ -11,35 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.collect.Interner;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import javax.annotation.Nullable;
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentMap
 
 /**
- * Strong {@link Interner} that also exposes whether there is a canonical representative for the
- * given sample object via {@link #getCanonical}.
+ * Strong [Interner] that also exposes whether there is a canonical representative for the
+ * given sample object via [.getCanonical].
  */
-public class InternerWithPresenceCheck<T> implements Interner<T> {
-  private final ConcurrentMap<T, T> map = new ConcurrentHashMap<>();
+class InternerWithPresenceCheck<T> : com.google.common.collect.Interner<T?> {
+    private val map: ConcurrentMap<T?, T?> = ConcurrentHashMap<T?, T?>()
 
-  @Override
-  public T intern(T sample) {
-    T canonical = map.putIfAbsent(checkNotNull(sample), sample);
-    return (canonical == null) ? sample : canonical;
-  }
+    override fun intern(sample: T?): T? {
+        val canonical: T? = map.putIfAbsent(com.google.common.base.Preconditions.checkNotNull<T?>(sample), sample)
+        return if (canonical == null) sample else canonical
+    }
 
-  /**
-   * Returns the canonical representative for {@code sample} if it is present. Unlike {@link
-   * #intern}, does not store {@code sample}. In other words, this method does not mutate the
-   * interner.
-   */
-  @Nullable
-  T getCanonical(T sample) {
-    return map.get(sample);
-  }
+    /**
+     * Returns the canonical representative for `sample` if it is present. Unlike [ ][.intern], does not store `sample`. In other words, this method does not mutate the
+     * interner.
+     */
+    fun getCanonical(sample: T?): T? {
+        return map.get(sample)
+    }
 }

@@ -11,13 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkdebug.server
 
-package com.google.devtools.build.lib.starlarkdebug.server;
-
-/** An exception that occurs while evaluating a conditional breakpoint expression. */
-final class ConditionalBreakpointException extends Exception {
-
-  ConditionalBreakpointException(String message) {
-    super(message);
-  }
-}
+/** An exception that occurs while evaluating a conditional breakpoint expression.  */
+internal class ConditionalBreakpointException(message: String?) : Exception(message)

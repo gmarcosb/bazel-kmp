@@ -12,248 +12,246 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-package com.google.devtools.build.lib.vfs.inmemoryfs;
+package com.google.devtools.build.lib.vfs.inmemoryfs
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static java.lang.Math.max;
-import static java.lang.Math.min;
-
-import com.google.common.math.IntMath;
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.ByteBuffer;
-import java.nio.channels.Channels;
-import java.nio.channels.ClosedChannelException;
-import java.nio.channels.NonReadableChannelException;
-import java.nio.channels.NonWritableChannelException;
-import java.nio.channels.SeekableByteChannel;
-import java.util.Arrays;
-import javax.annotation.concurrent.GuardedBy;
+import com.google.common.base.Preconditions
+import com.google.common.math.IntMath
+import com.google.devtools.build.lib.clock.Clock
+import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+import java.io.InputStream
+import java.io.OutputStream
+import java.nio.ByteBuffer
+import java.nio.channels.Channels
+import java.util.*
+import javax.annotation.concurrent.GuardedBy
 
 /**
  * InMemoryFileInfo manages file contents by storing them entirely in memory.
  */
 @ThreadSafe
-public class InMemoryFileInfo extends FileInfo {
+class InMemoryFileInfo internal constructor(clock: Clock?) : FileInfo(clock) {
+    // A byte array storing the file contents, possibly with extra unused bytes at the end.
+    @GuardedBy("this")
+    private var content: ByteArray
 
-  // The minimum storage size, to avoid small reallocations.
-  private static final int MIN_SIZE = 32;
+    // The file size.
+    @GuardedBy("this")
+    private var size: Int
 
-  // The maximum file size. For simplicity, use the largest power of two representable as an int.
-  private static final int MAX_SIZE = 1 << 30;
+    init {
+        // New files start out empty.
+        content = ByteArray(MIN_SIZE)
+        size = 0
+    }
 
-  // A byte array storing the file contents, possibly with extra unused bytes at the end.
-  @GuardedBy("this")
-  private byte[] content;
+    @kotlin.jvm.Synchronized
+    override fun getSize(): Long {
+        return size.toLong()
+    }
 
-  // The file size.
-  @GuardedBy("this")
-  private int size;
+    override fun getxattr(name: String?): ByteArray? {
+        return null
+    }
 
-  InMemoryFileInfo(Clock clock) {
-    super(clock);
-    // New files start out empty.
-    content = new byte[MIN_SIZE];
-    size = 0;
-  }
+    override fun getFastDigest(): ByteArray? {
+        return null
+    }
 
-  @Override
-  public synchronized long getSize() {
-    return size;
-  }
+    override fun getInputStream(): InputStream {
+        return Channels.newInputStream(
+            InMemoryByteChannel( /* readable= */
+                true,  /* writable= */
+                false,  /* append= */
+                false,  /* truncate= */
+                false
+            )
+        )
+    }
 
-  @Override
-  public byte[] getxattr(String name) {
-    return null;
-  }
+    override fun getOutputStream(append: Boolean): OutputStream {
+        return Channels.newOutputStream(
+            InMemoryByteChannel( /* readable= */
+                false,  /* writable= */
+                true,  /* append= */
+                append,  /* truncate= */
+                !append
+            )
+        )
+    }
 
-  @Override
-  public byte[] getFastDigest() {
-    return null;
-  }
+    override fun createReadWriteByteChannel(): SeekableByteChannel {
+        return InMemoryByteChannel( /* readable= */
+            true,  /* writable= */true,  /* append= */false,  /* truncate= */true
+        )
+    }
 
-  @Override
-  public InputStream getInputStream() {
-    return Channels.newInputStream(
-        new InMemoryByteChannel(
-            /* readable= */ true,
-            /* writable= */ false,
-            /* append= */ false,
-            /* truncate= */ false));
-  }
+    /**
+     * A [SeekableByteChannel] manipulating the contents of the parent [InMemoryFileInfo]
+     * instance.
+     * 
+     * 
+     * Supports concurrent operations, possibly through multiple channels.
+     */
+    private inner class InMemoryByteChannel(
+        private val readable: Boolean,
+        private val writable: Boolean,
+        private val append: Boolean,
+        truncate: Boolean
+    ) : SeekableByteChannel {
+        private var closed = false
+        private var position = 0
 
-  @Override
-  public OutputStream getOutputStream(boolean append) {
-    return Channels.newOutputStream(
-        new InMemoryByteChannel(
-            /* readable= */ false,
-            /* writable= */ true,
-            /* append= */ append,
-            /* truncate= */ !append));
-  }
-
-  @Override
-  public SeekableByteChannel createReadWriteByteChannel() {
-    return new InMemoryByteChannel(
-        /* readable= */ true, /* writable= */ true, /* append= */ false, /* truncate= */ true);
-  }
-
-  /**
-   * A {@link SeekableByteChannel} manipulating the contents of the parent {@link InMemoryFileInfo}
-   * instance.
-   *
-   * <p>Supports concurrent operations, possibly through multiple channels.
-   */
-  private final class InMemoryByteChannel implements SeekableByteChannel {
-    private final boolean readable;
-    private final boolean writable;
-    private final boolean append;
-    private boolean closed = false;
-    private int position = 0;
-
-    InMemoryByteChannel(boolean readable, boolean writable, boolean append, boolean truncate) {
-      this.readable = readable;
-      this.writable = writable;
-      this.append = append;
-
-      if (truncate) {
-        synchronized (InMemoryFileInfo.this) {
-          size = 0;
+        init {
+            if (truncate) {
+                synchronized(this@InMemoryFileInfo) {
+                    size = 0
+                }
+            }
         }
-      }
-    }
 
-    private void ensureOpen() throws IOException {
-      if (closed) {
-        throw new ClosedChannelException();
-      }
-    }
-
-    private void ensureReadable() {
-      if (!readable) {
-        throw new NonReadableChannelException();
-      }
-    }
-
-    private void ensureWritable() {
-      if (!writable) {
-        throw new NonWritableChannelException();
-      }
-    }
-
-    private int checkSize(long size) throws IOException {
-      if (size > MAX_SIZE) {
-        throw new IOException("InMemoryFileSystem does not support files larger than 1GB");
-      }
-      return (int) size;
-    }
-
-    private void maybeGrow(int newSize) {
-      synchronized (InMemoryFileInfo.this) {
-        if (newSize <= content.length) {
-          return;
+        @Throws(IOException::class)
+        fun ensureOpen() {
+            if (closed) {
+                throw ClosedChannelException()
+            }
         }
-        content = Arrays.copyOf(content, IntMath.ceilingPowerOfTwo(newSize));
-      }
-    }
 
-    @Override
-    public synchronized boolean isOpen() {
-      return !closed;
-    }
-
-    @Override
-    public synchronized void close() {
-      closed = true;
-    }
-
-    @Override
-    public synchronized int read(ByteBuffer dst) throws IOException {
-      ensureOpen();
-      ensureReadable();
-      synchronized (InMemoryFileInfo.this) {
-        if (position >= size) {
-          // End of file.
-          return -1;
+        fun ensureReadable() {
+            if (!readable) {
+                throw NonReadableChannelException()
+            }
         }
-        int len = min(dst.remaining(), size - position);
-        if (len == 0) {
-          return 0;
+
+        fun ensureWritable() {
+            if (!writable) {
+                throw NonWritableChannelException()
+            }
         }
-        dst.put(content, position, len);
-        position += len;
-        return len;
-      }
+
+        @Throws(IOException::class)
+        fun checkSize(size: Long): Int {
+            if (size > MAX_SIZE) {
+                throw IOException("InMemoryFileSystem does not support files larger than 1GB")
+            }
+            return size.toInt()
+        }
+
+        fun maybeGrow(newSize: Int) {
+            synchronized(this@InMemoryFileInfo) {
+                if (newSize <= content.size) {
+                    return
+                }
+                content = content.copyOf(IntMath.ceilingPowerOfTwo(newSize))
+            }
+        }
+
+        @get:kotlin.jvm.Synchronized
+        val isOpen: Boolean
+            get() = !closed
+
+        @kotlin.jvm.Synchronized
+        override fun close() {
+            closed = true
+        }
+
+        @kotlin.jvm.Synchronized
+        @Throws(IOException::class)
+        override fun read(dst: ByteBuffer): Int {
+            ensureOpen()
+            ensureReadable()
+            synchronized(this@InMemoryFileInfo) {
+                if (position >= size) {
+                    // End of file.
+                    return -1
+                }
+                val len: Int = min(dst.remaining(), size - position)
+                if (len == 0) {
+                    return 0
+                }
+                dst.put(content, position, len)
+                position += len
+                return len
+            }
+        }
+
+        @kotlin.jvm.Synchronized
+        @Throws(IOException::class)
+        override fun write(src: ByteBuffer): Int {
+            ensureOpen()
+            ensureWritable()
+            synchronized(this@InMemoryFileInfo) {
+                if (append) {
+                    position = size
+                }
+                val len = src.remaining()
+                if (len == 0) {
+                    // Zero write should not cause hole to be filled below.
+                    return 0
+                }
+                val newSize = checkSize(max(size, position.toLong() + len))
+                maybeGrow(newSize)
+                if (position > size) {
+                    // Fill hole left by previous seek, as it's not guaranteed to have been freshly allocated.
+                    Arrays.fill(content, size, position, 0.toByte())
+                }
+                src.get(content, position, len)
+                position += len
+                size = newSize
+                markModificationTime()
+                return len
+            }
+        }
+
+        @kotlin.jvm.Synchronized
+        @Throws(IOException::class)
+        override fun position(): Long {
+            ensureOpen()
+            return position.toLong()
+        }
+
+        @kotlin.jvm.Synchronized
+        @Throws(IOException::class)
+        override fun position(newPosition: Long): SeekableByteChannel {
+            Preconditions.checkArgument(newPosition >= 0, "new position must be non-negative: %s", newPosition)
+            ensureOpen()
+            position = checkSize(newPosition)
+            return this
+        }
+
+        @kotlin.jvm.Synchronized
+        @Throws(IOException::class)
+        override fun size(): Long {
+            ensureOpen()
+            synchronized(this@InMemoryFileInfo) {
+                return size.toLong()
+            }
+        }
+
+        @kotlin.jvm.Synchronized
+        @Throws(IOException::class)
+        override fun truncate(newSize: Long): SeekableByteChannel {
+            Preconditions.checkArgument(newSize >= 0, "new size must be non-negative: %s", newSize)
+            ensureOpen()
+            ensureWritable()
+            val truncatedSize = checkSize(newSize)
+            synchronized(this@InMemoryFileInfo) {
+                if (truncatedSize < size) {
+                    size = truncatedSize
+                    markModificationTime()
+                }
+                if (position > truncatedSize) {
+                    position = truncatedSize
+                }
+                return this
+            }
+        }
     }
 
-    @Override
-    public synchronized int write(ByteBuffer src) throws IOException {
-      ensureOpen();
-      ensureWritable();
-      synchronized (InMemoryFileInfo.this) {
-        if (append) {
-          position = size;
-        }
-        int len = src.remaining();
-        if (len == 0) {
-          // Zero write should not cause hole to be filled below.
-          return 0;
-        }
-        int newSize = checkSize(max(size, (long) position + len));
-        maybeGrow(newSize);
-        if (position > size) {
-          // Fill hole left by previous seek, as it's not guaranteed to have been freshly allocated.
-          Arrays.fill(content, size, position, (byte) 0);
-        }
-        src.get(content, position, len);
-        position += len;
-        size = newSize;
-        markModificationTime();
-        return len;
-      }
-    }
+    companion object {
+        // The minimum storage size, to avoid small reallocations.
+        private const val MIN_SIZE = 32
 
-    @Override
-    public synchronized long position() throws IOException {
-      ensureOpen();
-      return position;
+        // The maximum file size. For simplicity, use the largest power of two representable as an int.
+        private val MAX_SIZE = 1 shl 30
     }
-
-    @Override
-    public synchronized SeekableByteChannel position(long newPosition) throws IOException {
-      checkArgument(newPosition >= 0, "new position must be non-negative: %s", newPosition);
-      ensureOpen();
-      position = checkSize(newPosition);
-      return this;
-    }
-
-    @Override
-    public synchronized long size() throws IOException {
-      ensureOpen();
-      synchronized (InMemoryFileInfo.this) {
-        return size;
-      }
-    }
-
-    @Override
-    public synchronized SeekableByteChannel truncate(long newSize) throws IOException {
-      checkArgument(newSize >= 0, "new size must be non-negative: %s", newSize);
-      ensureOpen();
-      ensureWritable();
-      int truncatedSize = checkSize(newSize);
-      synchronized (InMemoryFileInfo.this) {
-        if (truncatedSize < size) {
-          size = truncatedSize;
-          markModificationTime();
-        }
-        if (position > truncatedSize) {
-          position = truncatedSize;
-        }
-        return this;
-      }
-    }
-  }
 }

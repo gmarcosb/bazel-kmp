@@ -11,82 +11,79 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.devtools.build.lib.buildeventstream.BuildEvent.LocalFile.LocalFileType;
-import com.google.devtools.build.lib.buildeventstream.BuildEventArtifactUploader;
-import com.google.devtools.build.lib.buildeventstream.BuildEventArtifactUploader.UploadContext;
-import com.google.devtools.build.lib.buildtool.BuildResult.BuildToolLogCollection;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.io.OutputStream;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.buildeventstream.BuildEvent.LocalFile.LocalFileType
 
 /**
  * Used when instrumentation output should be treated as a build event artifact so that it will be
  * uploaded to a specified location.
  */
-public final class BuildEventArtifactInstrumentationOutput implements InstrumentationOutput {
-  private final String name;
-  private final BuildEventArtifactUploader buildEventArtifactUploader;
-  @Nullable private UploadContext uploadContext;
+class BuildEventArtifactInstrumentationOutput(name: String?, buildEventArtifactUploader: BuildEventArtifactUploader?) :
+    InstrumentationOutput {
+    private val name: String
+    private val buildEventArtifactUploader: BuildEventArtifactUploader
+    private var uploadContext: UploadContext? = null
 
-  public BuildEventArtifactInstrumentationOutput(
-      String name, BuildEventArtifactUploader buildEventArtifactUploader) {
-    this.name = checkNotNull(name);
-    this.buildEventArtifactUploader = checkNotNull(buildEventArtifactUploader);
-  }
-
-  @Override
-  public void publish(BuildToolLogCollection buildToolLogCollection) {
-    checkNotNull(uploadContext, "Cannot publish to buildToolLogCollection if upload never starts.");
-    buildToolLogCollection.addUriFuture(name, uploadContext.uriFuture());
-  }
-
-  @Override
-  public OutputStream createOutputStream() {
-    uploadContext = buildEventArtifactUploader.startUpload(LocalFileType.LOG, null);
-    return uploadContext.outputStream;
-  }
-
-  /** Builder for {@link BuildEventArtifactInstrumentationOutput} */
-  public static class Builder implements InstrumentationOutputBuilder {
-    private String name;
-    private BuildEventArtifactUploader uploader;
-
-    @CanIgnoreReturnValue
-    @Override
-    public Builder setName(String name) {
-      this.name = name;
-      return this;
+    init {
+        this.name = com.google.common.base.Preconditions.checkNotNull<String>(name)
+        this.buildEventArtifactUploader =
+            com.google.common.base.Preconditions.checkNotNull<BuildEventArtifactUploader>(buildEventArtifactUploader)
     }
 
-    @CanIgnoreReturnValue
-    public Builder setUploader(BuildEventArtifactUploader uploader) {
-      this.uploader = uploader;
-      return this;
+    override fun publish(buildToolLogCollection: BuildToolLogCollection) {
+        com.google.common.base.Preconditions.checkNotNull<Any?>(
+            uploadContext,
+            "Cannot publish to buildToolLogCollection if upload never starts."
+        )
+        buildToolLogCollection.addUriFuture(name, uploadContext.uriFuture())
     }
 
-    /**
-     * {@inheritDoc}
-     *
-     * <p>This is a no-op for {@link BuildEventArtifactInstrumentationOutput} since it will never be
-     * written to a local path.
-     */
-    @CanIgnoreReturnValue
-    @Override
-    public Builder setCreateParent(boolean createParent) {
-      return this;
+    override fun createOutputStream(): java.io.OutputStream {
+        uploadContext = buildEventArtifactUploader.startUpload(LocalFileType.LOG, null)
+        return uploadContext.outputStream
     }
 
-    @Override
-    public BuildEventArtifactInstrumentationOutput build() {
-      return new BuildEventArtifactInstrumentationOutput(
-          checkNotNull(name, "Cannot create BuildEventArtifactInstrumentationOutput without name"),
-          checkNotNull(
-              uploader,
-              "Cannot create BuildEventArtifactInstrumentationOutput without bepUploader"));
+    /** Builder for [BuildEventArtifactInstrumentationOutput]  */
+    class Builder : InstrumentationOutputBuilder {
+        private var name: String? = null
+        private var uploader: BuildEventArtifactUploader? = null
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        override fun setName(name: String?): Builder {
+            this.name = name
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setUploader(uploader: BuildEventArtifactUploader?): Builder {
+            this.uploader = uploader
+            return this
+        }
+
+        /**
+         * {@inheritDoc}
+         * 
+         * 
+         * This is a no-op for [BuildEventArtifactInstrumentationOutput] since it will never be
+         * written to a local path.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        override fun setCreateParent(createParent: Boolean): Builder {
+            return this
+        }
+
+        override fun build(): BuildEventArtifactInstrumentationOutput {
+            return BuildEventArtifactInstrumentationOutput(
+                com.google.common.base.Preconditions.checkNotNull<String?>(
+                    name,
+                    "Cannot create BuildEventArtifactInstrumentationOutput without name"
+                ),
+                com.google.common.base.Preconditions.checkNotNull<BuildEventArtifactUploader?>(
+                    uploader,
+                    "Cannot create BuildEventArtifactInstrumentationOutput without bepUploader"
+                )
+            )
+        }
     }
-  }
 }

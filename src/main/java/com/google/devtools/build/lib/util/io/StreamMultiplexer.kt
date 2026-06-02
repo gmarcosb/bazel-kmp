@@ -11,13 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.util.io
 
-package com.google.devtools.build.lib.util.io;
-
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-
-import java.io.IOException;
-import java.io.OutputStream;
+import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
 
 /**
  * Instances of this class are multiplexers, which redirect multiple
@@ -27,91 +23,82 @@ import java.io.OutputStream;
  * multiple threads or select etc. on the receiving side: A client on the other
  * end of a networking connection can simply read the tagged lines and then act
  * on them within a sigle thread.
- *
+ * 
  * The format of the tagged output stream is reasonably simple:
- * <ol>
- *   <li>
- *     Marker byte indicating whether that chunk is for stdout (1), stderr (2) or the control
- *     stream (3).
- *   </li>
- *   <li>
- *     4 bytes indicating the length of the chunk in high-endian format.
- *   </li>
- *   <li>
- *     The payload (as many bytes as the length field before)
- *   </li>
- * </ol>>
- *
- *
+ * 
+ *  1. 
+ * Marker byte indicating whether that chunk is for stdout (1), stderr (2) or the control
+ * stream (3).
+ * 
+ *  1. 
+ * 4 bytes indicating the length of the chunk in high-endian format.
+ * 
+ *  1. 
+ * The payload (as many bytes as the length field before)
+ * 
+ * >
+ * 
+ * 
  */
 @ThreadSafe
-public final class StreamMultiplexer {
+class StreamMultiplexer(multiplexed: java.io.OutputStream) {
+    private val mutex = Any()
+    private val multiplexed: java.io.OutputStream
 
-  public static final byte STDOUT_MARKER = 1;
-  public static final byte STDERR_MARKER = 2;
-  public static final byte CONTROL_MARKER = 3;
-
-  private final Object mutex = new Object();
-  private final OutputStream multiplexed;
-
-  public StreamMultiplexer(OutputStream multiplexed) {
-    this.multiplexed = multiplexed;
-  }
-
-  private class MarkingStream extends LineFlushingOutputStream {
-
-    private final byte markerByte;
-
-    MarkingStream(byte markerByte) {
-      this.markerByte = markerByte;
+    init {
+        this.multiplexed = multiplexed
     }
 
-    @Override
-    protected void flushingHook() throws IOException {
-      synchronized (mutex) {
-        if (len == 0) {
-          multiplexed.flush();
-          return;
+    private inner class MarkingStream(private val markerByte: Byte) : LineFlushingOutputStream() {
+        @Throws(IOException::class)
+        override fun flushingHook() {
+            synchronized(mutex) {
+                if (len == 0) {
+                    multiplexed.flush()
+                    return
+                }
+                multiplexed.write(markerByte.toInt())
+                multiplexed.write((len shr 24) and 0xff)
+                multiplexed.write((len shr 16) and 0xff)
+                multiplexed.write((len shr 8) and 0xff)
+                multiplexed.write(len and 0xff)
+                multiplexed.write(buffer, 0, len)
+                multiplexed.flush()
+            }
+            len = 0
         }
-
-        multiplexed.write(markerByte);
-        multiplexed.write((len >> 24) & 0xff);
-        multiplexed.write((len >> 16) & 0xff);
-        multiplexed.write((len >> 8) & 0xff);
-        multiplexed.write(len & 0xff);
-        multiplexed.write(buffer, 0, len);
-        multiplexed.flush();
-      }
-      len = 0;
     }
 
-  }
+    /**
+     * Create a stream that will tag its contributions into the multiplexed stream
+     * with the marker '1', which means 'stdout'. Each newline byte leads
+     * to a forced automatic flush. Also, this stream never closes the underlying
+     * stream it delegates to - calling its `close()` method is equivalent
+     * to calling `flush`.
+     */
+    fun createStdout(): java.io.OutputStream {
+        return MarkingStream(STDOUT_MARKER)
+    }
 
-  /**
-   * Create a stream that will tag its contributions into the multiplexed stream
-   * with the marker '1', which means 'stdout'. Each newline byte leads
-   * to a forced automatic flush. Also, this stream never closes the underlying
-   * stream it delegates to - calling its {@code close()} method is equivalent
-   * to calling {@code flush}.
-   */
-  public OutputStream createStdout() {
-    return new MarkingStream(STDOUT_MARKER);
-  }
+    /**
+     * Like [.createStdout], except it tags with the marker '2' to
+     * indicate 'stderr'.
+     */
+    fun createStderr(): java.io.OutputStream {
+        return MarkingStream(STDERR_MARKER)
+    }
 
-  /**
-   * Like {@link #createStdout()}, except it tags with the marker '2' to
-   * indicate 'stderr'.
-   */
-  public OutputStream createStderr() {
-    return new MarkingStream(STDERR_MARKER);
-  }
+    /**
+     * Like [.createStdout], except it tags with the marker '3' to
+     * indicate control flow..
+     */
+    fun createControl(): java.io.OutputStream {
+        return MarkingStream(CONTROL_MARKER)
+    }
 
-  /**
-   * Like {@link #createStdout()}, except it tags with the marker '3' to
-   * indicate control flow..
-   */
-  public OutputStream createControl() {
-    return new MarkingStream(CONTROL_MARKER);
-  }
-
+    companion object {
+        const val STDOUT_MARKER: Byte = 1
+        const val STDERR_MARKER: Byte = 2
+        const val CONTROL_MARKER: Byte = 3
+    }
 }

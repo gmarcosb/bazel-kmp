@@ -72,7 +72,7 @@ public final class WorkerLifecycleManagerTest {
     ImmutableList<WorkerProcessMetrics> workerMetrics =
         ImmutableList.of(createWorkerMetric(w1, PROCESS_ID_1, /* memoryInKb= */ 1000));
     WorkerOptions options = Options.getDefaults(WorkerOptions.class);
-    options.setTotalWorkerMemoryLimitMb(1000 * 100);
+    options.totalWorkerMemoryLimitMb = 1000 * 100;
 
     WorkerLifecycleManager manager =
         new WorkerLifecycleManager(
@@ -101,7 +101,7 @@ public final class WorkerLifecycleManagerTest {
     ImmutableList<WorkerProcessMetrics> workerMetrics =
         ImmutableList.of(createWorkerMetric(w1, PROCESS_ID_1, /* memoryInKb= */ 1000));
     WorkerOptions options = Options.getDefaults(WorkerOptions.class);
-    options.setTotalWorkerMemoryLimitMb(0);
+    options.totalWorkerMemoryLimitMb = 0;
 
     WorkerLifecycleManager manager =
         new WorkerLifecycleManager(
@@ -129,7 +129,7 @@ public final class WorkerLifecycleManagerTest {
 
     ImmutableList<WorkerProcessMetrics> workerMetrics = ImmutableList.of();
     WorkerOptions options = Options.getDefaults(WorkerOptions.class);
-    options.setTotalWorkerMemoryLimitMb(1);
+    options.totalWorkerMemoryLimitMb = 1;
 
     WorkerLifecycleManager manager =
         new WorkerLifecycleManager(
@@ -157,7 +157,7 @@ public final class WorkerLifecycleManagerTest {
     ImmutableList<WorkerProcessMetrics> workerMetrics =
         ImmutableList.of(createWorkerMetric(w1, PROCESS_ID_1, /* memoryInKb= */ 2000));
     WorkerOptions options = Options.getDefaults(WorkerOptions.class);
-    options.setTotalWorkerMemoryLimitMb(1);
+    options.totalWorkerMemoryLimitMb = 1;
     WorkerLifecycleManager manager =
         new WorkerLifecycleManager(
             workerPool, options, new Reporter(EventBusEventHandler.createWithNewEventBus()));
@@ -195,7 +195,7 @@ public final class WorkerLifecycleManagerTest {
             createWorkerMetric(w3, PROCESS_ID_3, /* memoryInKb= */ 4000));
 
     WorkerOptions options = Options.getDefaults(WorkerOptions.class);
-    options.setTotalWorkerMemoryLimitMb(2);
+    options.totalWorkerMemoryLimitMb = 2;
     WorkerLifecycleManager manager =
         new WorkerLifecycleManager(
             workerPool, options, new Reporter(EventBusEventHandler.createWithNewEventBus()));
@@ -240,7 +240,7 @@ public final class WorkerLifecycleManagerTest {
             createWorkerMetric(w4, PROCESS_ID_4, /* memoryInKb= */ 4000));
 
     WorkerOptions options = Options.getDefaults(WorkerOptions.class);
-    options.setTotalWorkerMemoryLimitMb(1);
+    options.totalWorkerMemoryLimitMb = 1;
     WorkerLifecycleManager manager =
         new WorkerLifecycleManager(
             workerPool, options, new Reporter(EventBusEventHandler.createWithNewEventBus()));
@@ -281,14 +281,14 @@ public final class WorkerLifecycleManagerTest {
             createWorkerMetric(w3, PROCESS_ID_3, /* memoryInKb= */ 1000));
 
     WorkerOptions options = Options.getDefaults(WorkerOptions.class);
-    options.setTotalWorkerMemoryLimitMb(2);
-    options.setWorkerVerbose(true);
+    options.totalWorkerMemoryLimitMb = 2;
+    options.workerVerbose = true;
     WorkerLifecycleManager manager =
         new WorkerLifecycleManager(
             workerPool, options, new Reporter(EventBusEventHandler.createWithNewEventBus()));
 
     assertThat(workerPool.getIdleWorkers())
-        .containsExactly(w1.getWorkerId(), w2.getWorkerId(), w3.getWorkerId());
+        .containsExactly(w1.workerId, w2.workerId, w3.workerId);
     assertThat(w1.getStatus().isValid()).isTrue();
     assertThat(w2.getStatus().isValid()).isTrue();
     assertThat(w3.getStatus().isValid()).isTrue();
@@ -296,7 +296,7 @@ public final class WorkerLifecycleManagerTest {
     manager.evictWorkers(workerMetrics);
 
     // Only w3 shouldn't be killed.
-    assertThat(workerPool.getIdleWorkers()).containsExactly(w3.getWorkerId());
+    assertThat(workerPool.getIdleWorkers()).containsExactly(w3.workerId);
     assertThat(workerPool.getNumActive(key1)).isEqualTo(0);
     assertThat(workerPool.getNumActive(key2)).isEqualTo(0);
     assertThat(w1.getStatus().get()).isEqualTo(Status.KILLED_DUE_TO_MEMORY_PRESSURE);
@@ -323,7 +323,7 @@ public final class WorkerLifecycleManagerTest {
             createWorkerMetric(w3, PROCESS_ID_3, /* memoryInKb= */ 4000));
 
     WorkerOptions options = Options.getDefaults(WorkerOptions.class);
-    options.setTotalWorkerMemoryLimitMb(2);
+    options.totalWorkerMemoryLimitMb = 2;
 
     WorkerLifecycleManager manager =
         new WorkerLifecycleManager(
@@ -370,7 +370,7 @@ public final class WorkerLifecycleManagerTest {
             createWorkerMetric(w4, PROCESS_ID_4, /* memoryInKb= */ 1000));
 
     WorkerOptions options = Options.getDefaults(WorkerOptions.class);
-    options.setTotalWorkerMemoryLimitMb(2);
+    options.totalWorkerMemoryLimitMb = 2;
 
     WorkerLifecycleManager manager =
         new WorkerLifecycleManager(
@@ -387,11 +387,11 @@ public final class WorkerLifecycleManagerTest {
     manager.evictWorkers(workerMetrics);
 
     // Only w1 and w4 should be alive.
-    assertThat(workerPool.getIdleWorkers()).containsExactly(w1.getWorkerId(), w4.getWorkerId());
+    assertThat(workerPool.getIdleWorkers()).containsExactly(w1.workerId, w4.workerId);
     assertThat(workerPool.getNumActive(key1)).isEqualTo(0);
     assertThat(workerPool.getNumActive(key2)).isEqualTo(0);
-    assertThat(workerPool.borrowWorker(key1).getWorkerId()).isEqualTo(w1.getWorkerId());
-    assertThat(workerPool.borrowWorker(key2).getWorkerId()).isEqualTo(w4.getWorkerId());
+    assertThat(workerPool.borrowWorker(key1).workerId).isEqualTo(w1.workerId);
+    assertThat(workerPool.borrowWorker(key2).workerId).isEqualTo(w4.workerId);
     assertThat(w1.getStatus().isValid()).isTrue();
     assertThat(w2.getStatus().get()).isEqualTo(Status.KILLED_DUE_TO_MEMORY_PRESSURE);
     assertThat(w3.getStatus().get()).isEqualTo(Status.KILLED_DUE_TO_MEMORY_PRESSURE);
@@ -413,8 +413,8 @@ public final class WorkerLifecycleManagerTest {
             createWorkerMetric(w2, PROCESS_ID_2, /* memoryInKb= */ 2000));
 
     WorkerOptions options = Options.getDefaults(WorkerOptions.class);
-    options.setTotalWorkerMemoryLimitMb(1);
-    options.setShrinkWorkerPool(true);
+    options.totalWorkerMemoryLimitMb = 1;
+    options.shrinkWorkerPool = true;
 
     WorkerLifecycleManager manager =
         new WorkerLifecycleManager(
@@ -469,8 +469,8 @@ public final class WorkerLifecycleManagerTest {
             createWorkerMetric(w5, PROCESS_ID_5, /* memoryInKb= */ 1000));
 
     WorkerOptions options = Options.getDefaults(WorkerOptions.class);
-    options.setTotalWorkerMemoryLimitMb(2);
-    options.setShrinkWorkerPool(true);
+    options.totalWorkerMemoryLimitMb = 2;
+    options.shrinkWorkerPool = true;
 
     WorkerLifecycleManager manager =
         new WorkerLifecycleManager(
@@ -517,7 +517,7 @@ public final class WorkerLifecycleManagerTest {
             createMultiplexWorkerMetric(
                 ImmutableList.of(w1, w2), PROCESS_ID_1, /* memoryInKb= */ 4000));
     WorkerOptions options = Options.getDefaults(WorkerOptions.class);
-    options.setTotalWorkerMemoryLimitMb(1);
+    options.totalWorkerMemoryLimitMb = 1;
     WorkerLifecycleManager manager =
         new WorkerLifecycleManager(
             workerPool, options, new Reporter(EventBusEventHandler.createWithNewEventBus()));
@@ -549,8 +549,8 @@ public final class WorkerLifecycleManagerTest {
             createMultiplexWorkerMetric(
                 ImmutableList.of(w1, w2), PROCESS_ID_1, /* memoryInKb= */ 4000));
     WorkerOptions options = Options.getDefaults(WorkerOptions.class);
-    options.setTotalWorkerMemoryLimitMb(1);
-    options.setShrinkWorkerPool(true);
+    options.totalWorkerMemoryLimitMb = 1;
+    options.shrinkWorkerPool = true;
     WorkerLifecycleManager manager =
         new WorkerLifecycleManager(
             workerPool, options, new Reporter(EventBusEventHandler.createWithNewEventBus()));
@@ -577,10 +577,10 @@ public final class WorkerLifecycleManagerTest {
     // We need to override the processId.
     WorkerProcessMetrics wm =
         new WorkerProcessMetrics(
-            worker.getWorkerId(),
+                worker.workerId,
             processId,
             worker.getStatus(),
-            worker.getWorkerKey().getMnemonic(),
+                worker.getWorkerKey().mnemonic,
             worker.getWorkerKey().isMultiplex(),
             worker.getWorkerKey().isSandboxed(),
             worker.getWorkerKey().hashCode());
@@ -595,7 +595,7 @@ public final class WorkerLifecycleManagerTest {
             workers.stream().map(Worker::getWorkerId).collect(toImmutableList()),
             processId,
             workers.get(0).getStatus(),
-            workers.get(0).getWorkerKey().getMnemonic(),
+                workers.get(0).getWorkerKey().mnemonic,
             workers.get(0).getWorkerKey().isMultiplex(),
             workers.get(0).getWorkerKey().isSandboxed(),
             workers.get(0).getWorkerKey().hashCode());

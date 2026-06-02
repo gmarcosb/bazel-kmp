@@ -394,11 +394,11 @@ public class AbstractContainerizingSandboxedSpawnTest {
     for (Path path : entries) {
       PathFragment relativePath = path.asFragment().relativeTo(directory.asFragment());
       FileStatus stat = path.stat(Symlinks.NOFOLLOW);
-      if (stat.isFile()) {
+      if (stat.isFile) {
         result.add(PathEntry.create(relativePath, PathEntry.Type.FILE));
-      } else if (stat.isDirectory()) {
+      } else if (stat.isDirectory) {
         result.add(PathEntry.create(relativePath, PathEntry.Type.DIRECTORY));
-      } else if (stat.isSymbolicLink()) {
+      } else if (stat.isSymbolicLink) {
         result.add(PathEntry.create(relativePath, PathEntry.Type.SYMLINK));
       } else {
         throw new AssertionError("Unexpected file type for " + path);

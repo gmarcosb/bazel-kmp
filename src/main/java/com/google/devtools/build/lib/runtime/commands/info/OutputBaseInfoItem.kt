@@ -11,31 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime.commands.info
 
-package com.google.devtools.build.lib.runtime.commands.info;
+import com.google.common.base.Preconditions
+import com.google.common.base.Supplier
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.base.Supplier;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.InfoItem;
-
-/** Info item for the output_base directory. */
-public final class OutputBaseInfoItem extends InfoItem {
-  public OutputBaseInfoItem(String productName) {
-    super(
-        "output_base",
-        "A directory for shared "
+/** Info item for the output_base directory.  */
+class OutputBaseInfoItem(productName: String?) : InfoItem(
+    "output_base",
+    ("A directory for shared "
             + productName
-            + " state as well as tool and strategy specific subdirectories.",
-        false);
-  }
-
-  @Override
-  public byte[] get(
-      Supplier<BuildConfigurationValue> configurationSupplier, CommandEnvironment env) {
-    checkNotNull(env);
-    return print(env.getRuntime().getWorkspace().getOutputBase());
-  }
+            + " state as well as tool and strategy specific subdirectories."),
+    false
+) {
+    public override fun get(
+        configurationSupplier: Supplier<BuildConfigurationValue?>?, env: CommandEnvironment?
+    ): ByteArray {
+        Preconditions.checkNotNull<Any?>(env)
+        return print(env.getRuntime().getWorkspace().getOutputBase())
+    }
 }

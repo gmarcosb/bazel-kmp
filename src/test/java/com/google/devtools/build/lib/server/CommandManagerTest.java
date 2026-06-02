@@ -42,11 +42,11 @@ public class CommandManagerTest {
     assertThat(underTest.isEmpty()).isTrue();
     try (RunningCommand firstCommand = underTest.createCommand()) {
       assertThat(underTest.isEmpty()).isFalse();
-      assertThat(isValidUuid(firstCommand.getId())).isTrue();
+      assertThat(isValidUuid(firstCommand.id)).isTrue();
       try (RunningCommand secondCommand = underTest.createCommand()) {
         assertThat(underTest.isEmpty()).isFalse();
-        assertThat(isValidUuid(secondCommand.getId())).isTrue();
-        assertThat(firstCommand.getId()).isNotEqualTo(secondCommand.getId());
+        assertThat(isValidUuid(secondCommand.id)).isTrue();
+        assertThat(firstCommand.id).isNotEqualTo(secondCommand.id);
       }
       assertThat(underTest.isEmpty()).isFalse();
     }
@@ -135,7 +135,7 @@ public class CommandManagerTest {
     try (RunningCommand c3 = underTest.createCommand()) {
       assertThat(
               underTest.getIdleTaskResults().stream()
-                  .map(r -> new IdleTask.Result(r.name(), r.status(), Duration.ZERO)))
+                  .map(r -> new IdleTask.Result(r.name, r.status, Duration.ZERO)))
           .containsExactly(
               new IdleTask.Result("my idle task", IdleTask.Status.SUCCESS, Duration.ZERO));
     }

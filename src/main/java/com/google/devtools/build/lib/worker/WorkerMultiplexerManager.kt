@@ -11,167 +11,162 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.worker
 
-package com.google.devtools.build.lib.worker;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.devtools.build.lib.actions.UserExecException;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.Worker.Code;
-import com.google.devtools.build.lib.vfs.Path;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.UserExecException
 
 /**
- * A manager to instantiate and destroy multiplexers. There should only be one {@code
- * WorkerMultiplexer} corresponding to workers with the same {@code WorkerKey}. If the {@code
- * WorkerMultiplexer} has been constructed, other workers should point to the same one.
+ * A manager to instantiate and destroy multiplexers. There should only be one `WorkerMultiplexer` corresponding to workers with the same `WorkerKey`. If the `WorkerMultiplexer` has been constructed, other workers should point to the same one.
  */
-public class WorkerMultiplexerManager {
-  /**
-   * A map from the hash of {@code WorkerKey} objects to the corresponding information about the
-   * multiplexer instance.
-   */
-  private static final Map<WorkerKey, InstanceInfo> multiplexerInstance = new HashMap<>();
+object WorkerMultiplexerManager {
+    /**
+     * A map from the hash of `WorkerKey` objects to the corresponding information about the
+     * multiplexer instance.
+     */
+    private val multiplexerInstance: MutableMap<WorkerKey?, InstanceInfo> = HashMap<WorkerKey?, InstanceInfo>()
 
-  private WorkerMultiplexerManager() {}
+    /**
+     * A counter used to provide unique IDs across sandboxed multiplexer instances. It is used in
+     * determining the workdir for the multiplexer process. This is analogous to the `pidCounter` in `WorkerFactory`. It is ok to use an `AtomicInteger` here for the
+     * same reasons as it is there: the counter is only incremented when spawning a new multiplexer,
+     * so even in the worst case of workers quitting after each action it shouldn't overflow.
+     */
+    private val multiplexerIdCounter: AtomicInteger = AtomicInteger(1)
 
-  /**
-   * A counter used to provide unique IDs across sandboxed multiplexer instances. It is used in
-   * determining the workdir for the multiplexer process. This is analogous to the {@code
-   * pidCounter} in {@code WorkerFactory}. It is ok to use an {@code AtomicInteger} here for the
-   * same reasons as it is there: the counter is only incremented when spawning a new multiplexer,
-   * so even in the worst case of workers quitting after each action it shouldn't overflow.
-   */
-  private static final AtomicInteger multiplexerIdCounter = new AtomicInteger(1);
-
-  /**
-   * Returns a {@code WorkerMultiplexer} instance to {@code WorkerProxy}. {@code WorkerProxy}
-   * objects with the same {@code WorkerKey} talk to the same {@code WorkerMultiplexer}. Also,
-   * record how many {@code WorkerProxy} objects are talking to this {@code WorkerMultiplexer}.
-   */
-  public static synchronized WorkerMultiplexer getInstance(WorkerKey key, Path logFile) {
-    InstanceInfo instanceInfo =
-        multiplexerInstance.computeIfAbsent(
-            key,
-            k ->
-                new InstanceInfo(
-                    new WorkerMultiplexer(logFile, k, multiplexerIdCounter.getAndIncrement())));
-    instanceInfo.increaseRefCount();
-    return instanceInfo.getWorkerMultiplexer();
-  }
-
-  static void beforeCommand(Reporter reporter) {
-    setReporter(reporter);
-  }
-
-  static void afterCommand() {
-    setReporter(null);
-  }
-
-  /**
-   * Sets the reporter for all existing multiplexer instances. This allows reporting problems
-   * encountered while fetching an instance, e.g. during WorkerProxy validation.
-   */
-  private static synchronized void setReporter(@Nullable EventHandler reporter) {
-    for (InstanceInfo m : multiplexerInstance.values()) {
-      m.workerMultiplexer.setReporter(reporter);
-    }
-  }
-
-  /** Removes a {@code WorkerProxy} instance and reference count since it is no longer in use. */
-  public static synchronized void removeInstance(WorkerKey key) throws UserExecException {
-    InstanceInfo instanceInfo = multiplexerInstance.get(key);
-    if (instanceInfo == null) {
-      throw createUserExecException(
-          String.format(
-              "Attempting to remove non-existent %s multiplexer instance.", key.getMnemonic()),
-          Code.MULTIPLEXER_INSTANCE_REMOVAL_FAILURE);
-    }
-    instanceInfo.decreaseRefCount();
-    if (instanceInfo.getRefCount() == 0) {
-      instanceInfo.getWorkerMultiplexer().destroyMultiplexer();
-      multiplexerInstance.remove(key);
-    }
-  }
-
-  @VisibleForTesting
-  static WorkerMultiplexer getMultiplexer(WorkerKey key) throws UserExecException {
-    InstanceInfo instanceInfo = multiplexerInstance.get(key);
-    if (instanceInfo == null) {
-      throw createUserExecException(
-          "Accessing non-existent multiplexer instance.", Code.MULTIPLEXER_DOES_NOT_EXIST);
-    }
-    return instanceInfo.getWorkerMultiplexer();
-  }
-
-  @VisibleForTesting
-  static Integer getRefCount(WorkerKey key) throws UserExecException {
-    InstanceInfo instanceInfo = multiplexerInstance.get(key);
-    if (instanceInfo == null) {
-      throw createUserExecException(
-          "Accessing non-existent multiplexer instance.", Code.MULTIPLEXER_DOES_NOT_EXIST);
-    }
-    return instanceInfo.getRefCount();
-  }
-
-  @VisibleForTesting
-  static Integer getInstanceCount() {
-    return multiplexerInstance.keySet().size();
-  }
-
-  private static UserExecException createUserExecException(String message, Code detailedCode) {
-    return new UserExecException(
-        FailureDetail.newBuilder()
-            .setMessage(message)
-            .setWorker(FailureDetails.Worker.newBuilder().setCode(detailedCode))
-            .build());
-  }
-
-  /** Contains the WorkerMultiplexer instance and reference count. */
-  static class InstanceInfo {
-    private final WorkerMultiplexer workerMultiplexer;
-    private Integer refCount;
-
-    public InstanceInfo(WorkerMultiplexer workerMultiplexer) {
-      this.workerMultiplexer = workerMultiplexer;
-      this.refCount = 0;
+    /**
+     * Returns a `WorkerMultiplexer` instance to `WorkerProxy`. `WorkerProxy`
+     * objects with the same `WorkerKey` talk to the same `WorkerMultiplexer`. Also,
+     * record how many `WorkerProxy` objects are talking to this `WorkerMultiplexer`.
+     */
+    @kotlin.jvm.Synchronized
+    fun getInstance(key: WorkerKey?, logFile: com.google.devtools.build.lib.vfs.Path?): WorkerMultiplexer {
+        val instanceInfo: InstanceInfo =
+            multiplexerInstance.computeIfAbsent(
+                key,
+                java.util.function.Function { k: WorkerKey? ->
+                    InstanceInfo(
+                        WorkerMultiplexer(logFile, k, multiplexerIdCounter.getAndIncrement())
+                    )
+                })
+        instanceInfo.increaseRefCount()
+        return instanceInfo.getWorkerMultiplexer()
     }
 
-    public void increaseRefCount() {
-      refCount = refCount + 1;
+    fun beforeCommand(reporter: Reporter?) {
+        setReporter(reporter)
     }
 
-    public void decreaseRefCount() {
-      refCount = refCount - 1;
+    fun afterCommand() {
+        setReporter(null)
     }
 
-    public WorkerMultiplexer getWorkerMultiplexer() {
-      return workerMultiplexer;
+    /**
+     * Sets the reporter for all existing multiplexer instances. This allows reporting problems
+     * encountered while fetching an instance, e.g. during WorkerProxy validation.
+     */
+    @kotlin.jvm.Synchronized
+    private fun setReporter(reporter: EventHandler?) {
+        for (m in multiplexerInstance.values()) {
+            m.workerMultiplexer.setReporter(reporter)
+        }
     }
 
-    public Integer getRefCount() {
-      return refCount;
+    /** Removes a `WorkerProxy` instance and reference count since it is no longer in use.  */
+    @kotlin.jvm.Synchronized
+    @Throws(UserExecException::class)
+    fun removeInstance(key: WorkerKey) {
+        val instanceInfo: InstanceInfo = multiplexerInstance.get(key)!!
+        if (instanceInfo == null) {
+            throw createUserExecException(
+                java.lang.String.format(
+                    "Attempting to remove non-existent %s multiplexer instance.", key.getMnemonic()
+                ),
+                Code.MULTIPLEXER_INSTANCE_REMOVAL_FAILURE
+            )
+        }
+        instanceInfo.decreaseRefCount()
+        if (instanceInfo.refCount == 0) {
+            instanceInfo.getWorkerMultiplexer().destroyMultiplexer()
+            multiplexerInstance.remove(key)
+        }
     }
-  }
 
-  /** Resets the instances. For testing only. */
-  @VisibleForTesting
-  static void resetForTesting() {
-    for (InstanceInfo i : multiplexerInstance.values()) {
-      i.workerMultiplexer.destroyMultiplexer();
+    @com.google.common.annotations.VisibleForTesting
+    @Throws(UserExecException::class)
+    fun getMultiplexer(key: WorkerKey?): WorkerMultiplexer {
+        val instanceInfo: InstanceInfo = multiplexerInstance.get(key)!!
+        if (instanceInfo == null) {
+            throw createUserExecException(
+                "Accessing non-existent multiplexer instance.", Code.MULTIPLEXER_DOES_NOT_EXIST
+            )
+        }
+        return instanceInfo.getWorkerMultiplexer()
     }
-    multiplexerInstance.clear();
-  }
 
-  /** Injects a given WorkerMultiplexer into the instance map with refcount 0. For testing only. */
-  @VisibleForTesting
-  static synchronized void injectForTesting(WorkerKey key, WorkerMultiplexer multiplexer) {
-    multiplexerInstance.put(key, new InstanceInfo(multiplexer));
-  }
+    @com.google.common.annotations.VisibleForTesting
+    @Throws(UserExecException::class)
+    fun getRefCount(key: WorkerKey?): Int {
+        val instanceInfo: InstanceInfo = multiplexerInstance.get(key)!!
+        if (instanceInfo == null) {
+            throw createUserExecException(
+                "Accessing non-existent multiplexer instance.", Code.MULTIPLEXER_DOES_NOT_EXIST
+            )
+        }
+        return instanceInfo.refCount
+    }
+
+    @kotlin.jvm.JvmStatic
+    @get:com.google.common.annotations.VisibleForTesting
+    val instanceCount: Int
+        get() = multiplexerInstance.keySet().size()
+
+    private fun createUserExecException(message: String?, detailedCode: Code?): UserExecException {
+        return UserExecException(
+            FailureDetail.newBuilder()
+                .setMessage(message)
+                .setWorker(FailureDetails.Worker.newBuilder().setCode(detailedCode))
+                .build()
+        )
+    }
+
+    /** Resets the instances. For testing only.  */
+    @kotlin.jvm.JvmStatic
+    @com.google.common.annotations.VisibleForTesting
+    fun resetForTesting() {
+        for (i in multiplexerInstance.values()) {
+            i.workerMultiplexer.destroyMultiplexer()
+        }
+        multiplexerInstance.clear()
+    }
+
+    /** Injects a given WorkerMultiplexer into the instance map with refcount 0. For testing only.  */
+    @com.google.common.annotations.VisibleForTesting
+    @kotlin.jvm.Synchronized
+    fun injectForTesting(key: WorkerKey?, multiplexer: WorkerMultiplexer) {
+        multiplexerInstance.put(key, InstanceInfo(multiplexer))
+    }
+
+    /** Contains the WorkerMultiplexer instance and reference count.  */
+    internal class InstanceInfo(workerMultiplexer: WorkerMultiplexer) {
+        private val workerMultiplexer: WorkerMultiplexer
+        var refCount: Int
+            private set
+
+        init {
+            this.workerMultiplexer = workerMultiplexer
+            this.refCount = 0
+        }
+
+        fun increaseRefCount() {
+            refCount = refCount + 1
+        }
+
+        fun decreaseRefCount() {
+            refCount = refCount - 1
+        }
+
+        fun getWorkerMultiplexer(): WorkerMultiplexer {
+            return workerMultiplexer
+        }
+    }
 }

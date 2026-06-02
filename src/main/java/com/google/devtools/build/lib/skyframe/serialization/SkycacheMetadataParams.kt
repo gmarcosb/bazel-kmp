@@ -11,67 +11,65 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
-
-import java.time.Duration;
-import java.util.Collection;
-import java.util.Map;
-import java.util.Set;
+package com.google.devtools.build.lib.skyframe.serialization
 
 /**
  * Stores the parameters needed for Skycache's metadata insertion and queries about builds stored in
  * the remote analysis cache. Not every parameter is obtained at the same point during the build.
- *
- * <p>Metadata queries help UX by printing ahead of the build whether there will be any cache hits
+ * 
+ * 
+ * Metadata queries help UX by printing ahead of the build whether there will be any cache hits
  * or if there could potentially be cache hits by syncing to a different evaluating version or using
  * a different build configuration.
  */
-public interface SkycacheMetadataParams {
+interface SkycacheMetadataParams {
+    fun init(
+        clNumber: Long,
+        bazelVersion: String?,
+        targets: MutableCollection<String?>?,
+        useFakeStampData: Boolean,
+        userOptions: MutableMap<String?, String?>?,
+        projectSclOptions: MutableSet<String?>?
+    )
 
-  /**
-   * TODO: b/425247333 - Metadata insertions and queries should be very fast. 5 seconds is already
-   * very generous. As part of normal workflows we expect subsecond operations. We can re-evaluate
-   * this in production when we have more data.
-   */
-  Duration TIMEOUT = Duration.ofSeconds(5);
+    /**
+     * Using the user options map (setUserOptionsMap must have been called before this method) and
+     * using a set of all the existing options that affect the configuration checksum used by
+     * Skycache, we compute the top level flags (contracted as opposed to flags expanded from their
+     * configs) in order to print a diff of the flags vs cached writer builds for the user during
+     * reader builds if there was a config mismatch causing Skycache misses.
+     */
+    fun setOriginalConfigurationOptions(configOptions: MutableSet<String?>?)
 
-  void init(
-      long clNumber,
-      String bazelVersion,
-      Collection<String> targets,
-      boolean useFakeStampData,
-      Map<String, String> userOptions,
-      Set<String> projectSclOptions);
+    fun setConfigurationHash(configurationHash: String?)
 
-  /**
-   * Using the user options map (setUserOptionsMap must have been called before this method) and
-   * using a set of all the existing options that affect the configuration checksum used by
-   * Skycache, we compute the top level flags (contracted as opposed to flags expanded from their
-   * configs) in order to print a diff of the flags vs cached writer builds for the user during
-   * reader builds if there was a config mismatch causing Skycache misses.
-   */
-  void setOriginalConfigurationOptions(Set<String> configOptions);
+    /** The evaluating version, i.e.: changelist, commit, etc..  */
+    fun getEvaluatingVersion(): Long
 
-  void setConfigurationHash(String configurationHash);
+    /** Top level build config checksum for the build.  */
+    fun getConfigurationHash(): String?
 
-  /** The evaluating version, i.e.: changelist, commit, etc.. */
-  long getEvaluatingVersion();
+    /** The Bazel version which consists of the release name + the md5 install hash.  */
+    fun getBazelVersion(): String?
 
-  /** Top level build config checksum for the build. */
-  String getConfigurationHash();
+    /**
+     * Whether real stamp data is used for the build. This flag is not considered for the top level
+     * configuration checksum.
+     */
+    fun getUseFakeStampData(): Boolean
 
-  /** The Bazel version which consists of the release name + the md5 install hash. */
-  String getBazelVersion();
+    /** The invocation targets  */
+    fun getTargets(): MutableCollection<String?>?
 
-  /**
-   * Whether real stamp data is used for the build. This flag is not considered for the top level
-   * configuration checksum.
-   */
-  boolean getUseFakeStampData();
+    /** The user flags passed in this invocation  */
+    fun getConfigFlags(): MutableCollection<String?>?
 
-  /** The invocation targets */
-  Collection<String> getTargets();
-
-  /** The user flags passed in this invocation */
-  Collection<String> getConfigFlags();
+    companion object {
+        /**
+         * TODO: b/425247333 - Metadata insertions and queries should be very fast. 5 seconds is already
+         * very generous. As part of normal workflows we expect subsecond operations. We can re-evaluate
+         * this in production when we have more data.
+         */
+        val TIMEOUT: java.time.Duration? = java.time.Duration.ofSeconds(5)
+    }
 }

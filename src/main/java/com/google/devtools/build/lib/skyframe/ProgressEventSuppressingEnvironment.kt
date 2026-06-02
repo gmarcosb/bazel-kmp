@@ -11,136 +11,115 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.skyframe.GroupedDeps;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.SkyframeLookupResult;
-import com.google.devtools.build.skyframe.Version;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.skyframe.ProgressSuppressingEventHandler
+import com.google.devtools.build.skyframe.GroupedDeps
+import com.google.devtools.build.skyframe.SkyFunction
+import com.google.devtools.build.skyframe.SkyFunction.Environment.SkyKeyComputeState
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
+import com.google.devtools.build.skyframe.SkyframeLookupResult
 
 /**
- * A {@link SkyFunction.Environment} which returns a {@link ProgressSuppressingEventHandler} from
+ * A [SkyFunction.Environment] which returns a [ProgressSuppressingEventHandler] from
  * #getListener}.
- *
- * <p>Otherwise, delegates calls to its wrapped {@link SkyFunction.Environment}.
+ * 
+ * 
+ * Otherwise, delegates calls to its wrapped [SkyFunction.Environment].
  */
-final class ProgressEventSuppressingEnvironment implements SkyFunction.Environment {
+internal class ProgressEventSuppressingEnvironment(env: SkyFunction.Environment) : SkyFunction.Environment {
+    private val delegate: SkyFunction.Environment
+    private val suppressingEventHandler: ProgressSuppressingEventHandler
 
-  private final SkyFunction.Environment delegate;
-  private final ProgressSuppressingEventHandler suppressingEventHandler;
+    init {
+        this.delegate = env
+        this.suppressingEventHandler = ProgressSuppressingEventHandler(env.getListener())
+    }
 
-  ProgressEventSuppressingEnvironment(SkyFunction.Environment env) {
-    this.delegate = env;
-    this.suppressingEventHandler = new ProgressSuppressingEventHandler(env.getListener());
-  }
+    val listener: ProgressSuppressingEventHandler
+        get() = suppressingEventHandler
 
-  @Override
-  public ProgressSuppressingEventHandler getListener() {
-    return suppressingEventHandler;
-  }
+    @Throws(java.lang.InterruptedException::class)
+    override fun getValue(valueName: SkyKey?): SkyValue? {
+        return delegate.getValue(valueName)
+    }
 
-  @Override
-  @Nullable
-  public SkyValue getValue(SkyKey valueName) throws InterruptedException {
-    return delegate.getValue(valueName);
-  }
+    @Throws(E::class, java.lang.InterruptedException::class)
+    override fun <E : java.lang.Exception?> getValueOrThrow(
+        depKey: SkyKey?,
+        exceptionClass: java.lang.Class<E?>?
+    ): SkyValue? {
+        return delegate.getValueOrThrow<E?>(depKey, exceptionClass)
+    }
 
-  @Override
-  @Nullable
-  public <E extends Exception> SkyValue getValueOrThrow(SkyKey depKey, Class<E> exceptionClass)
-      throws E, InterruptedException {
-    return delegate.getValueOrThrow(depKey, exceptionClass);
-  }
+    @Throws(E1::class, E2::class, java.lang.InterruptedException::class)
+    override fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?> getValueOrThrow(
+        depKey: SkyKey?, exceptionClass1: java.lang.Class<E1?>?, exceptionClass2: java.lang.Class<E2?>?
+    ): SkyValue? {
+        return delegate.getValueOrThrow<E1?, E2?>(depKey, exceptionClass1, exceptionClass2)
+    }
 
-  @Override
-  @Nullable
-  public <E1 extends Exception, E2 extends Exception> SkyValue getValueOrThrow(
-      SkyKey depKey, Class<E1> exceptionClass1, Class<E2> exceptionClass2)
-      throws E1, E2, InterruptedException {
-    return delegate.getValueOrThrow(depKey, exceptionClass1, exceptionClass2);
-  }
+    @Throws(E1::class, E2::class, E3::class, java.lang.InterruptedException::class)
+    override fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?, E3 : java.lang.Exception?>
+            getValueOrThrow(
+        depKey: SkyKey?,
+        exceptionClass1: java.lang.Class<E1?>?,
+        exceptionClass2: java.lang.Class<E2?>?,
+        exceptionClass3: java.lang.Class<E3?>?
+    ): SkyValue? {
+        return delegate.getValueOrThrow<E1?, E2?, E3?>(depKey, exceptionClass1, exceptionClass2, exceptionClass3)
+    }
 
-  @Override
-  @Nullable
-  public <E1 extends Exception, E2 extends Exception, E3 extends Exception>
-      SkyValue getValueOrThrow(
-          SkyKey depKey,
-          Class<E1> exceptionClass1,
-          Class<E2> exceptionClass2,
-          Class<E3> exceptionClass3)
-          throws E1, E2, E3, InterruptedException {
-    return delegate.getValueOrThrow(depKey, exceptionClass1, exceptionClass2, exceptionClass3);
-  }
+    @Throws(E1::class, E2::class, E3::class, E4::class, java.lang.InterruptedException::class)
+    override fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?, E3 : java.lang.Exception?, E4 : java.lang.Exception?>
+            getValueOrThrow(
+        depKey: SkyKey?,
+        exceptionClass1: java.lang.Class<E1?>?,
+        exceptionClass2: java.lang.Class<E2?>?,
+        exceptionClass3: java.lang.Class<E3?>?,
+        exceptionClass4: java.lang.Class<E4?>?
+    ): SkyValue? {
+        return delegate.getValueOrThrow<E1?, E2?, E3?, E4?>(
+            depKey, exceptionClass1, exceptionClass2, exceptionClass3, exceptionClass4
+        )
+    }
 
-  @Override
-  @Nullable
-  public <E1 extends Exception, E2 extends Exception, E3 extends Exception, E4 extends Exception>
-      SkyValue getValueOrThrow(
-          SkyKey depKey,
-          Class<E1> exceptionClass1,
-          Class<E2> exceptionClass2,
-          Class<E3> exceptionClass3,
-          Class<E4> exceptionClass4)
-          throws E1, E2, E3, E4, InterruptedException {
-    return delegate.getValueOrThrow(
-        depKey, exceptionClass1, exceptionClass2, exceptionClass3, exceptionClass4);
-  }
+    override fun valuesMissing(): Boolean {
+        return delegate.valuesMissing()
+    }
 
-  @Override
-  public boolean valuesMissing() {
-    return delegate.valuesMissing();
-  }
+    @Throws(java.lang.InterruptedException::class)
+    override fun getValuesAndExceptions(depKeys: Iterable<out SkyKey?>?): SkyframeLookupResult? {
+        return delegate.getValuesAndExceptions(depKeys)
+    }
 
-  @Override
-  public SkyframeLookupResult getValuesAndExceptions(Iterable<? extends SkyKey> depKeys)
-      throws InterruptedException {
-    return delegate.getValuesAndExceptions(depKeys);
-  }
+    val temporaryDirectDeps: GroupedDeps?
+        get() = delegate.getTemporaryDirectDeps()
 
-  @Override
-  @Nullable
-  public GroupedDeps getTemporaryDirectDeps() {
-    return delegate.getTemporaryDirectDeps();
-  }
+    override fun injectVersionForNonHermeticFunction(version: com.google.devtools.build.skyframe.Version?) {
+        delegate.injectVersionForNonHermeticFunction(version)
+    }
 
-  @Override
-  public void injectVersionForNonHermeticFunction(Version version) {
-    delegate.injectVersionForNonHermeticFunction(version);
-  }
+    override fun registerDependencies(keys: Iterable<SkyKey?>?) {
+        delegate.registerDependencies(keys)
+    }
 
-  @Override
-  public void registerDependencies(Iterable<SkyKey> keys) {
-    delegate.registerDependencies(keys);
-  }
+    override fun inErrorBubbling(): Boolean {
+        return delegate.inErrorBubbling()
+    }
 
-  @Override
-  public boolean inErrorBubbling() {
-    return delegate.inErrorBubbling();
-  }
+    override fun dependOnFuture(future: com.google.common.util.concurrent.ListenableFuture<*>?) {
+        delegate.dependOnFuture(future)
+    }
 
-  @Override
-  public void dependOnFuture(ListenableFuture<?> future) {
-    delegate.dependOnFuture(future);
-  }
+    val lookupHandleForPreviouslyRequestedDeps: SkyframeLookupResult?
+        get() = delegate.getLookupHandleForPreviouslyRequestedDeps()
 
-  @Override
-  public SkyframeLookupResult getLookupHandleForPreviouslyRequestedDeps() {
-    return delegate.getLookupHandleForPreviouslyRequestedDeps();
-  }
+    override fun <T : SkyKeyComputeState?> getState(stateSupplier: java.util.function.Supplier<T?>?): T? {
+        return delegate.getState<T?>(stateSupplier)
+    }
 
-  @Override
-  public <T extends SkyKeyComputeState> T getState(Supplier<T> stateSupplier) {
-    return delegate.getState(stateSupplier);
-  }
-
-  @Override
-  @Nullable
-  public Version getMaxTransitiveSourceVersionSoFar() {
-    return delegate.getMaxTransitiveSourceVersionSoFar();
-  }
+    val maxTransitiveSourceVersionSoFar: com.google.devtools.build.skyframe.Version?
+        get() = delegate.getMaxTransitiveSourceVersionSoFar()
 }

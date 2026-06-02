@@ -594,7 +594,7 @@ public final class StateMachineTest {
             }
           });
       return t -> {
-        if (getException1() == null && getException2() == null) {
+        if (exception1 == null && exception2 == null) {
           setValue(SUCCESS_VALUE);
         }
         return DONE;
@@ -700,7 +700,7 @@ public final class StateMachineTest {
             }
           });
       return t -> {
-        if (getException1() == null && getException2() == null) {
+        if (exception1 == null && exception2 == null) {
           setValue(SUCCESS_VALUE);
         }
         isProcessValueOrExceptionCalled = true;
@@ -806,7 +806,7 @@ public final class StateMachineTest {
             }
           });
       return t -> {
-        if (getException1() == null && getException2() == null && getException3() == null) {
+        if (exception1 == null && exception2 == null && exception3 == null) {
           setValue(SUCCESS_VALUE);
         }
         return DONE;
@@ -930,7 +930,7 @@ public final class StateMachineTest {
             }
           });
       return t -> {
-        if (getException1() == null && getException2() == null && getException3() == null) {
+        if (exception1 == null && exception2 == null && exception3 == null) {
           setValue(SUCCESS_VALUE);
         }
         isProcessValueOrExceptionCalled = true;

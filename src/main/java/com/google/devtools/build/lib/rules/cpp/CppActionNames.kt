@@ -11,80 +11,97 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.cpp;
+package com.google.devtools.build.lib.rules.cpp
 
-/** Class holding constants for all C++ action names */
-public class CppActionNames {
+/** Class holding constants for all C++ action names  */
+object CppActionNames {
+    /** A string constant used to compute CC_FLAGS make variable value  */
+    const val CC_FLAGS_MAKE_VARIABLE: String = "cc-flags-make-variable"
 
-  /** A string constant used to compute CC_FLAGS make variable value */
-  public static final String CC_FLAGS_MAKE_VARIABLE = "cc-flags-make-variable";
-  /** A string constant for the strip action name. */
-  public static final String STRIP = "strip";
-  /** A string constant for the object copy action name. */
-  public static final String OBJ_COPY = "objcopy_embed_data";
-  /** A string constant for the linkstamp-compile action. */
-  public static final String LINKSTAMP_COMPILE = "linkstamp-compile";
-  /** A string constant for the c compilation action. */
-  public static final String C_COMPILE = "c-compile";
-  /** A string constant for the c++ compilation action. */
-  public static final String CPP_COMPILE = "c++-compile";
-  /** A string constant for the c++ module compile action. */
-  public static final String CPP_MODULE_CODEGEN = "c++-module-codegen";
-  /** A string constant for the objc compilation action. */
-  public static final String OBJC_COMPILE = "objc-compile";
-  /** A string constant for the objc++ compile action. */
-  public static final String OBJCPP_COMPILE = "objc++-compile";
-  /** A string constant for the c++ header parsing. */
-  public static final String CPP_HEADER_PARSING = "c++-header-parsing";
+    /** A string constant for the strip action name.  */
+    const val STRIP: String = "strip"
 
-  /** A string constant for the c++20 modules deps scanning */
-  public static final String CPP_MODULE_DEPS_SCANNING = "c++-module-deps-scanning";
+    /** A string constant for the object copy action name.  */
+    const val OBJ_COPY: String = "objcopy_embed_data"
 
-  /** A string constant for the c++20 module compile action. */
-  public static final String CPP20_MODULE_COMPILE = "c++20-module-compile";
+    /** A string constant for the linkstamp-compile action.  */
+    const val LINKSTAMP_COMPILE: String = "linkstamp-compile"
 
-  public static final String CPP20_MODULE_CODEGEN = "c++20-module-codegen";
+    /** A string constant for the c compilation action.  */
+    const val C_COMPILE: String = "c-compile"
 
-  /**
-   * A string constant for the c++ module compilation action. Note: currently we don't support C
-   * module compilation.
-   */
-  public static final String CPP_MODULE_COMPILE = "c++-module-compile";
-  /** A string constant for the assembler actions. */
-  public static final String ASSEMBLE = "assemble";
+    /** A string constant for the c++ compilation action.  */
+    const val CPP_COMPILE: String = "c++-compile"
 
-  public static final String PREPROCESS_ASSEMBLE = "preprocess-assemble";
-  /**
-   * A string constant for the clif actions. Bazel enables different features of the toolchain based
-   * on the name of the action. This name enables the clif_matcher feature, which switches the
-   * "compiler" to the clif_matcher and adds some additional arguments as described in the CROSSTOOL
-   * file.
-   */
-  public static final String CLIF_MATCH = "clif-match";
+    /** A string constant for the c++ module compile action.  */
+    const val CPP_MODULE_CODEGEN: String = "c++-module-codegen"
 
-  /** Name of the action producing static library. */
-  public static final String CPP_LINK_STATIC_LIBRARY = "c++-link-static-library";
-  /** Name of the action producing dynamic library from cc_library. */
-  public static final String CPP_LINK_NODEPS_DYNAMIC_LIBRARY = "c++-link-nodeps-dynamic-library";
-  /** Name of the action producing dynamic library from cc_binary. */
-  public static final String CPP_LINK_DYNAMIC_LIBRARY = "c++-link-dynamic-library";
-  /** Name of the action producing executable binary. */
-  public static final String CPP_LINK_EXECUTABLE = "c++-link-executable";
-  /** Name of the objc action producing dynamic library */
-  public static final String OBJC_FULLY_LINK = "objc-fully-link";
-  /** Name of the objc action producing objc executable binary */
-  public static final String OBJC_EXECUTABLE = "objc-executable";
+    /** A string constant for the objc compilation action.  */
+    const val OBJC_COMPILE: String = "objc-compile"
 
-  public static final String LTO_INDEXING = "lto-indexing";
-  /** Name of the action producing thinlto index for dynamic library. */
-  public static final String LTO_INDEX_DYNAMIC_LIBRARY = "lto-index-for-dynamic-library";
-  /** Name of the action producing thinlto index for nodeps dynamic library. */
-  public static final String LTO_INDEX_NODEPS_DYNAMIC_LIBRARY =
-      "lto-index-for-nodeps-dynamic-library";
-  /** Name of the action producing thinlto index for executable binary. */
-  public static final String LTO_INDEX_EXECUTABLE = "lto-index-for-executable";
+    /** A string constant for the objc++ compile action.  */
+    const val OBJCPP_COMPILE: String = "objc++-compile"
 
-  public static final String LTO_BACKEND = "lto-backend";
+    /** A string constant for the c++ header parsing.  */
+    const val CPP_HEADER_PARSING: String = "c++-header-parsing"
 
-  public static final String CPP_HEADER_ANALYSIS = "c++-header-analysis";
+    /** A string constant for the c++20 modules deps scanning  */
+    const val CPP_MODULE_DEPS_SCANNING: String = "c++-module-deps-scanning"
+
+    /** A string constant for the c++20 module compile action.  */
+    const val CPP20_MODULE_COMPILE: String = "c++20-module-compile"
+
+    const val CPP20_MODULE_CODEGEN: String = "c++20-module-codegen"
+
+    /**
+     * A string constant for the c++ module compilation action. Note: currently we don't support C
+     * module compilation.
+     */
+    const val CPP_MODULE_COMPILE: String = "c++-module-compile"
+
+    /** A string constant for the assembler actions.  */
+    const val ASSEMBLE: String = "assemble"
+
+    const val PREPROCESS_ASSEMBLE: String = "preprocess-assemble"
+
+    /**
+     * A string constant for the clif actions. Bazel enables different features of the toolchain based
+     * on the name of the action. This name enables the clif_matcher feature, which switches the
+     * "compiler" to the clif_matcher and adds some additional arguments as described in the CROSSTOOL
+     * file.
+     */
+    const val CLIF_MATCH: String = "clif-match"
+
+    /** Name of the action producing static library.  */
+    const val CPP_LINK_STATIC_LIBRARY: String = "c++-link-static-library"
+
+    /** Name of the action producing dynamic library from cc_library.  */
+    const val CPP_LINK_NODEPS_DYNAMIC_LIBRARY: String = "c++-link-nodeps-dynamic-library"
+
+    /** Name of the action producing dynamic library from cc_binary.  */
+    const val CPP_LINK_DYNAMIC_LIBRARY: String = "c++-link-dynamic-library"
+
+    /** Name of the action producing executable binary.  */
+    const val CPP_LINK_EXECUTABLE: String = "c++-link-executable"
+
+    /** Name of the objc action producing dynamic library  */
+    const val OBJC_FULLY_LINK: String = "objc-fully-link"
+
+    /** Name of the objc action producing objc executable binary  */
+    const val OBJC_EXECUTABLE: String = "objc-executable"
+
+    const val LTO_INDEXING: String = "lto-indexing"
+
+    /** Name of the action producing thinlto index for dynamic library.  */
+    const val LTO_INDEX_DYNAMIC_LIBRARY: String = "lto-index-for-dynamic-library"
+
+    /** Name of the action producing thinlto index for nodeps dynamic library.  */
+    const val LTO_INDEX_NODEPS_DYNAMIC_LIBRARY: String = "lto-index-for-nodeps-dynamic-library"
+
+    /** Name of the action producing thinlto index for executable binary.  */
+    const val LTO_INDEX_EXECUTABLE: String = "lto-index-for-executable"
+
+    const val LTO_BACKEND: String = "lto-backend"
+
+    const val CPP_HEADER_ANALYSIS: String = "c++-header-analysis"
 }

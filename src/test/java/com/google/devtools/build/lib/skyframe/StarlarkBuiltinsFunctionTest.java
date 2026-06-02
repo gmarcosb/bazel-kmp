@@ -116,14 +116,13 @@ public class StarlarkBuiltinsFunctionTest extends BuildViewTestCase {
 
     // Digest should be same as the exports file.
     byte[] exportsDigest =
-        ((BzlLoadValue)
-                SkyframeExecutorTestUtils.evaluate(
-                        getSkyframeExecutor(),
-                        StarlarkBuiltinsFunction.EXPORTS_ENTRYPOINT_KEY,
-                        /*keepGoing=*/ false,
-                        reporter)
-                    .get(StarlarkBuiltinsFunction.EXPORTS_ENTRYPOINT_KEY))
-            .getTransitiveDigest();
+            ((BzlLoadValue)
+                    SkyframeExecutorTestUtils.evaluate(
+                            getSkyframeExecutor(),
+                            StarlarkBuiltinsFunction.EXPORTS_ENTRYPOINT_KEY,
+                            /*keepGoing=*/ false,
+                            reporter)
+                        .get(StarlarkBuiltinsFunction.EXPORTS_ENTRYPOINT_KEY)).transitiveDigest;
     assertThat(value.transitiveDigest).isEqualTo(exportsDigest);
   }
 

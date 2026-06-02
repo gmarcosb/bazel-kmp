@@ -11,112 +11,98 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.config
 
-package com.google.devtools.build.lib.skyframe.config;
-
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.skyframe.serialization.DeferredObjectCodec;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
+import com.google.devtools.build.lib.analysis.config.BuildOptions
 
 /**
- * {@link SkyKey} for {@link com.google.devtools.build.lib.analysis.config.BuildConfigurationValue}.
+ * [SkyKey] for [com.google.devtools.build.lib.analysis.config.BuildConfigurationValue].
  */
 @AutoCodec
-public final class BuildConfigurationKey implements SkyKey {
+class BuildConfigurationKey private constructor(options: BuildOptions?) : SkyKey {
+    private val options: BuildOptions
 
-  private static final SkyKeyInterner<BuildConfigurationKey> interner = SkyKey.newInterner();
-
-  /**
-   * Returns the key for a requested configuration.
-   *
-   * @param options the {@link BuildOptions} object the {@link BuildOptions} should be rebuilt from
-   */
-  @AutoCodec.Instantiator
-  public static BuildConfigurationKey create(BuildOptions options) {
-    return interner.intern(new BuildConfigurationKey(options));
-  }
-
-  private final BuildOptions options;
-
-  private BuildConfigurationKey(BuildOptions options) {
-    this.options = Preconditions.checkNotNull(options);
-  }
-
-  public BuildOptions getOptions() {
-    return options;
-  }
-
-  @Override
-  public SkyFunctionName functionName() {
-    return SkyFunctions.BUILD_CONFIGURATION;
-  }
-
-  public String getOptionsChecksum() {
-    return options.checksum();
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (this == o) {
-      return true;
+    init {
+        this.options = com.google.common.base.Preconditions.checkNotNull<BuildOptions>(options)
     }
-    if (!(o instanceof BuildConfigurationKey otherConfig)) {
-      return false;
+
+    fun getOptions(): BuildOptions {
+        return options
     }
-    return options.equals(otherConfig.options);
-  }
 
-  @Override
-  public int hashCode() {
-    return options.hashCode();
-  }
-
-  @Override
-  public String toString() {
-    // This format is depended on by integration tests.
-    return "BuildConfigurationKey[" + options.checksum() + "]";
-  }
-
-  @Override
-  public SkyKeyInterner<BuildConfigurationKey> getSkyKeyInterner() {
-    return interner;
-  }
-
-  public static DeferredObjectCodec<BuildConfigurationKey> codec() {
-    return CodecHolder.INSTANCE.codec;
-  }
-
-  /** Enum pattern for avoiding cyclic class loading deadlocks. */
-  private enum CodecHolder {
-    INSTANCE;
-
-    @SuppressWarnings("ImmutableEnumChecker") // it's immutable
-    private final DeferredObjectCodec<BuildConfigurationKey> codec;
-
-    private CodecHolder() {
-      Class<?> codecClass;
-      try {
-        codecClass =
-            Class.forName(
-                "com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey_AutoCodec");
-      } catch (ClassNotFoundException e) {
-        // Okay, the codec class doesn't exist in the bootstrap jar file.
-        this.codec = null;
-        return;
-      }
-      try {
-        @SuppressWarnings("unchecked")
-        var castCodec =
-            (DeferredObjectCodec<BuildConfigurationKey>)
-                codecClass.getDeclaredConstructor().newInstance();
-        this.codec = castCodec;
-      } catch (ReflectiveOperationException e) {
-        throw new IllegalStateException("couldn't instantiate BuildConfigurationKey_AutoCodec", e);
-      }
+    override fun functionName(): SkyFunctionName {
+        return SkyFunctions.BUILD_CONFIGURATION
     }
-  }
+
+    val optionsChecksum: String
+        get() = options.checksum()
+
+    override fun equals(o: Any?): Boolean {
+        if (this === o) {
+            return true
+        }
+        if (o !is BuildConfigurationKey) {
+            return false
+        }
+        return options.equals(o.options)
+    }
+
+    override fun hashCode(): Int {
+        return options.hashCode()
+    }
+
+    override fun toString(): String {
+        // This format is depended on by integration tests.
+        return "BuildConfigurationKey[" + options.checksum() + "]"
+    }
+
+    val skyKeyInterner: SkyKeyInterner<BuildConfigurationKey?>
+        get() = interner
+
+    /** Enum pattern for avoiding cyclic class loading deadlocks.  */
+    private enum class CodecHolder {
+        INSTANCE;
+
+        // it's immutable
+        private val codec: DeferredObjectCodec<BuildConfigurationKey?>?
+
+        init {
+            val codecClass: java.lang.Class<*>
+            try {
+                codecClass =
+                    java.lang.Class.forName(
+                        "com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey_AutoCodec"
+                    )
+            } catch (e: java.lang.ClassNotFoundException) {
+                // Okay, the codec class doesn't exist in the bootstrap jar file.
+                this.codec = null
+                return
+            }
+            try {
+                val castCodec: DeferredObjectCodec<BuildConfigurationKey?>? =
+                    codecClass.getDeclaredConstructor().newInstance() as DeferredObjectCodec<BuildConfigurationKey?>?
+                this.codec = castCodec
+            } catch (e: java.lang.ReflectiveOperationException) {
+                throw java.lang.IllegalStateException("couldn't instantiate BuildConfigurationKey_AutoCodec", e)
+            }
+        }
+    }
+
+    companion object {
+        private val interner: SkyKeyInterner<BuildConfigurationKey?> = SkyKey.newInterner<BuildConfigurationKey?>()
+
+        /**
+         * Returns the key for a requested configuration.
+         * 
+         * @param options the [BuildOptions] object the [BuildOptions] should be rebuilt from
+         */
+        @AutoCodec.Instantiator
+        fun create(options: BuildOptions?): BuildConfigurationKey {
+            return interner.intern(BuildConfigurationKey(options))
+        }
+
+        fun codec(): DeferredObjectCodec<BuildConfigurationKey?>? {
+            return CodecHolder.INSTANCE.codec
+        }
+    }
 }

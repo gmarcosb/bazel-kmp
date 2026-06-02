@@ -11,98 +11,91 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.util.concurrent.Futures.immediateFuture;
-import static java.util.concurrent.ForkJoinPool.commonPool;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.WorkspaceBuilder;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCachingServicesSupplier;
-import com.google.errorprone.annotations.ForOverride;
-import java.util.function.Supplier;
+/** A [BlazeModule] to store Skyframe serialization lifecycle hooks.  */
+open class SerializationModule : BlazeModule() {
+    private var remoteAnalysisCachingServicesSupplier: RemoteAnalysisCachingServicesSupplier? = null
 
-/** A {@link BlazeModule} to store Skyframe serialization lifecycle hooks. */
-public class SerializationModule extends BlazeModule {
+    public override fun workspaceInit(
+        runtime: BlazeRuntime, directories: BlazeDirectories, builder: WorkspaceBuilder
+    ) {
+        if (!directories.inWorkspace()) {
+            // Serialization only works when the Bazel server is invoked from a workspace.
+            // Counter-example: invoking the Bazel server outside of a workspace to generate/dump
+            // documentation HTML.
+            return
+        }
+        // This is injected as a callback instead of evaluated eagerly to avoid forcing the somewhat
+        // expensive AutoRegistry.get call on clients that don't require it.
+        builder.setAnalysisCodecRegistrySupplier(
+            getAnalysisCodecRegistrySupplier(runtime, directories)
+        )
 
-  private RemoteAnalysisCachingServicesSupplier remoteAnalysisCachingServicesSupplier;
-
-  @Override
-  public void workspaceInit(
-      BlazeRuntime runtime, BlazeDirectories directories, WorkspaceBuilder builder) {
-    if (!directories.inWorkspace()) {
-      // Serialization only works when the Bazel server is invoked from a workspace.
-      // Counter-example: invoking the Bazel server outside of a workspace to generate/dump
-      // documentation HTML.
-      return;
+        remoteAnalysisCachingServicesSupplier = getAnalysisCachingServicesSupplier()
+        builder.setRemoteAnalysisCachingServicesSupplier(remoteAnalysisCachingServicesSupplier)
     }
-    // This is injected as a callback instead of evaluated eagerly to avoid forcing the somewhat
-    // expensive AutoRegistry.get call on clients that don't require it.
-    builder.setAnalysisCodecRegistrySupplier(
-        getAnalysisCodecRegistrySupplier(runtime, directories));
 
-    remoteAnalysisCachingServicesSupplier = getAnalysisCachingServicesSupplier();
-    builder.setRemoteAnalysisCachingServicesSupplier(remoteAnalysisCachingServicesSupplier);
-  }
-
-  @Override
-  public void commandComplete() {
-    if (remoteAnalysisCachingServicesSupplier != null) {
-      remoteAnalysisCachingServicesSupplier.resetCommandState();
+    public override fun commandComplete() {
+        if (remoteAnalysisCachingServicesSupplier != null) {
+            remoteAnalysisCachingServicesSupplier.resetCommandState()
+        }
     }
-  }
 
-  @Override
-  public void blazeShutdown() {
-    if (remoteAnalysisCachingServicesSupplier != null) {
-      remoteAnalysisCachingServicesSupplier.blazeShutdown();
+    public override fun blazeShutdown() {
+        if (remoteAnalysisCachingServicesSupplier != null) {
+            remoteAnalysisCachingServicesSupplier.blazeShutdown()
+        }
     }
-  }
 
-  @ForOverride
-  protected Supplier<ObjectCodecRegistry> getAnalysisCodecRegistrySupplier(
-      BlazeRuntime runtime, BlazeDirectories directories) {
-    return () ->
-        SerializationRegistrySetupHelpers.initializeAnalysisCodecRegistryBuilder(
+    @com.google.errorprone.annotations.ForOverride
+    protected fun getAnalysisCodecRegistrySupplier(
+        runtime: BlazeRuntime, directories: BlazeDirectories
+    ): java.util.function.Supplier<ObjectCodecRegistry?> {
+        return java.util.function.Supplier {
+            SerializationRegistrySetupHelpers.initializeAnalysisCodecRegistryBuilder(
                 runtime.getRuleClassProvider(),
                 SerializationRegistrySetupHelpers.makeReferenceConstants(
                     directories,
                     runtime.getRuleClassProvider(),
-                    directories.getWorkspace().getBaseName()))
-            .build();
-  }
-
-  @ForOverride
-  protected RemoteAnalysisCachingServicesSupplier getAnalysisCachingServicesSupplier() {
-    return InMemoryRemoteAnalysisCachingServicesSupplier.INSTANCE;
-  }
-
-  /** A supplier that uses an in-memory fingerprint value service. */
-  private static final class InMemoryRemoteAnalysisCachingServicesSupplier
-      implements RemoteAnalysisCachingServicesSupplier {
-    private static final InMemoryRemoteAnalysisCachingServicesSupplier INSTANCE =
-        new InMemoryRemoteAnalysisCachingServicesSupplier();
-
-    private static final FingerprintValueService SERVICE_INSTANCE =
-        new FingerprintValueService(
-            commonPool(),
-            // TODO: b/358347099 - use a persistent store
-            FingerprintValueStore.inMemoryStore(),
-            new FingerprintValueCache(FingerprintValueCache.SyncMode.NOT_LINKED),
-            FingerprintValueService.NONPROD_FINGERPRINTER);
-
-    private static final ListenableFuture<FingerprintValueService> WRAPPED_SERVICE_INSTANCE =
-        immediateFuture(SERVICE_INSTANCE);
-
-    @Override
-    public ListenableFuture<FingerprintValueService> getFingerprintValueService() {
-      return WRAPPED_SERVICE_INSTANCE;
+                    directories.getWorkspace().getBaseName()
+                )
+            )
+                .build()
+        }
     }
 
-    @Override
-    public void resetCommandState() {}
-  }
+    @com.google.errorprone.annotations.ForOverride
+    protected open fun getAnalysisCachingServicesSupplier(): RemoteAnalysisCachingServicesSupplier {
+        return InMemoryRemoteAnalysisCachingServicesSupplier.Companion.INSTANCE
+    }
+
+    /** A supplier that uses an in-memory fingerprint value service.  */
+    private class InMemoryRemoteAnalysisCachingServicesSupplier
+
+        : RemoteAnalysisCachingServicesSupplier {
+        override fun getFingerprintValueService(): com.google.common.util.concurrent.ListenableFuture<FingerprintValueService?> {
+            return WRAPPED_SERVICE_INSTANCE
+        }
+
+        override fun resetCommandState() {}
+
+        companion object {
+            private val INSTANCE = InMemoryRemoteAnalysisCachingServicesSupplier()
+
+            private val SERVICE_INSTANCE: FingerprintValueService = FingerprintValueService(
+                ForkJoinPool.commonPool(),  // TODO: b/358347099 - use a persistent store
+                FingerprintValueStore.Companion.inMemoryStore(),
+                FingerprintValueCache(com.google.devtools.build.lib.skyframe.serialization.FingerprintValueCache.SyncMode.NOT_LINKED),
+                FingerprintValueService.Companion.NONPROD_FINGERPRINTER
+            )
+
+            private val WRAPPED_SERVICE_INSTANCE: com.google.common.util.concurrent.ListenableFuture<FingerprintValueService?> =
+                com.google.common.util.concurrent.Futures.immediateFuture<FingerprintValueService?>(
+                    SERVICE_INSTANCE
+                )
+        }
+    }
 }

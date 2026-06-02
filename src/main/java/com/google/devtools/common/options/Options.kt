@@ -11,113 +11,120 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.common.options
 
-package com.google.devtools.common.options;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Maps;
-import java.util.Arrays;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.LinkedHashMap
 
 /**
  * Interface for parsing options from a single options specification class.
- *
- * <p>The {@link Options#parse(Class, String...)} method in this class has no clear use case.
- * Instead, use the {@link OptionsParser} class directly, as in this code snippet:
- *
+ * 
+ * 
+ * The [Options.parse] method in this class has no clear use case.
+ * Instead, use the [OptionsParser] class directly, as in this code snippet:
+ * 
  * <pre>
  * OptionsParser parser = OptionsParser.builder()
- *     .optionsClasses(FooOptions.class)
- *     .build();
+ * .optionsClasses(FooOptions.class)
+ * .build();
  * try {
- *   parser.parse(FooOptions.class, args);
+ * parser.parse(FooOptions.class, args);
  * } catch (OptionsParsingException e) {
- *   System.err.print("Error parsing options: " + e.getMessage());
- *   System.err.print(options.getUsage());
- *   System.exit(1);
+ * System.err.print("Error parsing options: " + e.getMessage());
+ * System.err.print(options.getUsage());
+ * System.exit(1);
  * }
  * FooOptions foo = parser.getOptions(FooOptions.class);
  * List&lt;String&gt; otherArguments = parser.getResidue();
- * </pre>
- *
+</pre> * 
+ * 
  * Using this class in this case actually results in more code.
- *
+ * 
  * @see OptionsParser for parsing options from multiple options specification classes.
  */
-public class Options<O extends OptionsBase> {
-
-  /**
-   * Parse the options provided in args, given the specification in
-   * optionsClass.
-   */
-  public static <O extends OptionsBase> Options<O> parse(Class<O> optionsClass, String... args)
-      throws OptionsParsingException {
-    OptionsParser parser = OptionsParser.builder().optionsClasses(optionsClass).build();
-    parser.parse(OptionPriority.PriorityCategory.COMMAND_LINE, null, Arrays.asList(args));
-    List<String> remainingArgs = parser.getResidue();
-    return new Options<>(parser.getOptions(optionsClass), remainingArgs.toArray(new String[0]));
-  }
-
-  /**
-   * Returns an options object at its default values.  The returned object may
-   * be freely modified by the caller, by assigning its fields.
-   */
-  public static <O extends OptionsBase> O getDefaults(Class<O> optionsClass) {
-    try {
-      return parse(optionsClass, new String[0]).getOptions();
-    } catch (OptionsParsingException e) {
-      String message = "Error while parsing defaults: " + e.getMessage();
-      throw new AssertionError(message);
+class Options<O : com.google.devtools.common.options.OptionsBase?> private constructor(
+  @kotlin.jvm.JvmField private val options: O?,
+  @kotlin.jvm.JvmField private val remainingArgs: Array<String?>?
+) {
+    /**
+     * Returns an instance of options class O.
+     */
+    fun getOptions(): O? {
+        return options
     }
-  }
 
-  /**
-   * Returns a usage string (renders the help information, the defaults, and
-   * of course the option names).
-   */
-  public static String getUsage(Class<? extends OptionsBase> optionsClass) {
-    StringBuilder usage = new StringBuilder();
-    OptionsUsage.getUsage(optionsClass, usage);
-    return usage.toString();
-  }
-
-  /**
-   * Returns a mapping from option names to values, for each option on the given options class,
-   * including inherited ones. The mapping is a copy, so subsequent mutations to it or to this
-   * object are independent. Entries are sorted alphabetically.
-   */
-  public static <O extends OptionsBase> Map<String, Object> toMap(O options) {
-    ImmutableList<? extends OptionDefinition> definitions =
-        OptionsData.getAllOptionDefinitionsForClass(options.getOptionsClass());
-    LinkedHashMap<String, Object> map = Maps.newLinkedHashMapWithExpectedSize(definitions.size());
-    for (OptionDefinition definition : definitions) {
-      map.put(definition.getOptionName(), definition.getValue(options));
+    /**
+     * Returns the arguments that we didn't parse.
+     */
+    fun getRemainingArgs(): Array<String?>? {
+        return remainingArgs
     }
-    return map;
-  }
 
-  private final O options;
-  private final String[] remainingArgs;
+    companion object {
+        /**
+         * Parse the options provided in args, given the specification in
+         * optionsClass.
+         */
+        @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+        fun <O : com.google.devtools.common.options.OptionsBase?> parse(
+            optionsClass: java.lang.Class<O?>?,
+            vararg args: String?
+        ): Options<O?> {
+            val parser: com.google.devtools.common.options.OptionsParser =
+                com.google.devtools.common.options.OptionsParser.Companion.builder().optionsClasses(optionsClass)
+                    .build()
+            parser.parse(
+                com.google.devtools.common.options.OptionPriority.PriorityCategory.COMMAND_LINE,
+                null,
+                java.util.Arrays.asList<String?>(*args)
+            )
+            val remainingArgs: MutableList<String?> = parser.getResidue()
+            return com.google.devtools.common.options.Options<O?>(
+                parser.getOptions<O?>(optionsClass), remainingArgs.toArray<String?>(
+                    arrayOfNulls<String>(0)
+                )
+            )
+        }
 
-  private Options(O options, String[] remainingArgs) {
-    this.options = options;
-    this.remainingArgs = remainingArgs;
-  }
+        /**
+         * Returns an options object at its default values.  The returned object may
+         * be freely modified by the caller, by assigning its fields.
+         */
+        fun <O : com.google.devtools.common.options.OptionsBase?> getDefaults(optionsClass: java.lang.Class<O?>?): O? {
+            try {
+                return com.google.devtools.common.options.Options.Companion.parse<O?>(
+                    optionsClass,
+                    *arrayOfNulls<String>(0)
+                ).getOptions()
+            } catch (e: com.google.devtools.common.options.OptionsParsingException) {
+                val message = "Error while parsing defaults: " + e.getMessage()
+                throw java.lang.AssertionError(message)
+            }
+        }
 
-  /**
-   * Returns an instance of options class O.
-   */
-  public O getOptions() {
-    return options;
-  }
+        /**
+         * Returns a usage string (renders the help information, the defaults, and
+         * of course the option names).
+         */
+        fun getUsage(optionsClass: java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?): String {
+            val usage: java.lang.StringBuilder = java.lang.StringBuilder()
+            com.google.devtools.common.options.OptionsUsage.getUsage(optionsClass, usage)
+            return usage.toString()
+        }
 
-  /**
-   * Returns the arguments that we didn't parse.
-   */
-  public String[] getRemainingArgs() {
-    return remainingArgs;
-  }
-
+        /**
+         * Returns a mapping from option names to values, for each option on the given options class,
+         * including inherited ones. The mapping is a copy, so subsequent mutations to it or to this
+         * object are independent. Entries are sorted alphabetically.
+         */
+        fun <O : com.google.devtools.common.options.OptionsBase?> toMap(options: O?): MutableMap<String?, Any?> {
+            val definitions: com.google.common.collect.ImmutableList<out com.google.devtools.common.options.OptionDefinition> =
+                com.google.devtools.common.options.IsolatedOptionsData.Companion.getAllOptionDefinitionsForClass(options.getOptionsClass())
+            val map: LinkedHashMap<String?, Any?> =
+                com.google.common.collect.Maps.newLinkedHashMapWithExpectedSize<String?, Any?>(definitions.size())
+            for (definition in definitions) {
+                map.put(definition.getOptionName(), definition.getValue(options))
+            }
+            return map
+        }
+    }
 }

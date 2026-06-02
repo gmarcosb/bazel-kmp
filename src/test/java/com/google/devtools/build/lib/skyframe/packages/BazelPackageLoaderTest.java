@@ -160,7 +160,7 @@ public final class BazelPackageLoaderTest extends AbstractPackageLoaderTest {
     RepositoryMapping repoMapping;
     try (PackageLoader pkgLoader = newPackageLoader()) {
       goodPkg = pkgLoader.loadPackage(pkgId);
-      repoMapping = pkgLoader.makeLoadingContext().getRepositoryMapping();
+      repoMapping = pkgLoader.makeLoadingContext().repositoryMapping;
     }
     assertThat(goodPkg.containsErrors()).isFalse();
     assertThat(goodPkg.getTarget("good").getAssociatedRule().getRuleClass()).isEqualTo("filegroup");

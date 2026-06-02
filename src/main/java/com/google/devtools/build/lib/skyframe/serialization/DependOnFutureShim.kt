@@ -11,54 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.base.Preconditions.checkState;
-
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.skyframe.SkyFunction.Environment;
+import com.google.devtools.build.skyframe.SkyFunction
 
 /**
- * Encapsulates {@link Environment#dependOnFuture}, {@link Environment#valuesMissing} in a single
+ * Encapsulates [Environment.dependOnFuture], [Environment.valuesMissing] in a single
  * method.
- *
- * <p>Decoupling this from {@link Environment} simplifies testing and the API.
+ * 
+ * 
+ * Decoupling this from [Environment] simplifies testing and the API.
  */
-public interface DependOnFutureShim {
-  /** Returned status of {@link #dependOnFuture}. */
-  enum ObservedFutureStatus {
-    /** If the future was already done. */
-    DONE,
+interface DependOnFutureShim {
+    /** Returned status of [.dependOnFuture].  */
+    enum class ObservedFutureStatus {
+        /** If the future was already done.  */
+        DONE,
+
+        /**
+         * If the future was not done.
+         * 
+         * 
+         * Indicates that a Skyframe restart is needed.
+         */
+        NOT_DONE
+    }
+
     /**
-     * If the future was not done.
-     *
-     * <p>Indicates that a Skyframe restart is needed.
+     * Outside of testing, delegates to [Environment.dependOnFuture] then [ ][Environment.valuesMissing] to determine the return value.
+     * 
+     * @throws IllegalStateException if called when an underlying environment's [     ][Environment.valuesMissing] is already true.
      */
-    NOT_DONE
-  }
+    fun dependOnFuture(future: com.google.common.util.concurrent.ListenableFuture<*>?): ObservedFutureStatus?
 
-  /**
-   * Outside of testing, delegates to {@link Environment#dependOnFuture} then {@link
-   * Environment#valuesMissing} to determine the return value.
-   *
-   * @throws IllegalStateException if called when an underlying environment's {@link
-   *     Environment#valuesMissing} is already true.
-   */
-  ObservedFutureStatus dependOnFuture(ListenableFuture<?> future);
+    /** A convenience implementation used with an [Environment] instance.  */
+    class DefaultDependOnFutureShim(env: SkyFunction.Environment) : DependOnFutureShim {
+        private val env: SkyFunction.Environment
 
-  /** A convenience implementation used with an {@link Environment} instance. */
-  final class DefaultDependOnFutureShim implements DependOnFutureShim {
-    private final Environment env;
+        init {
+            this.env = env
+        }
 
-    public DefaultDependOnFutureShim(Environment env) {
-      this.env = env;
+        override fun dependOnFuture(future: com.google.common.util.concurrent.ListenableFuture<*>?): ObservedFutureStatus {
+            com.google.common.base.Preconditions.checkState(!env.valuesMissing())
+            env.dependOnFuture(future)
+            return if (env.valuesMissing()) ObservedFutureStatus.NOT_DONE else ObservedFutureStatus.DONE
+        }
     }
-
-    @Override
-    public ObservedFutureStatus dependOnFuture(ListenableFuture<?> future) {
-      checkState(!env.valuesMissing());
-      env.dependOnFuture(future);
-      return env.valuesMissing() ? ObservedFutureStatus.NOT_DONE : ObservedFutureStatus.DONE;
-    }
-  }
 }

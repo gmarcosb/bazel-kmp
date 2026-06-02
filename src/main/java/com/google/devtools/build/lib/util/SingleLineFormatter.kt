@@ -11,79 +11,87 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import com.google.common.collect.ImmutableRangeMap;
-import com.google.common.collect.Range;
-import java.io.PrintWriter;
-import java.io.StringWriter;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
-import java.util.logging.Formatter;
-import java.util.logging.Level;
-import java.util.logging.LogRecord;
+import com.google.devtools.build.lib.supplier.InterruptibleSupplier.get
+import java.io.PrintWriter
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.logging.LogRecord
 
 /**
  * Formatter to write java.util.logging messages out in single-line format.
- *
- * <p>Log entries contain the date and time (in UTC), log level (as letter and numerical value),
+ * 
+ * 
+ * Log entries contain the date and time (in UTC), log level (as letter and numerical value),
  * source location, thread ID, message and, if applicable, a stack trace.
  */
-public class SingleLineFormatter extends Formatter {
+class SingleLineFormatter : java.util.logging.Formatter() {
+    override fun format(rec: LogRecord): String {
+        val buf: java.lang.StringBuilder = java.lang.StringBuilder()
 
-  /** Single-character codes based on {@link Level}s. */
-  private static final ImmutableRangeMap<Integer, Character> CODES_BY_LEVEL =
-      ImmutableRangeMap.<Integer, Character>builder()
-          .put(Range.atMost(Level.FINE.intValue()), 'D')
-          .put(Range.open(Level.FINE.intValue(), Level.WARNING.intValue()), 'I')
-          .put(Range.closedOpen(Level.WARNING.intValue(), Level.SEVERE.intValue()), 'W')
-          .put(Range.atLeast(Level.SEVERE.intValue()), 'X')
-          .build();
+        // Timestamp
+        buf.append(
+            DATE_TIME_FORMAT.format(Instant.ofEpochMilli(rec.getMillis()).atZone(ZoneOffset.UTC))
+        )
+            .append(':')
 
-  /** A thread safe, immutable formatter that can be used by all without contention. */
-  private static final DateTimeFormatter DATE_TIME_FORMAT =
-      DateTimeFormatter.ofPattern("yyMMdd HH:mm:ss.SSS").withZone(ZoneOffset.UTC);
+        // One character code for level
+        buf.append(CODES_BY_LEVEL.get(rec.getLevel().intValue()))
 
-  @Override
-  public String format(LogRecord rec) {
-    StringBuilder buf = new StringBuilder();
+        // The stack trace, if any
+        val thrown: Throwable? = rec.getThrown()
+        if (thrown != null) {
+            buf.append('T')
+        }
 
-    // Timestamp
-    buf.append(
-            DATE_TIME_FORMAT.format(Instant.ofEpochMilli(rec.getMillis()).atZone(ZoneOffset.UTC)))
-        .append(':');
+        buf.append(' ')
 
-    // One character code for level
-    buf.append(CODES_BY_LEVEL.get(rec.getLevel().intValue()));
+        // Information about the source of the exception
+        buf.append(rec.getThreadID())
+            .append(" [")
+            .append(rec.getSourceClassName())
+            .append('.')
+            .append(rec.getSourceMethodName())
+            .append("] ")
 
-    // The stack trace, if any
-    Throwable thrown = rec.getThrown();
-    if (thrown != null) {
-      buf.append('T');
+        // The actual message
+        buf.append(formatMessage(rec)).append('\n')
+
+        if (thrown != null) {
+            val sw: java.io.StringWriter = java.io.StringWriter()
+            val pw: PrintWriter = PrintWriter(sw)
+            thrown.printStackTrace(pw)
+            pw.flush()
+            buf.append(sw.toString())
+        }
+
+        return buf.toString()
     }
 
-    buf.append(' ');
+    companion object {
+        /** Single-character codes based on [Level]s.  */
+        private val CODES_BY_LEVEL: com.google.common.collect.ImmutableRangeMap<Int?, Char?> =
+            com.google.common.collect.ImmutableRangeMap.builder<Int?, Char?>()
+                .put(com.google.common.collect.Range.atMost<Int?>(java.util.logging.Level.FINE.intValue()), 'D')
+                .put(
+                    com.google.common.collect.Range.open<Int?>(
+                        java.util.logging.Level.FINE.intValue(),
+                        java.util.logging.Level.WARNING.intValue()
+                    ), 'I'
+                )
+                .put(
+                    com.google.common.collect.Range.closedOpen<Int?>(
+                        java.util.logging.Level.WARNING.intValue(),
+                        java.util.logging.Level.SEVERE.intValue()
+                    ), 'W'
+                )
+                .put(com.google.common.collect.Range.atLeast<Int?>(java.util.logging.Level.SEVERE.intValue()), 'X')
+                .build()
 
-    // Information about the source of the exception
-    buf.append(rec.getThreadID())
-        .append(" [")
-        .append(rec.getSourceClassName())
-        .append('.')
-        .append(rec.getSourceMethodName())
-        .append("] ");
-
-    // The actual message
-    buf.append(formatMessage(rec)).append('\n');
-
-    if (thrown != null) {
-      StringWriter sw = new StringWriter();
-      PrintWriter pw = new PrintWriter(sw);
-      thrown.printStackTrace(pw);
-      pw.flush();
-      buf.append(sw.toString());
+        /** A thread safe, immutable formatter that can be used by all without contention.  */
+        private val DATE_TIME_FORMAT: DateTimeFormatter =
+            DateTimeFormatter.ofPattern("yyMMdd HH:mm:ss.SSS").withZone(ZoneOffset.UTC)
     }
-
-    return buf.toString();
-  }
 }

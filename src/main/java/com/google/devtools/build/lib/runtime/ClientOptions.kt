@@ -11,130 +11,104 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.Converters;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionMetadataTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.util.List;
-import java.util.Map;
+import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryFunction.name
 
 /**
  * Options that the Bazel client passes to server, which are then incorporated into the environment.
- *
- * <p>The rc file options are parsed in their own right and appear, if applicable, in the final
+ * 
+ * 
+ * The rc file options are parsed in their own right and appear, if applicable, in the final
  * value of the parsed options. The environment variables update the stored values in the
  * CommandEnvironment. These options should never be accessed directly from this class after command
  * environment initialization.
  */
-@OptionsClass
-public abstract class ClientOptions extends OptionsBase {
-  /**
-   * A class representing a blazerc option. blazeRc is serial number of the rc file this option came
-   * from, option is the name of the option and value is its value (or null if not specified).
-   */
-  public static class OptionOverride {
-    final int blazeRc;
-    final String command;
-    final String option;
-
-    public OptionOverride(int blazeRc, String command, String option) {
-      this.blazeRc = blazeRc;
-      this.command = command;
-      this.option = option;
+@com.google.devtools.common.options.OptionsClass
+abstract class ClientOptions : com.google.devtools.common.options.OptionsBase() {
+    /**
+     * A class representing a blazerc option. blazeRc is serial number of the rc file this option came
+     * from, option is the name of the option and value is its value (or null if not specified).
+     */
+    class OptionOverride(val blazeRc: Int, val command: String?, val option: String?) {
+        override fun toString(): String {
+            return String.format("%d:%s=%s", blazeRc, command, option)
+        }
     }
 
-    @Override
-    public String toString() {
-      return String.format("%d:%s=%s", blazeRc, command, option);
-    }
-  }
+    /** Converter for --default_override. The format is: --default_override=blazerc:command=option.  */
+    class OptionOverrideConverter : com.google.devtools.common.options.Converter.Contextless<OptionOverride?>() {
+        @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+        override fun convert(input: String): OptionOverride {
+            val colonPos: Int = input.indexOf(':')
+            val assignmentPos: Int = input.indexOf('=')
 
-  /** Converter for --default_override. The format is: --default_override=blazerc:command=option. */
-  public static class OptionOverrideConverter extends Converter.Contextless<OptionOverride> {
-    static final String ERROR_MESSAGE =
-        "option overrides must be in form rcfile:command=option, where rcfile is a nonzero integer";
+            if (colonPos < 0) {
+                throw com.google.devtools.common.options.OptionsParsingException(ERROR_MESSAGE)
+            }
 
-    public OptionOverrideConverter() {}
+            if (assignmentPos <= colonPos + 1) {
+                throw com.google.devtools.common.options.OptionsParsingException(ERROR_MESSAGE)
+            }
 
-    @Override
-    public OptionOverride convert(String input) throws OptionsParsingException {
-      int colonPos = input.indexOf(':');
-      int assignmentPos = input.indexOf('=');
+            val blazeRc: Int
+            try {
+                blazeRc = input.substring(0, colonPos).toInt()
+            } catch (e: java.lang.NumberFormatException) {
+                throw com.google.devtools.common.options.OptionsParsingException(ERROR_MESSAGE, e)
+            }
 
-      if (colonPos < 0) {
-        throw new OptionsParsingException(ERROR_MESSAGE);
-      }
+            if (blazeRc < 0) {
+                throw com.google.devtools.common.options.OptionsParsingException(ERROR_MESSAGE)
+            }
 
-      if (assignmentPos <= colonPos + 1) {
-        throw new OptionsParsingException(ERROR_MESSAGE);
-      }
+            val command: String = input.substring(colonPos + 1, assignmentPos)
+            val option: String = input.substring(assignmentPos + 1)
 
-      int blazeRc;
-      try {
-        blazeRc = Integer.valueOf(input.substring(0, colonPos));
-      } catch (NumberFormatException e) {
-        throw new OptionsParsingException(ERROR_MESSAGE, e);
-      }
+            return OptionOverride(blazeRc, command, option)
+        }
 
-      if (blazeRc < 0) {
-        throw new OptionsParsingException(ERROR_MESSAGE);
-      }
+        val typeDescription: String
+            get() = "blazerc option override"
 
-      String command = input.substring(colonPos + 1, assignmentPos);
-      String option = input.substring(assignmentPos + 1);
-
-      return new OptionOverride(blazeRc, command, option);
+        companion object {
+            const val ERROR_MESSAGE: String =
+                "option overrides must be in form rcfile:command=option, where rcfile is a nonzero integer"
+        }
     }
 
-    @Override
-    public String getTypeDescription() {
-      return "blazerc option override";
-    }
-  }
+    @get:com.google.devtools.common.options.Option(
+        name = "client_env",
+        defaultValue = "null",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        metadataTags = [com.google.devtools.common.options.OptionMetadataTag.HIDDEN],
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.CHANGES_INPUTS],
+        converter = com.google.devtools.common.options.Converters.AssignmentConverter::class,
+        allowMultiple = true,
+        help = "A system-generated parameter which specifies the client's environment"
+    )
+    abstract val clientEnv: MutableList<MutableMap.MutableEntry<String?, String?>?>?
 
-  @Option(
-      name = "client_env",
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      metadataTags = {OptionMetadataTag.HIDDEN},
-      effectTags = {OptionEffectTag.CHANGES_INPUTS},
-      converter = Converters.AssignmentConverter.class,
-      allowMultiple = true,
-      help = "A system-generated parameter which specifies the client's environment")
-  public abstract List<Map.Entry<String, String>> getClientEnv();
+    @get:com.google.devtools.common.options.Option(
+        name = "default_override",
+        defaultValue = "null",
+        allowMultiple = true,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.CHANGES_INPUTS],
+        metadataTags = [com.google.devtools.common.options.OptionMetadataTag.HIDDEN],
+        converter = OptionOverrideConverter::class,
+        help = ""
+    )
+    abstract val optionsOverrides: MutableList<OptionOverride?>?
 
-  /**
-   * These are the actual default overrides. Each value is a tuple of (bazelrc index, command name,
-   * value). The blazerc index is a number used to find the blazerc in --rc_source's values.
-   *
-   * <p>For example: "--default_override=rc:build=--cpu=piii"
-   */
-  @Option(
-      name = "default_override",
-      defaultValue = "null",
-      allowMultiple = true,
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.CHANGES_INPUTS},
-      metadataTags = {OptionMetadataTag.HIDDEN},
-      converter = OptionOverrideConverter.class,
-      help = "")
-  public abstract List<OptionOverride> getOptionsOverrides();
-
-  /** This is the filename that the Blaze client parsed. */
-  @Option(
-      name = "rc_source",
-      defaultValue = "null",
-      allowMultiple = true,
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.CHANGES_INPUTS},
-      metadataTags = {OptionMetadataTag.HIDDEN},
-      help = "")
-  public abstract List<String> getRcSource();
+    @get:com.google.devtools.common.options.Option(
+        name = "rc_source",
+        defaultValue = "null",
+        allowMultiple = true,
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.CHANGES_INPUTS],
+        metadataTags = [com.google.devtools.common.options.OptionMetadataTag.HIDDEN],
+        help = ""
+    )
+    abstract val rcSource: MutableList<String?>?
 }

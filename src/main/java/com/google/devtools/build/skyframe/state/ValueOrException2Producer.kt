@@ -11,71 +11,72 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe.state;
+package com.google.devtools.build.skyframe.state
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunction.LookupEnvironment;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.SkyFunction.LookupEnvironment
+import com.google.devtools.build.skyframe.state.StateMachine
 
 /**
  * A state machine that outputs a value or one of two possible exceptions.
- *
- * <p>This class serves as a bridge between a {@link StateMachine} and a {@link SkyFunction}.
- *
- * <p>Subclasses should call {@link #setValue}, {@link #setException1} or {@link #setException2} to
+ * 
+ * 
+ * This class serves as a bridge between a [StateMachine] and a [SkyFunction].
+ * 
+ * 
+ * Subclasses should call [.setValue], [.setException1] or [.setException2] to
  * emit results.
  */
-public abstract class ValueOrException2Producer<V, E1 extends Exception, E2 extends Exception>
-    implements StateMachine {
-  private final Driver driver = new Driver(this);
+abstract class ValueOrException2Producer<V, E1 : java.lang.Exception?, E2 : java.lang.Exception?>
+    : StateMachine {
+    private val driver: com.google.devtools.build.skyframe.state.Driver =
+        com.google.devtools.build.skyframe.state.Driver(this)
 
-  private V value;
-  private E1 exception1;
-  private E2 exception2;
+    private var value: V? = null
+    @kotlin.jvm.JvmField
+    private var exception1: E1? = null
+    @kotlin.jvm.JvmField
+    private var exception2: E2? = null
 
-  /**
-   * Tries to produce the result of the underlying state machine.
-   *
-   * <p>See comment of {@link ValueOrExceptionProducer#tryProduceValue}. The only difference here is
-   * that if both {@link #exception1} and {@link #exception2} are set, {@link #exception1} has
-   * priority.
-   */
-  @Nullable
-  public final V tryProduceValue(LookupEnvironment env) throws InterruptedException, E1, E2 {
-    boolean done = driver.drive(env);
-    if (exception1 != null) {
-      throw exception1;
+    /**
+     * Tries to produce the result of the underlying state machine.
+     * 
+     * 
+     * See comment of [ValueOrExceptionProducer.tryProduceValue]. The only difference here is
+     * that if both [.exception1] and [.exception2] are set, [.exception1] has
+     * priority.
+     */
+    @Throws(java.lang.InterruptedException::class, E1::class, E2::class)
+    fun tryProduceValue(env: LookupEnvironment?): V? {
+        val done: Boolean = driver.drive(env)
+        if (exception1 != null) {
+            throw exception1
+        }
+        if (exception2 != null) {
+            throw exception2
+        }
+        if (done) {
+            return com.google.common.base.Preconditions.checkNotNull<V?>(value)
+        }
+        return null
     }
-    if (exception2 != null) {
-      throw exception2;
+
+    protected fun setValue(value: V?) {
+        this.value = value
     }
-    if (done) {
-      return checkNotNull(value);
+
+    protected fun setException1(exception: E1?) {
+        this.exception1 = exception
     }
-    return null;
-  }
 
-  protected final void setValue(V value) {
-    this.value = value;
-  }
+    protected fun getException1(): E1? {
+        return exception1
+    }
 
-  protected final void setException1(E1 exception) {
-    this.exception1 = exception;
-  }
+    protected fun setException2(exception: E2?) {
+        this.exception2 = exception
+    }
 
-  @Nullable
-  protected final E1 getException1() {
-    return exception1;
-  }
-
-  protected final void setException2(E2 exception) {
-    this.exception2 = exception;
-  }
-
-  @Nullable
-  protected final E2 getException2() {
-    return exception2;
-  }
+    protected fun getException2(): E2? {
+        return exception2
+    }
 }

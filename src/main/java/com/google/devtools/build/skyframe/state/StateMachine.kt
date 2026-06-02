@@ -11,161 +11,173 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe.state;
+package com.google.devtools.build.skyframe.state
 
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunction.Environment.SkyKeyComputeState;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.function.Consumer;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
 
 /**
  * A simple state machine with structured concurrency.
- *
- * <p>This is used to implement {@link SkyFunction}s with logical concurrency within {@link
- * SkyKeyComputeState}. All execution is singly-threaded. It can be used in places where further
- * stateful decomposition of a computation is desirable but more {@code Skyframe} entries would
+ * 
+ * 
+ * This is used to implement [SkyFunction]s with logical concurrency within [ ]. All execution is singly-threaded. It can be used in places where further
+ * stateful decomposition of a computation is desirable but more `Skyframe` entries would
  * create too much overhead. However, the key motivation is to facilitate logical concurrency.
- *
- * <p>For example, consider a {@link SkyFunction} that processes dependencies. Each dependency
- * requires a sequence of processing steps, some of which have {@code Skyframe} lookups. Let {@code
- * A = <A1, A2, A3>} and {@code B = <B1, B2, B3>} be sequences of dependent {@code SkyKey}s. {@code
- * A3} depends on {@code A2} depends on {@code A1} and similarly for {@code B3, B2, B1}. The
- * processing of {@code A} and {@code B} are independent and therefore logically concurrent.
- *
- * <p>One conventional approach is to implement the {@code SkyFunction} to make groups like {@code
- * (A1,B1), (A2,B2), (A3,B3)}. Grouping is more efficient than one-at-a-time lookups because in
+ * 
+ * 
+ * For example, consider a [SkyFunction] that processes dependencies. Each dependency
+ * requires a sequence of processing steps, some of which have `Skyframe` lookups. Let `A = <A1, A2, A3>` and `B = <B1, B2, B3>` be sequences of dependent `SkyKey`s. `A3` depends on `A2` depends on `A1` and similarly for `B3, B2, B1`. The
+ * processing of `A` and `B` are independent and therefore logically concurrent.
+ * 
+ * 
+ * One conventional approach is to implement the `SkyFunction` to make groups like `(A1,B1), (A2,B2), (A3,B3)`. Grouping is more efficient than one-at-a-time lookups because in
  * builds where lookups can be performed remotely, such implementations can parallelize over groups
  * but process single queries sequentially to avoid wasted speculative work.
- *
- * <p>However, this manual batching may creates false dependencies that lead to unnecessary latency.
- * In the example, {@code A2} can't be evaluated until {@code B1} is available. If both {@code B1}
- * and {@code A2} are slow, the critical path is unnecessarily lengthened by forcing {@code A2} to
- * happen after {@code B1} instead of allowing {@code A2} to proceed once {@code A1} is available.
- * From the perspective of restarts, if both {@code B1} and {@code A2} require restarts, evaluation
- * requires 2 restarts. However, by running concurrently, the restart of {@code B1} and {@code A2}
+ * 
+ * 
+ * However, this manual batching may creates false dependencies that lead to unnecessary latency.
+ * In the example, `A2` can't be evaluated until `B1` is available. If both `B1`
+ * and `A2` are slow, the critical path is unnecessarily lengthened by forcing `A2` to
+ * happen after `B1` instead of allowing `A2` to proceed once `A1` is available.
+ * From the perspective of restarts, if both `B1` and `A2` require restarts, evaluation
+ * requires 2 restarts. However, by running concurrently, the restart of `B1` and `A2`
  * can be grouped together, reducing it to 1 restart.
- *
- * <p>The {@link Driver} class and {@link Driver#drive} are used to run a state machine.
- *
- * <p>A guide is available at <a href="https://bazel.build/contribute/statemachine-guide"/>.
+ * 
+ * 
+ * The [Driver] class and [Driver.drive] are used to run a state machine.
+ * 
+ * 
+ * A guide is available at [](https://bazel.build/contribute/statemachine-guide).
  */
-@FunctionalInterface
-public interface StateMachine {
-  /** A sentinel value returned when a {@code StateMachine} is done. */
-  public static final StateMachine DONE =
-      t -> {
-        throw new IllegalStateException("Sentinel DONE state should not be executed.");
-      };
-
-  /**
-   * Step performs the next computation.
-   *
-   * <p>{@link Tasks#lookup} may be used to request {@link SkyKey}s. The next step will not be
-   * executed until all requested {@link SkyValue}s are available and their associated callbacks
-   * have been called. Similarly, {@link Tasks#enqueue} can be used to spawn a concurrent
-   * subcomputation, which must also complete before the next computation step.
-   *
-   * <p>Note that recursive decomposition within subtasks is possible and can be used to capture
-   * fine-grain dependency structures. This is required to correctly model the example in the class
-   * description. {@code <A1, A2, A3>} and {@code <B1, B2, B3>} become concurrent, multi-step,
-   * subtasks.
-   *
-   * @param tasks an interface for adding subtasks, which may be either {@link SkyKey} lookups or
-   *     child state machines. The {@code tasks} handle is associated with this state machine and
-   *     other state machines should not use it.
-   * @return an instance indicating the next computation or {@link #DONE} on completion.
-   */
-  StateMachine step(Tasks tasks) throws InterruptedException;
-
-  /**
-   * Tasks allows registering logically parallel subtasks.
-   *
-   * <p>Completion of the current step waits until all subtasks are complete.
-   */
-  interface Tasks {
+fun interface StateMachine {
     /**
-     * Enqueues a subtask for logically concurrent evaluation.
-     *
-     * <p>The next step will not be executed until the subtask completes. If more than one subtask
-     * is enqueued, the next step waits on all subtasks.
+     * Step performs the next computation.
+     * 
+     * 
+     * [Tasks.lookup] may be used to request [SkyKey]s. The next step will not be
+     * executed until all requested [SkyValue]s are available and their associated callbacks
+     * have been called. Similarly, [Tasks.enqueue] can be used to spawn a concurrent
+     * subcomputation, which must also complete before the next computation step.
+     * 
+     * 
+     * Note that recursive decomposition within subtasks is possible and can be used to capture
+     * fine-grain dependency structures. This is required to correctly model the example in the class
+     * description. `<A1, A2, A3>` and `<B1, B2, B3>` become concurrent, multi-step,
+     * subtasks.
+     * 
+     * @param tasks an interface for adding subtasks, which may be either [SkyKey] lookups or
+     * child state machines. The `tasks` handle is associated with this state machine and
+     * other state machines should not use it.
+     * @return an instance indicating the next computation or [.DONE] on completion.
      */
-    void enqueue(StateMachine subtask);
+    @Throws(java.lang.InterruptedException::class)
+    fun step(tasks: Tasks?): StateMachine?
 
     /**
-     * A lookup that handles no exceptions.
-     *
-     * <p>This lookup is logically concurrent with other subtasks. The state machine {@link Driver}
-     * may defer the callback until after a {@code Skyframe} restart if it is not immediately
-     * available.
-     *
-     * <p>Unhandled exceptions eventually set a fail fast condition over the entire state machine
-     * tree and no further processing occurs afterwards.
-     *
-     * <p>IMPLEMENTATION: if an unhandled exception occurs immediately (without a restart) on a
-     * lookup, {@link Driver} observes unavailability and returns an incomplete status. The driver
-     * cannot distinguish here between a result that is not yet computed and an unhandled exception.
-     *
-     * <p>After a restart, all previously requested values should be available, so observing
-     * unavailability implies an unhandled exception, triggering fail-fast.
+     * Tasks allows registering logically parallel subtasks.
+     * 
+     * 
+     * Completion of the current step waits until all subtasks are complete.
      */
-    void lookUp(SkyKey key, Consumer<SkyValue> sink);
+    interface Tasks {
+        /**
+         * Enqueues a subtask for logically concurrent evaluation.
+         * 
+         * 
+         * The next step will not be executed until the subtask completes. If more than one subtask
+         * is enqueued, the next step waits on all subtasks.
+         */
+        fun enqueue(subtask: StateMachine?)
+
+        /**
+         * A lookup that handles no exceptions.
+         * 
+         * 
+         * This lookup is logically concurrent with other subtasks. The state machine [Driver]
+         * may defer the callback until after a `Skyframe` restart if it is not immediately
+         * available.
+         * 
+         * 
+         * Unhandled exceptions eventually set a fail fast condition over the entire state machine
+         * tree and no further processing occurs afterwards.
+         * 
+         * 
+         * IMPLEMENTATION: if an unhandled exception occurs immediately (without a restart) on a
+         * lookup, [Driver] observes unavailability and returns an incomplete status. The driver
+         * cannot distinguish here between a result that is not yet computed and an unhandled exception.
+         * 
+         * 
+         * After a restart, all previously requested values should be available, so observing
+         * unavailability implies an unhandled exception, triggering fail-fast.
+         */
+        fun lookUp(key: SkyKey?, sink: java.util.function.Consumer<SkyValue?>?)
+
+        /**
+         * A lookup that handles exceptions of the specified type.
+         * 
+         * 
+         * The callback could be deferred until the next `Skyframe` restart if the queried key
+         * is not immediately available.
+         */
+        fun <E : java.lang.Exception?> lookUp(
+            key: SkyKey?, exceptionClass: java.lang.Class<E?>?, sink: ValueOrExceptionSink<E?>?
+        )
+
+        /** A lookup that handles exceptions of the specified 2 types.  */
+        fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?> lookUp(
+            key: SkyKey?,
+            exceptionClass1: java.lang.Class<E1?>?,
+            exceptionClass2: java.lang.Class<E2?>?,
+            sink: ValueOrException2Sink<E1?, E2?>?
+        )
+
+        /** A lookup that handles exceptions of the specified 3 types.  */
+        fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?, E3 : java.lang.Exception?> lookUp(
+            key: SkyKey?,
+            exceptionClass1: java.lang.Class<E1?>?,
+            exceptionClass2: java.lang.Class<E2?>?,
+            exceptionClass3: java.lang.Class<E3?>?,
+            sink: ValueOrException3Sink<E1?, E2?, E3?>?
+        )
+    }
 
     /**
-     * A lookup that handles exceptions of the specified type.
-     *
-     * <p>The callback could be deferred until the next {@code Skyframe} restart if the queried key
-     * is not immediately available.
+     * Receives the result of a lookup.
+     * 
+     * 
+     * Exactly one of `value` or `exception` will be non-null.
      */
-    <E extends Exception> void lookUp(
-        SkyKey key, Class<E> exceptionClass, ValueOrExceptionSink<E> sink);
+    fun interface ValueOrExceptionSink<E : java.lang.Exception?> {
+        fun acceptValueOrException(value: SkyValue?, exception: E?)
+    }
 
-    /** A lookup that handles exceptions of the specified 2 types. */
-    <E1 extends Exception, E2 extends Exception> void lookUp(
-        SkyKey key,
-        Class<E1> exceptionClass1,
-        Class<E2> exceptionClass2,
-        ValueOrException2Sink<E1, E2> sink);
+    /**
+     * Receives the result of a lookup.
+     * 
+     * 
+     * Exactly one of `value`, `e1` or `e2` will be non-null.
+     */
+    fun interface ValueOrException2Sink<E1 : java.lang.Exception?, E2 : java.lang.Exception?> {
+        fun acceptValueOrException2(value: SkyValue?, e1: E1?, e2: E2?)
+    }
 
-    /** A lookup that handles exceptions of the specified 3 types. */
-    <E1 extends Exception, E2 extends Exception, E3 extends Exception> void lookUp(
-        SkyKey key,
-        Class<E1> exceptionClass1,
-        Class<E2> exceptionClass2,
-        Class<E3> exceptionClass3,
-        ValueOrException3Sink<E1, E2, E3> sink);
-  }
+    /**
+     * Receives the result of a lookup.
+     * 
+     * 
+     * Exactly one of `value`, `e1`, `e2` or `e3` will be non-null.
+     */
+    fun interface ValueOrException3Sink<E1 : java.lang.Exception?, E2 : java.lang.Exception?, E3 : java.lang.Exception?> {
+        fun acceptValueOrException3(
+            value: SkyValue?, e1: E1?, e2: E2?, e3: E3?
+        )
+    }
 
-  /**
-   * Receives the result of a lookup.
-   *
-   * <p>Exactly one of {@code value} or {@code exception} will be non-null.
-   */
-  @FunctionalInterface
-  interface ValueOrExceptionSink<E extends Exception> {
-    void acceptValueOrException(@Nullable SkyValue value, @Nullable E exception);
-  }
-
-  /**
-   * Receives the result of a lookup.
-   *
-   * <p>Exactly one of {@code value}, {@code e1} or {@code e2} will be non-null.
-   */
-  @FunctionalInterface
-  interface ValueOrException2Sink<E1 extends Exception, E2 extends Exception> {
-    void acceptValueOrException2(@Nullable SkyValue value, @Nullable E1 e1, @Nullable E2 e2);
-  }
-
-  /**
-   * Receives the result of a lookup.
-   *
-   * <p>Exactly one of {@code value}, {@code e1}, {@code e2} or {@code e3} will be non-null.
-   */
-  @FunctionalInterface
-  interface ValueOrException3Sink<
-      E1 extends Exception, E2 extends Exception, E3 extends Exception> {
-    void acceptValueOrException3(
-        @Nullable SkyValue value, @Nullable E1 e1, @Nullable E2 e2, @Nullable E3 e3);
-  }
+    companion object {
+        /** A sentinel value returned when a `StateMachine` is done.  */
+        @kotlin.jvm.JvmField
+        val DONE: StateMachine = StateMachine { t: Tasks? ->
+            throw java.lang.IllegalStateException("Sentinel DONE state should not be executed.")
+        }
+    }
 }

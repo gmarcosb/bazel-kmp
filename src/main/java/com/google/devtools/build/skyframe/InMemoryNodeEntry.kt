@@ -11,63 +11,57 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import java.util.Collection;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.NodeEntry
+import com.google.devtools.build.skyframe.NodeEntry.DependencyState
+import com.google.devtools.build.skyframe.NodeEntry.DirtyType
+import com.google.devtools.build.skyframe.NodeEntry.MarkedDirtyResult
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
 
 /**
- * A {@link NodeEntry} that is stored in memory.
- *
- * <p>Supports several {@link NodeEntry} methods without throwing {@link InterruptedException}.
+ * A [NodeEntry] that is stored in memory.
+ * 
+ * 
+ * Supports several [NodeEntry] methods without throwing [InterruptedException].
  */
-public interface InMemoryNodeEntry extends NodeEntry {
+interface InMemoryNodeEntry : NodeEntry {
+    /** Returns the [SkyKey] associated with this node.  */
+    @kotlin.jvm.JvmField
+    val key: SkyKey?
 
-  /** Returns the {@link SkyKey} associated with this node. */
-  SkyKey getKey();
+    /** Whether this node stores edges (deps and rdeps).  */
+    fun keepsEdges(): Boolean
 
-  /** Whether this node stores edges (deps and rdeps). */
-  boolean keepsEdges();
+    /**
+     * Returns the compressed [GroupedDeps] of direct deps. Can only be called if this node
+     * [.isDone] and [.keepsEdges].
+     */
+    @kotlin.jvm.JvmField
+    val compressedDirectDepsForDoneEntry: @`<error>` Any?
 
-  /**
-   * Returns the compressed {@link GroupedDeps} of direct deps. Can only be called if this node
-   * {@link #isDone} and {@link #keepsEdges}.
-   */
-  @GroupedDeps.Compressed
-  Object getCompressedDirectDepsForDoneEntry();
+    @kotlin.jvm.JvmField
+    val value: SkyValue?
 
-  @Override // Remove InterruptedException.
-  @Nullable
-  SkyValue getValue();
+    val valueMaybeWithMetadata: SkyValue?
 
-  @Override // Remove InterruptedException.
-  @Nullable
-  SkyValue getValueMaybeWithMetadata();
+    override fun toValue(): SkyValue?
 
-  @Override // Remove InterruptedException.
-  @Nullable
-  SkyValue toValue();
+    @kotlin.jvm.JvmField
+    val errorInfo: com.google.devtools.build.skyframe.ErrorInfo?
 
-  @Override // Remove InterruptedException.
-  @Nullable
-  ErrorInfo getErrorInfo();
+    @kotlin.jvm.JvmField
+    val directDeps: Iterable<SkyKey>?
 
-  @Override // Remove InterruptedException.
-  Iterable<SkyKey> getDirectDeps();
+    override fun hasAtLeastOneDep(): Boolean
 
-  @Override // Remove InterruptedException.
-  boolean hasAtLeastOneDep();
+    override fun removeReverseDep(reverseDep: SkyKey?)
 
-  @Override // Remove InterruptedException.
-  void removeReverseDep(SkyKey reverseDep);
+    @kotlin.jvm.JvmField
+    val reverseDepsForDoneEntry: MutableCollection<SkyKey>?
 
-  @Override // Remove InterruptedException.
-  Collection<SkyKey> getReverseDepsForDoneEntry();
+    override fun addReverseDepAndCheckIfDone(reverseDep: SkyKey?): DependencyState?
 
-  @Override // Remove InterruptedException.
-  DependencyState addReverseDepAndCheckIfDone(@Nullable SkyKey reverseDep);
-
-  @Override // Remove InterruptedException.
-  @Nullable
-  MarkedDirtyResult markDirty(DirtyType dirtyType);
+    override fun markDirty(dirtyType: DirtyType?): MarkedDirtyResult?
 }

@@ -11,21 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
-import static java.util.Objects.requireNonNull;
+/** Event issued when a source directory is encountered in [ArtifactFunction].  */
+class SourceDirectoryEvent(execPath: PathFragment?) : Postable {
+    val execPath: PathFragment?
 
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
-import com.google.devtools.build.lib.vfs.PathFragment;
+    init {
+        this.execPath = execPath
+        java.util.Objects.requireNonNull<PathFragment?>(execPath, "execPath")
+    }
 
-/** Event issued when a source directory is encountered in {@link ArtifactFunction}. */
-public record SourceDirectoryEvent(PathFragment execPath) implements Postable {
-  public SourceDirectoryEvent {
-    requireNonNull(execPath, "execPath");
-  }
-
-  public static SourceDirectoryEvent create(PathFragment execPath) {
-    return new SourceDirectoryEvent(execPath);
-  }
+    companion object {
+        fun create(execPath: PathFragment?): SourceDirectoryEvent {
+            return SourceDirectoryEvent(execPath)
+        }
+    }
 }

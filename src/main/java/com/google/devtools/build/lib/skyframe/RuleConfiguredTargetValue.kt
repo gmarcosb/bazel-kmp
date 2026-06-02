@@ -11,47 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.base.MoreObjects;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.analysis.ConfiguredTargetValue;
-import com.google.devtools.build.lib.analysis.RuleConfiguredObjectValue;
-import com.google.devtools.build.lib.analysis.configuredtargets.RuleConfiguredTarget;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.packages.Package;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionAnalysisMetadata
 
-/** A configured target in the context of a Skyframe graph. */
-@Immutable
-@ThreadSafe
-public final class RuleConfiguredTargetValue
-    extends AbstractConfiguredTargetValue<RuleConfiguredTarget>
-    implements RuleConfiguredObjectValue, ConfiguredTargetValue {
+/** A configured target in the context of a Skyframe graph.  */
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+@com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+class RuleConfiguredTargetValue
+    (
+    configuredTarget: RuleConfiguredTarget,
+    transitivePackages: NestedSet<Package.Metadata?>?
+) : AbstractConfiguredTargetValue<RuleConfiguredTarget?>(configuredTarget, transitivePackages),
+    RuleConfiguredObjectValue, ConfiguredTargetValue {
+    private val actions: com.google.common.collect.ImmutableList<ActionAnalysisMetadata?>?
 
-  private final ImmutableList<ActionAnalysisMetadata> actions;
+    init {
+        // These are specifically *not* copied to save memory.
+        this.actions = configuredTarget.getActions()
+    }
 
-  public RuleConfiguredTargetValue(
-      RuleConfiguredTarget configuredTarget,
-      @Nullable NestedSet<Package.Metadata> transitivePackages) {
-    super(configuredTarget, transitivePackages);
-    // These are specifically *not* copied to save memory.
-    this.actions = configuredTarget.getActions();
-  }
+    public override fun getActions(): com.google.common.collect.ImmutableList<ActionAnalysisMetadata?>? {
+        return actions
+    }
 
-  @Override
-  public ImmutableList<ActionAnalysisMetadata> getActions() {
-    return actions;
-  }
-
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("actions", actions)
-        .add("configuredTarget", getConfiguredTarget())
-        .toString();
-  }
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("actions", actions)
+            .add("configuredTarget", getConfiguredTarget())
+            .toString()
+    }
 }

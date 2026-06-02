@@ -11,59 +11,53 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options;
+package com.google.devtools.common.options
 
-import com.google.common.collect.ImmutableList;
-import java.util.function.Predicate;
+/** Utility functions for global RC files.  */
+object GlobalRcUtils {
+    /* No global RC files in Bazel, so no global configs. */
+    val ALLOWED_GLOBAL_CONFIGS: com.google.common.collect.ImmutableList<String?> =
+        com.google.common.collect.ImmutableList.of<String?>()
 
-/** Utility functions for global RC files. */
-public final class GlobalRcUtils {
+    private val GLOBAL_RC_FILES: com.google.common.collect.ImmutableList<String?> =
+        com.google.common.collect.ImmutableList.of<String?>( // LINT.IfChange
+            "client",  // LINT.ThenChange(//src/main/cpp/option_processor.cc)
+            // LINT.IfChange
+            "Invocation policy" // LINT.ThenChange(//src/main/java/com/google/devtools/common/options/InvocationPolicyEnforcer.java)
+        )
 
-  private GlobalRcUtils() {}
-
-  /* No global RC files in Bazel, so no global configs. */
-  public static final ImmutableList<String> ALLOWED_GLOBAL_CONFIGS = ImmutableList.of();
-
-  private static final ImmutableList<String> GLOBAL_RC_FILES =
-      ImmutableList.of(
-          // LINT.IfChange
-          "client",
-          // LINT.ThenChange(//src/main/cpp/option_processor.cc)
-          // LINT.IfChange
-          "Invocation policy"
-          // LINT.ThenChange(//src/main/java/com/google/devtools/common/options/InvocationPolicyEnforcer.java)
-          );
-
-  /** No global RC files in Bazel. Consider "client" options to be global. */
-  static final Predicate<ParsedOptionDescription> IS_GLOBAL_RC_OPTION =
-      // LINT.IfChange
-      (option) -> {
-        for (String globalRc : GLOBAL_RC_FILES) {
-          // Don't match the full RC file location to be resilient to builds with the same global
-          // RC but different workspaces.
-          if (option.getOrigin().getSource() != null
-              && option.getOrigin().getSource().endsWith(globalRc)) {
-            return true;
-          }
-          if (option.getExpandedFrom() != null) {
-            if (option.getExpandedFrom().getOrigin().getSource() != null
-                && option.getExpandedFrom().getOrigin().getSource().endsWith(globalRc)) {
-              return true;
+    /** No global RC files in Bazel. Consider "client" options to be global.  */
+    val IS_GLOBAL_RC_OPTION: java.util.function.Predicate<com.google.devtools.common.options.ParsedOptionDescription?> =
+        // LINT.IfChange
+        java.util.function.Predicate { option: com.google.devtools.common.options.ParsedOptionDescription? ->
+            for (globalRc in com.google.devtools.common.options.GlobalRcUtils.GLOBAL_RC_FILES) {
+                // Don't match the full RC file location to be resilient to builds with the same global
+                // RC but different workspaces.
+                if (option.getOrigin().getSource() != null
+                    && option.getOrigin().getSource().endsWith(globalRc)
+                ) {
+                    return@Predicate true
+                }
+                if (option.getExpandedFrom() != null) {
+                    if (option.getExpandedFrom().getOrigin().getSource() != null
+                        && option.getExpandedFrom().getOrigin().getSource().endsWith(globalRc)
+                    ) {
+                        return@Predicate true
+                    }
+                }
             }
-          }
+            false
         }
-        return false;
-      };
-  // LINT.ThenChange(//src/main/cpp/option_processor.cc,
-  // //src/main/java/com/google/devtools/common/options/InvocationPolicyEnforcer.java)
 
-  /** Is an rc file path a global rc? */
-  public static boolean isGlobalRcFile(String rcFilePath) {
-    for (String globalRc : GLOBAL_RC_FILES) {
-      if (rcFilePath.endsWith(globalRc)) {
-        return true;
-      }
+    // LINT.ThenChange(//src/main/cpp/option_processor.cc,
+    // //src/main/java/com/google/devtools/common/options/InvocationPolicyEnforcer.java)
+    /** Is an rc file path a global rc?  */
+    fun isGlobalRcFile(rcFilePath: String): Boolean {
+        for (globalRc in com.google.devtools.common.options.GlobalRcUtils.GLOBAL_RC_FILES) {
+            if (rcFilePath.endsWith(globalRc)) {
+                return true
+            }
+        }
+        return false
     }
-    return false;
-  }
 }

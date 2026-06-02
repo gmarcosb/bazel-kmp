@@ -11,27 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.repository
 
-package com.google.devtools.build.lib.repository;
+import com.google.devtools.build.lib.packages.NoSuchPackageException
 
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import java.io.IOException;
-import net.starlark.java.eval.EvalException;
+/** Exception thrown when something goes wrong accessing a rule.  */
+class ExternalPackageException : SkyFunctionException {
+    constructor(cause: NoSuchPackageException?, transience: Transience?) : super(cause, transience)
 
-/** Exception thrown when something goes wrong accessing a rule. */
-public class ExternalPackageException extends SkyFunctionException {
-  public ExternalPackageException(NoSuchPackageException cause, Transience transience) {
-    super(cause, transience);
-  }
+    /** Error reading or writing to the filesystem.  */
+    constructor(cause: IOException?, transience: Transience?) : super(cause, transience)
 
-  /** Error reading or writing to the filesystem. */
-  public ExternalPackageException(IOException cause, Transience transience) {
-    super(cause, transience);
-  }
-
-  /** For errors in WORKSPACE file rules (e.g., malformed paths or URLs). */
-  public ExternalPackageException(EvalException cause, Transience transience) {
-    super(cause, transience);
-  }
+    /** For errors in WORKSPACE file rules (e.g., malformed paths or URLs).  */
+    constructor(cause: net.starlark.java.eval.EvalException?, transience: Transience?) : super(cause, transience)
 }

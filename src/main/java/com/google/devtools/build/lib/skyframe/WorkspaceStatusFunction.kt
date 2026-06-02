@@ -11,41 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.actions.ActionLookupData;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.DerivedArtifact;
-import com.google.devtools.build.lib.analysis.WorkspaceStatusAction;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionLookupData
 
-/** Creates the workspace status artifacts and action. */
-public class WorkspaceStatusFunction implements SkyFunction {
+/** Creates the workspace status artifacts and action.  */
+class WorkspaceStatusFunction internal constructor(workspaceStatusActionFactory: java.util.function.Supplier<WorkspaceStatusAction>) :
+    SkyFunction {
+    private val workspaceStatusActionFactory: java.util.function.Supplier<WorkspaceStatusAction>
 
-  private final Supplier<WorkspaceStatusAction> workspaceStatusActionFactory;
-
-  WorkspaceStatusFunction(Supplier<WorkspaceStatusAction> workspaceStatusActionFactory) {
-    this.workspaceStatusActionFactory = workspaceStatusActionFactory;
-  }
-
-  @Override
-  @Nullable
-  public SkyValue compute(SkyKey skyKey, Environment env) throws InterruptedException {
-    Preconditions.checkState(
-        WorkspaceStatusValue.BUILD_INFO_KEY.equals(skyKey), WorkspaceStatusValue.BUILD_INFO_KEY);
-    WorkspaceStatusAction action = workspaceStatusActionFactory.get();
-
-    ActionLookupData generatingActionKey =
-        ActionLookupData.createUnshareable(WorkspaceStatusValue.BUILD_INFO_KEY, 0);
-    for (Artifact output : action.getOutputs()) {
-      ((DerivedArtifact) output).setGeneratingActionKey(generatingActionKey);
+    init {
+        this.workspaceStatusActionFactory = workspaceStatusActionFactory
     }
 
-    return new WorkspaceStatusValue(action);
-  }
+    @Throws(java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey?, env: com.google.devtools.build.skyframe.SkyFunction.Environment?): SkyValue? {
+        com.google.common.base.Preconditions.checkState(
+            WorkspaceStatusValue.Companion.BUILD_INFO_KEY == skyKey, WorkspaceStatusValue.Companion.BUILD_INFO_KEY
+        )
+        val action: WorkspaceStatusAction = workspaceStatusActionFactory.get()
+
+        val generatingActionKey: ActionLookupData? =
+            ActionLookupData.createUnshareable(WorkspaceStatusValue.Companion.BUILD_INFO_KEY, 0)
+        for (output in action.getOutputs()) {
+            (output as DerivedArtifact).setGeneratingActionKey(generatingActionKey)
+        }
+
+        return WorkspaceStatusValue(action)
+    }
 }

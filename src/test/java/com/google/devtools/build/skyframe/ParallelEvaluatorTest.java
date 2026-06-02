@@ -1376,8 +1376,8 @@ public class ParallelEvaluatorTest {
     ErrorInfo errorInfo = eval(false, ImmutableList.of(aKey)).getError();
     assertThat(errorInfo.getException()).isNull();
     CycleInfo cycleInfo = Iterables.getOnlyElement(errorInfo.getCycleInfo());
-    assertThat(cycleInfo.getCycle()).containsExactly(aKey, bKey).inOrder();
-    assertThat(cycleInfo.getPathToCycle()).isEmpty();
+    assertThat(cycleInfo.cycle).containsExactly(aKey, bKey).inOrder();
+    assertThat(cycleInfo.pathToCycle).isEmpty();
   }
 
   @Test
@@ -1394,8 +1394,8 @@ public class ParallelEvaluatorTest {
     ErrorInfo errorInfo = eval(false, ImmutableList.of(topKey)).getError();
     assertThat(errorInfo.getException()).isNull();
     CycleInfo cycleInfo = Iterables.getOnlyElement(errorInfo.getCycleInfo());
-    assertThat(cycleInfo.getCycle()).containsExactly(aKey, bKey).inOrder();
-    assertThat(cycleInfo.getPathToCycle()).containsExactly(topKey, midKey).inOrder();
+    assertThat(cycleInfo.cycle).containsExactly(aKey, bKey).inOrder();
+    assertThat(cycleInfo.pathToCycle).containsExactly(topKey, midKey).inOrder();
   }
 
   @Test
@@ -1410,8 +1410,8 @@ public class ParallelEvaluatorTest {
     ErrorInfo errorInfo = eval(false, ImmutableList.of(topKey)).getError();
     assertThat(errorInfo.getException()).isNull();
     CycleInfo cycleInfo = Iterables.getOnlyElement(errorInfo.getCycleInfo());
-    assertThat(cycleInfo.getCycle()).containsExactly(aKey).inOrder();
-    assertThat(cycleInfo.getPathToCycle()).containsExactly(topKey, midKey).inOrder();
+    assertThat(cycleInfo.cycle).containsExactly(aKey).inOrder();
+    assertThat(cycleInfo.pathToCycle).containsExactly(topKey, midKey).inOrder();
   }
 
   @Test
@@ -1433,8 +1433,8 @@ public class ParallelEvaluatorTest {
     assertThat(result.get(topKey)).isNull();
     ErrorInfo errorInfo = result.getError(topKey);
     CycleInfo cycleInfo = Iterables.getOnlyElement(errorInfo.getCycleInfo());
-    assertThat(cycleInfo.getCycle()).containsExactly(aKey, bKey).inOrder();
-    assertThat(cycleInfo.getPathToCycle()).containsExactly(topKey, midKey).inOrder();
+    assertThat(cycleInfo.cycle).containsExactly(aKey, bKey).inOrder();
+    assertThat(cycleInfo.pathToCycle).containsExactly(topKey, midKey).inOrder();
   }
 
   @Test
@@ -1537,8 +1537,8 @@ public class ParallelEvaluatorTest {
     assertThat(result.get(topKey)).isNull();
     ErrorInfo errorInfo = result.getError(topKey);
     CycleInfo cycleInfo = Iterables.getOnlyElement(errorInfo.getCycleInfo());
-    assertThat(cycleInfo.getCycle()).containsExactly(aKey, bKey).inOrder();
-    assertThat(cycleInfo.getPathToCycle()).containsExactly(topKey).inOrder();
+    assertThat(cycleInfo.cycle).containsExactly(aKey, bKey).inOrder();
+    assertThat(cycleInfo.pathToCycle).containsExactly(topKey).inOrder();
   }
 
   /** Regression test: "value cannot be ready in a cycle". */
@@ -1555,8 +1555,8 @@ public class ParallelEvaluatorTest {
     assertThat(result.get(aKey)).isNull();
     ErrorInfo errorInfo = result.getError(aKey);
     CycleInfo cycleInfo = Iterables.getOnlyElement(errorInfo.getCycleInfo());
-    assertThat(cycleInfo.getCycle()).containsExactly(zKey).inOrder();
-    assertThat(cycleInfo.getPathToCycle()).containsExactly(aKey).inOrder();
+    assertThat(cycleInfo.cycle).containsExactly(zKey).inOrder();
+    assertThat(cycleInfo.pathToCycle).containsExactly(aKey).inOrder();
   }
 
   /** Regression test: "value cannot be ready in a cycle". */
@@ -1575,8 +1575,8 @@ public class ParallelEvaluatorTest {
     assertThat(result.get(aKey)).isNull();
     ErrorInfo errorInfo = result.getError(aKey);
     CycleInfo cycleInfo = Iterables.getOnlyElement(errorInfo.getCycleInfo());
-    assertThat(cycleInfo.getCycle()).containsExactly(bKey, dKey).inOrder();
-    assertThat(cycleInfo.getPathToCycle()).containsExactly(aKey).inOrder();
+    assertThat(cycleInfo.cycle).containsExactly(bKey, dKey).inOrder();
+    assertThat(cycleInfo.pathToCycle).containsExactly(aKey).inOrder();
   }
 
   /** Regression test: "value cannot be ready in a cycle". */
@@ -1610,8 +1610,8 @@ public class ParallelEvaluatorTest {
     assertThat(result.get(aKey)).isNull();
     assertThat(result.getError(aKey).getException()).isNotNull();
     CycleInfo cycleInfo = Iterables.getOnlyElement(result.getError(aKey).getCycleInfo());
-    assertThat(cycleInfo.getCycle()).containsExactly(bKey).inOrder();
-    assertThat(cycleInfo.getPathToCycle()).containsExactly(aKey).inOrder();
+    assertThat(cycleInfo.cycle).containsExactly(bKey).inOrder();
+    assertThat(cycleInfo.pathToCycle).containsExactly(aKey).inOrder();
   }
 
   @Test
@@ -1666,9 +1666,9 @@ public class ParallelEvaluatorTest {
     EvaluationResult<StringValue> result = eval(/* keepGoing= */ true, ImmutableList.of(topKey));
     assertThat(result.get(topKey)).isNull();
     CycleInfo cycleInfo = Iterables.getOnlyElement(result.getError(topKey).getCycleInfo());
-    assertThat(cycleInfo.getCycle()).hasSize(1);
-    assertThat(cycleInfo.getPathToCycle()).hasSize(3);
-    assertThat(cycleInfo.getPathToCycle().subList(0, 2)).containsExactly(topKey, midKey).inOrder();
+    assertThat(cycleInfo.cycle).hasSize(1);
+    assertThat(cycleInfo.pathToCycle).hasSize(3);
+    assertThat(cycleInfo.pathToCycle.subList(0, 2)).containsExactly(topKey, midKey).inOrder();
   }
 
   /**
@@ -1680,11 +1680,11 @@ public class ParallelEvaluatorTest {
     assertThat(Iterables.size(errorInfo.getCycleInfo())).isLessThan(50);
     boolean foundSelfEdge = false;
     for (CycleInfo cycle : errorInfo.getCycleInfo()) {
-      assertThat(cycle.getCycle()).hasSize(1); // Self-edge.
-      if (!Iterables.isEmpty(cycle.getPathToCycle())) {
-        assertThat(cycle.getPathToCycle()).containsExactly(topKey).inOrder();
+      assertThat(cycle.cycle).hasSize(1); // Self-edge.
+      if (!Iterables.isEmpty(cycle.pathToCycle)) {
+        assertThat(cycle.pathToCycle).containsExactly(topKey).inOrder();
       } else {
-        assertThat(cycle.getCycle()).containsExactly(topKey).inOrder();
+        assertThat(cycle.cycle).containsExactly(topKey).inOrder();
         foundSelfEdge = true;
       }
     }
@@ -1728,8 +1728,8 @@ public class ParallelEvaluatorTest {
         .that(Iterables.size(errorInfo.getCycleInfo()))
         .isEqualTo(1);
     CycleInfo cycleInfo = Iterables.getOnlyElement(errorInfo.getCycleInfo());
-    assertThat(cycleInfo.getCycle()).containsExactly(lastSelfKey);
-    assertThat(cycleInfo.getPathToCycle()).isEmpty();
+    assertThat(cycleInfo.cycle).containsExactly(lastSelfKey);
+    assertThat(cycleInfo.pathToCycle).isEmpty();
 
     // Check firstSelfKey. It should not have discovered its own self-edge, because there were too
     // many other values before it in the queue.
@@ -1909,8 +1909,8 @@ public class ParallelEvaluatorTest {
     assertThat(result.errorMap().keySet()).containsExactly(topKey);
     Iterable<CycleInfo> cycleInfos = result.getError(topKey).getCycleInfo();
     CycleInfo cycleInfo = Iterables.getOnlyElement(cycleInfos);
-    assertThat(cycleInfo.getPathToCycle()).containsExactly(topKey);
-    assertThat(cycleInfo.getCycle()).containsExactly(midKey, cycleKey);
+    assertThat(cycleInfo.pathToCycle).containsExactly(topKey);
+    assertThat(cycleInfo.cycle).containsExactly(midKey, cycleKey);
   }
 
   /**
@@ -2021,8 +2021,8 @@ public class ParallelEvaluatorTest {
     Iterable<CycleInfo> cycleInfos = result.getError(topKey).getCycleInfo();
     assertThat(cycleInfos).isNotEmpty();
     CycleInfo cycleInfo = Iterables.getOnlyElement(cycleInfos);
-    assertThat(cycleInfo.getPathToCycle()).containsExactly(topKey);
-    assertThat(cycleInfo.getCycle()).containsExactly(midKey, cycleKey);
+    assertThat(cycleInfo.pathToCycle).containsExactly(topKey);
+    assertThat(cycleInfo.cycle).containsExactly(midKey, cycleKey);
   }
 
   /**
@@ -2581,7 +2581,7 @@ public class ParallelEvaluatorTest {
     ErrorInfo errorInfo = evalValueInError(grandparentKey);
     List<ImmutableList<SkyKey>> cycles = new ArrayList<>();
     for (CycleInfo cycleInfo : errorInfo.getCycleInfo()) {
-      cycles.add(cycleInfo.getCycle());
+      cycles.add(cycleInfo.cycle);
     }
     // Skyframe doesn't automatically dedupe cycles that are the same except for entry point.
     assertThat(cycles).hasSize(2);

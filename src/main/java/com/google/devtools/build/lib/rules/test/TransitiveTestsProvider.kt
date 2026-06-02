@@ -11,15 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.test
 
-package com.google.devtools.build.lib.rules.test;
-
-import com.google.devtools.build.lib.analysis.TransitiveInfoProvider;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
+import com.google.devtools.build.lib.analysis.TransitiveInfoProvider
 
 /**
  * Marker transitive info provider for test_suite rules to recognize one another.
  */
-@Immutable
-public final class TransitiveTestsProvider implements TransitiveInfoProvider {
-}
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+class TransitiveTestsProvider : TransitiveInfoProvider

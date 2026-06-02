@@ -11,116 +11,117 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.toolchains
 
-package com.google.devtools.build.lib.skyframe.toolchains;
-
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.base.MoreObjects;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Objects;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * A value which represents every execution platform known to Bazel and available to run actions.
- *
+ * 
  * @param rejectedPlatforms Any execution platforms that were rejected, along with a reason. The
- *     keys are the platform label, and the value is the rejection reason. Only non-null if {@link
- *     RegisteredExecutionPlatformsValue.Key#debug} is {@code true}.
+ * keys are the platform label, and the value is the rejection reason. Only non-null if [     ][RegisteredExecutionPlatformsValue.Key.debug] is `true`.
  */
 @AutoCodec
-public record RegisteredExecutionPlatformsValue(
-    ImmutableList<ConfiguredTargetKey> registeredExecutionPlatformKeys,
-    @Nullable ImmutableMap<Label, String> rejectedPlatforms)
-    implements SkyValue {
-  public RegisteredExecutionPlatformsValue {
-    requireNonNull(registeredExecutionPlatformKeys, "registeredExecutionPlatformKeys");
-  }
-
-  /** Returns the {@link SkyKey} for {@link RegisteredExecutionPlatformsValue}s. */
-  public static SkyKey key(BuildConfigurationKey configurationKey, boolean debug) {
-    return Key.of(configurationKey, debug);
-  }
-
-  /** {@link SkyKey} implementation used for {@link RegisteredExecutionPlatformsFunction}. */
-  @AutoCodec
-  @VisibleForSerialization
-  public static class Key implements SkyKey {
-    private static final SkyKeyInterner<Key> interner = SkyKey.newInterner();
-
-    private final BuildConfigurationKey configurationKey;
-    private final boolean debug;
-
-    private Key(BuildConfigurationKey configurationKey, boolean debug) {
-      this.configurationKey = configurationKey;
-      this.debug = debug;
-    }
-
-    private static Key of(BuildConfigurationKey configurationKey, boolean debug) {
-      return interner.intern(new Key(configurationKey, debug));
-    }
-
+class RegisteredExecutionPlatformsValue(
+    registeredExecutionPlatformKeys: com.google.common.collect.ImmutableList<ConfiguredTargetKey?>?,
+    rejectedPlatforms: com.google.common.collect.ImmutableMap<Label?, String?>?
+) : SkyValue {
+    /** [SkyKey] implementation used for [RegisteredExecutionPlatformsFunction].  */
+    @AutoCodec
     @VisibleForSerialization
-    @AutoCodec.Interner
-    static Key intern(Key key) {
-      return interner.intern(key);
+    class Key private constructor(configurationKey: BuildConfigurationKey?, debug: Boolean) : SkyKey {
+        private val configurationKey: BuildConfigurationKey?
+        private val debug: Boolean
+
+        init {
+            this.configurationKey = configurationKey
+            this.debug = debug
+        }
+
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.REGISTERED_EXECUTION_PLATFORMS
+        }
+
+        fun configurationKey(): BuildConfigurationKey? {
+            return configurationKey
+        }
+
+        fun debug(): Boolean {
+            return debug
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            if (obj !is Key) {
+                return false
+            }
+            return this.configurationKey == obj.configurationKey
+                    && this.debug == obj.debug
+        }
+
+        override fun hashCode(): Int {
+            return java.util.Objects.hash(configurationKey, debug)
+        }
+
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper("RegisteredExecutionPlatformsValue.Key")
+                .add("configurationKey", configurationKey())
+                .add("debug", debug())
+                .toString()
+        }
+
+        val skyKeyInterner: SkyKeyInterner<Key?>
+            get() = com.google.devtools.build.lib.skyframe.toolchains.RegisteredExecutionPlatformsValue.Key.Companion.interner
+
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
+
+            private fun of(configurationKey: BuildConfigurationKey?, debug: Boolean): Key {
+                return com.google.devtools.build.lib.skyframe.toolchains.RegisteredExecutionPlatformsValue.Key.Companion.interner.intern(
+                    com.google.devtools.build.lib.skyframe.toolchains.RegisteredExecutionPlatformsValue.Key(
+                        configurationKey,
+                        debug
+                    )
+                )
+            }
+
+            @VisibleForSerialization
+            @AutoCodec.Interner
+            fun intern(key: Key?): Key {
+                return com.google.devtools.build.lib.skyframe.toolchains.RegisteredExecutionPlatformsValue.Key.Companion.interner.intern(
+                    key
+                )
+            }
+        }
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.REGISTERED_EXECUTION_PLATFORMS;
+    val registeredExecutionPlatformKeys: com.google.common.collect.ImmutableList<ConfiguredTargetKey?>?
+    val rejectedPlatforms: com.google.common.collect.ImmutableMap<Label?, String?>?
+
+    init {
+        this.rejectedPlatforms = rejectedPlatforms
+        this.registeredExecutionPlatformKeys = registeredExecutionPlatformKeys
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableList<ConfiguredTargetKey?>?>(
+            registeredExecutionPlatformKeys,
+            "registeredExecutionPlatformKeys"
+        )
     }
 
-    BuildConfigurationKey configurationKey() {
-      return configurationKey;
-    }
+    companion object {
+        /** Returns the [SkyKey] for [RegisteredExecutionPlatformsValue]s.  */
+        fun key(configurationKey: BuildConfigurationKey?, debug: Boolean): SkyKey {
+            return com.google.devtools.build.lib.skyframe.toolchains.RegisteredExecutionPlatformsValue.Key.Companion.of(
+                configurationKey,
+                debug
+            )
+        }
 
-    boolean debug() {
-      return debug;
+        fun create(
+            registeredExecutionPlatformKeys: com.google.common.collect.ImmutableList<ConfiguredTargetKey?>?,
+            rejectedPlatforms: com.google.common.collect.ImmutableMap<Label?, String?>?
+        ): RegisteredExecutionPlatformsValue {
+            return RegisteredExecutionPlatformsValue(
+                registeredExecutionPlatformKeys, rejectedPlatforms
+            )
+        }
     }
-
-    @Override
-    public boolean equals(Object obj) {
-      if (!(obj instanceof Key that)) {
-        return false;
-      }
-      return Objects.equals(this.configurationKey, that.configurationKey)
-          && this.debug == that.debug;
-    }
-
-    @Override
-    public int hashCode() {
-      return Objects.hash(configurationKey, debug);
-    }
-
-    @Override
-    public String toString() {
-      return MoreObjects.toStringHelper("RegisteredExecutionPlatformsValue.Key")
-          .add("configurationKey", configurationKey())
-          .add("debug", debug())
-          .toString();
-    }
-
-    @Override
-    public final SkyKeyInterner<Key> getSkyKeyInterner() {
-      return interner;
-    }
-  }
-
-  static RegisteredExecutionPlatformsValue create(
-      ImmutableList<ConfiguredTargetKey> registeredExecutionPlatformKeys,
-      ImmutableMap<Label, String> rejectedPlatforms) {
-    return new RegisteredExecutionPlatformsValue(
-        registeredExecutionPlatformKeys, rejectedPlatforms);
-  }
 }

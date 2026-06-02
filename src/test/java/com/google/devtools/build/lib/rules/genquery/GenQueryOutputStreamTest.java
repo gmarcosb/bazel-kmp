@@ -106,7 +106,7 @@ public class GenQueryOutputStreamTest {
       gzipDataOut.finish();
       ByteString dataCompressedInByteString = compressedDataBytesOut.toByteString();
 
-      assertThat(result.getBytes()).isEqualTo(dataCompressedInByteString);
+      assertThat(result.bytes).isEqualTo(dataCompressedInByteString);
 
       Fingerprint actualFingerprint = new Fingerprint();
       result.fingerprint(actualFingerprint);
@@ -119,7 +119,7 @@ public class GenQueryOutputStreamTest {
       result.writeTo(bytesOut);
       assertThat(bytesOut.toByteArray()).isEqualTo(dataCompressedInByteString.toByteArray());
     } else {
-      assertThat(result.getBytes()).isEqualTo(ByteString.copyFromUtf8(data));
+      assertThat(result.bytes).isEqualTo(ByteString.copyFromUtf8(data));
       assertThat(result.size()).isEqualTo(data.length());
 
       Fingerprint actualFingerprint = new Fingerprint();

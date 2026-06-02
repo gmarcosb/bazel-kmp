@@ -307,7 +307,7 @@ public final class RecursiveFilesystemTraversalFunctionTest extends FoundationTe
         DirectTraversalRoot root, boolean skipTestingForSubpackage) {
       return new AutoValue_RecursiveFilesystemTraversalFunctionTest_BasicTraversalRequest(
           root,
-          isRootGenerated(),
+              isRootGenerated,
           strictOutputFiles(),
           skipTestingForSubpackage,
           emitEmptyDirectoryNodes());
@@ -344,7 +344,7 @@ public final class RecursiveFilesystemTraversalFunctionTest extends FoundationTe
     for (ResolvedFile act : result.getTransitiveFiles().toList()) {
       // We can't compare  directly, since metadata would be different, so we compare
       // by comparing the results of public method calls..
-      nameToActualResolvedFiles.put(act.getNameInSymlinkTree(), act);
+      nameToActualResolvedFiles.put(act.nameInSymlinkTree, act);
     }
     assertExpectedResolvedFilesPresent(nameToActualResolvedFiles, expectedFilesIgnoringMetadata);
     return result;
@@ -362,9 +362,9 @@ public final class RecursiveFilesystemTraversalFunctionTest extends FoundationTe
         expectedFilesIgnoringMetadata.length,
         nameToActualResolvedFiles.size());
     for (ResolvedFile expected : expectedFilesIgnoringMetadata) {
-      ResolvedFile actual = nameToActualResolvedFiles.get(expected.getNameInSymlinkTree());
-      assertEquals(expected.getType(), actual.getType());
-      assertEquals(expected.getPath(), actual.getPath());
+      ResolvedFile actual = nameToActualResolvedFiles.get(expected.nameInSymlinkTree);
+      assertEquals(expected.type, actual.type);
+      assertEquals(expected.path, actual.path);
     }
   }
 
@@ -885,7 +885,7 @@ public final class RecursiveFilesystemTraversalFunctionTest extends FoundationTe
 
     // Change the mtime of the file but not the digest. See that the value is *not* rebuilt.
     TimestampGranularityUtils.waitForTimestampGranularity(
-        path.asPath().stat().getLastChangeTime(), OutErr.SYSTEM_OUT_ERR);
+            path.asPath().stat().lastChangeTime, OutErr.SYSTEM_OUT_ERR);
     path.asPath().setLastModifiedTime(System.currentTimeMillis());
     RecursiveFilesystemTraversalValue v2 = traverseAndAssertFiles(params, expected);
     assertThat(v2).isEqualTo(v1);
@@ -903,7 +903,7 @@ public final class RecursiveFilesystemTraversalFunctionTest extends FoundationTe
     EvaluationResult<SkyValue> result = eval(key);
     assertThat(result.hasError()).isTrue();
     ErrorInfo error = result.getError(key);
-    assertThat(error.isTransitivelyTransient()).isFalse();
+    assertThat(error.isTransitivelyTransient).isFalse();
     assertThat(error.getException())
         .hasMessageThat()
         .contains("Generated directory a/b/c conflicts with package under the same path.");
@@ -919,7 +919,7 @@ public final class RecursiveFilesystemTraversalFunctionTest extends FoundationTe
     assertThat(result.hasError()).isTrue();
     ErrorInfo error = result.getError(key);
     assertThat(error.getException()).isInstanceOf(RecursiveFilesystemTraversalException.class);
-    assertThat(((RecursiveFilesystemTraversalException) error.getException()).getType())
+    assertThat(((RecursiveFilesystemTraversalException) error.getException()).type)
         .isEqualTo(RecursiveFilesystemTraversalException.Type.SYMLINK_CYCLE_OR_INFINITE_EXPANSION);
     assertThat(error.getException()).hasMessageThat().contains("Infinite symlink expansion");
   }
@@ -939,7 +939,7 @@ public final class RecursiveFilesystemTraversalFunctionTest extends FoundationTe
     assertThat(result.hasError()).isTrue();
     ErrorInfo error = result.getError(key);
     assertThat(error.getException()).isInstanceOf(RecursiveFilesystemTraversalException.class);
-    assertThat(((RecursiveFilesystemTraversalException) error.getException()).getType())
+    assertThat(((RecursiveFilesystemTraversalException) error.getException()).type)
         .isEqualTo(RecursiveFilesystemTraversalException.Type.SYMLINK_CYCLE_OR_INFINITE_EXPANSION);
     assertThat(error.getException()).hasMessageThat().contains("Symlink cycle");
   }
@@ -1006,8 +1006,8 @@ public final class RecursiveFilesystemTraversalFunctionTest extends FoundationTe
     ResolvedFile resolvedFile = value.getResolvedRoot().get();
     ResolvedFile strictResolvedFile = strictValue.getResolvedRoot().get();
 
-    assertThat(resolvedFile.getMetadata()).isInstanceOf(FileArtifactValue.class);
-    assertThat(strictResolvedFile.getMetadata()).isInstanceOf(FileArtifactValue.class);
+    assertThat(resolvedFile.metadata).isInstanceOf(FileArtifactValue.class);
+    assertThat(strictResolvedFile.metadata).isInstanceOf(FileArtifactValue.class);
   }
 
   @Test
@@ -1057,7 +1057,7 @@ public final class RecursiveFilesystemTraversalFunctionTest extends FoundationTe
 
     RegularFileStateValueWithContentsProxy withoutDigest =
         new RegularFileStateValueWithContentsProxy(
-            status.getSize(), /* contentsProxy= */ FileContentsProxy.create(status));
+                status.size, /* contentsProxy= */ FileContentsProxy.create(status));
     HasDigest withoutDigestResult =
         RecursiveFilesystemTraversalFunction.withDigest(
             withoutDigest, rootedPath.asPath(), SyscallCache.NO_CACHE);
@@ -1088,7 +1088,7 @@ public final class RecursiveFilesystemTraversalFunctionTest extends FoundationTe
     assertThat(result.hasError()).isTrue();
     ErrorInfo error = result.getError(key);
     assertThat(error.getException()).isInstanceOf(RecursiveFilesystemTraversalException.class);
-    assertThat(((RecursiveFilesystemTraversalException) error.getException()).getType())
+    assertThat(((RecursiveFilesystemTraversalException) error.getException()).type)
         .isEqualTo(RecursiveFilesystemTraversalException.Type.INCONSISTENT_FILESYSTEM);
     assertThat(error.getException())
         .hasMessageThat()

@@ -11,124 +11,115 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkdebug.module
 
-package com.google.devtools.build.lib.starlarkdebug.module;
+import com.google.devtools.build.lib.runtime.BlazeModule
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.starlarkdebug.server.StarlarkDebugServer;
-import com.google.devtools.build.lib.starlarkdebug.server.StarlarkDebugServer.DebugCallback;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.common.options.OptionsBase;
-import java.io.IOException;
-import java.util.Objects;
-import java.util.concurrent.CountDownLatch;
-import net.starlark.java.eval.Debug;
-
-/** Blaze module for setting up Starlark debugging. */
-public final class StarlarkDebuggerModule extends BlazeModule {
-  @Override
-  public void beforeCommand(CommandEnvironment env) {
-    // Conditionally enable debugging
-    StarlarkDebuggerOptions buildOptions =
-        env.getOptions().getOptions(StarlarkDebuggerOptions.class);
-    boolean enabled = buildOptions != null && buildOptions.getDebugStarlark();
-    if (enabled) {
-      initializeDebugging(
-          env,
-          buildOptions.getDebugServerPort(),
-          buildOptions.getVerboseLogs(),
-          buildOptions.getResetAnalysis());
-    } else {
-      disableDebugging();
+/** Blaze module for setting up Starlark debugging.  */
+class StarlarkDebuggerModule : BlazeModule() {
+    public override fun beforeCommand(env: CommandEnvironment) {
+        // Conditionally enable debugging
+        val buildOptions: StarlarkDebuggerOptions? =
+            env.getOptions().getOptions(StarlarkDebuggerOptions::class.java)
+        val enabled = buildOptions != null && buildOptions.getDebugStarlark()
+        if (enabled) {
+            initializeDebugging(
+                env,
+                buildOptions.getDebugServerPort(),
+                buildOptions.getVerboseLogs(),
+                buildOptions.getResetAnalysis()
+            )
+        } else {
+            disableDebugging()
+        }
     }
-  }
 
-  @Override
-  public void afterCommand() {
-    disableDebugging();
-  }
-
-  @Override
-  public Iterable<Class<? extends OptionsBase>> getCommandOptions(String commandName) {
-    return commandName.equals("build")
-        ? ImmutableList.of(StarlarkDebuggerOptions.class)
-        : ImmutableList.of();
-  }
-
-  @Override
-  public void blazeShutdown() {
-    disableDebugging();
-  }
-
-  @Override
-  public void blazeShutdownOnCrash(DetailedExitCode exitCode) {
-    disableDebugging();
-  }
-
-  private static void initializeDebugging(
-      CommandEnvironment env, int debugPort, boolean verboseLogs, boolean resetAnalysis) {
-    try {
-      DebugCallback callback =
-          resetAnalysis ? getBreakpointInvalidatingCallback(env) : DebugCallback.noop();
-      StarlarkDebugServer server =
-          StarlarkDebugServer.createAndWaitForConnection(
-              env.getReporter(), debugPort, verboseLogs, callback);
-      Debug.setDebugger(server);
-      // we need to block otherwise the build (i.e. analysis) may start and the request to set
-      // breakpoints may lose the race to delete skyframe nodes
-      callback.maybeBlockBeforeStart();
-    } catch (IOException | InterruptedException e) {
-      env.getReporter()
-          .handle(Event.error("Error while setting up the debug server: " + e.getMessage()));
+    public override fun afterCommand() {
+        disableDebugging()
     }
-  }
 
-  private static DebugCallback getBreakpointInvalidatingCallback(CommandEnvironment env) {
-    return new DebugCallback() {
-      private final CountDownLatch latch = new CountDownLatch(1);
+    public override fun getCommandOptions(commandName: String): Iterable<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?> {
+        return if (commandName == "build")
+            com.google.common.collect.ImmutableList.of<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?>(
+                StarlarkDebuggerOptions::class.java
+            )
+        else
+            com.google.common.collect.ImmutableList.of<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?>()
+    }
 
-      @Override
-      public void beforeDebuggingStart(ImmutableSet<String> breakPointPaths) {
-        handle(Event.debug("resetting analysis for: " + breakPointPaths));
-        // we delete the FILE nodes for all paths with breakpoints to force re-analysis. Ideally,
-        // we should perhaps invalidate bzl-compile (for .bzl files) and package(??) (for BUILD
-        // files) but computing the right arguments for those skykeys is a lot harder.
-        env.getSkyframeExecutor()
-            .getEvaluator()
-            .delete(
-                skyKey ->
-                    Objects.equals(skyKey.functionName(), SkyFunctions.FILE)
-                        && breakPointPaths.contains(
-                            ((RootedPath) skyKey.argument()).asPath().toString()));
-        handle(Event.debug("analysis reset complete"));
-        // unblock the build
-        latch.countDown();
-      }
+    public override fun blazeShutdown() {
+        disableDebugging()
+    }
 
-      @Override
-      public void maybeBlockBeforeStart() throws InterruptedException {
-        handle(Event.debug("waiting for breakpoints before executing build"));
-        latch.await();
-      }
+    public override fun blazeShutdownOnCrash(exitCode: DetailedExitCode?) {
+        disableDebugging()
+    }
 
-      @Override
-      public void onClose() {
-        latch.countDown();
-      }
+    companion object {
+        private fun initializeDebugging(
+            env: CommandEnvironment, debugPort: Int, verboseLogs: Boolean, resetAnalysis: Boolean
+        ) {
+            try {
+                val callback: DebugCallback =
+                    if (resetAnalysis) getBreakpointInvalidatingCallback(env) else DebugCallback.Companion.noop()
+                val server: StarlarkDebugServer =
+                    StarlarkDebugServer.Companion.createAndWaitForConnection(
+                        env.getReporter(), debugPort, verboseLogs, callback
+                    )
+                net.starlark.java.eval.Debug.setDebugger(server)
+                // we need to block otherwise the build (i.e. analysis) may start and the request to set
+                // breakpoints may lose the race to delete skyframe nodes
+                callback.maybeBlockBeforeStart()
+            } catch (e: IOException) {
+                env.getReporter()
+                    .handle(com.google.devtools.build.lib.events.Event.error("Error while setting up the debug server: " + e.message))
+            } catch (e: java.lang.InterruptedException) {
+                env.getReporter()
+                    .handle(com.google.devtools.build.lib.events.Event.error("Error while setting up the debug server: " + e.message))
+            }
+        }
 
-      private void handle(Event event) {
-        env.getReporter().handle(event);
-      }
-    };
-  }
+        private fun getBreakpointInvalidatingCallback(env: CommandEnvironment): DebugCallback {
+            return object : DebugCallback {
+                private val latch: CountDownLatch = CountDownLatch(1)
 
-  private static void disableDebugging() {
-    Debug.setDebugger(null);
-  }
+                override fun beforeDebuggingStart(breakPointPaths: com.google.common.collect.ImmutableSet<String?>) {
+                    handle(com.google.devtools.build.lib.events.Event.debug("resetting analysis for: " + breakPointPaths))
+                    // we delete the FILE nodes for all paths with breakpoints to force re-analysis. Ideally,
+                    // we should perhaps invalidate bzl-compile (for .bzl files) and package(??) (for BUILD
+                    // files) but computing the right arguments for those skykeys is a lot harder.
+                    env.getSkyframeExecutor()
+                        .getEvaluator()
+                        .delete(
+                            { skyKey ->
+                                skyKey.functionName() == SkyFunctions.FILE
+                                        && breakPointPaths.contains(
+                                    (skyKey.argument() as RootedPath).asPath().toString()
+                                )
+                            })
+                    handle(com.google.devtools.build.lib.events.Event.debug("analysis reset complete"))
+                    // unblock the build
+                    latch.countDown()
+                }
+
+                @Throws(java.lang.InterruptedException::class)
+                override fun maybeBlockBeforeStart() {
+                    handle(com.google.devtools.build.lib.events.Event.debug("waiting for breakpoints before executing build"))
+                    latch.await()
+                }
+
+                override fun onClose() {
+                    latch.countDown()
+                }
+
+                fun handle(event: com.google.devtools.build.lib.events.Event?) {
+                    env.getReporter().handle(event)
+                }
+            }
+        }
+
+        private fun disableDebugging() {
+            net.starlark.java.eval.Debug.setDebugger(null)
+        }
+    }
 }

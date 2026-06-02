@@ -12,52 +12,45 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-package com.google.devtools.build.lib.vfs.inmemoryfs;
+package com.google.devtools.build.lib.vfs.inmemoryfs
 
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.channels.SeekableByteChannel;
+import com.google.devtools.build.lib.clock.Clock
+import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+import java.io.OutputStream
 
 /**
  * This interface represents a mutable file stored in an InMemoryFileSystem.
  */
 @ThreadSafe
-public abstract class FileInfo extends InMemoryContentInfo {
+abstract class FileInfo protected constructor(clock: Clock?) : InMemoryContentInfo(clock) {
+    override fun isDirectory(): Boolean {
+        return false
+    }
 
-  protected FileInfo(Clock clock) {
-    super(clock);
-  }
+    override fun isSymbolicLink(): Boolean {
+        return false
+    }
 
-  @Override
-  public boolean isDirectory() {
-    return false;
-  }
+    override fun isFile(): Boolean {
+        return true
+    }
 
-  @Override
-  public boolean isSymbolicLink() {
-    return false;
-  }
+    override fun isSpecialFile(): Boolean {
+        return false
+    }
 
-  @Override
-  public boolean isFile() {
-    return true;
-  }
+    @Throws(IOException::class)
+    abstract fun getOutputStream(append: Boolean): OutputStream?
 
-  @Override
-  public boolean isSpecialFile() {
-    return false;
-  }
+    @get:Throws(IOException::class)
+    abstract val inputStream: InputStream?
 
-  public abstract OutputStream getOutputStream(boolean append) throws IOException;
+    @Throws(IOException::class)
+    abstract fun createReadWriteByteChannel(): SeekableByteChannel?
 
-  public abstract InputStream getInputStream() throws IOException;
+    @Throws(IOException::class)
+    abstract fun getxattr(name: String?): ByteArray?
 
-  public abstract SeekableByteChannel createReadWriteByteChannel() throws IOException;
-
-  public abstract byte[] getxattr(String name) throws IOException;
-
-  public abstract byte[] getFastDigest() throws IOException;
+    @get:Throws(IOException::class)
+    abstract val fastDigest: ByteArray?
 }

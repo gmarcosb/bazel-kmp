@@ -9737,7 +9737,7 @@ r = rule(_r_impl, attrs = { 'dep' : attr.label(aspects = [a])})
     ImmutableList<AspectKey> keysForAspectAOnT3 = getAspectKeys("//test:t3", "//test:defs.bzl%a");
     assertThat(keysForAspectAOnT3).hasSize(1);
 
-    ImmutableList<AspectKey> baseKeys = keysForAspectAOnT3.get(0).getBaseKeys();
+    ImmutableList<AspectKey> baseKeys = keysForAspectAOnT3.get(0).baseKeys;
     assertThat(baseKeys.stream().map(k -> k.getAspectClass().getName()))
         .containsExactly("//test:defs.bzl%b", "//test:defs.bzl%c")
         .inOrder();
@@ -9950,7 +9950,7 @@ r = rule(_r_impl, attrs = { 'dep' : attr.label(aspects = [a])})
     assertThat(aspectNode).isNotNull();
 
     ImmutableList<String> configuredTargetsDeps =
-        stream(Iterables.filter(aspectNode.getDirectDeps(), ConfiguredTargetKey.class))
+        stream(Iterables.filter(aspectNode.directDeps, ConfiguredTargetKey.class))
             .map(k -> k.getLabel().toString())
             .collect(toImmutableList());
     // aspect depends only on its target and its implicit dependencies not the dependencies of its
@@ -9961,7 +9961,7 @@ r = rule(_r_impl, attrs = { 'dep' : attr.label(aspects = [a])})
     assertThat(configuredTargetsDeps).doesNotContain("//test:t4");
 
     ImmutableList<String> aspectsDeps =
-        stream(Iterables.filter(aspectNode.getDirectDeps(), AspectKey.class))
+        stream(Iterables.filter(aspectNode.directDeps, AspectKey.class))
             .map(k -> k.getLabel().toString())
             .collect(toImmutableList());
     // aspect depends on the result of its application on the target deps if it propagates to them
@@ -10004,21 +10004,21 @@ r = rule(_r_impl, attrs = { 'dep' : attr.label(aspects = [a])})
     assertThat(topLevelAspectsNode).isNotNull();
     // top level aspect should not depend on any configured target.
     ImmutableList<String> configuredTargetsDeps =
-        stream(Iterables.filter(topLevelAspectsNode.getDirectDeps(), ConfiguredTargetKey.class))
+        stream(Iterables.filter(topLevelAspectsNode.directDeps, ConfiguredTargetKey.class))
             .map(k -> k.getLabel().toString())
             .collect(toImmutableList());
     assertThat(configuredTargetsDeps).isEmpty();
 
     // top level aspect should not even depend on any build configuration.
     ImmutableList<String> buildConfiguredTargetsDeps =
-        stream(Iterables.filter(topLevelAspectsNode.getDirectDeps(), BuildConfigurationKey.class))
+        stream(Iterables.filter(topLevelAspectsNode.directDeps, BuildConfigurationKey.class))
             .map(k -> k.getCanonicalName())
             .collect(toImmutableList());
     assertThat(buildConfiguredTargetsDeps).hasSize(0);
 
     // top level aspect should depend on the result of aspect's application on the top level target.
     ImmutableList<String> aspectsDeps =
-        stream(Iterables.filter(topLevelAspectsNode.getDirectDeps(), AspectKey.class))
+        stream(Iterables.filter(topLevelAspectsNode.directDeps, AspectKey.class))
             .map(k -> k.getLabel().toString())
             .collect(toImmutableList());
     assertThat(aspectsDeps).containsExactly("//test:t1");
@@ -10167,7 +10167,7 @@ r = rule(_r_impl, attrs = { 'dep' : attr.label(aspects = [a])})
                         .toString()
                         .equals("//test:actual"));
     assertThat(aspectNode).isNotNull();
-    var aspectValue = (AspectValue) aspectNode.getValue();
+    var aspectValue = (AspectValue) aspectNode.value;
     assertThat(aspectValue.getActions()).hasSize(1);
     assertThat(aspectValue.getActions().get(0).getPrimaryOutput().getExecPathString())
         .endsWith("bin/test/actual.label");
@@ -10183,7 +10183,7 @@ r = rule(_r_impl, attrs = { 'dep' : attr.label(aspects = [a])})
                         .toString()
                         .equals("//test:alias_target"));
     assertThat(aspectOnAliasNode).isNotNull();
-    var aspectOnAliasValue = (AspectValue) aspectOnAliasNode.getValue();
+    var aspectOnAliasValue = (AspectValue) aspectOnAliasNode.value;
     assertThat(AspectValue.isForAliasTarget(aspectOnAliasValue)).isTrue();
     assertThat(aspectOnAliasValue.getActions()).isEmpty();
 
@@ -10341,7 +10341,7 @@ r = rule(_r_impl, attrs = { 'dep' : attr.label(aspects = [a])})
             .collect(toImmutableList());
     assertWithMessage(
             "Found multiple entries: %s",
-            matchingEntries.stream().map(e -> e.getKey().toString()).collect(toImmutableList()))
+            matchingEntries.stream().map(e -> e.key.toString()).collect(toImmutableList()))
         .that(matchingEntries.size())
         .isAtMost(1);
     if (matchingEntries.size() == 1) {

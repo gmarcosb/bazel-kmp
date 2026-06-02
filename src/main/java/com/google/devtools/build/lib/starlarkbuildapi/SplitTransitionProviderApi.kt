@@ -11,12 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi
 
-package com.google.devtools.build.lib.starlarkbuildapi;
-
-import net.starlark.java.eval.StarlarkValue;
-
-/** Interface for a type representing a split configuration transition. */
-public interface SplitTransitionProviderApi extends StarlarkValue {
-  // TODO(cparsons): Expose this explicitly to the build API.
-}
+/** Interface for a type representing a split configuration transition.  */
+interface SplitTransitionProviderApi : net.starlark.java.eval.StarlarkValue

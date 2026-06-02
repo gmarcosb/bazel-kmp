@@ -11,20 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.packages.Package;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
 /**
  * Looks up previously loaded packages.
- *
- * <p>Used by {@link ConfiguredTargetFunction} to lookup packages of dependencies.
+ * 
+ * 
+ * Used by [ConfiguredTargetFunction] to lookup packages of dependencies.
  */
-public interface PrerequisitePackageFunction {
-
-  /** Directly retrieves packages of dependencies from Skyframe without adding a dependency edge. */
-  @Nullable // Null if the package not available.
-  Package getExistingPackage(PackageIdentifier id) throws InterruptedException;
+interface PrerequisitePackageFunction {
+    /** Directly retrieves packages of dependencies from Skyframe without adding a dependency edge.  */
+    @Throws(java.lang.InterruptedException::class)
+    fun getExistingPackage(id: PackageIdentifier?): Package?
 }

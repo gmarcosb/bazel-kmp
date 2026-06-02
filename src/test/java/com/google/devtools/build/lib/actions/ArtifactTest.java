@@ -655,14 +655,14 @@ public final class ArtifactTest {
     assertThat(sourceArtifact1.getDirnameForStarlark(semantics)).isEqualTo("path/to/pkg");
 
     FileRootApi mappedSourceRoot1 = sourceArtifact1.getRootForStarlark(semantics);
-    assertThat(mappedSourceRoot1.getExecPathString()).isEqualTo("");
+    assertThat(mappedSourceRoot1.execPathString).isEqualTo("");
 
     assertThat(sourceArtifact2.getExecPathStringForStarlark(semantics))
         .isEqualTo("path/to/pkg/file2");
     assertThat(sourceArtifact2.getDirnameForStarlark(semantics)).isEqualTo("path/to/pkg");
 
     FileRootApi mappedSourceRoot2 = sourceArtifact1.getRootForStarlark(semantics);
-    assertThat(mappedSourceRoot2.getExecPathString()).isEqualTo("");
+    assertThat(mappedSourceRoot2.execPathString).isEqualTo("");
 
     assertThat(outputArtifact1.getExecPathStringForStarlark(semantics))
         .isEqualTo("output/3540078408/path/to/pkg/file1");
@@ -670,7 +670,7 @@ public final class ArtifactTest {
         .isEqualTo("output/3540078408/path/to/pkg");
 
     FileRootApi mappedOutputRoot1 = outputArtifact1.getRootForStarlark(semantics);
-    assertThat(mappedOutputRoot1.getExecPathString()).isEqualTo("output/3540078408");
+    assertThat(mappedOutputRoot1.execPathString).isEqualTo("output/3540078408");
 
     assertThat(outputArtifact2.getExecPathStringForStarlark(semantics))
         .isEqualTo("output/3540078409/path/to/pkg/file2");
@@ -678,7 +678,7 @@ public final class ArtifactTest {
         .isEqualTo("output/3540078409/path/to/pkg");
 
     FileRootApi mappedOutputRoot2 = outputArtifact2.getRootForStarlark(semantics);
-    assertThat(mappedOutputRoot2.getExecPathString()).isEqualTo("output/3540078409");
+    assertThat(mappedOutputRoot2.execPathString).isEqualTo("output/3540078409");
 
     // Starlark equality uses Object#equals.
     // Mapped roots are always distinct from non-mapped roots, even if their paths are equal.

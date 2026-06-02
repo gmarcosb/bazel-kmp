@@ -11,81 +11,82 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.protobuf.CodedInputStream;
-import java.io.IOException;
-import java.util.concurrent.Callable;
+import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.DeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.ObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.ObjectCodec.MemoizationStrategy
+import com.google.protobuf.CodedInputStream
+import java.io.IOException
 
 /**
- * {@link ObjectCodec} that returns a continuation when deserializing.
- *
- * <p>The {@link AsyncDeserializationContext} can defer invoking of the continuation until all
+ * [ObjectCodec] that returns a continuation when deserializing.
+ * 
+ * 
+ * The [AsyncDeserializationContext] can defer invoking of the continuation until all
  * asynchronous dependencies are resolved.
  */
-public abstract class DeferredObjectCodec<T> implements ObjectCodec<T> {
-  /**
-   * A supplier-like object returned when deserializing with this codec.
-   *
-   * <p>Does not include any synchronization. The caller must ensure that {@link #call} is not
-   * called until after all requested sub-values are available.
-   *
-   * <p>This interface should only be used by codec implementations and serialization code.
-   */
-  public interface DeferredValue<T> extends Callable<T> {
-    @Override // to remove the checked exception
-    T call();
-  }
-
-  /**
-   * A no-frills implementation of {@link DeferredValue} that provides a static function to set the
-   * deserialized value. This is for use with {@code
-   * SharedValueDeserializationContext#getSharedValue}.
-   */
-  public static final class SimpleDeferredValue<T> implements DeferredValue<T> {
-    private SimpleDeferredValue() {}
-
-    public static <T> SimpleDeferredValue<T> create() {
-      return new SimpleDeferredValue<>();
+abstract class DeferredObjectCodec<T> : ObjectCodec<T?> {
+    /**
+     * A supplier-like object returned when deserializing with this codec.
+     * 
+     * 
+     * Does not include any synchronization. The caller must ensure that [.call] is not
+     * called until after all requested sub-values are available.
+     * 
+     * 
+     * This interface should only be used by codec implementations and serialization code.
+     */
+    interface DeferredValue<T> : java.util.concurrent.Callable<T?> {
+        override fun call(): T?
     }
 
-    private T t;
+    /**
+     * A no-frills implementation of [DeferredValue] that provides a static function to set the
+     * deserialized value. This is for use with `SharedValueDeserializationContext#getSharedValue`.
+     */
+    class SimpleDeferredValue<T> private constructor() : DeferredValue<T?> {
+        private var t: T? = null
 
-    @Override
-    public T call() {
-      return t;
+        override fun call(): T? {
+            return t
+        }
+
+        companion object {
+            @kotlin.jvm.JvmStatic
+            fun <T> create(): SimpleDeferredValue<T?> {
+                return SimpleDeferredValue<T?>()
+            }
+
+            fun <T> set(dv: SimpleDeferredValue<T?>, obj: Any?) {
+                dv.t = obj as T?
+            }
+        }
     }
 
-    @SuppressWarnings("unchecked")
-    public static <T> void set(SimpleDeferredValue<T> dv, Object obj) {
-      dv.t = (T) obj;
+    val strategy: MemoizationStrategy
+        get() = MemoizationStrategy.MEMOIZE_AFTER
+
+    /** Implementation that adapts this codec for synchronous use.  */
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun deserialize(context: DeserializationContext?, codedIn: CodedInputStream?): T? {
+        return deserializeDeferred(context, codedIn)!!.call()
     }
-  }
 
-  @Override
-  public final MemoizationStrategy getStrategy() {
-    return MemoizationStrategy.MEMOIZE_AFTER;
-  }
-
-  /** Implementation that adapts this codec for synchronous use. */
-  @Override
-  public final T deserialize(DeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    return deserializeDeferred(context, codedIn).call();
-  }
-
-  /**
-   * This differs from {@link #deserialize} by using the narrower {@link
-   * AsyncDeserializationContext} and returning a {@link DeferredValue}.
-   *
-   * <p>This is used in cases where the deserialized object cannot even be constructed before the
-   * children become available, which is common for immutable types.
-   *
-   * <p>{@link DeferredValue#call} is invoked when all child objects are available. These are
-   * completely deserialized except if the child is a reference to a parent. See comment at {@link
-   * AsyncDeserializationContext} for details.
-   */
-  public abstract DeferredValue<? extends T> deserializeDeferred(
-      AsyncDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException;
+    /**
+     * This differs from [.deserialize] by using the narrower [ ] and returning a [DeferredValue].
+     * 
+     * 
+     * This is used in cases where the deserialized object cannot even be constructed before the
+     * children become available, which is common for immutable types.
+     * 
+     * 
+     * [DeferredValue.call] is invoked when all child objects are available. These are
+     * completely deserialized except if the child is a reference to a parent. See comment at [ ] for details.
+     */
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    abstract fun deserializeDeferred(
+        context: AsyncDeserializationContext?, codedIn: CodedInputStream?
+    ): DeferredValue<out T?>?
 }

@@ -11,188 +11,170 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs.inmemoryfs;
+package com.google.devtools.build.lib.vfs.inmemoryfs
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.vfs.FileStatus;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem.InodeOrErrno;
-import javax.annotation.concurrent.GuardedBy;
+import com.google.common.base.Preconditions
+import com.google.devtools.build.lib.clock.Clock
+import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+import javax.annotation.concurrent.GuardedBy
 
 /**
  * This interface defines the function directly supported by the "files" stored in a
  * InMemoryFileSystem. This corresponds to a file or inode in UNIX: it doesn't have a path (it could
  * have many paths due to hard links, or none if it's unlinked, i.e. garbage).
- *
- * <p>This class is thread-safe: instances may be accessed and modified from concurrent threads.
+ * 
+ * 
+ * This class is thread-safe: instances may be accessed and modified from concurrent threads.
  * Subclasses must preserve this property.
  */
 @ThreadSafe
-public abstract non-sealed class InMemoryContentInfo implements FileStatus, InodeOrErrno {
+abstract class InMemoryContentInfo protected constructor(clock: Clock?) : FileStatus, InodeOrErrno {
+    protected val clock: Clock
 
-  protected final Clock clock;
+    /**
+     * Stores the time when the file was last modified. This is atomically updated whenever the file
+     * changes, so all accesses must be synchronized.
+     */
+    @GuardedBy("this")
+    private var lastModifiedTime: Long = 0
 
-  /**
-   * Stores the time when the file was last modified. This is atomically updated whenever the file
-   * changes, so all accesses must be synchronized.
-   */
-  @GuardedBy("this")
-  private long lastModifiedTime;
+    /**
+     * Returns the time when the entity denoted by the current object was last
+     * changed.
+     */
+    /**
+     * Stores the time when the file information was changed. This is atomically updated whenever the
+     * file changes, so all accesses must be synchronized.
+     */
+    @get:kotlin.jvm.Synchronized
+    @GuardedBy("this")
+    var lastChangeTime: Long = 0
+        private set
 
-  /**
-   * Stores the time when the file information was changed. This is atomically updated whenever the
-   * file changes, so all accesses must be synchronized.
-   */
-  @GuardedBy("this")
-  private long lastChangeTime;
+    /** Stores the file's permission bits.  */
+    @get:kotlin.jvm.Synchronized
+    @GuardedBy("this")
+    var permissions: Int = 420
+        private set
 
-  /** Stores the file's permission bits. */
-  @GuardedBy("this")
-  private int permissions = 0644;
+    init {
+        this.clock = Preconditions.checkNotNull<Clock>(clock, "clock")
+        // When we create the file, it is modified.
+        markModificationTime()
+    }
 
-  protected InMemoryContentInfo(Clock clock) {
-    this.clock = checkNotNull(clock, "clock");
-    // When we create the file, it is modified.
-    markModificationTime();
-  }
+    /**
+     * Returns true if the current object is a directory.
+     */
+    abstract val isDirectory: Boolean
 
-  /**
-   * Returns true if the current object is a directory.
-   */
-  @Override
-  public abstract boolean isDirectory();
+    /**
+     * Returns true if the current object is a symbolic link.
+     */
+    abstract val isSymbolicLink: Boolean
 
-  /**
-   * Returns true if the current object is a symbolic link.
-   */
-  @Override
-  public abstract boolean isSymbolicLink();
+    /**
+     * Returns true if the current object is a regular or special file.
+     */
+    abstract val isFile: Boolean
 
-  /**
-   * Returns true if the current object is a regular or special file.
-   */
-  @Override
-  public abstract boolean isFile();
+    /**
+     * Returns true if the current object is a special file.
+     */
+    abstract val isSpecialFile: Boolean
 
-  /**
-   * Returns true if the current object is a special file.
-   */
-  @Override
-  public abstract boolean isSpecialFile();
+    /**
+     * Returns the size of the entity denoted by the current object. For files,
+     * this is the length in bytes, for directories the number of children. The
+     * size of links is unspecified.
+     */
+    abstract val size: Long
 
-  /**
-   * Returns the size of the entity denoted by the current object. For files,
-   * this is the length in bytes, for directories the number of children. The
-   * size of links is unspecified.
-   */
-  @Override
-  public abstract long getSize();
+    /**
+     * Returns the time when the entity denoted by the current object was last
+     * modified.
+     */
+    @kotlin.jvm.Synchronized
+    override fun getLastModifiedTime(): Long {
+        return lastModifiedTime
+    }
 
-  /**
-   * Returns the time when the entity denoted by the current object was last
-   * modified.
-   */
-  @Override
-  public synchronized long getLastModifiedTime() {
-    return lastModifiedTime;
-  }
+    val nodeId: Long
+        /**
+         * Returns the file node id for the given instance, emulated by the
+         * identity hash code.
+         */
+        get() = System.identityHashCode(this).toLong()
 
-  /**
-   * Returns the time when the entity denoted by the current object was last
-   * changed.
-   */
-  @Override
-  public synchronized long getLastChangeTime() {
-    return lastChangeTime;
-  }
+    override fun inodeOrThrow(path: PathFragment?): InMemoryContentInfo {
+        return this
+    }
 
-  /**
-   * Returns the file node id for the given instance, emulated by the
-   * identity hash code.
-   */
-  @Override
-  public long getNodeId() {
-    return System.identityHashCode(this);
-  }
+    /**
+     * Sets the time that denotes when the entity denoted by this object was last
+     * modified.
+     */
+    @kotlin.jvm.Synchronized
+    fun setLastModifiedTime(newTime: Long) {
+        lastModifiedTime = newTime
+        markChangeTime()
+    }
 
-  @Override
-  public final synchronized int getPermissions() {
-    return permissions;
-  }
+    /** Sets the last modification and change times to the current time.  */
+    @kotlin.jvm.Synchronized
+    fun markModificationTime() {
+        lastModifiedTime = clock.currentTimeMillis()
+        lastChangeTime = lastModifiedTime
+    }
 
-  @Override
-  public final InMemoryContentInfo inodeOrThrow(PathFragment path) {
-    return this;
-  }
+    /** Sets the last change time to the current time.  */
+    @kotlin.jvm.Synchronized
+    private fun markChangeTime() {
+        lastChangeTime = clock.currentTimeMillis()
+    }
 
-  /**
-   * Sets the time that denotes when the entity denoted by this object was last
-   * modified.
-   */
-  synchronized void setLastModifiedTime(long newTime) {
-    lastModifiedTime = newTime;
-    markChangeTime();
-  }
+    var isReadable: Boolean
+        /** Returns whether the current file is readable.  */
+        get() = checkPermissions(256)
+        /** Sets whether the current file is readable.  */
+        set(readable) {
+            updatePermissions(256, readable)
+        }
 
-  /** Sets the last modification and change times to the current time. */
-  synchronized void markModificationTime() {
-    lastModifiedTime = clock.currentTimeMillis();
-    lastChangeTime = lastModifiedTime;
-  }
+    var isWritable: Boolean
+        /** Returns whether the current file is writable.  */
+        get() = checkPermissions(128)
+        /** Sets whether the current file is writable.  */
+        set(writable) {
+            updatePermissions(128, writable)
+        }
 
-  /** Sets the last change time to the current time. */
-  private synchronized void markChangeTime() {
-    lastChangeTime = clock.currentTimeMillis();
-  }
+    var isExecutable: Boolean
+        /** Returns whether the current file is executable.  */
+        get() = checkPermissions(64)
+        /** Sets whether the current file is executable.  */
+        set(executable) {
+            updatePermissions(73, executable)
+        }
 
-  /** Returns whether the current file is readable. */
-  boolean isReadable() {
-    return checkPermissions(0400);
-  }
+    /** Sets the permissions on the current file.  */
+    @kotlin.jvm.Synchronized
+    fun chmod(permissions: Int) {
+        this.permissions = permissions
+        markChangeTime()
+    }
 
-  /** Sets whether the current file is readable. */
-  void setReadable(boolean readable) {
-    updatePermissions(0400, readable);
-  }
+    @kotlin.jvm.Synchronized
+    private fun checkPermissions(mask: Int): Boolean {
+        return (permissions and mask) != 0
+    }
 
-  /** Returns whether the current file is writable. */
-  boolean isWritable() {
-    return checkPermissions(0200);
-  }
+    @kotlin.jvm.Synchronized
+    private fun updatePermissions(mask: Int, set: Boolean) {
+        chmod(if (set) (permissions or mask) else (permissions and mask.inv()))
+    }
 
-  /** Sets whether the current file is writable. */
-  void setWritable(boolean writable) {
-    updatePermissions(0200, writable);
-  }
-
-  /** Returns whether the current file is executable. */
-  boolean isExecutable() {
-    return checkPermissions(0100);
-  }
-
-  /** Sets whether the current file is executable. */
-  void setExecutable(boolean executable) {
-    updatePermissions(0111, executable);
-  }
-
-  /** Sets the permissions on the current file. */
-  synchronized void chmod(int permissions) {
-    this.permissions = permissions;
-    markChangeTime();
-  }
-
-  private synchronized boolean checkPermissions(int mask) {
-    return (permissions & mask) != 0;
-  }
-
-  private synchronized void updatePermissions(int mask, boolean set) {
-    chmod(set ? (permissions | mask) : (permissions & ~mask));
-  }
-
-  InMemoryDirectoryInfo asDirectory() {
-    throw new IllegalStateException("Not a directory: " + this);
-  }
+    open fun asDirectory(): InMemoryDirectoryInfo? {
+        throw IllegalStateException("Not a directory: " + this)
+    }
 }

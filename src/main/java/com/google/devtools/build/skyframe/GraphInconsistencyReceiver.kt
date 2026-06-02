@@ -11,36 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.skyframe
 
-package com.google.devtools.build.skyframe;
-
-import com.google.devtools.build.skyframe.proto.GraphInconsistency.Inconsistency;
-import com.google.devtools.build.skyframe.proto.GraphInconsistency.InconsistencyStats;
-import java.util.Collection;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.proto.GraphInconsistency.Inconsistency
 
 /**
  * A receiver that can be informed of inconsistencies detected in Skyframe. Such inconsistencies are
  * usually the result of external data loss (such as nodes in the graph, or the results of external
  * computations stored in a remote execution service).
- *
- * <p>The receiver can tolerate such inconsistencies, or throw hard if they are unexpected.
+ * 
+ * 
+ * The receiver can tolerate such inconsistencies, or throw hard if they are unexpected.
  */
-public interface GraphInconsistencyReceiver {
+interface GraphInconsistencyReceiver {
+    fun noteInconsistencyAndMaybeThrow(
+        key: SkyKey?, otherKeys: MutableCollection<SkyKey?>?, inconsistency: Inconsistency?
+    )
 
-  void noteInconsistencyAndMaybeThrow(
-      SkyKey key, @Nullable Collection<SkyKey> otherKeys, Inconsistency inconsistency);
+    val inconsistencyStats: InconsistencyStats
+        get() = InconsistencyStats.getDefaultInstance()
 
-  /** A {@link GraphInconsistencyReceiver} that crashes on any inconsistency. */
-  GraphInconsistencyReceiver THROWING =
-      (key, otherKey, inconsistency) -> {
-        throw new IllegalStateException(
-            "Unexpected inconsistency: " + key + ", " + otherKey + ", " + inconsistency);
-      };
+    fun reset() {}
 
-  default InconsistencyStats getInconsistencyStats() {
-    return InconsistencyStats.getDefaultInstance();
-  }
-
-  default void reset() {}
+    companion object {
+        /** A [GraphInconsistencyReceiver] that crashes on any inconsistency.  */
+        @kotlin.jvm.JvmField
+        val THROWING: GraphInconsistencyReceiver =
+            GraphInconsistencyReceiver { key: SkyKey?, otherKey: MutableCollection<SkyKey?>?, inconsistency: Inconsistency? ->
+                throw java.lang.IllegalStateException(
+                    "Unexpected inconsistency: " + key + ", " + otherKey + ", " + inconsistency
+                )
+            }
+    }
 }

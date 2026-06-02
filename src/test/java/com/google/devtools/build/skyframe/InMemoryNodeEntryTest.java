@@ -129,7 +129,7 @@ abstract class InMemoryNodeEntryTest<V extends Version> {
     if (!entry.keepsEdges()) {
       return;
     }
-    assertThat(entry.getDirectDeps()).containsExactly(dep1, dep2, dep3);
+    assertThat(entry.directDeps).containsExactly(dep1, dep2, dep3);
   }
 
   @Test
@@ -169,10 +169,10 @@ abstract class InMemoryNodeEntryTest<V extends Version> {
     if (!entry.keepsEdges()) {
       return;
     }
-    assertThat(entry.getReverseDepsForDoneEntry()).containsExactly(mother, father);
+    assertThat(entry.reverseDepsForDoneEntry).containsExactly(mother, father);
     assertThat(entry.isDone()).isTrue();
     entry.removeReverseDep(mother);
-    assertThat(entry.getReverseDepsForDoneEntry()).doesNotContain(mother);
+    assertThat(entry.reverseDepsForDoneEntry).doesNotContain(mother);
   }
 
   @Test
@@ -187,9 +187,9 @@ abstract class InMemoryNodeEntryTest<V extends Version> {
     assertThat(setValue(entry, /* value= */ null, errorInfo, initialVersion)).isEmpty();
     assertThat(entry.isDone()).isTrue();
     assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.DONE);
-    assertThat(entry.getValue()).isNull();
+    assertThat(entry.value).isNull();
     assertThat(entry.toValue()).isNull();
-    assertThat(entry.getErrorInfo()).isEqualTo(errorInfo);
+    assertThat(entry.errorInfo).isEqualTo(errorInfo);
   }
 
   @Test
@@ -204,7 +204,7 @@ abstract class InMemoryNodeEntryTest<V extends Version> {
     setValue(entry, new SkyValue() {}, errorInfo, initialVersion);
     assertThat(entry.isDone()).isTrue();
     assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.DONE);
-    assertThat(entry.getErrorInfo()).isEqualTo(errorInfo);
+    assertThat(entry.errorInfo).isEqualTo(errorInfo);
   }
 
   @Test
@@ -482,7 +482,7 @@ abstract class InMemoryNodeEntryTest<V extends Version> {
     SkyValue newValue = new IntegerValue(2);
     assertThat(setValue(entry, newValue, /* errorInfo= */ null, initialVersion))
         .containsExactly(resetParent);
-    assertThat(entry.getValue()).isEqualTo(newValue);
+    assertThat(entry.value).isEqualTo(newValue);
     assertThat(entry.toValue()).isEqualTo(newValue);
     assertThat(entry.getVersion()).isEqualTo(initialVersion);
   }
@@ -546,7 +546,7 @@ abstract class InMemoryNodeEntryTest<V extends Version> {
     SkyValue newValue = new IntegerValue(2);
     assertThat(setValue(entry, newValue, /* errorInfo= */ null, initialVersion))
         .containsExactly(resetParent);
-    assertThat(entry.getValue()).isEqualTo(newValue);
+    assertThat(entry.value).isEqualTo(newValue);
     assertThat(entry.toValue()).isEqualTo(newValue);
     assertThat(entry.getVersion()).isEqualTo(initialVersion);
   }
@@ -583,9 +583,9 @@ abstract class InMemoryNodeEntryTest<V extends Version> {
     assertThat(entry.markDirty(DirtyType.REWIND)).isNull();
     assertThat(entry.isDone()).isTrue();
     assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.DONE);
-    assertThat(entry.getValue()).isNull();
+    assertThat(entry.value).isNull();
     assertThat(entry.toValue()).isNull();
-    assertThat(entry.getErrorInfo()).isEqualTo(errorInfo);
+    assertThat(entry.errorInfo).isEqualTo(errorInfo);
   }
 
   @Test

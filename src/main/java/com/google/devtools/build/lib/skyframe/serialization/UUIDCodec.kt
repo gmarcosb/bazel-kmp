@@ -11,31 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
+import java.util.UUID
 
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import java.util.UUID;
+internal class UUIDCodec : LeafObjectCodec<UUID?>() {
+    override fun getEncodedClass(): java.lang.Class<UUID?> {
+        return UUID::class.java
+    }
 
-class UUIDCodec extends LeafObjectCodec<UUID> {
+    @Throws(IOException::class)
+    override fun serialize(context: LeafSerializationContext?, uuid: UUID, codedOut: CodedOutputStream) {
+        codedOut.writeInt64NoTag(uuid.getMostSignificantBits())
+        codedOut.writeInt64NoTag(uuid.getLeastSignificantBits())
+    }
 
-  @Override
-  public Class<UUID> getEncodedClass() {
-    return UUID.class;
-  }
-
-  @Override
-  public void serialize(LeafSerializationContext context, UUID uuid, CodedOutputStream codedOut)
-      throws IOException {
-    codedOut.writeInt64NoTag(uuid.getMostSignificantBits());
-    codedOut.writeInt64NoTag(uuid.getLeastSignificantBits());
-  }
-
-  @Override
-  public UUID deserialize(LeafDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    return new UUID(codedIn.readInt64(), codedIn.readInt64());
-  }
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun deserialize(context: LeafDeserializationContext?, codedIn: CodedInputStream): UUID {
+        return UUID(codedIn.readInt64(), codedIn.readInt64())
+    }
 }

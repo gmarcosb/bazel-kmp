@@ -11,22 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.annot;
-
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
+package net.starlark.java.annot
 
 /**
  * This annotation is used on classes and interfaces that represent Starlark data types.
- *
- * <p>Conceptually, every {@link StarlarkBuiltin} annotation corresponds to a user-distinguishable
+ * 
+ * 
+ * Conceptually, every [StarlarkBuiltin] annotation corresponds to a user-distinguishable
  * Starlark type. The annotation holds metadata associated with that type, in particular its name
  * and documentation. The annotation also implicitly demarcates the Starlark API of the type. It
  * does not matter whether the annotation is used on a class or an interface.
- *
- * <p>Annotations are "inherited" and "overridden", in the sense that a child class or interface
+ * 
+ * 
+ * Annotations are "inherited" and "overridden", in the sense that a child class or interface
  * takes on the Starlark type of its ancestor by default, unless it has a direct annotation of its
  * own. If there are multiple ancestors that have an annotation, then to avoid ambiguity we require
  * that one of them is a subtype of the rest; that is the one whose annotation gets inherited. This
@@ -34,47 +31,41 @@ import java.lang.annotation.Target;
  * multiple types. (In mathematical terms, the most-derived annotation for class or interface C is
  * the minimum element in the partial order of all annotations defined on C and its ancestors, where
  * the order relationship is X < Y if X annotates a subtype of what Y annotates.) The lookup logic
- * for retrieving a class's {@link StarlarkBuiltin} is implemented by {@link
- * StarlarkAnnotations#getStarlarkBuiltin}.
- *
- * <p>Inheriting an annotation is useful when the class is an implementation detail, such as a
+ * for retrieving a class's [StarlarkBuiltin] is implemented by [ ][StarlarkAnnotations.getStarlarkBuiltin].
+ * 
+ * 
+ * Inheriting an annotation is useful when the class is an implementation detail, such as a
  * concrete implementation of an abstract interface. Overriding an annotation is useful when the
- * class should have its own distinct user-visible API or documentation. For example, {@link
- * Sequence} is an abstract type implemented by both {@link StarlarkList} and {@link
- * Sequence.Tuple}, all three of which are annotated. Annotating the list and tuple types allows
- * them to define different methods, while annotating {@link Sequence} allows them to be identified
+ * class should have its own distinct user-visible API or documentation. For example, [ ] is an abstract type implemented by both [StarlarkList] and [ ], all three of which are annotated. Annotating the list and tuple types allows
+ * them to define different methods, while annotating [Sequence] allows them to be identified
  * as a single type for the purpose of type checking, documentation, and error messages.
- *
- * <p>All {@link StarlarkBuiltin}-annotated types must implement {@link StarlarkValue}. Nearly all
- * non-abstract implementations of {@link StarlarkValue} have or inherit a {@link StarlarkBuiltin}
- * annotation. (It is possible, though quite unusual, to declare an implementation of {@code
- * StarlarkValue} without using the annotation mechanism defined in this package. {@code
- * StarlarkFunction} is one example.)
+ * 
+ * 
+ * All [StarlarkBuiltin]-annotated types must implement [StarlarkValue]. Nearly all
+ * non-abstract implementations of [StarlarkValue] have or inherit a [StarlarkBuiltin]
+ * annotation. (It is possible, though quite unusual, to declare an implementation of `StarlarkValue` without using the annotation mechanism defined in this package. `StarlarkFunction` is one example.)
  */
 // TODO(adonovan): rename to StarlarkBuiltinType.
-@Target({ElementType.TYPE})
-@Retention(RetentionPolicy.RUNTIME)
-public @interface StarlarkBuiltin {
-
-  /**
-   * The name of this data type, as returned by the Starlark expression {@code type(x)}.
-   *
-   * <p>Applications should ensure that data type names are unique. This is especially important for
-   * a type that implements Comparable, as its {@code compareTo} method may be passed any value of
-   * the same Starlark type, not necessarily one of the same Java class.
-   */
-  String name();
-
-  /** Module documentation in HTML. May be empty only if {@code !documented()}. */
-  String doc() default "";
-
-  /** Whether the module should appear in the documentation. */
-  boolean documented() default true;
-
-  /**
-   * The category of the documentation to which this data type belongs. Applications may use this
-   * field as they wish for their documentation tools. The core data types of the Starlark
-   * interpreter all have category "core".
-   */
-  String category() default "";
-}
+@Target(AnnotationTarget.CLASS)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class StarlarkBuiltin(
+    /**
+     * The name of this data type, as returned by the Starlark expression `type(x)`.
+     * 
+     * 
+     * Applications should ensure that data type names are unique. This is especially important for
+     * a type that implements Comparable, as its `compareTo` method may be passed any value of
+     * the same Starlark type, not necessarily one of the same Java class.
+     */
+    val name: String,
+    /** Module documentation in HTML. May be empty only if `!documented()`.  */
+    val doc: String = "",
+    /** Whether the module should appear in the documentation.  */
+    val documented: Boolean = true,
+    /**
+     * The category of the documentation to which this data type belongs. Applications may use this
+     * field as they wish for their documentation tools. The core data types of the Starlark
+     * interpreter all have category "core".
+     */
+    val category: String = ""
+)

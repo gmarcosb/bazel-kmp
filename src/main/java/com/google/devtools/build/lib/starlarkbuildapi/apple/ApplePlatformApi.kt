@@ -11,20 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.apple
 
-package com.google.devtools.build.lib.starlarkbuildapi.apple;
+import com.google.devtools.build.docgen.annot.DocCategory
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
+import net.starlark.java.eval.StarlarkValue
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkValue;
-
-/** An interface for an object representing an Apple platform. */
+/** An interface for an object representing an Apple platform.  */
 @StarlarkBuiltin(
     name = "apple_platform",
     category = DocCategory.BUILTIN,
-    doc =
-        "Corresponds to Xcode's notion of a platform as would be found in"
+    doc = ("Corresponds to Xcode's notion of a platform as would be found in"
             + " <code>Xcode.app/Contents/Developer/Platforms</code>. Each platform represents an"
             + " Apple platform type (such as iOS or tvOS) combined with one or more related CPU"
             + " architectures. For example, the iOS simulator platform supports <code>x86_64</code>"
@@ -43,47 +41,40 @@ import net.starlark.java.eval.StarlarkValue;
             + "p = apple_common.platform.ios_device\n"
             + "print(p.name_in_plist)  # 'iPhoneOS'\n"
             + "</pre>")
-public interface ApplePlatformApi extends StarlarkValue {
+)
+interface ApplePlatformApi : StarlarkValue {
+    @get:StarlarkMethod(
+        name = "name",
+        doc = "Returns the name aka starlarkKey of this platform.",
+        structField = true
+    )
+    val name: String?
 
-  /** Returns the name aka starlarkKey of this platform. */
-  @StarlarkMethod(
-      name = "name",
-      doc = "Returns the name aka starlarkKey of this platform.",
-      structField = true)
-  String getName();
+    @get:StarlarkMethod(
+        name = "platform_type",
+        doc = "Returns the platform type of this platform.",
+        structField = true
+    )
+    val type: String?
 
-  /** Returns the platform type of this platform. */
-  @StarlarkMethod(
-      name = "platform_type",
-      doc = "Returns the platform type of this platform.",
-      structField = true)
-  String getType();
+    @get:StarlarkMethod(
+        name = "is_device",
+        doc = ("Returns <code>True</code> if this platform is a device platform or <code>False</code> "
+                + "if it is a simulator platform."),
+        structField = true
+    )
+    val isDevice: Boolean
 
-  /**
-   * Returns true if this platform is a device platform, or false if this is a simulator platform.
-   */
-  @StarlarkMethod(
-      name = "is_device",
-      doc =
-          "Returns <code>True</code> if this platform is a device platform or <code>False</code> "
-              + "if it is a simulator platform.",
-      structField = true)
-  boolean isDevice();
-
-  /**
-   * Returns the name of the "platform" as it appears in the CFBundleSupportedPlatforms plist
-   * setting.
-   */
-  @StarlarkMethod(
-      name = "name_in_plist",
-      structField = true,
-      doc =
-          "The name of the platform as it appears in the <code>CFBundleSupportedPlatforms</code>"
-              + " entry of an Info.plist file and in Xcode's platforms directory, without the"
-              + " extension (for example, <code>iPhoneOS</code> or"
-              + " <code>iPhoneSimulator</code>).<br>This name, when converted to lowercase (e.g.,"
-              + " <code>iphoneos</code>, <code>iphonesimulator</code>), can be passed to Xcode's"
-              + " command-line tools like <code>ibtool</code> and <code>actool</code> when they"
-              + " expect a platform name.")
-  String getNameInPlist();
+    @get:StarlarkMethod(
+        name = "name_in_plist",
+        structField = true,
+        doc = ("The name of the platform as it appears in the <code>CFBundleSupportedPlatforms</code>"
+                + " entry of an Info.plist file and in Xcode's platforms directory, without the"
+                + " extension (for example, <code>iPhoneOS</code> or"
+                + " <code>iPhoneSimulator</code>).<br>This name, when converted to lowercase (e.g.,"
+                + " <code>iphoneos</code>, <code>iphonesimulator</code>), can be passed to Xcode's"
+                + " command-line tools like <code>ibtool</code> and <code>actool</code> when they"
+                + " expect a platform name.")
+    )
+    val nameInPlist: String?
 }

@@ -11,17 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
+package com.google.devtools.build.lib.util.io
 
-import com.google.protobuf.Message;
-import java.io.IOException;
+import com.google.protobuf.Message
 
-/** A variation of OutputStream for protobuf messages. */
-public interface MessageOutputStream<T extends Message> extends AutoCloseable {
-  /** Writes a protobuf message to the underlying stream. */
-  void write(T m) throws IOException;
+/** A variation of OutputStream for protobuf messages.  */
+interface MessageOutputStream<T : Message?> : java.lang.AutoCloseable {
+    /** Writes a protobuf message to the underlying stream.  */
+    @Throws(IOException::class)
+    fun write(m: T?)
 
-  /** Closes the underlying stream. Any following writes will fail. */
-  @Override
-  void close() throws IOException;
+    /** Closes the underlying stream. Any following writes will fail.  */
+    @Throws(IOException::class)
+    override fun close()
 }

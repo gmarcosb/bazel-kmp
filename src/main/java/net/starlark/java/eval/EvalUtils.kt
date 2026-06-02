@@ -11,510 +11,570 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.eval;
+package net.starlark.java.eval
 
-import java.util.IllegalFormatException;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Set;
-import javax.annotation.Nullable;
-import net.starlark.java.syntax.TokenKind;
+import java.util.IllegalFormatException
+import java.util.LinkedHashMap
 
-/** Internal declarations used by the evaluator. */
-final class EvalUtils {
-
-  private EvalUtils() {}
-
-  static void addIterator(Object x) {
-    if (x instanceof Mutability.Freezable) {
-      ((Mutability.Freezable) x).updateIteratorCount(+1);
+/** Internal declarations used by the evaluator.  */
+internal object EvalUtils {
+    fun addIterator(x: Any?) {
+        if (x is net.starlark.java.eval.Mutability.Freezable) {
+            (x as net.starlark.java.eval.Mutability.Freezable).updateIteratorCount(+1)
+        }
     }
-  }
 
-  static void removeIterator(Object x) {
-    if (x instanceof Mutability.Freezable) {
-      ((Mutability.Freezable) x).updateIteratorCount(-1);
+    fun removeIterator(x: Any?) {
+        if (x is net.starlark.java.eval.Mutability.Freezable) {
+            (x as net.starlark.java.eval.Mutability.Freezable).updateIteratorCount(-1)
+        }
     }
-  }
 
-  // The following functions for indexing and slicing match the behavior of Python.
-
-  /**
-   * Resolves a positive or negative index to an index in the range [0, length), or throws
-   * EvalException if it is out of range. If the index is negative, it counts backward from length.
-   */
-  static int getSequenceIndex(int index, int length) throws EvalException {
-    int actualIndex = index;
-    if (actualIndex < 0) {
-      actualIndex += length;
+    // The following functions for indexing and slicing match the behavior of Python.
+    /**
+     * Resolves a positive or negative index to an index in the range [0, length), or throws
+     * EvalException if it is out of range. If the index is negative, it counts backward from length.
+     */
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun getSequenceIndex(index: Int, length: Int): Int {
+        var actualIndex = index
+        if (actualIndex < 0) {
+            actualIndex += length
+        }
+        if (actualIndex < 0 || actualIndex >= length) {
+            throw net.starlark.java.eval.Starlark.Companion.errorf(
+                "index out of range (index is %d, but sequence has %d elements)", index, length
+            )
+        }
+        return actualIndex
     }
-    if (actualIndex < 0 || actualIndex >= length) {
-      throw Starlark.errorf(
-          "index out of range (index is %d, but sequence has %d elements)", index, length);
-    }
-    return actualIndex;
-  }
 
-  /** Evaluates an eager binary operation, {@code x op y}. (Excludes AND and OR.) */
-  static Object binaryOp(TokenKind op, Object x, Object y, StarlarkThread starlarkThread)
-      throws EvalException {
-    StarlarkSemantics semantics = starlarkThread.getSemantics();
-    Mutability mu = starlarkThread.mutability();
-    switch (op) {
-      case PLUS:
-        if (x instanceof StarlarkInt) {
-          if (y instanceof StarlarkInt) {
-            // int + int
-            return StarlarkInt.add((StarlarkInt) x, (StarlarkInt) y);
-          } else if (y instanceof StarlarkFloat) {
-            // int + float
-            double z = ((StarlarkInt) x).toFiniteDouble() + ((StarlarkFloat) y).toDouble();
-            return StarlarkFloat.of(z);
-          }
-
-        } else if (x instanceof String) {
-          if (y instanceof String) {
-            // string + string
-            return (String) x + (String) y;
-          }
-
-        } else if (x instanceof Tuple) {
-          if (y instanceof Tuple) {
-            // tuple + tuple
-            return Tuple.concat((Tuple) x, (Tuple) y);
-          }
-
-        } else if (x instanceof StarlarkList) {
-          if (y instanceof StarlarkList) {
-            // list + list
-            return StarlarkList.concat((StarlarkList<?>) x, (StarlarkList<?>) y, mu);
-          }
-
-        } else if (x instanceof StarlarkFloat) {
-          double xf = ((StarlarkFloat) x).toDouble();
-          if (y instanceof StarlarkFloat) {
-            // float + float
-            double z = xf + ((StarlarkFloat) y).toDouble();
-            return StarlarkFloat.of(z);
-          } else if (y instanceof StarlarkInt) {
-            // float + int
-            double z = xf + ((StarlarkInt) y).toFiniteDouble();
-            return StarlarkFloat.of(z);
-          }
-        }
-        break;
-
-      case PIPE:
-        if (x instanceof StarlarkInt) {
-          if (y instanceof StarlarkInt) {
-            // int | int
-            return StarlarkInt.or((StarlarkInt) x, (StarlarkInt) y);
-          }
-        } else if (x instanceof Map<?, ?> xMap) {
-          if (y instanceof Map<?, ?> yMap) {
-            // map | map (usually dicts)
-            LinkedHashMap<Object, Object> union = new LinkedHashMap<>(xMap);
-            union.putAll(yMap);
-            return mu.isFrozen() ? CompactImmutableDict.copyOf(union) : Dict.wrap(mu, union);
-          }
-        } else if (x instanceof Set && y instanceof Set) {
-          // set | set
-          if (semantics.getBool(StarlarkSemantics.EXPERIMENTAL_ENABLE_STARLARK_SET)) {
-            return StarlarkSet.empty().union(Tuple.of(x, y), starlarkThread);
-          }
-        }
-        break;
-
-      case AMPERSAND:
-        if (x instanceof StarlarkInt && y instanceof StarlarkInt) {
-          // int & int
-          return StarlarkInt.and((StarlarkInt) x, (StarlarkInt) y);
-        } else if (x instanceof Set<?> xSet && y instanceof Set) {
-          // set & set
-          if (semantics.getBool(StarlarkSemantics.EXPERIMENTAL_ENABLE_STARLARK_SET)) {
-            StarlarkSet<?> xStarlarkSet =
-                xSet instanceof StarlarkSet
-                    ? (StarlarkSet<?>) xSet
-                    : StarlarkSet.checkedCopyOf(mu, xSet);
-            return xStarlarkSet.intersection(Tuple.of(y), starlarkThread);
-          }
-        }
-        break;
-
-      case CARET:
-        if (x instanceof StarlarkInt && y instanceof StarlarkInt) {
-          // int ^ int
-          return StarlarkInt.xor((StarlarkInt) x, (StarlarkInt) y);
-        } else if (x instanceof Set<?> xSet && y instanceof Set) {
-          // set ^ set
-          if (semantics.getBool(StarlarkSemantics.EXPERIMENTAL_ENABLE_STARLARK_SET)) {
-            StarlarkSet<?> xStarlarkSet =
-                xSet instanceof StarlarkSet
-                    ? (StarlarkSet<?>) xSet
-                    : StarlarkSet.checkedCopyOf(mu, xSet);
-            return xStarlarkSet.symmetricDifference(y, starlarkThread);
-          }
-        }
-        break;
-
-      case GREATER_GREATER:
-        if (x instanceof StarlarkInt && y instanceof StarlarkInt) {
-          // x >> y
-          return StarlarkInt.shiftRight((StarlarkInt) x, (StarlarkInt) y);
-        }
-        break;
-
-      case LESS_LESS:
-        if (x instanceof StarlarkInt && y instanceof StarlarkInt) {
-          // x << y
-          return StarlarkInt.shiftLeft((StarlarkInt) x, (StarlarkInt) y);
-        }
-        break;
-
-      case MINUS:
-        if (x instanceof StarlarkInt) {
-          if (y instanceof StarlarkInt) {
-            // int - int
-            return StarlarkInt.subtract((StarlarkInt) x, (StarlarkInt) y);
-          } else if (y instanceof StarlarkFloat) {
-            // int - float
-            double z = ((StarlarkInt) x).toFiniteDouble() - ((StarlarkFloat) y).toDouble();
-            return StarlarkFloat.of(z);
-          }
-
-        } else if (x instanceof StarlarkFloat) {
-          double xf = ((StarlarkFloat) x).toDouble();
-          if (y instanceof StarlarkFloat) {
-            // float - float
-            double z = xf - ((StarlarkFloat) y).toDouble();
-            return StarlarkFloat.of(z);
-          } else if (y instanceof StarlarkInt) {
-            // float - int
-            double z = xf - ((StarlarkInt) y).toFiniteDouble();
-            return StarlarkFloat.of(z);
-          }
-        } else if (x instanceof Set<?> xSet && y instanceof Set) {
-          // set - set
-          if (semantics.getBool(StarlarkSemantics.EXPERIMENTAL_ENABLE_STARLARK_SET)) {
-            StarlarkSet<?> xStarlarkSet =
-                xSet instanceof StarlarkSet
-                    ? (StarlarkSet<?>) xSet
-                    : StarlarkSet.checkedCopyOf(mu, xSet);
-            return xStarlarkSet.difference(Tuple.of(y), starlarkThread);
-          }
-        }
-        break;
-
-      case STAR:
-        if (x instanceof StarlarkInt xi) {
-          if (y instanceof StarlarkInt) {
-            // int * int
-            return StarlarkInt.multiply(xi, (StarlarkInt) y);
-          } else if (y instanceof String) {
-            // int * string
-            return repeatString((String) y, xi);
-          } else if (y instanceof Tuple) {
-            //  int * tuple
-            return ((Tuple) y).repeat(xi);
-          } else if (y instanceof StarlarkList) {
-            // int * list
-            return ((StarlarkList<?>) y).repeat(xi, mu);
-          } else if (y instanceof StarlarkFloat) {
-            // int * float
-            double z = xi.toFiniteDouble() * ((StarlarkFloat) y).toDouble();
-            return StarlarkFloat.of(z);
-          }
-
-        } else if (x instanceof String) {
-          if (y instanceof StarlarkInt) {
-            // string * int
-            return repeatString((String) x, (StarlarkInt) y);
-          }
-
-        } else if (x instanceof Tuple) {
-          if (y instanceof StarlarkInt) {
-            // tuple * int
-            return ((Tuple) x).repeat((StarlarkInt) y);
-          }
-
-        } else if (x instanceof StarlarkList) {
-          if (y instanceof StarlarkInt) {
-            // list * int
-            return ((StarlarkList<?>) x).repeat((StarlarkInt) y, mu);
-          }
-
-        } else if (x instanceof StarlarkFloat) {
-          double xf = ((StarlarkFloat) x).toDouble();
-          if (y instanceof StarlarkFloat) {
-            // float * float
-            return StarlarkFloat.of(xf * ((StarlarkFloat) y).toDouble());
-          } else if (y instanceof StarlarkInt) {
-            // float * int
-            return StarlarkFloat.of(xf * ((StarlarkInt) y).toFiniteDouble());
-          }
-        }
-        break;
-
-      case SLASH: // real division
-        if (x instanceof StarlarkInt) {
-          double xf = ((StarlarkInt) x).toFiniteDouble();
-          if (y instanceof StarlarkInt) {
-            // int / int
-            return StarlarkFloat.div(xf, ((StarlarkInt) y).toFiniteDouble());
-          } else if (y instanceof StarlarkFloat) {
-            // int / float
-            return StarlarkFloat.div(xf, ((StarlarkFloat) y).toDouble());
-          }
-
-        } else if (x instanceof StarlarkFloat) {
-          double xf = ((StarlarkFloat) x).toDouble();
-          if (y instanceof StarlarkFloat) {
-            // float / float
-            return StarlarkFloat.div(xf, ((StarlarkFloat) y).toDouble());
-          } else if (y instanceof StarlarkInt) {
-            // float / int
-            return StarlarkFloat.div(xf, ((StarlarkInt) y).toFiniteDouble());
-          }
-        }
-        break;
-
-      case SLASH_SLASH:
-        if (x instanceof StarlarkInt) {
-          if (y instanceof StarlarkInt) {
-            // int // int
-            return StarlarkInt.floordiv((StarlarkInt) x, (StarlarkInt) y);
-          } else if (y instanceof StarlarkFloat) {
-            // int // float
-            double xf = ((StarlarkInt) x).toFiniteDouble();
-            double yf = ((StarlarkFloat) y).toDouble();
-            return StarlarkFloat.floordiv(xf, yf);
-          }
-
-        } else if (x instanceof StarlarkFloat) {
-          double xf = ((StarlarkFloat) x).toDouble();
-          if (y instanceof StarlarkFloat) {
-            // float // float
-            return StarlarkFloat.floordiv(xf, ((StarlarkFloat) y).toDouble());
-          } else if (y instanceof StarlarkInt) {
-            // float // int
-            return StarlarkFloat.floordiv(xf, ((StarlarkInt) y).toFiniteDouble());
-          }
-        }
-        break;
-
-      case PERCENT:
-        if (x instanceof StarlarkInt) {
-          if (y instanceof StarlarkInt) {
-            // int % int
-            return StarlarkInt.mod((StarlarkInt) x, (StarlarkInt) y);
-
-          } else if (y instanceof StarlarkFloat) {
-            // int % float
-            double xf = ((StarlarkInt) x).toFiniteDouble();
-            double yf = ((StarlarkFloat) y).toDouble();
-            return StarlarkFloat.mod(xf, yf);
-          }
-
-        } else if (x instanceof String xs) {
-          // string % any
-          try {
-            if (y instanceof Tuple) {
-              return Starlark.formatWithList(semantics, xs, (Tuple) y);
-            } else {
-              return Starlark.format(semantics, xs, y);
+    /** Evaluates an eager binary operation, `x op y`. (Excludes AND and OR.)  */
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun binaryOp(
+        op: net.starlark.java.syntax.TokenKind,
+        x: Any,
+        y: Any,
+        starlarkThread: net.starlark.java.eval.StarlarkThread
+    ): Any? {
+        val semantics: net.starlark.java.eval.StarlarkSemantics = starlarkThread.getSemantics()
+        val mu: net.starlark.java.eval.Mutability = starlarkThread.mutability()
+        when (op) {
+            net.starlark.java.syntax.TokenKind.PLUS -> if (x is net.starlark.java.eval.StarlarkInt) {
+                if (y is net.starlark.java.eval.StarlarkInt) {
+                    // int + int
+                    return net.starlark.java.eval.StarlarkInt.Companion.add(
+                        x as net.starlark.java.eval.StarlarkInt,
+                        y as net.starlark.java.eval.StarlarkInt
+                    )
+                } else if (y is net.starlark.java.eval.StarlarkFloat) {
+                    // int + float
+                    val z: Double =
+                        (x as net.starlark.java.eval.StarlarkInt).toFiniteDouble() + (y as net.starlark.java.eval.StarlarkFloat).toDouble()
+                    return net.starlark.java.eval.StarlarkFloat.Companion.of(z)
+                }
+            } else if (x is String) {
+                if (y is String) {
+                    // string + string
+                    return x + y
+                }
+            } else if (x is net.starlark.java.eval.Tuple) {
+                if (y is net.starlark.java.eval.Tuple) {
+                    // tuple + tuple
+                    return net.starlark.java.eval.Tuple.Companion.concat(
+                        x as net.starlark.java.eval.Tuple,
+                        y as net.starlark.java.eval.Tuple
+                    )
+                }
+            } else if (x is net.starlark.java.eval.StarlarkList<*>) {
+                if (y is net.starlark.java.eval.StarlarkList<*>) {
+                    // list + list
+                    return net.starlark.java.eval.StarlarkList.Companion.concat<Any?>(
+                        x as net.starlark.java.eval.StarlarkList<*>,
+                        y as net.starlark.java.eval.StarlarkList<*>,
+                        mu
+                    )
+                }
+            } else if (x is net.starlark.java.eval.StarlarkFloat) {
+                val xf: Double = (x as net.starlark.java.eval.StarlarkFloat).toDouble()
+                if (y is net.starlark.java.eval.StarlarkFloat) {
+                    // float + float
+                    val z: Double = xf + (y as net.starlark.java.eval.StarlarkFloat).toDouble()
+                    return net.starlark.java.eval.StarlarkFloat.Companion.of(z)
+                } else if (y is net.starlark.java.eval.StarlarkInt) {
+                    // float + int
+                    val z: Double = xf + (y as net.starlark.java.eval.StarlarkInt).toFiniteDouble()
+                    return net.starlark.java.eval.StarlarkFloat.Companion.of(z)
+                }
             }
-          } catch (IllegalFormatException ex) {
-            throw new EvalException(ex);
-          }
 
-        } else if (x instanceof StarlarkFloat) {
-          double xf = ((StarlarkFloat) x).toDouble();
-          if (y instanceof StarlarkFloat) {
-            // float % float
-            return StarlarkFloat.mod(xf, ((StarlarkFloat) y).toDouble());
-          } else if (y instanceof StarlarkInt) {
-            // float % int
-            return StarlarkFloat.mod(xf, ((StarlarkInt) y).toFiniteDouble());
-          }
+            net.starlark.java.syntax.TokenKind.PIPE -> if (x is net.starlark.java.eval.StarlarkInt) {
+                if (y is net.starlark.java.eval.StarlarkInt) {
+                    // int | int
+                    return net.starlark.java.eval.StarlarkInt.Companion.or(
+                        x as net.starlark.java.eval.StarlarkInt,
+                        y as net.starlark.java.eval.StarlarkInt
+                    )
+                }
+            } else if (x is MutableMap<*, *>) {
+                if (y is MutableMap<*, *>) {
+                    // map | map (usually dicts)
+                    val union: LinkedHashMap<Any?, Any?> = LinkedHashMap<Any?, Any?>(x)
+                    union.putAll(y)
+                    return if (mu.isFrozen()) net.starlark.java.eval.CompactImmutableDict.Companion.copyOf<Any?, Any?>(
+                        union
+                    ) else net.starlark.java.eval.Dict.Companion.wrap<Any?, Any?>(mu, union)
+                }
+            } else if (x is MutableSet<*> && y is MutableSet<*>) {
+                // set | set
+                if (semantics.getBool(net.starlark.java.eval.StarlarkSemantics.Companion.EXPERIMENTAL_ENABLE_STARLARK_SET)) {
+                    return net.starlark.java.eval.StarlarkSet.Companion.empty<Any?>()
+                        .union(net.starlark.java.eval.Tuple.Companion.of(x, y), starlarkThread)
+                }
+            }
+
+            net.starlark.java.syntax.TokenKind.AMPERSAND -> if (x is net.starlark.java.eval.StarlarkInt && y is net.starlark.java.eval.StarlarkInt) {
+                // int & int
+                return net.starlark.java.eval.StarlarkInt.Companion.and(
+                    x as net.starlark.java.eval.StarlarkInt,
+                    y as net.starlark.java.eval.StarlarkInt
+                )
+            } else if (x is MutableSet<*> && y is MutableSet<*>) {
+                // set & set
+                if (semantics.getBool(net.starlark.java.eval.StarlarkSemantics.Companion.EXPERIMENTAL_ENABLE_STARLARK_SET)) {
+                    val xStarlarkSet: net.starlark.java.eval.StarlarkSet<*> =
+                        if (x is net.starlark.java.eval.StarlarkSet<*>)
+                            x as net.starlark.java.eval.StarlarkSet<*>
+                        else
+                            net.starlark.java.eval.StarlarkSet.Companion.checkedCopyOf(mu, x)
+                    return xStarlarkSet.intersection(net.starlark.java.eval.Tuple.Companion.of(y), starlarkThread)
+                }
+            }
+
+            net.starlark.java.syntax.TokenKind.CARET -> if (x is net.starlark.java.eval.StarlarkInt && y is net.starlark.java.eval.StarlarkInt) {
+                // int ^ int
+                return net.starlark.java.eval.StarlarkInt.Companion.xor(
+                    x as net.starlark.java.eval.StarlarkInt,
+                    y as net.starlark.java.eval.StarlarkInt
+                )
+            } else if (x is MutableSet<*> && y is MutableSet<*>) {
+                // set ^ set
+                if (semantics.getBool(net.starlark.java.eval.StarlarkSemantics.Companion.EXPERIMENTAL_ENABLE_STARLARK_SET)) {
+                    val xStarlarkSet: net.starlark.java.eval.StarlarkSet<*> =
+                        if (x is net.starlark.java.eval.StarlarkSet<*>)
+                            x as net.starlark.java.eval.StarlarkSet<*>
+                        else
+                            net.starlark.java.eval.StarlarkSet.Companion.checkedCopyOf(mu, x)
+                    return xStarlarkSet.symmetricDifference(y, starlarkThread)
+                }
+            }
+
+            net.starlark.java.syntax.TokenKind.GREATER_GREATER -> if (x is net.starlark.java.eval.StarlarkInt && y is net.starlark.java.eval.StarlarkInt) {
+                // x >> y
+                return net.starlark.java.eval.StarlarkInt.Companion.shiftRight(
+                    x as net.starlark.java.eval.StarlarkInt,
+                    y as net.starlark.java.eval.StarlarkInt
+                )
+            }
+
+            net.starlark.java.syntax.TokenKind.LESS_LESS -> if (x is net.starlark.java.eval.StarlarkInt && y is net.starlark.java.eval.StarlarkInt) {
+                // x << y
+                return net.starlark.java.eval.StarlarkInt.Companion.shiftLeft(
+                    x as net.starlark.java.eval.StarlarkInt,
+                    y as net.starlark.java.eval.StarlarkInt
+                )
+            }
+
+            net.starlark.java.syntax.TokenKind.MINUS -> if (x is net.starlark.java.eval.StarlarkInt) {
+                if (y is net.starlark.java.eval.StarlarkInt) {
+                    // int - int
+                    return net.starlark.java.eval.StarlarkInt.Companion.subtract(
+                        x as net.starlark.java.eval.StarlarkInt,
+                        y as net.starlark.java.eval.StarlarkInt
+                    )
+                } else if (y is net.starlark.java.eval.StarlarkFloat) {
+                    // int - float
+                    val z: Double =
+                        (x as net.starlark.java.eval.StarlarkInt).toFiniteDouble() - (y as net.starlark.java.eval.StarlarkFloat).toDouble()
+                    return net.starlark.java.eval.StarlarkFloat.Companion.of(z)
+                }
+            } else if (x is net.starlark.java.eval.StarlarkFloat) {
+                val xf: Double = (x as net.starlark.java.eval.StarlarkFloat).toDouble()
+                if (y is net.starlark.java.eval.StarlarkFloat) {
+                    // float - float
+                    val z: Double = xf - (y as net.starlark.java.eval.StarlarkFloat).toDouble()
+                    return net.starlark.java.eval.StarlarkFloat.Companion.of(z)
+                } else if (y is net.starlark.java.eval.StarlarkInt) {
+                    // float - int
+                    val z: Double = xf - (y as net.starlark.java.eval.StarlarkInt).toFiniteDouble()
+                    return net.starlark.java.eval.StarlarkFloat.Companion.of(z)
+                }
+            } else if (x is MutableSet<*> && y is MutableSet<*>) {
+                // set - set
+                if (semantics.getBool(net.starlark.java.eval.StarlarkSemantics.Companion.EXPERIMENTAL_ENABLE_STARLARK_SET)) {
+                    val xStarlarkSet: net.starlark.java.eval.StarlarkSet<*> =
+                        if (x is net.starlark.java.eval.StarlarkSet<*>)
+                            x as net.starlark.java.eval.StarlarkSet<*>
+                        else
+                            net.starlark.java.eval.StarlarkSet.Companion.checkedCopyOf(mu, x)
+                    return xStarlarkSet.difference(net.starlark.java.eval.Tuple.Companion.of(y), starlarkThread)
+                }
+            }
+
+            net.starlark.java.syntax.TokenKind.STAR -> if (x is net.starlark.java.eval.StarlarkInt) {
+                if (y is net.starlark.java.eval.StarlarkInt) {
+                    // int * int
+                    return net.starlark.java.eval.StarlarkInt.Companion.multiply(
+                        x,
+                        y as net.starlark.java.eval.StarlarkInt
+                    )
+                } else if (y is String) {
+                    // int * string
+                    return net.starlark.java.eval.EvalUtils.repeatString(y, x)
+                } else if (y is net.starlark.java.eval.Tuple) {
+                    //  int * tuple
+                    return (y as net.starlark.java.eval.Tuple).repeat(x)
+                } else if (y is net.starlark.java.eval.StarlarkList<*>) {
+                    // int * list
+                    return (y as net.starlark.java.eval.StarlarkList<*>).repeat(x, mu)
+                } else if (y is net.starlark.java.eval.StarlarkFloat) {
+                    // int * float
+                    val z: Double = x.toFiniteDouble() * (y as net.starlark.java.eval.StarlarkFloat).toDouble()
+                    return net.starlark.java.eval.StarlarkFloat.Companion.of(z)
+                }
+            } else if (x is String) {
+                if (y is net.starlark.java.eval.StarlarkInt) {
+                    // string * int
+                    return net.starlark.java.eval.EvalUtils.repeatString(x, y as net.starlark.java.eval.StarlarkInt)
+                }
+            } else if (x is net.starlark.java.eval.Tuple) {
+                if (y is net.starlark.java.eval.StarlarkInt) {
+                    // tuple * int
+                    return (x as net.starlark.java.eval.Tuple).repeat(y as net.starlark.java.eval.StarlarkInt)
+                }
+            } else if (x is net.starlark.java.eval.StarlarkList<*>) {
+                if (y is net.starlark.java.eval.StarlarkInt) {
+                    // list * int
+                    return (x as net.starlark.java.eval.StarlarkList<*>).repeat(
+                        y as net.starlark.java.eval.StarlarkInt,
+                        mu
+                    )
+                }
+            } else if (x is net.starlark.java.eval.StarlarkFloat) {
+                val xf: Double = (x as net.starlark.java.eval.StarlarkFloat).toDouble()
+                if (y is net.starlark.java.eval.StarlarkFloat) {
+                    // float * float
+                    return net.starlark.java.eval.StarlarkFloat.Companion.of(xf * (y as net.starlark.java.eval.StarlarkFloat).toDouble())
+                } else if (y is net.starlark.java.eval.StarlarkInt) {
+                    // float * int
+                    return net.starlark.java.eval.StarlarkFloat.Companion.of(xf * (y as net.starlark.java.eval.StarlarkInt).toFiniteDouble())
+                }
+            }
+
+            net.starlark.java.syntax.TokenKind.SLASH -> if (x is net.starlark.java.eval.StarlarkInt) {
+                val xf: Double = (x as net.starlark.java.eval.StarlarkInt).toFiniteDouble()
+                if (y is net.starlark.java.eval.StarlarkInt) {
+                    // int / int
+                    return net.starlark.java.eval.StarlarkFloat.Companion.div(
+                        xf,
+                        (y as net.starlark.java.eval.StarlarkInt).toFiniteDouble()
+                    )
+                } else if (y is net.starlark.java.eval.StarlarkFloat) {
+                    // int / float
+                    return net.starlark.java.eval.StarlarkFloat.Companion.div(
+                        xf,
+                        (y as net.starlark.java.eval.StarlarkFloat).toDouble()
+                    )
+                }
+            } else if (x is net.starlark.java.eval.StarlarkFloat) {
+                val xf: Double = (x as net.starlark.java.eval.StarlarkFloat).toDouble()
+                if (y is net.starlark.java.eval.StarlarkFloat) {
+                    // float / float
+                    return net.starlark.java.eval.StarlarkFloat.Companion.div(
+                        xf,
+                        (y as net.starlark.java.eval.StarlarkFloat).toDouble()
+                    )
+                } else if (y is net.starlark.java.eval.StarlarkInt) {
+                    // float / int
+                    return net.starlark.java.eval.StarlarkFloat.Companion.div(
+                        xf,
+                        (y as net.starlark.java.eval.StarlarkInt).toFiniteDouble()
+                    )
+                }
+            }
+
+            net.starlark.java.syntax.TokenKind.SLASH_SLASH -> if (x is net.starlark.java.eval.StarlarkInt) {
+                if (y is net.starlark.java.eval.StarlarkInt) {
+                    // int // int
+                    return net.starlark.java.eval.StarlarkInt.Companion.floordiv(
+                        x as net.starlark.java.eval.StarlarkInt,
+                        y as net.starlark.java.eval.StarlarkInt
+                    )
+                } else if (y is net.starlark.java.eval.StarlarkFloat) {
+                    // int // float
+                    val xf: Double = (x as net.starlark.java.eval.StarlarkInt).toFiniteDouble()
+                    val yf: Double = (y as net.starlark.java.eval.StarlarkFloat).toDouble()
+                    return net.starlark.java.eval.StarlarkFloat.Companion.floordiv(xf, yf)
+                }
+            } else if (x is net.starlark.java.eval.StarlarkFloat) {
+                val xf: Double = (x as net.starlark.java.eval.StarlarkFloat).toDouble()
+                if (y is net.starlark.java.eval.StarlarkFloat) {
+                    // float // float
+                    return net.starlark.java.eval.StarlarkFloat.Companion.floordiv(
+                        xf,
+                        (y as net.starlark.java.eval.StarlarkFloat).toDouble()
+                    )
+                } else if (y is net.starlark.java.eval.StarlarkInt) {
+                    // float // int
+                    return net.starlark.java.eval.StarlarkFloat.Companion.floordiv(
+                        xf,
+                        (y as net.starlark.java.eval.StarlarkInt).toFiniteDouble()
+                    )
+                }
+            }
+
+            net.starlark.java.syntax.TokenKind.PERCENT -> if (x is net.starlark.java.eval.StarlarkInt) {
+                if (y is net.starlark.java.eval.StarlarkInt) {
+                    // int % int
+                    return net.starlark.java.eval.StarlarkInt.Companion.mod(
+                        x as net.starlark.java.eval.StarlarkInt,
+                        y as net.starlark.java.eval.StarlarkInt
+                    )
+                } else if (y is net.starlark.java.eval.StarlarkFloat) {
+                    // int % float
+                    val xf: Double = (x as net.starlark.java.eval.StarlarkInt).toFiniteDouble()
+                    val yf: Double = (y as net.starlark.java.eval.StarlarkFloat).toDouble()
+                    return net.starlark.java.eval.StarlarkFloat.Companion.mod(xf, yf)
+                }
+            } else if (x is String) {
+                // string % any
+                try {
+                    if (y is net.starlark.java.eval.Tuple) {
+                        return net.starlark.java.eval.Starlark.Companion.formatWithList(
+                            semantics,
+                            x,
+                            y as net.starlark.java.eval.Tuple
+                        )
+                    } else {
+                        return net.starlark.java.eval.Starlark.Companion.format(semantics, x, y)
+                    }
+                } catch (ex: IllegalFormatException) {
+                    throw net.starlark.java.eval.EvalException(ex)
+                }
+            } else if (x is net.starlark.java.eval.StarlarkFloat) {
+                val xf: Double = (x as net.starlark.java.eval.StarlarkFloat).toDouble()
+                if (y is net.starlark.java.eval.StarlarkFloat) {
+                    // float % float
+                    return net.starlark.java.eval.StarlarkFloat.Companion.mod(
+                        xf,
+                        (y as net.starlark.java.eval.StarlarkFloat).toDouble()
+                    )
+                } else if (y is net.starlark.java.eval.StarlarkInt) {
+                    // float % int
+                    return net.starlark.java.eval.StarlarkFloat.Companion.mod(
+                        xf,
+                        (y as net.starlark.java.eval.StarlarkInt).toFiniteDouble()
+                    )
+                }
+            }
+
+            net.starlark.java.syntax.TokenKind.EQUALS_EQUALS -> return x == y
+
+            net.starlark.java.syntax.TokenKind.NOT_EQUALS -> return x != y
+
+            net.starlark.java.syntax.TokenKind.LESS -> return net.starlark.java.eval.EvalUtils.compare(x, y) < 0
+
+            net.starlark.java.syntax.TokenKind.LESS_EQUALS -> return net.starlark.java.eval.EvalUtils.compare(x, y) <= 0
+
+            net.starlark.java.syntax.TokenKind.GREATER -> return net.starlark.java.eval.EvalUtils.compare(x, y) > 0
+
+            net.starlark.java.syntax.TokenKind.GREATER_EQUALS -> return net.starlark.java.eval.EvalUtils.compare(
+                x,
+                y
+            ) >= 0
+
+            net.starlark.java.syntax.TokenKind.IN -> if (y is net.starlark.java.eval.StarlarkMembershipTestable) {
+                return (y as net.starlark.java.eval.StarlarkMembershipTestable).containsKey(semantics, x)
+            } else if (y is net.starlark.java.eval.StarlarkIndexable.Threaded) {
+                return (y as net.starlark.java.eval.StarlarkIndexable.Threaded).containsKey(
+                    starlarkThread,
+                    semantics,
+                    x
+                )
+            } else if (y is String) {
+                if (x !is String) {
+                    throw net.starlark.java.eval.Starlark.Companion.errorf(
+                        "'in <string>' requires string as left operand, not '%s'",
+                        net.starlark.java.eval.Starlark.Companion.type(x)
+                    )
+                }
+                return y.contains(x)
+            }
+
+            net.starlark.java.syntax.TokenKind.NOT_IN -> {
+                val z: Any? = net.starlark.java.eval.EvalUtils.binaryOp(
+                    net.starlark.java.syntax.TokenKind.IN,
+                    x,
+                    y,
+                    starlarkThread
+                )
+                if (z != null) {
+                    return !net.starlark.java.eval.Starlark.Companion.truth(z)
+                }
+            }
+
+            else -> throw java.lang.AssertionError("not a binary operator: " + op)
         }
-        break;
 
-      case EQUALS_EQUALS:
-        return x.equals(y);
-
-      case NOT_EQUALS:
-        return !x.equals(y);
-
-      case LESS:
-        return compare(x, y) < 0;
-
-      case LESS_EQUALS:
-        return compare(x, y) <= 0;
-
-      case GREATER:
-        return compare(x, y) > 0;
-
-      case GREATER_EQUALS:
-        return compare(x, y) >= 0;
-
-      case IN:
-        if (y instanceof StarlarkMembershipTestable) {
-          return ((StarlarkMembershipTestable) y).containsKey(semantics, x);
-        } else if (y instanceof StarlarkIndexable.Threaded) {
-          return ((StarlarkIndexable.Threaded) y).containsKey(starlarkThread, semantics, x);
-        } else if (y instanceof String) {
-          if (!(x instanceof String)) {
-            throw Starlark.errorf(
-                "'in <string>' requires string as left operand, not '%s'", Starlark.type(x));
-          }
-          return ((String) y).contains((String) x);
+        // custom binary operator?
+        if (x is net.starlark.java.eval.HasBinary) {
+            val z: Any? = (x as net.starlark.java.eval.HasBinary).binaryOp(op, y, true)
+            if (z != null) {
+                return z
+            }
         }
-        break;
-
-      case NOT_IN:
-        Object z = binaryOp(TokenKind.IN, x, y, starlarkThread);
-        if (z != null) {
-          return !Starlark.truth(z);
+        if (y is net.starlark.java.eval.HasBinary) {
+            val z: Any? = (y as net.starlark.java.eval.HasBinary).binaryOp(op, x, false)
+            if (z != null) {
+                return z
+            }
         }
-        break;
 
-      default:
-        throw new AssertionError("not a binary operator: " + op);
+        throw net.starlark.java.eval.Starlark.Companion.errorf(
+            "unsupported binary operation: %s %s %s",
+            net.starlark.java.eval.Starlark.Companion.type(x),
+            op,
+            net.starlark.java.eval.Starlark.Companion.type(y)
+        )
     }
 
-    // custom binary operator?
-    if (x instanceof HasBinary) {
-      Object z = ((HasBinary) x).binaryOp(op, y, true);
-      if (z != null) {
-        return z;
-      }
-    }
-    if (y instanceof HasBinary) {
-      Object z = ((HasBinary) y).binaryOp(op, x, false);
-      if (z != null) {
-        return z;
-      }
-    }
-
-    throw Starlark.errorf(
-        "unsupported binary operation: %s %s %s", Starlark.type(x), op, Starlark.type(y));
-  }
-
-  // Defines the behavior of the language's ordered comparison operators (< <= => >).
-  private static int compare(Object x, Object y) throws EvalException {
-    try {
-      return Starlark.compareUnchecked(x, y);
-    } catch (ClassCastException ex) {
-      throw new EvalException(ex.getMessage());
-    }
-  }
-
-  private static String repeatString(String s, StarlarkInt in) throws EvalException {
-    int n = in.toInt("repeat");
-    if (n <= 0) {
-      return "";
-    } else if ((long) s.length() * (long) n > Integer.MAX_VALUE) {
-      // Would exceed max length of a java String.
-      throw Starlark.errorf("excessive repeat (%d * %d characters)", s.length(), n);
-    } else {
-      return s.repeat(n);
-    }
-  }
-
-  /** Evaluates a unary operation. */
-  static Object unaryOp(TokenKind op, Object x) throws EvalException {
-    switch (op) {
-      case NOT:
-        return !Starlark.truth(x);
-
-      case MINUS:
-        if (x instanceof StarlarkInt) {
-          return StarlarkInt.uminus((StarlarkInt) x); // -int
-        } else if (x instanceof StarlarkFloat) {
-          return StarlarkFloat.of(-((StarlarkFloat) x).toDouble()); // -float
+    // Defines the behavior of the language's ordered comparison operators (< <= => >).
+    @Throws(net.starlark.java.eval.EvalException::class)
+    private fun compare(x: Any?, y: Any?): Int {
+        try {
+            return net.starlark.java.eval.Starlark.Companion.compareUnchecked(x, y)
+        } catch (ex: java.lang.ClassCastException) {
+            throw net.starlark.java.eval.EvalException(ex.getMessage())
         }
-        break;
+    }
 
-      case PLUS:
-        if (x instanceof StarlarkInt) {
-          return x; // +int
-        } else if (x instanceof StarlarkFloat) {
-          return x; // +float
+    @Throws(net.starlark.java.eval.EvalException::class)
+    private fun repeatString(s: String, `in`: net.starlark.java.eval.StarlarkInt): String {
+        val n: Int = `in`.toInt("repeat")
+        if (n <= 0) {
+            return ""
+        } else if (s.length().toLong() * n.toLong() > java.lang.Integer.MAX_VALUE) {
+            // Would exceed max length of a java String.
+            throw net.starlark.java.eval.Starlark.Companion.errorf(
+                "excessive repeat (%d * %d characters)",
+                s.length(),
+                n
+            )
+        } else {
+            return s.repeat(n)
         }
-        break;
+    }
 
-      case TILDE:
-        if (x instanceof StarlarkInt) {
-          return StarlarkInt.bitnot((StarlarkInt) x); // ~int
+    /** Evaluates a unary operation.  */
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun unaryOp(op: net.starlark.java.syntax.TokenKind, x: Any): Any {
+        when (op) {
+            net.starlark.java.syntax.TokenKind.NOT -> return !net.starlark.java.eval.Starlark.Companion.truth(x)
+
+            net.starlark.java.syntax.TokenKind.MINUS -> if (x is net.starlark.java.eval.StarlarkInt) {
+                return net.starlark.java.eval.StarlarkInt.Companion.uminus(x as net.starlark.java.eval.StarlarkInt) // -int
+            } else if (x is net.starlark.java.eval.StarlarkFloat) {
+                return net.starlark.java.eval.StarlarkFloat.Companion.of(-(x as net.starlark.java.eval.StarlarkFloat).toDouble()) // -float
+            }
+
+            net.starlark.java.syntax.TokenKind.PLUS -> if (x is net.starlark.java.eval.StarlarkInt) {
+                return x // +int
+            } else if (x is net.starlark.java.eval.StarlarkFloat) {
+                return x // +float
+            }
+
+            net.starlark.java.syntax.TokenKind.TILDE -> if (x is net.starlark.java.eval.StarlarkInt) {
+                return net.starlark.java.eval.StarlarkInt.Companion.bitnot(x as net.starlark.java.eval.StarlarkInt) // ~int
+            }
+
+            else -> {}
         }
-        break;
-
-      default:
-        /* fall through */
+        throw net.starlark.java.eval.Starlark.Companion.errorf(
+            "unsupported unary operation: %s%s",
+            op,
+            net.starlark.java.eval.Starlark.Companion.type(x)
+        )
     }
-    throw Starlark.errorf("unsupported unary operation: %s%s", op, Starlark.type(x));
-  }
 
-  /**
-   * Returns the element of sequence or mapping {@code object} indexed by {@code key}.
-   *
-   * @throws EvalException if {@code object} is not a sequence or mapping.
-   */
-  @Nullable
-  static Object index(StarlarkThread starlarkThread, Object object, Object key)
-      throws EvalException {
-    Mutability mu = starlarkThread.mutability();
-    StarlarkSemantics semantics = starlarkThread.getSemantics();
+    /**
+     * Returns the element of sequence or mapping `object` indexed by `key`.
+     * 
+     * @throws EvalException if `object` is not a sequence or mapping.
+     */
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun index(starlarkThread: net.starlark.java.eval.StarlarkThread, `object`: Any, key: Any): Any? {
+        val mu: net.starlark.java.eval.Mutability = starlarkThread.mutability()
+        val semantics: net.starlark.java.eval.StarlarkSemantics = starlarkThread.getSemantics()
 
-    if (object instanceof StarlarkIndexable.Threaded) {
-      return ((StarlarkIndexable.Threaded) object).getIndex(starlarkThread, semantics, key);
-    } else if (object instanceof StarlarkIndexable) {
-      Object result = ((StarlarkIndexable) object).getIndex(semantics, key);
-      // TODO(bazel-team): We shouldn't have this fromJava call here. If it's needed at all,
-      // it should go in the implementations of StarlarkIndexable#getIndex that produce non-Starlark
-      // values.
-      return result == null ? null : Starlark.fromJava(result, mu);
-    } else if (object instanceof String string) {
-      int index = Starlark.toInt(key, "string index");
-      index = getSequenceIndex(index, string.length());
-      return StringModule.memoizedCharToString(string.charAt(index));
-    } else {
-      throw Starlark.errorf(
-          "type '%s' has no operator [](%s)", Starlark.type(object), Starlark.type(key));
+        if (`object` is net.starlark.java.eval.StarlarkIndexable.Threaded) {
+            return (`object` as net.starlark.java.eval.StarlarkIndexable.Threaded).getIndex(
+                starlarkThread,
+                semantics,
+                key
+            )
+        } else if (`object` is net.starlark.java.eval.StarlarkIndexable) {
+            val result: Any? = (`object` as net.starlark.java.eval.StarlarkIndexable).getIndex(semantics, key)
+            // TODO(bazel-team): We shouldn't have this fromJava call here. If it's needed at all,
+            // it should go in the implementations of StarlarkIndexable#getIndex that produce non-Starlark
+            // values.
+            return if (result == null) null else net.starlark.java.eval.Starlark.Companion.fromJava(result, mu)
+        } else if (`object` is String) {
+            var index: Int = net.starlark.java.eval.Starlark.Companion.toInt(key, "string index")
+            index = net.starlark.java.eval.EvalUtils.getSequenceIndex(index, `object`.length())
+            return net.starlark.java.eval.StringModule.Companion.memoizedCharToString(`object`.charAt(index))
+        } else {
+            throw net.starlark.java.eval.Starlark.Companion.errorf(
+                "type '%s' has no operator [](%s)",
+                net.starlark.java.eval.Starlark.Companion.type(`object`),
+                net.starlark.java.eval.Starlark.Companion.type(key)
+            )
+        }
     }
-  }
 
-  /**
-   * Updates an object as if by the Starlark statement {@code object[key] = value}.
-   *
-   * @throws EvalException if the object is not a list or dict.
-   */
-  static void setIndex(Object object, Object key, Object value) throws EvalException {
-    if (object instanceof Dict) {
-      @SuppressWarnings("unchecked")
-      Dict<Object, Object> dict = (Dict<Object, Object>) object;
-      dict.putEntry(key, value);
-
-    } else if (object instanceof StarlarkList) {
-      @SuppressWarnings("unchecked")
-      StarlarkList<Object> list = (StarlarkList<Object>) object;
-      int index = Starlark.toInt(key, "list index");
-      index = EvalUtils.getSequenceIndex(index, list.size());
-      list.setElementAt(index, value);
-
-    } else {
-      throw Starlark.errorf(
-          "can only assign an element in a dictionary or a list, not in a '%s'",
-          Starlark.type(object));
+    /**
+     * Updates an object as if by the Starlark statement `object[key] = value`.
+     * 
+     * @throws EvalException if the object is not a list or dict.
+     */
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun setIndex(`object`: Any, key: Any?, value: Any?) {
+        if (`object` is net.starlark.java.eval.Dict<*, *>) {
+            val dict: net.starlark.java.eval.Dict<Any?, Any?> = `object` as net.starlark.java.eval.Dict<Any?, Any?>
+            dict.putEntry(key, value)
+        } else if (`object` is net.starlark.java.eval.StarlarkList<*>) {
+            val list: net.starlark.java.eval.StarlarkList<Any?> = `object` as net.starlark.java.eval.StarlarkList<Any?>
+            var index: Int = net.starlark.java.eval.Starlark.Companion.toInt(key, "list index")
+            index = net.starlark.java.eval.EvalUtils.getSequenceIndex(index, list.size())
+            list.setElementAt(index, value)
+        } else {
+            throw net.starlark.java.eval.Starlark.Companion.errorf(
+                "can only assign an element in a dictionary or a list, not in a '%s'",
+                net.starlark.java.eval.Starlark.Companion.type(`object`)
+            )
+        }
     }
-  }
 
-  /** Updates the named field of x as if by the Starlark statement {@code x.field = value}. */
-  static void setField(Object x, String field, Object value) throws EvalException {
-    if (x instanceof Structure) {
-      ((Structure) x).setField(field, value);
-    } else {
-      throw Starlark.errorf("cannot set .%s field of %s value", field, Starlark.type(x));
+    /** Updates the named field of x as if by the Starlark statement `x.field = value`.  */
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun setField(x: Any, field: String?, value: Any?) {
+        if (x is net.starlark.java.eval.Structure) {
+            (x as net.starlark.java.eval.Structure).setField(field, value)
+        } else {
+            throw net.starlark.java.eval.Starlark.Companion.errorf(
+                "cannot set .%s field of %s value",
+                field,
+                net.starlark.java.eval.Starlark.Companion.type(x)
+            )
+        }
     }
-  }
 }

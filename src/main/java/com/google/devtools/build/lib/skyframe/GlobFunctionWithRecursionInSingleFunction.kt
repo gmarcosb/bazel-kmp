@@ -11,101 +11,91 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.packages.producers.GlobComputationProducer;
-import com.google.devtools.build.lib.packages.producers.GlobError;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.skyframe.SkyFunction.Environment.SkyKeyComputeState;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.state.Driver;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories
 
 /**
- * Computes {@link GlobValue}s for a package with only one Glob node created. The recursive globbing
- * logic is inlined in one {@link com.google.devtools.build.skyframe.SkyFunction#compute}
+ * Computes [GlobValue]s for a package with only one Glob node created. The recursive globbing
+ * logic is inlined in one [com.google.devtools.build.skyframe.SkyFunction.compute]
  * invocation.
- *
- * <p>The recursion inlined in one {@link com.google.devtools.build.skyframe.SkyFunction#compute}
- * invocation is realized by using {@link com.google.devtools.build.skyframe.state.StateMachine} for
- * structured concurrency when querying dependent {@link SkyKey}s, and {@link SkyKeyComputeState} to
+ * 
+ * 
+ * The recursion inlined in one [com.google.devtools.build.skyframe.SkyFunction.compute]
+ * invocation is realized by using [com.google.devtools.build.skyframe.state.StateMachine] for
+ * structured concurrency when querying dependent [SkyKey]s, and [SkyKeyComputeState] to
  * cache computation state between skyframe restarts.
  */
-public class GlobFunctionWithRecursionInSingleFunction extends GlobFunction {
-
-  /**
-   * Stores {@link GlobFunctionWithRecursionInSingleFunction} computation state of the same glob
-   * pattern between skyframe restarts.
-   */
-  private static class State implements SkyKeyComputeState, GlobComputationProducer.ResultSink {
-
+class GlobFunctionWithRecursionInSingleFunction : GlobFunction() {
     /**
-     * Drives a {@link GlobComputationProducer} that sets the {@link #globMatchingResult} when
-     * complete.
+     * Stores [GlobFunctionWithRecursionInSingleFunction] computation state of the same glob
+     * pattern between skyframe restarts.
      */
-    @Nullable // Non-null while in-flight.
-    private Driver globComputationDriver;
+    private class State : SkyKeyComputeState,
+        com.google.devtools.build.lib.packages.producers.GlobComputationProducer.ResultSink {
+        /**
+         * Drives a [GlobComputationProducer] that sets the [.globMatchingResult] when
+         * complete.
+         */
+        // Non-null while in-flight.
+        private var globComputationDriver: com.google.devtools.build.skyframe.state.Driver? = null
 
-    @Nullable IgnoredSubdirectories ignoredSubdirectories;
+        var ignoredSubdirectories: IgnoredSubdirectories? = null
 
-    private ImmutableSet<PathFragment> globMatchingResult;
-    private GlobError error;
+        private var globMatchingResult: com.google.common.collect.ImmutableSet<PathFragment?>? = null
+        private var error: GlobError? = null
 
-    @Override
-    public void acceptPathFragmentsWithoutPackageFragment(
-        ImmutableSet<PathFragment> globMatchingResult) {
-      if (error == null) {
-        // If an exception has already been discovered and accepted during previous computation, we
-        // should not accept any matching result.
-        this.globMatchingResult = globMatchingResult;
-      }
+        public override fun acceptPathFragmentsWithoutPackageFragment(
+            globMatchingResult: com.google.common.collect.ImmutableSet<PathFragment?>?
+        ) {
+            if (error == null) {
+                // If an exception has already been discovered and accepted during previous computation, we
+                // should not accept any matching result.
+                this.globMatchingResult = globMatchingResult
+            }
+        }
+
+        override fun acceptGlobError(error: GlobError?) {
+            if (this.error == null) {
+                // Keeps the first reported error if there are multiple.
+                this.error = error
+            }
+        }
     }
 
-    @Override
-    public void acceptGlobError(GlobError error) {
-      if (this.error == null) {
-        // Keeps the first reported error if there are multiple.
-        this.error = error;
-      }
+    @Throws(GlobException::class, java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment): SkyValue? {
+        val glob: GlobDescriptor = skyKey.argument() as GlobDescriptor
+        val state: State =
+            env.getState<State>(java.util.function.Supplier { com.google.devtools.build.lib.skyframe.GlobFunctionWithRecursionInSingleFunction.State() })
+
+        if (state.ignoredSubdirectories == null) {
+            val repositoryName: RepositoryName? = glob.getPackageId().getRepository()
+            val ignoredSubDirectories: IgnoredSubdirectoriesValue? =
+                env.getValue(IgnoredSubdirectoriesValue.Companion.key(repositoryName)) as IgnoredSubdirectoriesValue?
+            if (env.valuesMissing()) {
+                return null
+            }
+            state.ignoredSubdirectories = ignoredSubDirectories.asIgnoredSubdirectories()
+        }
+
+        if (state.globComputationDriver == null) {
+            state.globComputationDriver =
+                com.google.devtools.build.skyframe.state.Driver(
+                    GlobComputationProducer(
+                        glob, state.ignoredSubdirectories, regexPatternCache, state
+                    )
+                )
+        }
+
+        if (!state.globComputationDriver.drive(env)) {
+            // Even though glob computation has not completed, we still want to throw exceptions
+            // discovered in the current Skyframe session.
+            GlobException.Companion.handleExceptions(state.error)
+            return null
+        }
+
+        GlobException.Companion.handleExceptions(state.error)
+        return GlobValueWithImmutableSet(state.globMatchingResult)
     }
-  }
-
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws GlobException, InterruptedException {
-    GlobDescriptor glob = (GlobDescriptor) skyKey.argument();
-    State state = env.getState(State::new);
-
-    if (state.ignoredSubdirectories == null) {
-      RepositoryName repositoryName = glob.getPackageId().getRepository();
-      IgnoredSubdirectoriesValue ignoredSubDirectories =
-          (IgnoredSubdirectoriesValue) env.getValue(IgnoredSubdirectoriesValue.key(repositoryName));
-      if (env.valuesMissing()) {
-        return null;
-      }
-      state.ignoredSubdirectories = ignoredSubDirectories.asIgnoredSubdirectories();
-    }
-
-    if (state.globComputationDriver == null) {
-      state.globComputationDriver =
-          new Driver(
-              new GlobComputationProducer(
-                  glob, state.ignoredSubdirectories, regexPatternCache, state));
-    }
-
-    if (!state.globComputationDriver.drive(env)) {
-      // Even though glob computation has not completed, we still want to throw exceptions
-      // discovered in the current Skyframe session.
-      GlobException.handleExceptions(state.error);
-      return null;
-    }
-
-    GlobException.handleExceptions(state.error);
-    return new GlobValueWithImmutableSet(state.globMatchingResult);
-  }
 }

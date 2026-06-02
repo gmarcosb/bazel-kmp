@@ -11,118 +11,121 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.worker;
+package com.google.devtools.build.lib.worker
 
-import static java.nio.charset.StandardCharsets.UTF_8;
+import com.google.devtools.build.lib.worker.WorkerProtocol.WorkRequest
 
-import com.google.devtools.build.lib.worker.WorkerProtocol.WorkRequest;
-import com.google.devtools.build.lib.worker.WorkerProtocol.WorkResponse;
-import com.google.gson.stream.JsonReader;
-import com.google.gson.stream.MalformedJsonException;
-import com.google.protobuf.util.JsonFormat;
-import com.google.protobuf.util.JsonFormat.Printer;
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.EOFException;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.OutputStreamWriter;
+/** An implementation of a Bazel worker using JSON to communicate with the worker process.  */
+internal class JsonWorkerProtocol(workersStdin: java.io.OutputStream, workersStdout: java.io.InputStream) :
+    WorkerProtocolImpl {
+    /** Reader for reading the WorkResponse.  */
+    private val reader: JsonReader
 
-/** An implementation of a Bazel worker using JSON to communicate with the worker process. */
-final class JsonWorkerProtocol implements WorkerProtocolImpl {
-  /** Reader for reading the WorkResponse. */
-  private final JsonReader reader;
-  /** Printer for printing the WorkRequest */
-  private final Printer jsonPrinter;
-  /** Writer for writing the WorkRequest to the worker */
-  private final BufferedWriter jsonWriter;
+    /** Printer for printing the WorkRequest  */
+    private val jsonPrinter: Printer
 
-  JsonWorkerProtocol(OutputStream workersStdin, InputStream workersStdout) {
-    jsonPrinter = JsonFormat.printer().omittingInsignificantWhitespace();
-    jsonWriter = new BufferedWriter(new OutputStreamWriter(workersStdin, UTF_8));
-    reader = new JsonReader(new BufferedReader(new InputStreamReader(workersStdout, UTF_8)));
-    reader.setLenient(true);
-  }
+    /** Writer for writing the WorkRequest to the worker  */
+    private val jsonWriter: BufferedWriter
 
-  @Override
-  public void putRequest(WorkRequest request) throws IOException {
-    // WorkRequests are serialized according to ndjson spec.
-    // https://github.com/ndjson/ndjson-spec
-    jsonPrinter.appendTo(request, jsonWriter);
-    jsonWriter.append("\n");
-    jsonWriter.flush();
-  }
-
-  @Override
-  public WorkResponse getResponse() throws IOException {
-    boolean interrupted = Thread.interrupted();
-    try {
-      return parseResponse();
-    } finally {
-      if (interrupted) {
-        Thread.currentThread().interrupt();
-      }
+    init {
+        jsonPrinter = JsonFormat.printer().omittingInsignificantWhitespace()
+        jsonWriter = BufferedWriter(OutputStreamWriter(workersStdin, java.nio.charset.StandardCharsets.UTF_8))
+        reader = JsonReader(
+            BufferedReader(
+                java.io.InputStreamReader(
+                    workersStdout,
+                    java.nio.charset.StandardCharsets.UTF_8
+                )
+            )
+        )
+        reader.setLenient(true)
     }
-  }
 
-  private WorkResponse parseResponse() throws IOException {
-    Integer exitCode = null;
-    String output = null;
-    Integer requestId = null;
-    try {
-      reader.beginObject();
-      while (reader.hasNext()) {
-        String name = reader.nextName();
-        switch (name) {
-          case "exitCode":
-            if (exitCode != null) {
-              throw new IOException("Work response cannot have more than one exit code");
+    @Throws(IOException::class)
+    override fun putRequest(request: WorkRequest?) {
+        // WorkRequests are serialized according to ndjson spec.
+        // https://github.com/ndjson/ndjson-spec
+        jsonPrinter.appendTo(request, jsonWriter)
+        jsonWriter.append("\n")
+        jsonWriter.flush()
+    }
+
+    @get:Throws(IOException::class)
+    val response: WorkResponse
+        get() {
+            val interrupted: Boolean = java.lang.Thread.interrupted()
+            try {
+                return parseResponse()
+            } finally {
+                if (interrupted) {
+                    java.lang.Thread.currentThread().interrupt()
+                }
             }
-            exitCode = reader.nextInt();
-            break;
-          case "output":
-            if (output != null) {
-              throw new IOException("Work response cannot have more than one output");
-            }
-            output = reader.nextString();
-            break;
-          case "requestId":
-            if (requestId != null) {
-              throw new IOException("Work response cannot have more than one requestId");
-            }
-            requestId = reader.nextInt();
-            break;
-          default:
-            // As per https://bazel.build/docs/creating-workers#work-responses,
-            // unknown fields are ignored.
-            reader.skipValue();
         }
-      }
-      reader.endObject();
-    } catch (MalformedJsonException | EOFException | IllegalStateException e) {
-      throw new IOException("Could not parse json work request correctly", e);
+
+    @Throws(IOException::class)
+    private fun parseResponse(): WorkResponse {
+        var exitCode: Int? = null
+        var output: String? = null
+        var requestId: Int? = null
+        try {
+            reader.beginObject()
+            while (reader.hasNext()) {
+                val name: String = reader.nextName()
+                when (name) {
+                    "exitCode" -> {
+                        if (exitCode != null) {
+                            throw IOException("Work response cannot have more than one exit code")
+                        }
+                        exitCode = reader.nextInt()
+                    }
+
+                    "output" -> {
+                        if (output != null) {
+                            throw IOException("Work response cannot have more than one output")
+                        }
+                        output = reader.nextString()
+                    }
+
+                    "requestId" -> {
+                        if (requestId != null) {
+                            throw IOException("Work response cannot have more than one requestId")
+                        }
+                        requestId = reader.nextInt()
+                    }
+
+                    else ->             // As per https://bazel.build/docs/creating-workers#work-responses,
+                        // unknown fields are ignored.
+                        reader.skipValue()
+                }
+            }
+            reader.endObject()
+        } catch (e: MalformedJsonException) {
+            throw IOException("Could not parse json work request correctly", e)
+        } catch (e: EOFException) {
+            throw IOException("Could not parse json work request correctly", e)
+        } catch (e: java.lang.IllegalStateException) {
+            throw IOException("Could not parse json work request correctly", e)
+        }
+
+        val responseBuilder: WorkResponse.Builder = WorkResponse.newBuilder()
+
+        if (exitCode != null) {
+            responseBuilder.setExitCode(exitCode)
+        }
+        if (output != null) {
+            responseBuilder.setOutput(output)
+        }
+        if (requestId != null) {
+            responseBuilder.setRequestId(requestId)
+        }
+
+        return responseBuilder.build()
     }
 
-    WorkResponse.Builder responseBuilder = WorkResponse.newBuilder();
-
-    if (exitCode != null) {
-      responseBuilder.setExitCode(exitCode);
+    @Throws(IOException::class)
+    override fun close() {
+        reader.close()
+        jsonWriter.close()
     }
-    if (output != null) {
-      responseBuilder.setOutput(output);
-    }
-    if (requestId != null) {
-      responseBuilder.setRequestId(requestId);
-    }
-
-    return responseBuilder.build();
-  }
-
-  @Override
-  public void close() throws IOException {
-    reader.close();
-    jsonWriter.close();
-  }
 }

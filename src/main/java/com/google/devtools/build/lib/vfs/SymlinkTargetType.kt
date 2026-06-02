@@ -12,36 +12,36 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import com.google.devtools.build.lib.skyframe.serialization.EnumCodec;
+import com.google.devtools.build.lib.skyframe.serialization.EnumCodec
 
 /**
  * Indicates the file type at the other end of a symlink.
- *
- * <p>Required by some filesystems (notably on Windows) to correctly create a symlink when its
+ * 
+ * 
+ * Required by some filesystems (notably on Windows) to correctly create a symlink when its
  * target does not yet exist, as a different kind of filesystem object might be required depending
  * on the target type.
  */
-public enum SymlinkTargetType {
-  /** The target is of unspecified type. */
-  UNSPECIFIED,
-  /** The target is a regular file. */
-  FILE,
-  /** The target is a directory. */
-  DIRECTORY;
+enum class SymlinkTargetType {
+    /** The target is of unspecified type.  */
+    UNSPECIFIED,
 
-  /**
-   * Codec for {@link SymlinkTargetType}.
-   *
-   * <p>{@link com.google.devtools.build.lib.skyframe.serialization.AutoRegistry} excludes the
-   * entire com.google.devtools.build.lib.vfs java package from having DynamicCodec support.
-   * Therefore, we need to provide our own codec.
-   */
-  @SuppressWarnings("unused") // found by CLASSPATH-scanning magic
-  private static final class Codec extends EnumCodec<SymlinkTargetType> {
-    Codec() {
-      super(SymlinkTargetType.class);
-    }
-  }
+    /** The target is a regular file.  */
+    FILE,
+
+    /** The target is a directory.  */
+    DIRECTORY;
+
+    /**
+     * Codec for [SymlinkTargetType].
+     * 
+     * 
+     * [com.google.devtools.build.lib.skyframe.serialization.AutoRegistry] excludes the
+     * entire com.google.devtools.build.lib.vfs java package from having DynamicCodec support.
+     * Therefore, we need to provide our own codec.
+     */
+    @Suppress("unused") // found by CLASSPATH-scanning magic
+    private class Codec : EnumCodec<SymlinkTargetType?>(SymlinkTargetType::class.java)
 }

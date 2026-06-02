@@ -11,181 +11,177 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.sandbox
 
-package com.google.devtools.build.lib.sandbox;
+import com.google.devtools.build.lib.runtime.ProcessWrapper
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.runtime.ProcessWrapper;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.time.Duration;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+internal class DockerCommandLineBuilder {
+    private var processWrapper: ProcessWrapper? = null
+    private var dockerClient: com.google.devtools.build.lib.vfs.Path? = null
+    private var imageName: String? = null
+    private var commandArguments: MutableList<String?>? = null
+    private var sandboxExecRoot: com.google.devtools.build.lib.vfs.Path? = null
+    private var environmentVariables: MutableMap<String?, String?>? = null
+    private var timeout: java.time.Duration? = null
+    private var createNetworkNamespace = false
+    private var uuid: UUID? = null
+    private var uid = 0
+    private var gid = 0
+    private var commandId: String? = null
+    private var privileged = false
+    private var additionalMounts: MutableList<MutableMap.MutableEntry<String?, String?>>? = null
 
-final class DockerCommandLineBuilder {
-  private ProcessWrapper processWrapper;
-  private Path dockerClient;
-  private String imageName;
-  private List<String> commandArguments;
-  private Path sandboxExecRoot;
-  private Map<String, String> environmentVariables;
-  private Duration timeout;
-  private boolean createNetworkNamespace;
-  private UUID uuid;
-  private int uid;
-  private int gid;
-  private String commandId;
-  private boolean privileged;
-  private List<Map.Entry<String, String>> additionalMounts;
-
-  @CanIgnoreReturnValue
-  public DockerCommandLineBuilder setProcessWrapper(ProcessWrapper processWrapper) {
-    this.processWrapper = processWrapper;
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public DockerCommandLineBuilder setDockerClient(Path dockerClient) {
-    this.dockerClient = dockerClient;
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public DockerCommandLineBuilder setImageName(String imageName) {
-    this.imageName = imageName;
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public DockerCommandLineBuilder setCommandArguments(List<String> commandArguments) {
-    this.commandArguments = commandArguments;
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public DockerCommandLineBuilder setSandboxExecRoot(Path sandboxExecRoot) {
-    this.sandboxExecRoot = sandboxExecRoot;
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public DockerCommandLineBuilder setEnvironmentVariables(
-      Map<String, String> environmentVariables) {
-    this.environmentVariables = environmentVariables;
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public DockerCommandLineBuilder setTimeout(Duration timeout) {
-    this.timeout = timeout;
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public DockerCommandLineBuilder setCreateNetworkNamespace(boolean createNetworkNamespace) {
-    this.createNetworkNamespace = createNetworkNamespace;
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public DockerCommandLineBuilder setUuid(UUID uuid) {
-    this.uuid = uuid;
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public DockerCommandLineBuilder setUid(int uid) {
-    this.uid = uid;
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public DockerCommandLineBuilder setGid(int gid) {
-    this.gid = gid;
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public DockerCommandLineBuilder setCommandId(String commandId) {
-    this.commandId = commandId;
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public DockerCommandLineBuilder setPrivileged(boolean privileged) {
-    this.privileged = privileged;
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public DockerCommandLineBuilder setAdditionalMounts(
-      List<Map.Entry<String, String>> additionalMounts) {
-    this.additionalMounts = additionalMounts;
-    return this;
-  }
-
-  public ImmutableList<String> build() {
-    Preconditions.checkNotNull(sandboxExecRoot, "sandboxExecRoot must be set");
-    Preconditions.checkState(!imageName.isEmpty(), "imageName must be set");
-    Preconditions.checkState(!commandArguments.isEmpty(), "commandArguments must be set");
-
-    ImmutableList.Builder<String> dockerCmdLine = ImmutableList.builder();
-
-    dockerCmdLine.add(dockerClient.getPathString());
-    dockerCmdLine.add("run");
-    dockerCmdLine.add("--rm");
-    if (createNetworkNamespace) {
-      dockerCmdLine.add("--network=none");
-    } else {
-      dockerCmdLine.add("--network=host");
-    }
-    if (privileged) {
-      dockerCmdLine.add("--privileged");
-    }
-    environmentVariables.forEach((k, v) -> dockerCmdLine.add("-e", k + "=" + v));
-    PathFragment execRootInsideDocker =
-        PathFragment.create("/execroot/").getRelative(sandboxExecRoot.getBaseName());
-    dockerCmdLine.add(
-        "-v", sandboxExecRoot.getPathString() + ":" + execRootInsideDocker.getPathString());
-    dockerCmdLine.add("-w", execRootInsideDocker.getPathString());
-
-    for (ImmutableMap.Entry<String, String> additionalMountPath : additionalMounts) {
-      final String mountTarget = additionalMountPath.getValue();
-      final String mountSource = additionalMountPath.getKey();
-      dockerCmdLine.add("-v", mountSource + ":" + mountTarget);
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setProcessWrapper(processWrapper: ProcessWrapper): DockerCommandLineBuilder {
+        this.processWrapper = processWrapper
+        return this
     }
 
-    StringBuilder uidGidFlagBuilder = new StringBuilder();
-    if (uid != 0) {
-      uidGidFlagBuilder.append(uid);
-    }
-    if (gid != 0) {
-      uidGidFlagBuilder.append(":");
-      uidGidFlagBuilder.append(gid);
-    }
-    String uidGidFlag = uidGidFlagBuilder.toString();
-    if (!uidGidFlag.isEmpty()) {
-      dockerCmdLine.add("-u", uidGidFlagBuilder.toString());
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setDockerClient(dockerClient: com.google.devtools.build.lib.vfs.Path): DockerCommandLineBuilder {
+        this.dockerClient = dockerClient
+        return this
     }
 
-    if (!commandId.isEmpty()) {
-      dockerCmdLine.add("-l", "command_id=" + commandId);
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setImageName(imageName: String): DockerCommandLineBuilder {
+        this.imageName = imageName
+        return this
     }
-    if (uuid != null) {
-      dockerCmdLine.add("--name", uuid.toString());
-    }
-    dockerCmdLine.add(imageName);
-    dockerCmdLine.addAll(commandArguments);
 
-    ProcessWrapper.CommandLineBuilder processWrapperCmdLine =
-        processWrapper.commandLineBuilder(dockerCmdLine.build());
-    if (timeout != null) {
-      processWrapperCmdLine.setTimeout(timeout);
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setCommandArguments(commandArguments: MutableList<String?>): DockerCommandLineBuilder {
+        this.commandArguments = commandArguments
+        return this
     }
-    return processWrapperCmdLine.build();
-  }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setSandboxExecRoot(sandboxExecRoot: com.google.devtools.build.lib.vfs.Path): DockerCommandLineBuilder {
+        this.sandboxExecRoot = sandboxExecRoot
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setEnvironmentVariables(
+        environmentVariables: MutableMap<String?, String?>
+    ): DockerCommandLineBuilder {
+        this.environmentVariables = environmentVariables
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setTimeout(timeout: java.time.Duration?): DockerCommandLineBuilder {
+        this.timeout = timeout
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setCreateNetworkNamespace(createNetworkNamespace: Boolean): DockerCommandLineBuilder {
+        this.createNetworkNamespace = createNetworkNamespace
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setUuid(uuid: UUID?): DockerCommandLineBuilder {
+        this.uuid = uuid
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setUid(uid: Int): DockerCommandLineBuilder {
+        this.uid = uid
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setGid(gid: Int): DockerCommandLineBuilder {
+        this.gid = gid
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setCommandId(commandId: String): DockerCommandLineBuilder {
+        this.commandId = commandId
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setPrivileged(privileged: Boolean): DockerCommandLineBuilder {
+        this.privileged = privileged
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setAdditionalMounts(
+        additionalMounts: MutableList<MutableMap.MutableEntry<String?, String?>>
+    ): DockerCommandLineBuilder {
+        this.additionalMounts = additionalMounts
+        return this
+    }
+
+    fun build(): com.google.common.collect.ImmutableList<String?> {
+        com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.lib.vfs.Path?>(
+            sandboxExecRoot,
+            "sandboxExecRoot must be set"
+        )
+        com.google.common.base.Preconditions.checkState(!imageName.isEmpty(), "imageName must be set")
+        com.google.common.base.Preconditions.checkState(!commandArguments!!.isEmpty(), "commandArguments must be set")
+
+        val dockerCmdLine: com.google.common.collect.ImmutableList.Builder<String?> =
+            com.google.common.collect.ImmutableList.builder<String?>()
+
+        dockerCmdLine.add(dockerClient.getPathString())
+        dockerCmdLine.add("run")
+        dockerCmdLine.add("--rm")
+        if (createNetworkNamespace) {
+            dockerCmdLine.add("--network=none")
+        } else {
+            dockerCmdLine.add("--network=host")
+        }
+        if (privileged) {
+            dockerCmdLine.add("--privileged")
+        }
+        environmentVariables.forEach { (k: String?, v: String?) -> dockerCmdLine.add("-e", k + "=" + v) }
+        val execRootInsideDocker: PathFragment =
+            PathFragment.create("/execroot/").getRelative(sandboxExecRoot.getBaseName())
+        dockerCmdLine.add(
+            "-v", sandboxExecRoot.getPathString() + ":" + execRootInsideDocker.getPathString()
+        )
+        dockerCmdLine.add("-w", execRootInsideDocker.getPathString())
+
+        for (additionalMountPath in additionalMounts!!) {
+            val mountTarget = additionalMountPath.value
+            val mountSource = additionalMountPath.key
+            dockerCmdLine.add("-v", mountSource + ":" + mountTarget)
+        }
+
+        val uidGidFlagBuilder: java.lang.StringBuilder = java.lang.StringBuilder()
+        if (uid != 0) {
+            uidGidFlagBuilder.append(uid)
+        }
+        if (gid != 0) {
+            uidGidFlagBuilder.append(":")
+            uidGidFlagBuilder.append(gid)
+        }
+        val uidGidFlag = uidGidFlagBuilder.toString()
+        if (!uidGidFlag.isEmpty()) {
+            dockerCmdLine.add("-u", uidGidFlagBuilder.toString())
+        }
+
+        if (!commandId.isEmpty()) {
+            dockerCmdLine.add("-l", "command_id=" + commandId)
+        }
+        if (uuid != null) {
+            dockerCmdLine.add("--name", uuid.toString())
+        }
+        dockerCmdLine.add(imageName)
+        dockerCmdLine.addAll(commandArguments)
+
+        val processWrapperCmdLine: CommandLineBuilder =
+            processWrapper.commandLineBuilder(dockerCmdLine.build())
+        if (timeout != null) {
+            processWrapperCmdLine.setTimeout(timeout)
+        }
+        return processWrapperCmdLine.build()
+    }
 }

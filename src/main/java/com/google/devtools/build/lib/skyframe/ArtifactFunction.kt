@@ -11,685 +11,671 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.devtools.build.lib.skyframe.SkyValueRetrieverUtils.retrieveRemoteSkyValue;
-
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.ActionExecutionException;
-import com.google.devtools.build.lib.actions.ActionLookupData;
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.actions.ActionLookupValue;
-import com.google.devtools.build.lib.actions.ActionTemplate;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.DerivedArtifact;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifact;
-import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.FileStateValue.RegularFileStateValueWithMetadata;
-import com.google.devtools.build.lib.actions.FileValue;
-import com.google.devtools.build.lib.bugreport.BugReport;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.server.FailureDetails.Execution;
-import com.google.devtools.build.lib.server.FailureDetails.Execution.Code;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.skyframe.ActionTemplateExpansionValue.ActionTemplateExpansionKey;
-import com.google.devtools.build.lib.skyframe.RecursiveFilesystemTraversalFunction.RecursiveFilesystemTraversalException;
-import com.google.devtools.build.lib.skyframe.RecursiveFilesystemTraversalValue.ResolvedFile;
-import com.google.devtools.build.lib.skyframe.TraversalRequest.DirectTraversalRoot;
-import com.google.devtools.build.lib.skyframe.serialization.SkyValueRetriever;
-import com.google.devtools.build.lib.skyframe.serialization.SkyValueRetriever.RetrievalContext;
-import com.google.devtools.build.lib.skyframe.serialization.SkyValueRetriever.SerializableSkyKeyComputeState;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCacheReaderDepsProvider;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.vfs.DetailedIOException;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.lib.vfs.XattrProvider;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionException.Transience;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.SkyframeLookupResult;
-import java.io.IOException;
-import java.util.Map;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionAnalysisMetadata
 
 /**
- * A builder of values for {@link Artifact} keys when the key is not a simple generated artifact. To
+ * A builder of values for [Artifact] keys when the key is not a simple generated artifact. To
  * save memory, ordinary generated artifacts (non-runfiles, non-tree) have their metadata accessed
- * directly from the corresponding {@link ActionExecutionValue}. This SkyFunction is therefore only
+ * directly from the corresponding [ActionExecutionValue]. This SkyFunction is therefore only
  * usable for source, runfiles trees and tree artifacts.
  */
-public final class ArtifactFunction implements SkyFunction {
+class ArtifactFunction(
+    mkdirForTreeArtifacts: java.util.function.Supplier<Boolean?>,
+    sourceArtifactsSeen: MetadataConsumerForMetrics,
+    xattrProvider: XattrProvider?,
+    actionExecutor: SkyframeActionExecutor,
+    cachingDependenciesSupplier: java.util.function.Supplier<RemoteAnalysisCacheReaderDepsProvider>
+) : SkyFunction {
+    private val mkdirForTreeArtifacts: java.util.function.Supplier<Boolean?>
+    private val sourceArtifactsSeen: MetadataConsumerForMetrics
+    private val xattrProvider: XattrProvider?
+    private val actionExecutor: SkyframeActionExecutor
+    private val cachingDependenciesSupplier: java.util.function.Supplier<RemoteAnalysisCacheReaderDepsProvider>
 
-  private final Supplier<Boolean> mkdirForTreeArtifacts;
-  private final MetadataConsumerForMetrics sourceArtifactsSeen;
-  private final XattrProvider xattrProvider;
-  private final SkyframeActionExecutor actionExecutor;
-  private final Supplier<RemoteAnalysisCacheReaderDepsProvider> cachingDependenciesSupplier;
+    /** A [SkyValue] representing a missing input file.  */
+    class MissingArtifactValue private constructor(missingArtifact: Artifact) : SkyValue {
+        private val detailedExitCode: DetailedExitCode
 
-  /** A {@link SkyValue} representing a missing input file. */
-  public static final class MissingArtifactValue implements SkyValue {
-    private final DetailedExitCode detailedExitCode;
-
-    private MissingArtifactValue(Artifact missingArtifact) {
-      FailureDetail failureDetail =
-          FailureDetail.newBuilder()
-              .setMessage(constructErrorMessage(missingArtifact, "missing input file"))
-              .setExecution(Execution.newBuilder().setCode(Code.SOURCE_INPUT_MISSING))
-              .build();
-      this.detailedExitCode = DetailedExitCode.of(failureDetail);
-    }
-
-    DetailedExitCode getDetailedExitCode() {
-      return detailedExitCode;
-    }
-
-    @Override
-    public String toString() {
-      return MoreObjects.toStringHelper(this).add("detailedExitCode", detailedExitCode).toString();
-    }
-  }
-
-  private static class State implements SerializableSkyKeyComputeState {
-    @Nullable // initialized lazily
-    private RetrievalContext retrievalContext = null;
-
-    @Override
-    public RetrievalContext getRetrievalContext() {
-      if (retrievalContext == null) {
-        retrievalContext = new RetrievalContext();
-      }
-
-      return retrievalContext;
-    }
-  }
-
-  public ArtifactFunction(
-      Supplier<Boolean> mkdirForTreeArtifacts,
-      MetadataConsumerForMetrics sourceArtifactsSeen,
-      XattrProvider xattrProvider,
-      SkyframeActionExecutor actionExecutor,
-      Supplier<RemoteAnalysisCacheReaderDepsProvider> cachingDependenciesSupplier) {
-    this.mkdirForTreeArtifacts = mkdirForTreeArtifacts;
-    this.sourceArtifactsSeen = sourceArtifactsSeen;
-    this.xattrProvider = xattrProvider;
-    this.actionExecutor = actionExecutor;
-    this.cachingDependenciesSupplier = cachingDependenciesSupplier;
-  }
-
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws ArtifactFunctionException, InterruptedException {
-    Artifact artifact = (Artifact) skyKey;
-
-    if (!artifact.hasKnownGeneratingAction()) {
-      // If the artifact has no known generating action, it is a source artifact and is never cached
-      // remotely.
-      return createSourceValue(artifact, env);
-    }
-
-    Artifact.DerivedArtifact derivedArtifact = (DerivedArtifact) artifact;
-
-    RemoteAnalysisCacheReaderDepsProvider remoteCachingDependencies =
-        cachingDependenciesSupplier.get();
-    if (remoteCachingDependencies.mode().isRetrievalEnabled()
-        && !remoteCachingDependencies.getSkycacheAnalysisOnly()
-        && !actionExecutor.shouldSkipRetrieval(derivedArtifact.getGeneratingActionKey())) {
-      switch (retrieveRemoteSkyValue(artifact, env, remoteCachingDependencies, State::new)) {
-        case SkyValueRetriever.Restart unused:
-          return null;
-        case SkyValueRetriever.RetrievedValue v:
-          return v.value();
-        case SkyValueRetriever.NoCachedData unused:
-          break;
-      }
-    }
-
-    ArtifactDependencies artifactDependencies =
-        ArtifactDependencies.discoverDependencies(
-            derivedArtifact,
-            env,
-            /* crashIfActionOwnerMissing= */ !remoteCachingDependencies
-                .mode()
-                .isRetrievalEnabled());
-    if (artifactDependencies == null) {
-      return null;
-    }
-
-    // If the action is an ActionTemplate, we need to expand the ActionTemplate into concrete
-    // actions, execute those actions in parallel and then aggregate the action execution results.
-    ActionTemplate<?> actionTemplate = artifactDependencies.maybeGetTemplateActionForTreeArtifact();
-    if (actionTemplate != null) {
-      if (mkdirForTreeArtifacts.get()) {
-        mkdirForTreeArtifact(artifact, env, actionTemplate);
-      }
-      return createTreeArtifactValueFromActionKey(artifactDependencies, env);
-    }
-
-    ActionLookupData generatingActionKey = derivedArtifact.getGeneratingActionKey();
-    ActionExecutionValue actionValue = (ActionExecutionValue) env.getValue(generatingActionKey);
-    if (actionValue == null) {
-      return null;
-    }
-
-    Preconditions.checkState(
-        artifact.isTreeArtifact(),
-        "'%s' used as a key for ArtifactFunction is not a tree artifact or a source artifact",
-        artifact);
-
-    // We got a request for the whole tree artifact. We can just return the associated
-    // TreeArtifactValue.
-    return Preconditions.checkNotNull(actionValue.getTreeArtifactValue(artifact), artifact);
-  }
-
-  private static void mkdirForTreeArtifact(
-      Artifact artifact, Environment env, ActionTemplate<?> actionForFailure)
-      throws ArtifactFunctionException {
-    try {
-      artifact.getPath().createDirectoryAndParents();
-    } catch (IOException e) {
-      String errorMessage =
-          String.format(
-              "Failed to create output directory for TreeArtifact %s: %s",
-              artifact.getExecPath(), e.getMessage());
-      env.getListener()
-          .handle(Event.error(actionForFailure.getOwner().getLocation(), errorMessage));
-      // We could throw this as an IOException and expect our callers to catch and reprocess it,
-      // but we know the action at fault, so we should be in charge.
-      DetailedExitCode code =
-          DetailedExitCode.of(
-              FailureDetail.newBuilder()
-                  .setMessage(errorMessage)
-                  .setExecution(
-                      Execution.newBuilder().setCode(Code.TREE_ARTIFACT_DIRECTORY_CREATION_FAILURE))
-                  .build());
-      throw new ArtifactFunctionException(
-          new ActionExecutionException(errorMessage, e, actionForFailure, false, code));
-    }
-  }
-
-  @Nullable
-  private static TreeArtifactValue createTreeArtifactValueFromActionKey(
-      ArtifactDependencies artifactDependencies, Environment env) throws InterruptedException {
-    // Request the list of expanded action keys from the ActionTemplate.
-    ImmutableList<ActionLookupData> expandedActionExecutionKeys =
-        artifactDependencies.getActionTemplateExpansionKeys(env);
-    if (expandedActionExecutionKeys == null) {
-      return null; // The expanded actions are not yet available.
-    }
-
-    SkyframeLookupResult expandedActionValues =
-        env.getValuesAndExceptions(expandedActionExecutionKeys);
-    if (env.valuesMissing()) {
-      return null; // The execution values of the expanded actions are not yet all available.
-    }
-
-    // Aggregate the metadata for individual TreeFileArtifacts into a TreeArtifactValue for the
-    // parent TreeArtifact.
-    SpecialArtifact parent = (SpecialArtifact) artifactDependencies.artifact;
-    TreeArtifactValue.Builder treeBuilder = TreeArtifactValue.newBuilder(parent);
-
-    for (ActionLookupData actionKey : expandedActionExecutionKeys) {
-      boolean sawTreeChild = false;
-      ActionExecutionValue actionExecutionValue =
-          (ActionExecutionValue) expandedActionValues.get(actionKey);
-      if (actionExecutionValue == null) {
-        return null;
-      }
-
-      for (Map.Entry<Artifact, FileArtifactValue> entry :
-          actionExecutionValue.getAllFileValues().entrySet()) {
-        Artifact artifact = entry.getKey();
-        Preconditions.checkState(
-            artifact.hasParent(),
-            "Parentless artifact %s found in ActionExecutionValue for %s: %s %s",
-            artifact,
-            actionKey,
-            actionExecutionValue,
-            artifactDependencies);
-
-        if (artifact.getParent().equals(parent)) {
-          sawTreeChild = true;
-          treeBuilder.putChild((TreeFileArtifact) artifact, entry.getValue());
+        init {
+            val failureDetail: FailureDetail? =
+                FailureDetail.newBuilder()
+                    .setMessage(constructErrorMessage(missingArtifact, "missing input file"))
+                    .setExecution(Execution.newBuilder().setCode(Code.SOURCE_INPUT_MISSING))
+                    .build()
+            this.detailedExitCode = DetailedExitCode.of(failureDetail)
         }
-      }
 
-      for (Map.Entry<Artifact, TreeArtifactValue> entry :
-          actionExecutionValue.getAllTreeArtifactValues().entrySet()) {
-        Artifact artifact = entry.getKey();
-        Preconditions.checkState(
-            artifact.hasParent(),
-            "Parentless artifact %s found in ActionExecutionValue for %s: %s %s",
-            artifact,
-            actionKey,
-            actionExecutionValue,
-            artifactDependencies);
-        Preconditions.checkState(
-            artifact.isSubTreeArtifact(), "Artifact %s is not a subdirectory artifact", artifact);
-
-        if (artifact.getParent().equals(parent)) {
-          sawTreeChild = true;
-          // Flatten the TreeArtifactValue from subdirectories.
-          TreeArtifactValue treeArtifactValue =
-              Preconditions.checkNotNull(actionExecutionValue.getTreeArtifactValue(artifact));
-          for (Map.Entry<TreeFileArtifact, FileArtifactValue> childEntry :
-              treeArtifactValue.getChildValues().entrySet()) {
-            treeBuilder.putChild(childEntry.getKey(), childEntry.getValue());
-          }
+        fun getDetailedExitCode(): DetailedExitCode {
+            return detailedExitCode
         }
-      }
 
-      Preconditions.checkState(
-          sawTreeChild,
-          "Action denoted by %s does not output any TreeFileArtifacts from %s",
-          actionKey,
-          artifactDependencies);
-    }
-
-    TreeArtifactValue tree = treeBuilder.build();
-    return tree;
-  }
-
-  @Nullable
-  private SkyValue createSourceValue(Artifact artifact, Environment env)
-      throws InterruptedException, ArtifactFunctionException {
-    RootedPath path = RootedPath.toRootedPath(artifact.getRoot().getRoot(), artifact.getPath());
-    SkyKey fileSkyKey = FileValue.key(path);
-    FileValue fileValue;
-    try {
-      fileValue = (FileValue) env.getValueOrThrow(fileSkyKey, IOException.class);
-    } catch (DetailedIOException e) {
-      throw new ArtifactFunctionException(
-          SourceArtifactException.createdDetailed(artifact, e), Transience.PERSISTENT);
-    } catch (IOException e) {
-      throw new ArtifactFunctionException(
-          SourceArtifactException.create(artifact, e), Transience.PERSISTENT);
-    }
-    if (fileValue == null) {
-      return null;
-    }
-    if (!fileValue.exists()) {
-      return new MissingArtifactValue(artifact);
-    }
-    if (fileValue.realFileStateValue()
-        instanceof RegularFileStateValueWithMetadata valueWithMetadata) {
-      var metadata = valueWithMetadata.getMetadata();
-      sourceArtifactsSeen.accumulate(metadata);
-      return metadata;
-    }
-
-    if (fileValue.isDirectory()) {
-      env.getListener().post(SourceDirectoryEvent.create(artifact.getExecPath()));
-    }
-
-    if (!fileValue.isDirectory() || !TrackSourceDirectoriesFlag.trackSourceDirectories()) {
-      FileArtifactValue metadata;
-      try {
-        metadata = FileArtifactValue.createForSourceArtifact(artifact, fileValue, xattrProvider);
-      } catch (IOException e) {
-        throw new ArtifactFunctionException(
-            SourceArtifactException.create(artifact, e), Transience.TRANSIENT);
-      }
-      sourceArtifactsSeen.accumulate(metadata);
-      return metadata;
-    }
-    // For directory artifacts that are not Filesets, we initiate a directory traversal here, and
-    // compute a hash from the directory structure.
-    // We rely on the guarantees of RecursiveFilesystemTraversalFunction for correctness.
-    //
-    // This approach may have unexpected interactions with --package_path. In particular, the exec
-    // root is set up from the loading / analysis phase, and it is now too late to change it;
-    // therefore, this may traverse a different set of files depending on which targets are built
-    // at the same time and what the package-path layout is (this may be moot if there is only one
-    // entry). Or this may return a set of files that's inconsistent with those actually available
-    // to the action (for local execution).
-    //
-    // In the future, we need to make this result the source of truth for the files available to
-    // the action so that we at least have consistency.
-    TraversalRequest request =
-        DirectoryArtifactTraversalRequest.create(
-            DirectTraversalRoot.forRootedPath(path),
-            /* skipTestingForSubpackage= */ true,
-            artifact);
-    RecursiveFilesystemTraversalValue value;
-    try {
-      value =
-          (RecursiveFilesystemTraversalValue)
-              env.getValueOrThrow(request, RecursiveFilesystemTraversalException.class);
-    } catch (RecursiveFilesystemTraversalException e) {
-      // Use a switch to guarantee that if a new type is added, this stops compiling.
-      switch (e.getType()) {
-        case DANGLING_SYMLINK:
-        case FILE_OPERATION_FAILURE:
-        case SYMLINK_CYCLE_OR_INFINITE_EXPANSION:
-        case CANNOT_TRAVERSE_SOURCE_DIRECTORY:
-        case CANNOT_CROSS_PACKAGE_BOUNDARY:
-          throw new ArtifactFunctionException(
-              SourceArtifactException.create(artifact, e), Transience.PERSISTENT);
-        case INCONSISTENT_FILESYSTEM:
-        case DETAILED_IO_EXCEPTION:
-          throw new ArtifactFunctionException(
-              SourceArtifactException.create(artifact, e), Transience.TRANSIENT);
-        case GENERATED_PATH_CONFLICT:
-          throw new IllegalStateException(
-              String.format(
-                  "Generated conflict in source tree: %s %s %s", artifact, fileValue, request),
-              e);
-      }
-      throw new IllegalStateException("Can't get here", e);
-    }
-    if (value == null) {
-      return null;
-    }
-    Fingerprint fp = new Fingerprint();
-    for (ResolvedFile file : value.getTransitiveFiles().toList()) {
-      fp.addString(file.getNameInSymlinkTree().getPathString());
-      fp.addBytes(file.getMetadata().getDigest());
-    }
-    return FileArtifactValue.createForDirectoryWithHash(fp.digestAndReset());
-  }
-
-  @Override
-  public String extractTag(SkyKey skyKey) {
-    return Label.print(((Artifact) skyKey).getOwner());
-  }
-
-  @Nullable
-  public static ActionLookupValue getActionLookupValue(
-      ActionLookupKey actionLookupKey,
-      SkyFunction.Environment env,
-      boolean crashIfActionOwnerMissing)
-      throws InterruptedException {
-    ActionLookupValue value = (ActionLookupValue) env.getValue(actionLookupKey);
-    if (value == null) {
-      Preconditions.checkState(
-          actionLookupKey == CoverageReportValue.COVERAGE_REPORT_KEY || !crashIfActionOwnerMissing,
-          "Not-yet-present artifact owner: %s",
-          actionLookupKey.getCanonicalName());
-      return null;
-    }
-    return value;
-  }
-
-  private static final class ArtifactFunctionException extends SkyFunctionException {
-    ArtifactFunctionException(ActionExecutionException e) {
-      super(e, Transience.TRANSIENT);
-    }
-
-    ArtifactFunctionException(SourceArtifactException e, Transience transience) {
-      super(e, transience);
-    }
-  }
-
-  private static String constructErrorMessage(Artifact artifact, String error) {
-    Label ownerLabel = artifact.getOwner();
-    if (ownerLabel == null || ownerLabel.name.equals(".")) {
-      // Discovered inputs may not have an owner. Directory source artifacts may be owned by a label
-      // ':.' which will crash toPathFragment below.
-      return String.format("%s '%s'", error, artifact.getExecPathString());
-    }
-
-    PathFragment labelFragment = ownerLabel.toPathFragment();
-    if (ownerLabel.getRepository().isMain()) {
-      if (labelFragment.equals(artifact.getExecPath())) {
-        // No additional useful information from path.
-        return String.format("%s '%s'", error, ownerLabel);
-      }
-    } else {
-      // Not worth threading sibling repository layout config value all the way here: if either
-      // match, we know the label isn't useful.
-      for (boolean siblingRepositoryLayout : ImmutableList.of(Boolean.FALSE, Boolean.TRUE)) {
-        if (ownerLabel
-            .getRepository()
-            .getExecPath(siblingRepositoryLayout)
-            .getRelative(labelFragment)
-            .equals(artifact.getExecPath())) {
-          return String.format("%s '%s'", error, ownerLabel);
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(this).add("detailedExitCode", detailedExitCode)
+                .toString()
         }
-      }
     }
 
-    // TODO(bazel-team): when is this hit?
-    BugReport.sendBugReport(
-        new IllegalStateException("Unexpected special owner? " + artifact + ", " + ownerLabel));
-    return String.format("%s '%s', owner: '%s'", error, artifact.getExecPathString(), ownerLabel);
-  }
+    private class State : SerializableSkyKeyComputeState {
+        // initialized lazily
+        var retrievalContext: RetrievalContext? = null
+            get() {
+                if (field == null) {
+                    field = RetrievalContext()
+                }
 
-  /** Describes dependencies of derived artifacts. */
-  public static final class ArtifactDependencies {
-    private final DerivedArtifact artifact;
-    private final ActionLookupValue actionLookupValue;
+                return field
+            }
+            private set
+    }
 
-    private ArtifactDependencies(DerivedArtifact artifact, ActionLookupValue actionLookupValue) {
-      this.artifact = artifact;
-      this.actionLookupValue = actionLookupValue;
+    init {
+        this.mkdirForTreeArtifacts = mkdirForTreeArtifacts
+        this.sourceArtifactsSeen = sourceArtifactsSeen
+        this.xattrProvider = xattrProvider
+        this.actionExecutor = actionExecutor
+        this.cachingDependenciesSupplier = cachingDependenciesSupplier
+    }
+
+    @Throws(ArtifactFunctionException::class, java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey?, env: SkyFunction.Environment): SkyValue? {
+        val artifact: Artifact = skyKey as Artifact
+
+        if (!artifact.hasKnownGeneratingAction()) {
+            // If the artifact has no known generating action, it is a source artifact and is never cached
+            // remotely.
+            return createSourceValue(artifact, env)
+        }
+
+        val derivedArtifact: Artifact.DerivedArtifact = artifact as DerivedArtifact
+
+        val remoteCachingDependencies: RemoteAnalysisCacheReaderDepsProvider =
+            cachingDependenciesSupplier.get()
+        if (remoteCachingDependencies.mode().isRetrievalEnabled()
+            && !remoteCachingDependencies.getSkycacheAnalysisOnly() && !actionExecutor.shouldSkipRetrieval(
+                derivedArtifact.getGeneratingActionKey()
+            )
+        ) {
+            when (SkyValueRetrieverUtils.retrieveRemoteSkyValue(
+                artifact,
+                env,
+                remoteCachingDependencies,
+                java.util.function.Supplier { com.google.devtools.build.lib.skyframe.ArtifactFunction.State() })) {
+                -> return null
+                -> return v.value
+                -> {}
+            }
+        }
+
+        val artifactDependencies =
+            ArtifactDependencies.Companion.discoverDependencies(
+                derivedArtifact,
+                env,  /* crashIfActionOwnerMissing= */
+                !remoteCachingDependencies
+                    .mode()
+                    .isRetrievalEnabled()
+            )
+        if (artifactDependencies == null) {
+            return null
+        }
+
+        // If the action is an ActionTemplate, we need to expand the ActionTemplate into concrete
+        // actions, execute those actions in parallel and then aggregate the action execution results.
+        val actionTemplate: ActionTemplate<*>? = artifactDependencies.maybeGetTemplateActionForTreeArtifact()
+        if (actionTemplate != null) {
+            if (mkdirForTreeArtifacts.get()) {
+                mkdirForTreeArtifact(artifact, env, actionTemplate)
+            }
+            return createTreeArtifactValueFromActionKey(artifactDependencies, env)
+        }
+
+        val generatingActionKey: ActionLookupData? = derivedArtifact.getGeneratingActionKey()
+        val actionValue: ActionExecutionValue? = env.getValue(generatingActionKey) as ActionExecutionValue?
+        if (actionValue == null) {
+            return null
+        }
+
+        com.google.common.base.Preconditions.checkState(
+            artifact.isTreeArtifact(),
+            "'%s' used as a key for ArtifactFunction is not a tree artifact or a source artifact",
+            artifact
+        )
+
+        // We got a request for the whole tree artifact. We can just return the associated
+        // TreeArtifactValue.
+        return com.google.common.base.Preconditions.checkNotNull(actionValue.getTreeArtifactValue(artifact), artifact)
+    }
+
+    @Throws(java.lang.InterruptedException::class, ArtifactFunctionException::class)
+    private fun createSourceValue(artifact: Artifact, env: SkyFunction.Environment): SkyValue? {
+        val path: RootedPath = RootedPath.toRootedPath(artifact.getRoot().getRoot(), artifact.getPath())
+        val fileSkyKey: SkyKey? = FileValue.key(path)
+        val fileValue: FileValue?
+        try {
+            fileValue = env.getValueOrThrow<IOException?>(fileSkyKey, IOException::class.java) as FileValue?
+        } catch (e: DetailedIOException) {
+            throw ArtifactFunctionException(
+                SourceArtifactException.Companion.createdDetailed(artifact, e), Transience.PERSISTENT
+            )
+        } catch (e: IOException) {
+            throw ArtifactFunctionException(
+                SourceArtifactException.Companion.create(artifact, e), Transience.PERSISTENT
+            )
+        }
+        if (fileValue == null) {
+            return null
+        }
+        if (!fileValue.exists()) {
+            return MissingArtifactValue(artifact)
+        }
+        if (fileValue.realFileStateValue()
+                    is RegularFileStateValueWithMetadata
+        ) {
+            val metadata: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                valueWithMetadata.getMetadata()
+            sourceArtifactsSeen.accumulate(metadata)
+            return metadata
+        }
+
+        if (fileValue.isDirectory()) {
+            env.getListener().post(SourceDirectoryEvent.create(artifact.getExecPath()))
+        }
+
+        if (!fileValue.isDirectory() || !TrackSourceDirectoriesFlag.trackSourceDirectories()) {
+            val metadata: FileArtifactValue?
+            try {
+                metadata = FileArtifactValue.createForSourceArtifact(artifact, fileValue, xattrProvider)
+            } catch (e: IOException) {
+                throw ArtifactFunctionException(
+                    SourceArtifactException.Companion.create(artifact, e), Transience.TRANSIENT
+                )
+            }
+            sourceArtifactsSeen.accumulate(metadata)
+            return metadata
+        }
+        // For directory artifacts that are not Filesets, we initiate a directory traversal here, and
+        // compute a hash from the directory structure.
+        // We rely on the guarantees of RecursiveFilesystemTraversalFunction for correctness.
+        //
+        // This approach may have unexpected interactions with --package_path. In particular, the exec
+        // root is set up from the loading / analysis phase, and it is now too late to change it;
+        // therefore, this may traverse a different set of files depending on which targets are built
+        // at the same time and what the package-path layout is (this may be moot if there is only one
+        // entry). Or this may return a set of files that's inconsistent with those actually available
+        // to the action (for local execution).
+        //
+        // In the future, we need to make this result the source of truth for the files available to
+        // the action so that we at least have consistency.
+        val request: TraversalRequest =
+            DirectoryArtifactTraversalRequest.Companion.create(
+                DirectTraversalRoot.forRootedPath(path),  /* skipTestingForSubpackage= */
+                true,
+                artifact
+            )
+        val value: RecursiveFilesystemTraversalValue?
+        try {
+            value =
+                env.getValueOrThrow<RecursiveFilesystemTraversalException?>(
+                    request,
+                    RecursiveFilesystemTraversalException::class.java
+                ) as RecursiveFilesystemTraversalValue?
+        } catch (e: RecursiveFilesystemTraversalException) {
+            // Use a switch to guarantee that if a new type is added, this stops compiling.
+            when (e.getType()) {
+                com.google.devtools.build.lib.skyframe.RecursiveFilesystemTraversalFunction.RecursiveFilesystemTraversalException.Type.DANGLING_SYMLINK, com.google.devtools.build.lib.skyframe.RecursiveFilesystemTraversalFunction.RecursiveFilesystemTraversalException.Type.FILE_OPERATION_FAILURE, com.google.devtools.build.lib.skyframe.RecursiveFilesystemTraversalFunction.RecursiveFilesystemTraversalException.Type.SYMLINK_CYCLE_OR_INFINITE_EXPANSION, com.google.devtools.build.lib.skyframe.RecursiveFilesystemTraversalFunction.RecursiveFilesystemTraversalException.Type.CANNOT_TRAVERSE_SOURCE_DIRECTORY, com.google.devtools.build.lib.skyframe.RecursiveFilesystemTraversalFunction.RecursiveFilesystemTraversalException.Type.CANNOT_CROSS_PACKAGE_BOUNDARY -> throw ArtifactFunctionException(
+                    SourceArtifactException.Companion.create(artifact, e), Transience.PERSISTENT
+                )
+
+                com.google.devtools.build.lib.skyframe.RecursiveFilesystemTraversalFunction.RecursiveFilesystemTraversalException.Type.INCONSISTENT_FILESYSTEM, com.google.devtools.build.lib.skyframe.RecursiveFilesystemTraversalFunction.RecursiveFilesystemTraversalException.Type.DETAILED_IO_EXCEPTION -> throw ArtifactFunctionException(
+                    SourceArtifactException.Companion.create(artifact, e), Transience.TRANSIENT
+                )
+
+                com.google.devtools.build.lib.skyframe.RecursiveFilesystemTraversalFunction.RecursiveFilesystemTraversalException.Type.GENERATED_PATH_CONFLICT -> throw java.lang.IllegalStateException(
+                    java.lang.String.format(
+                        "Generated conflict in source tree: %s %s %s", artifact, fileValue, request
+                    ),
+                    e
+                )
+            }
+            throw java.lang.IllegalStateException("Can't get here", e)
+        }
+        if (value == null) {
+            return null
+        }
+        val fp: Fingerprint = Fingerprint()
+        for (file in value.getTransitiveFiles().toList()) {
+            fp.addString(file.getNameInSymlinkTree().getPathString())
+            fp.addBytes(file.getMetadata().getDigest())
+        }
+        return FileArtifactValue.createForDirectoryWithHash(fp.digestAndReset())
+    }
+
+    override fun extractTag(skyKey: SkyKey): String {
+        return Label.print((skyKey as Artifact).getOwner())
+    }
+
+    private class ArtifactFunctionException : SkyFunctionException {
+        internal constructor(e: ActionExecutionException?) : super(e, Transience.TRANSIENT)
+
+        internal constructor(e: SourceArtifactException?, transience: Transience?) : super(e, transience)
+    }
+
+    /** Describes dependencies of derived artifacts.  */
+    class ArtifactDependencies private constructor(artifact: DerivedArtifact, actionLookupValue: ActionLookupValue) {
+        private val artifact: DerivedArtifact
+        private val actionLookupValue: ActionLookupValue
+
+        init {
+            this.artifact = artifact
+            this.actionLookupValue = actionLookupValue
+        }
+
+        val isTemplateActionForTreeArtifact: Boolean
+            get() = maybeGetTemplateActionForTreeArtifact() != null
+
+        fun maybeGetTemplateActionForTreeArtifact(): ActionTemplate<*>? {
+            if (!artifact.isTreeArtifact()) {
+                return null
+            }
+            val result: ActionAnalysisMetadata? =
+                actionLookupValue.getActions().get(artifact.getGeneratingActionKey().getActionIndex())
+            return if (result is ActionTemplate) result as ActionTemplate<*>? else null
+        }
+
+        /**
+         * Returns action template expansion keys or `null` if that information is unavailable.
+         * 
+         * 
+         * Must only be called if [.isTemplateActionForTreeArtifact] returns `true`.
+         */
+        @Throws(java.lang.InterruptedException::class)
+        fun getActionTemplateExpansionKeys(
+            env: SkyFunction.Environment
+        ): com.google.common.collect.ImmutableList<ActionLookupData?>? {
+            com.google.common.base.Preconditions.checkState(
+                this.isTemplateActionForTreeArtifact, "Action is unexpectedly non-template: %s", this
+            )
+            val key: ActionTemplateExpansionKey? =
+                ActionTemplateExpansionValue.Companion.key(
+                    artifact.getArtifactOwner(), artifact.getGeneratingActionKey().getActionIndex()
+                )
+            val value: ActionTemplateExpansionValue? = env.getValue(key) as ActionTemplateExpansionValue?
+            if (value == null) {
+                return null
+            }
+            val expandedActionExecutionKeys: com.google.common.collect.ImmutableList.Builder<ActionLookupData?> =
+                com.google.common.collect.ImmutableList.builderWithExpectedSize<E?>(value.getActions().size())
+            for (action in value.getActions()) {
+                // ActionTemplates expand into actions that can generate multiple output trees (as a whole),
+                // but an expanded action can generate outputs under only a single tree. As such, we only
+                // need to evaluate the action if it generates an output under the requested tree artifact.
+                for (output in action.getOutputs()) {
+                    if (output.hasParent() && output.getParent().equals(artifact)) {
+                        expandedActionExecutionKeys.add((output as DerivedArtifact).getGeneratingActionKey())
+                        break
+                    }
+                }
+            }
+            return expandedActionExecutionKeys.build()
+        }
+
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(this)
+                .add("artifact", artifact)
+                .add("generatingActionKey", artifact.getGeneratingActionKey())
+                .add("actionLookupValue", actionLookupValue)
+                .toString()
+        }
+
+        companion object {
+            /**
+             * Constructs an [ArtifactDependencies] for the provided `derivedArtifact`. Returns
+             * `null` if any dependencies are not yet ready.
+             */
+            @Throws(java.lang.InterruptedException::class)
+            fun discoverDependencies(
+                derivedArtifact: Artifact.DerivedArtifact,
+                env: SkyFunction.Environment,
+                crashIfActionOwnerMissing: Boolean
+            ): ArtifactDependencies? {
+                val generatingActionKey: ActionLookupData = derivedArtifact.getGeneratingActionKey()
+                val actionLookupValue: ActionLookupValue? =
+                    getActionLookupValue(
+                        generatingActionKey.getActionLookupKey(), env, crashIfActionOwnerMissing
+                    )
+                if (actionLookupValue == null) {
+                    return null
+                }
+
+                return ArtifactDependencies(derivedArtifact, actionLookupValue)
+            }
+        }
+    }
+
+    /** An [Exception] thrown representing a source input [IOException].  */
+    class SourceArtifactException private constructor(detailedExitCode: DetailedExitCode, e: java.lang.Exception?) :
+        java.lang.Exception(detailedExitCode.getFailureDetail().getMessage(), e), DetailedException {
+        private val detailedExitCode: DetailedExitCode
+
+        init {
+            this.detailedExitCode = detailedExitCode
+        }
+
+        override fun getDetailedExitCode(): DetailedExitCode {
+            return detailedExitCode
+        }
+
+        companion object {
+            private fun create(artifact: Artifact, e: IOException): SourceArtifactException {
+                val detailedExitCode: DetailedExitCode =
+                    DetailedExitCode.of(
+                        FailureDetail.newBuilder()
+                            .setMessage(
+                                constructErrorMessage(artifact, "error reading file") + ": " + e.getMessage()
+                            )
+                            .setExecution(Execution.newBuilder().setCode(Code.SOURCE_INPUT_IO_EXCEPTION))
+                            .build()
+                    )
+                return SourceArtifactException(detailedExitCode, e)
+            }
+
+            private fun createdDetailed(
+                artifact: Artifact, e: DetailedIOException
+            ): SourceArtifactException {
+                val failureDetailWithUpdatedErrorMessage: FailureDetail? =
+                    e.getDetailedExitCode().getFailureDetail().toBuilder()
+                        .setMessage(
+                            constructErrorMessage(
+                                artifact,
+                                "error reading file: "
+                                        + e.getDetailedExitCode().getFailureDetail().getMessage()
+                            )
+                        )
+                        .build()
+                return SourceArtifactException(
+                    DetailedExitCode.of(failureDetailWithUpdatedErrorMessage), e
+                )
+            }
+
+            private fun create(
+                artifact: Artifact, e: RecursiveFilesystemTraversalException
+            ): SourceArtifactException {
+                val failureDetail: FailureDetail? =
+                    FailureDetail.newBuilder()
+                        .setMessage(
+                            (constructErrorMessage(artifact, "error traversing directory")
+                                    + ": "
+                                    + e.getMessage())
+                        )
+                        .setExecution(Execution.newBuilder().setCode(Code.SOURCE_INPUT_IO_EXCEPTION))
+                        .build()
+                return SourceArtifactException(DetailedExitCode.of(failureDetail), e)
+            }
+        }
     }
 
     /**
-     * Constructs an {@link ArtifactDependencies} for the provided {@code derivedArtifact}. Returns
-     * {@code null} if any dependencies are not yet ready.
+     * Key for depending on all files under a source directory. Only requested when [ ].
      */
-    @Nullable
-    public static ArtifactDependencies discoverDependencies(
-        Artifact.DerivedArtifact derivedArtifact,
-        SkyFunction.Environment env,
-        boolean crashIfActionOwnerMissing)
-        throws InterruptedException {
+    class DirectoryArtifactTraversalRequest private constructor(
+        root: DirectTraversalRoot,
+        skipTestingForSubpackage: Boolean,
+        artifact: Artifact
+    ) : TraversalRequest() {
+        private val root: DirectTraversalRoot
+        private val skipTestingForSubpackage: Boolean
+        private val artifact: Artifact
 
-      ActionLookupData generatingActionKey = derivedArtifact.getGeneratingActionKey();
-      ActionLookupValue actionLookupValue =
-          ArtifactFunction.getActionLookupValue(
-              generatingActionKey.getActionLookupKey(), env, crashIfActionOwnerMissing);
-      if (actionLookupValue == null) {
-        return null;
-      }
-
-      return new ArtifactDependencies(derivedArtifact, actionLookupValue);
-    }
-
-    public boolean isTemplateActionForTreeArtifact() {
-      return maybeGetTemplateActionForTreeArtifact() != null;
-    }
-
-    @Nullable
-    ActionTemplate<?> maybeGetTemplateActionForTreeArtifact() {
-      if (!artifact.isTreeArtifact()) {
-        return null;
-      }
-      ActionAnalysisMetadata result =
-          actionLookupValue.getActions().get(artifact.getGeneratingActionKey().getActionIndex());
-      return result instanceof ActionTemplate ? (ActionTemplate<?>) result : null;
-    }
-
-    /**
-     * Returns action template expansion keys or {@code null} if that information is unavailable.
-     *
-     * <p>Must only be called if {@link #isTemplateActionForTreeArtifact} returns {@code true}.
-     */
-    @Nullable
-    public ImmutableList<ActionLookupData> getActionTemplateExpansionKeys(
-        SkyFunction.Environment env) throws InterruptedException {
-      Preconditions.checkState(
-          isTemplateActionForTreeArtifact(), "Action is unexpectedly non-template: %s", this);
-      ActionTemplateExpansionKey key =
-          ActionTemplateExpansionValue.key(
-              artifact.getArtifactOwner(), artifact.getGeneratingActionKey().getActionIndex());
-      ActionTemplateExpansionValue value = (ActionTemplateExpansionValue) env.getValue(key);
-      if (value == null) {
-        return null;
-      }
-      ImmutableList.Builder<ActionLookupData> expandedActionExecutionKeys =
-          ImmutableList.builderWithExpectedSize(value.getActions().size());
-      for (ActionAnalysisMetadata action : value.getActions()) {
-        // ActionTemplates expand into actions that can generate multiple output trees (as a whole),
-        // but an expanded action can generate outputs under only a single tree. As such, we only
-        // need to evaluate the action if it generates an output under the requested tree artifact.
-        for (Artifact output : action.getOutputs()) {
-          if (output.hasParent() && output.getParent().equals(artifact)) {
-            expandedActionExecutionKeys.add(((DerivedArtifact) output).getGeneratingActionKey());
-            break;
-          }
+        init {
+            this.root = root
+            this.skipTestingForSubpackage = skipTestingForSubpackage
+            this.artifact = artifact
         }
-      }
-      return expandedActionExecutionKeys.build();
+
+        override fun root(): DirectTraversalRoot {
+            return root
+        }
+
+        protected val isRootGenerated: Boolean
+            get() = false
+
+        protected override fun strictOutputFiles(): Boolean {
+            return true
+        }
+
+        protected override fun skipTestingForSubpackage(): Boolean {
+            return skipTestingForSubpackage
+        }
+
+        protected override fun emitEmptyDirectoryNodes(): Boolean {
+            return true
+        }
+
+        protected override fun errorInfo(): String {
+            return "Directory artifact " + artifact.prettyPrint()
+        }
+
+        override fun duplicateWithOverrides(
+            newRoot: DirectTraversalRoot, newSkipTestingForSubpackage: Boolean
+        ): TraversalRequest {
+            return create(newRoot, newSkipTestingForSubpackage, artifact)
+        }
+
+        val skyKeyInterner: SkyKeyInterner<DirectoryArtifactTraversalRequest?>
+            get() = interner
+
+        override fun hashCode(): Int {
+            // Artifact is only for error info and not considered in hash code or equality.
+            return root.hashCode() * 31 + java.lang.Boolean.hashCode(skipTestingForSubpackage)
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o !is DirectoryArtifactTraversalRequest) {
+                return false
+            }
+            // Artifact is only for error info and not considered in hash code or equality.
+            return root == o.root && skipTestingForSubpackage == o.skipTestingForSubpackage
+        }
+
+        companion object {
+            private val interner: SkyKeyInterner<DirectoryArtifactTraversalRequest?> =
+                SkyKey.newInterner<DirectoryArtifactTraversalRequest?>()
+
+            private fun create(
+                root: DirectTraversalRoot, skipTestingForSubpackage: Boolean, artifact: Artifact
+            ): DirectoryArtifactTraversalRequest {
+                return interner.intern(
+                    DirectoryArtifactTraversalRequest(root, skipTestingForSubpackage, artifact)
+                )
+            }
+        }
     }
 
-    @Override
-    public String toString() {
-      return MoreObjects.toStringHelper(this)
-          .add("artifact", artifact)
-          .add("generatingActionKey", artifact.getGeneratingActionKey())
-          .add("actionLookupValue", actionLookupValue)
-          .toString();
+    companion object {
+        @Throws(ArtifactFunctionException::class)
+        private fun mkdirForTreeArtifact(
+            artifact: Artifact, env: SkyFunction.Environment, actionForFailure: ActionTemplate<*>
+        ) {
+            try {
+                artifact.getPath().createDirectoryAndParents()
+            } catch (e: IOException) {
+                val errorMessage: String? =
+                    java.lang.String.format(
+                        "Failed to create output directory for TreeArtifact %s: %s",
+                        artifact.getExecPath(), e.getMessage()
+                    )
+                env.getListener()
+                    .handle(
+                        com.google.devtools.build.lib.events.Event.error(
+                            actionForFailure.getOwner().getLocation(),
+                            errorMessage
+                        )
+                    )
+                // We could throw this as an IOException and expect our callers to catch and reprocess it,
+                // but we know the action at fault, so we should be in charge.
+                val code: DetailedExitCode =
+                    DetailedExitCode.of(
+                        FailureDetail.newBuilder()
+                            .setMessage(errorMessage)
+                            .setExecution(
+                                Execution.newBuilder().setCode(Code.TREE_ARTIFACT_DIRECTORY_CREATION_FAILURE)
+                            )
+                            .build()
+                    )
+                throw ArtifactFunctionException(
+                    ActionExecutionException(errorMessage, e, actionForFailure, false, code)
+                )
+            }
+        }
+
+        @Throws(java.lang.InterruptedException::class)
+        private fun createTreeArtifactValueFromActionKey(
+            artifactDependencies: ArtifactDependencies, env: SkyFunction.Environment
+        ): TreeArtifactValue? {
+            // Request the list of expanded action keys from the ActionTemplate.
+            val expandedActionExecutionKeys: com.google.common.collect.ImmutableList<ActionLookupData?>? =
+                artifactDependencies.getActionTemplateExpansionKeys(env)
+            if (expandedActionExecutionKeys == null) {
+                return null // The expanded actions are not yet available.
+            }
+
+            val expandedActionValues: SkyframeLookupResult =
+                env.getValuesAndExceptions(expandedActionExecutionKeys)
+            if (env.valuesMissing()) {
+                return null // The execution values of the expanded actions are not yet all available.
+            }
+
+            // Aggregate the metadata for individual TreeFileArtifacts into a TreeArtifactValue for the
+            // parent TreeArtifact.
+            val parent: SpecialArtifact? = artifactDependencies.artifact as SpecialArtifact?
+            val treeBuilder: com.google.devtools.build.lib.skyframe.TreeArtifactValue.Builder =
+                TreeArtifactValue.newBuilder(parent)
+
+            for (actionKey in expandedActionExecutionKeys) {
+                var sawTreeChild = false
+                val actionExecutionValue: ActionExecutionValue? =
+                    expandedActionValues.get(actionKey) as ActionExecutionValue?
+                if (actionExecutionValue == null) {
+                    return null
+                }
+
+                for (entry in actionExecutionValue.allFileValues.entrySet()) {
+                    val artifact: Artifact = entry.getKey()
+                    com.google.common.base.Preconditions.checkState(
+                        artifact.hasParent(),
+                        "Parentless artifact %s found in ActionExecutionValue for %s: %s %s",
+                        artifact,
+                        actionKey,
+                        actionExecutionValue,
+                        artifactDependencies
+                    )
+
+                    if (artifact.getParent().equals(parent)) {
+                        sawTreeChild = true
+                        treeBuilder.putChild(artifact as TreeFileArtifact, entry.getValue())
+                    }
+                }
+
+                for (entry in actionExecutionValue.getAllTreeArtifactValues().entrySet()) {
+                    val artifact: Artifact = entry.getKey()
+                    com.google.common.base.Preconditions.checkState(
+                        artifact.hasParent(),
+                        "Parentless artifact %s found in ActionExecutionValue for %s: %s %s",
+                        artifact,
+                        actionKey,
+                        actionExecutionValue,
+                        artifactDependencies
+                    )
+                    com.google.common.base.Preconditions.checkState(
+                        artifact.isSubTreeArtifact(), "Artifact %s is not a subdirectory artifact", artifact
+                    )
+
+                    if (artifact.getParent().equals(parent)) {
+                        sawTreeChild = true
+                        // Flatten the TreeArtifactValue from subdirectories.
+                        val treeArtifactValue: TreeArtifactValue =
+                            com.google.common.base.Preconditions.checkNotNull<T>(
+                                actionExecutionValue.getTreeArtifactValue(
+                                    artifact
+                                )
+                            )
+                        for (childEntry in treeArtifactValue.getChildValues().entrySet()) {
+                            treeBuilder.putChild(childEntry.getKey(), childEntry.getValue())
+                        }
+                    }
+                }
+
+                com.google.common.base.Preconditions.checkState(
+                    sawTreeChild,
+                    "Action denoted by %s does not output any TreeFileArtifacts from %s",
+                    actionKey,
+                    artifactDependencies
+                )
+            }
+
+            val tree: TreeArtifactValue? = treeBuilder.build()
+            return tree
+        }
+
+        @Throws(java.lang.InterruptedException::class)
+        fun getActionLookupValue(
+            actionLookupKey: ActionLookupKey,
+            env: SkyFunction.Environment,
+            crashIfActionOwnerMissing: Boolean
+        ): ActionLookupValue? {
+            val value: ActionLookupValue? = env.getValue(actionLookupKey) as ActionLookupValue?
+            if (value == null) {
+                com.google.common.base.Preconditions.checkState(
+                    actionLookupKey === CoverageReportValue.Companion.COVERAGE_REPORT_KEY || !crashIfActionOwnerMissing,
+                    "Not-yet-present artifact owner: %s",
+                    actionLookupKey.getCanonicalName()
+                )
+                return null
+            }
+            return value
+        }
+
+        private fun constructErrorMessage(artifact: Artifact, error: String?): String? {
+            val ownerLabel: Label? = artifact.getOwner()
+            if (ownerLabel == null || ownerLabel.name.equals(".")) {
+                // Discovered inputs may not have an owner. Directory source artifacts may be owned by a label
+                // ':.' which will crash toPathFragment below.
+                return java.lang.String.format("%s '%s'", error, artifact.getExecPathString())
+            }
+
+            val labelFragment: PathFragment = ownerLabel.toPathFragment()
+            if (ownerLabel.getRepository().isMain()) {
+                if (labelFragment == artifact.getExecPath()) {
+                    // No additional useful information from path.
+                    return java.lang.String.format("%s '%s'", error, ownerLabel)
+                }
+            } else {
+                // Not worth threading sibling repository layout config value all the way here: if either
+                // match, we know the label isn't useful.
+                for (siblingRepositoryLayout in com.google.common.collect.ImmutableList.of<Boolean?>(
+                    java.lang.Boolean.FALSE,
+                    java.lang.Boolean.TRUE
+                )) {
+                    if (ownerLabel
+                            .getRepository()
+                            .getExecPath(siblingRepositoryLayout)
+                            .getRelative(labelFragment)
+                            .equals(artifact.getExecPath())
+                    ) {
+                        return java.lang.String.format("%s '%s'", error, ownerLabel)
+                    }
+                }
+            }
+
+            // TODO(bazel-team): when is this hit?
+            BugReport.sendBugReport(
+                java.lang.IllegalStateException("Unexpected special owner? " + artifact + ", " + ownerLabel)
+            )
+            return java.lang.String.format("%s '%s', owner: '%s'", error, artifact.getExecPathString(), ownerLabel)
+        }
     }
-  }
-
-  /** An {@link Exception} thrown representing a source input {@link IOException}. */
-  public static final class SourceArtifactException extends Exception implements DetailedException {
-    private final DetailedExitCode detailedExitCode;
-
-    private SourceArtifactException(DetailedExitCode detailedExitCode, Exception e) {
-      super(detailedExitCode.getFailureDetail().getMessage(), e);
-      this.detailedExitCode = detailedExitCode;
-    }
-
-    private static SourceArtifactException create(Artifact artifact, IOException e) {
-      DetailedExitCode detailedExitCode =
-          DetailedExitCode.of(
-              FailureDetail.newBuilder()
-                  .setMessage(
-                      constructErrorMessage(artifact, "error reading file") + ": " + e.getMessage())
-                  .setExecution(Execution.newBuilder().setCode(Code.SOURCE_INPUT_IO_EXCEPTION))
-                  .build());
-      return new SourceArtifactException(detailedExitCode, e);
-    }
-
-    private static SourceArtifactException createdDetailed(
-        Artifact artifact, DetailedIOException e) {
-      FailureDetail failureDetailWithUpdatedErrorMessage =
-          e.getDetailedExitCode().getFailureDetail().toBuilder()
-              .setMessage(
-                  constructErrorMessage(
-                      artifact,
-                      "error reading file: "
-                          + e.getDetailedExitCode().getFailureDetail().getMessage()))
-              .build();
-      return new SourceArtifactException(
-          DetailedExitCode.of(failureDetailWithUpdatedErrorMessage), e);
-    }
-
-    private static SourceArtifactException create(
-        Artifact artifact, RecursiveFilesystemTraversalException e) {
-      FailureDetail failureDetail =
-          FailureDetail.newBuilder()
-              .setMessage(
-                  constructErrorMessage(artifact, "error traversing directory")
-                      + ": "
-                      + e.getMessage())
-              .setExecution(Execution.newBuilder().setCode(Code.SOURCE_INPUT_IO_EXCEPTION))
-              .build();
-      return new SourceArtifactException(DetailedExitCode.of(failureDetail), e);
-    }
-
-    @Override
-    public DetailedExitCode getDetailedExitCode() {
-      return detailedExitCode;
-    }
-  }
-
-  /**
-   * Key for depending on all files under a source directory. Only requested when {@linkplain
-   * TrackSourceDirectoriesFlag tracking source directories}.
-   */
-  public static final class DirectoryArtifactTraversalRequest extends TraversalRequest {
-
-    private static final SkyKeyInterner<DirectoryArtifactTraversalRequest> interner =
-        SkyKey.newInterner();
-
-    private static DirectoryArtifactTraversalRequest create(
-        DirectTraversalRoot root, boolean skipTestingForSubpackage, Artifact artifact) {
-      return interner.intern(
-          new DirectoryArtifactTraversalRequest(root, skipTestingForSubpackage, artifact));
-    }
-
-    private final DirectTraversalRoot root;
-    private final boolean skipTestingForSubpackage;
-    private final Artifact artifact;
-
-    private DirectoryArtifactTraversalRequest(
-        DirectTraversalRoot root, boolean skipTestingForSubpackage, Artifact artifact) {
-      this.root = root;
-      this.skipTestingForSubpackage = skipTestingForSubpackage;
-      this.artifact = artifact;
-    }
-
-    @Override
-    public DirectTraversalRoot root() {
-      return root;
-    }
-
-    @Override
-    protected boolean isRootGenerated() {
-      return false;
-    }
-
-    @Override
-    protected boolean strictOutputFiles() {
-      return true;
-    }
-
-    @Override
-    protected boolean skipTestingForSubpackage() {
-      return skipTestingForSubpackage;
-    }
-
-    @Override
-    protected boolean emitEmptyDirectoryNodes() {
-      return true;
-    }
-
-    @Override
-    protected String errorInfo() {
-      return "Directory artifact " + artifact.prettyPrint();
-    }
-
-    @Override
-    protected TraversalRequest duplicateWithOverrides(
-        DirectTraversalRoot newRoot, boolean newSkipTestingForSubpackage) {
-      return create(newRoot, newSkipTestingForSubpackage, artifact);
-    }
-
-    @Override
-    public SkyKeyInterner<DirectoryArtifactTraversalRequest> getSkyKeyInterner() {
-      return interner;
-    }
-
-    @Override
-    public int hashCode() {
-      // Artifact is only for error info and not considered in hash code or equality.
-      return root.hashCode() * 31 + Boolean.hashCode(skipTestingForSubpackage);
-    }
-
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (!(o instanceof DirectoryArtifactTraversalRequest other)) {
-        return false;
-      }
-      // Artifact is only for error info and not considered in hash code or equality.
-      return root.equals(other.root) && skipTestingForSubpackage == other.skipTestingForSubpackage;
-    }
-  }
 }

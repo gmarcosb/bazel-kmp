@@ -11,105 +11,97 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.sandbox
 
-package com.google.devtools.build.lib.sandbox;
+import com.google.devtools.build.lib.actions.Spawn
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.exec.TreeDeleter;
-import com.google.devtools.build.lib.exec.local.LocalEnvProvider;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.ProcessWrapper;
-import com.google.devtools.build.lib.sandbox.SandboxHelpers.SandboxInputs;
-import com.google.devtools.build.lib.sandbox.SandboxHelpers.SandboxOutputs;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.IOException;
-import java.time.Duration;
+/** Strategy that uses sandboxing to execute a process.  */
+internal class ProcessWrapperSandboxedSpawnRunner(
+    cmdEnv: CommandEnvironment,
+    sandboxBase: com.google.devtools.build.lib.vfs.Path,
+    treeDeleter: TreeDeleter?
+) : AbstractSandboxSpawnRunner(cmdEnv) {
+    private val processWrapper: ProcessWrapper
+    private val execRoot: com.google.devtools.build.lib.vfs.Path
+    private val sandboxBase: com.google.devtools.build.lib.vfs.Path
+    private val localEnvProvider: LocalEnvProvider
+    private val treeDeleter: TreeDeleter?
 
-/** Strategy that uses sandboxing to execute a process. */
-final class ProcessWrapperSandboxedSpawnRunner extends AbstractSandboxSpawnRunner {
+    /**
+     * Creates a sandboxed spawn runner that uses the `process-wrapper` tool.
+     * 
+     * @param cmdEnv the command environment to use
+     * @param sandboxBase path to the sandbox base directory
+     */
+    init {
+        this.processWrapper = ProcessWrapper.fromCommandEnvironment(cmdEnv)
+        this.execRoot = cmdEnv.getExecRoot()
+        this.localEnvProvider = LocalEnvProvider.forCurrentOs(cmdEnv.getClientEnv())
+        this.sandboxBase = sandboxBase
+        this.treeDeleter = treeDeleter
+    }
 
-  public static boolean isSupported(CommandEnvironment cmdEnv) {
-    return OS.isPosixCompatible() && ProcessWrapper.fromCommandEnvironment(cmdEnv) != null;
-  }
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    override fun prepareSpawn(spawn: Spawn, context: SpawnExecutionContext): SandboxedSpawn {
+        // Each invocation of "exec" gets its own sandbox base.
+        // Note that the value returned by context.getId() is only unique inside one given SpawnRunner,
+        // so we have to prefix our name to turn it into a globally unique value.
+        val sandboxPath: com.google.devtools.build.lib.vfs.Path =
+            sandboxBase.getRelative(this.name).getRelative(context.id.toString())
+        sandboxPath.createDirectoryAndParents()
 
-  private final ProcessWrapper processWrapper;
-  private final Path execRoot;
-  private final Path sandboxBase;
-  private final LocalEnvProvider localEnvProvider;
-  private final TreeDeleter treeDeleter;
+        // b/64689608: The execroot of the sandboxed process must end with the workspace name, just like
+        // the normal execroot does.
+        val workspaceName: String? = execRoot.getBaseName()
+        val sandboxExecRoot: com.google.devtools.build.lib.vfs.Path =
+            sandboxPath.getRelative("execroot").getRelative(workspaceName)
+        sandboxExecRoot.createDirectoryAndParents()
 
-  /**
-   * Creates a sandboxed spawn runner that uses the {@code process-wrapper} tool.
-   *
-   * @param cmdEnv the command environment to use
-   * @param sandboxBase path to the sandbox base directory
-   */
-  ProcessWrapperSandboxedSpawnRunner(
-      CommandEnvironment cmdEnv, Path sandboxBase, TreeDeleter treeDeleter) {
-    super(cmdEnv);
-    this.processWrapper = ProcessWrapper.fromCommandEnvironment(cmdEnv);
-    this.execRoot = cmdEnv.getExecRoot();
-    this.localEnvProvider = LocalEnvProvider.forCurrentOs(cmdEnv.getClientEnv());
-    this.sandboxBase = sandboxBase;
-    this.treeDeleter = treeDeleter;
-  }
+        val environment: com.google.common.collect.ImmutableMap<String?, String?>? =
+            localEnvProvider.rewriteLocalEnv(spawn.getEnvironment(), binTools, "/tmp")
 
-  @Override
-  protected SandboxedSpawn prepareSpawn(Spawn spawn, SpawnExecutionContext context)
-      throws IOException, InterruptedException {
-    // Each invocation of "exec" gets its own sandbox base.
-    // Note that the value returned by context.getId() is only unique inside one given SpawnRunner,
-    // so we have to prefix our name to turn it into a globally unique value.
-    Path sandboxPath =
-        sandboxBase.getRelative(getName()).getRelative(Integer.toString(context.id));
-    sandboxPath.createDirectoryAndParents();
+        val timeout: java.time.Duration? = context.timeout
+        val commandLineBuilder: CommandLineBuilder =
+            processWrapper
+                .commandLineBuilder(spawn.getArguments())
+                .addExecutionInfo(spawn.getExecutionInfo())
+                .setTimeout(timeout)
 
-    // b/64689608: The execroot of the sandboxed process must end with the workspace name, just like
-    // the normal execroot does.
-    String workspaceName = execRoot.getBaseName();
-    Path sandboxExecRoot = sandboxPath.getRelative("execroot").getRelative(workspaceName);
-    sandboxExecRoot.createDirectoryAndParents();
+        val statisticsPath: com.google.devtools.build.lib.vfs.Path = sandboxPath.getRelative("stats.out")
+        commandLineBuilder.setStatisticsPath(statisticsPath.asFragment())
 
-    ImmutableMap<String, String> environment =
-        localEnvProvider.rewriteLocalEnv(spawn.getEnvironment(), binTools, "/tmp");
+        val inputs: SandboxInputs =
+            SandboxHelpers.processInputFiles(
+                context.getInputMapping(PathFragment.EMPTY_FRAGMENT,  /* willAccessRepeatedly= */true),
+                execRoot
+            )
+        val outputs: SandboxOutputs = SandboxHelpers.getOutputs(spawn)
 
-    Duration timeout = context.timeout;
-    ProcessWrapper.CommandLineBuilder commandLineBuilder =
-        processWrapper
-            .commandLineBuilder(spawn.getArguments())
-            .addExecutionInfo(spawn.getExecutionInfo())
-            .setTimeout(timeout);
+        return SymlinkedSandboxedSpawn(
+            sandboxPath,
+            sandboxExecRoot,
+            commandLineBuilder.build(),
+            environment,
+            inputs,
+            outputs,
+            getWritableDirs(sandboxExecRoot, environment),
+            treeDeleter,  /* sandboxDebugPath= */
+            null,
+            statisticsPath,  /* interactiveDebugArguments= */
+            null,
+            spawn.getMnemonic(),
+            spawn.getTargetLabel()
+        )
+    }
 
-    Path statisticsPath = sandboxPath.getRelative("stats.out");
-    commandLineBuilder.setStatisticsPath(statisticsPath.asFragment());
+    val name: String
+        get() = "processwrapper-sandbox"
 
-    SandboxInputs inputs =
-        SandboxHelpers.processInputFiles(
-            context.getInputMapping(PathFragment.EMPTY_FRAGMENT, /* willAccessRepeatedly= */ true),
-            execRoot);
-    SandboxOutputs outputs = SandboxHelpers.getOutputs(spawn);
-
-    return new SymlinkedSandboxedSpawn(
-        sandboxPath,
-        sandboxExecRoot,
-        commandLineBuilder.build(),
-        environment,
-        inputs,
-        outputs,
-        getWritableDirs(sandboxExecRoot, environment),
-        treeDeleter,
-        /* sandboxDebugPath= */ null,
-        statisticsPath,
-        /* interactiveDebugArguments= */ null,
-        spawn.getMnemonic(),
-        spawn.getTargetLabel());
-  }
-
-  @Override
-  public String getName() {
-    return "processwrapper-sandbox";
-  }
+    companion object {
+        fun isSupported(cmdEnv: CommandEnvironment?): Boolean {
+            return com.google.devtools.build.lib.util.OS.isPosixCompatible() && ProcessWrapper.fromCommandEnvironment(
+                cmdEnv
+            ) != null
+        }
+    }
 }

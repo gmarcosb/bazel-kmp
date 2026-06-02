@@ -11,68 +11,54 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.packages.BuildFileName;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.skyframe.DiffAwarenessManager.EvaluatingVersionDiff;
-import com.google.devtools.build.lib.skyframe.PackageFunction.ActionOnFilesystemErrorCodeLoadingBzlFile;
-import com.google.devtools.build.lib.skyframe.PackageFunction.ActionOnIOExceptionReadingBuildFile;
-import com.google.devtools.build.lib.skyframe.PackageLookupFunction.CrossRepositoryLabelViolationStrategy;
-import com.google.devtools.build.lib.skyframe.SkyframeExecutor.DiffCheckNotificationOptions;
-import com.google.devtools.common.options.OptionsProvider;
-import java.time.Duration;
+import com.google.devtools.build.lib.packages.BuildFileName
 
-/** Hardcoded constants describing bazel-on-skyframe behavior. */
-public class BazelSkyframeExecutorConstants {
-  private BazelSkyframeExecutorConstants() {}
+/** Hardcoded constants describing bazel-on-skyframe behavior.  */
+object BazelSkyframeExecutorConstants {
+    val CROSS_REPOSITORY_LABEL_VIOLATION_STRATEGY: CrossRepositoryLabelViolationStrategy? =
+        CrossRepositoryLabelViolationStrategy.ERROR
 
-  public static final CrossRepositoryLabelViolationStrategy
-      CROSS_REPOSITORY_LABEL_VIOLATION_STRATEGY = CrossRepositoryLabelViolationStrategy.ERROR;
+    @kotlin.jvm.JvmField
+    val BUILD_FILES_BY_PRIORITY: com.google.common.collect.ImmutableList<BuildFileName?> =
+        com.google.common.collect.ImmutableList.of<BuildFileName?>(BuildFileName.BUILD_DOT_BAZEL, BuildFileName.BUILD)
 
-  public static final ImmutableList<BuildFileName> BUILD_FILES_BY_PRIORITY =
-      ImmutableList.of(BuildFileName.BUILD_DOT_BAZEL, BuildFileName.BUILD);
+    val ACTION_ON_IO_EXCEPTION_READING_BUILD_FILE: ActionOnIOExceptionReadingBuildFile =
+        UseOriginalIOException.Companion.INSTANCE
 
-  public static final ActionOnIOExceptionReadingBuildFile
-      ACTION_ON_IO_EXCEPTION_READING_BUILD_FILE =
-          ActionOnIOExceptionReadingBuildFile.UseOriginalIOException.INSTANCE;
+    val ACTION_ON_FILESYSTEM_ERROR_CODE_LOADING_BZL_FILE: ActionOnFilesystemErrorCodeLoadingBzlFile =
+        ActionOnFilesystemErrorCodeLoadingBzlFile { filesystemCode: Filesystem.Code? -> filesystemCode === FailureDetails.Filesystem.Code.REMOTE_FILE_EVICTED }
 
-  public static final ActionOnFilesystemErrorCodeLoadingBzlFile
-      ACTION_ON_FILESYSTEM_ERROR_CODE_LOADING_BZL_FILE =
-          filesystemCode -> filesystemCode == FailureDetails.Filesystem.Code.REMOTE_FILE_EVICTED;
+    const val USE_REPO_DOT_BAZEL: Boolean = true
 
-  public static final boolean USE_REPO_DOT_BAZEL = true;
-
-  public static final DiffCheckNotificationOptions DIFF_CHECK_NOTIFICATION_OPTIONS =
-      new DiffCheckNotificationOptions() {
-        @Override
-        public boolean allowDiffCheck(
-            EvaluatingVersionDiff versionDiff, EventHandler eventHandler, OptionsProvider options) {
-          return true;
+    val DIFF_CHECK_NOTIFICATION_OPTIONS: DiffCheckNotificationOptions = object : DiffCheckNotificationOptions {
+        override fun allowDiffCheck(
+            versionDiff: EvaluatingVersionDiff?,
+            eventHandler: com.google.devtools.build.lib.events.EventHandler?,
+            options: com.google.devtools.common.options.OptionsProvider?
+        ): Boolean {
+            return true
         }
 
-        @Override
-        public String getStatusMessage() {
-          return "Checking for file changes...";
-        }
+        val statusMessage: String
+            get() = "Checking for file changes..."
 
-        @Override
-        public Duration getStatusUpdateDelay() {
-          return Duration.ofSeconds(1);
-        }
-      };
+        val statusUpdateDelay: java.time.Duration?
+            get() = java.time.Duration.ofSeconds(1)
+    }
 
-  public static SequencedSkyframeExecutor.Builder newBazelSkyframeExecutorBuilder() {
-    return SequencedSkyframeExecutor.builder()
-        .setIgnoredSubdirectories(IgnoredSubdirectoriesFunction.INSTANCE)
-        .setActionOnIOExceptionReadingBuildFile(ACTION_ON_IO_EXCEPTION_READING_BUILD_FILE)
-        .setActionOnFilesystemErrorCodeLoadingBzlFile(
-            ACTION_ON_FILESYSTEM_ERROR_CODE_LOADING_BZL_FILE)
-        .setShouldUseRepoDotBazel(USE_REPO_DOT_BAZEL)
-        .setCrossRepositoryLabelViolationStrategy(CROSS_REPOSITORY_LABEL_VIOLATION_STRATEGY)
-        .setBuildFilesByPriority(BUILD_FILES_BY_PRIORITY)
-        .setDiffCheckNotificationOptions(DIFF_CHECK_NOTIFICATION_OPTIONS);
-  }
+    @kotlin.jvm.JvmStatic
+    fun newBazelSkyframeExecutorBuilder(): com.google.devtools.build.lib.skyframe.SequencedSkyframeExecutor.Builder {
+        return SequencedSkyframeExecutor.Companion.builder()
+            .setIgnoredSubdirectories(IgnoredSubdirectoriesFunction.INSTANCE)
+            .setActionOnIOExceptionReadingBuildFile(ACTION_ON_IO_EXCEPTION_READING_BUILD_FILE)
+            .setActionOnFilesystemErrorCodeLoadingBzlFile(
+                ACTION_ON_FILESYSTEM_ERROR_CODE_LOADING_BZL_FILE
+            )
+            .setShouldUseRepoDotBazel(USE_REPO_DOT_BAZEL)
+            .setCrossRepositoryLabelViolationStrategy(CROSS_REPOSITORY_LABEL_VIOLATION_STRATEGY)
+            .setBuildFilesByPriority(BUILD_FILES_BY_PRIORITY)
+            .setDiffCheckNotificationOptions(DIFF_CHECK_NOTIFICATION_OPTIONS)
+    }
 }

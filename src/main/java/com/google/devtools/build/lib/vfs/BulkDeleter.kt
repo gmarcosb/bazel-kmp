@@ -11,18 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import java.io.IOException;
+import com.google.devtools.build.lib.vfs.PathFragment
+import java.io.IOException
 
-/** An interface for deleting outputs in bulk. */
-public interface BulkDeleter {
-  /**
-   * Bulk delete outputs.
-   *
-   * @param paths the paths to delete, relative to the exec root.
-   * @throws IOException on unexpected failure.
-   * @throws InterruptedException on interrupt.
-   */
-  void bulkDelete(Iterable<PathFragment> paths) throws IOException, InterruptedException;
+/** An interface for deleting outputs in bulk.  */
+interface BulkDeleter {
+    /**
+     * Bulk delete outputs.
+     * 
+     * @param paths the paths to delete, relative to the exec root.
+     * @throws IOException on unexpected failure.
+     * @throws InterruptedException on interrupt.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun bulkDelete(paths: Iterable<PathFragment?>?)
 }

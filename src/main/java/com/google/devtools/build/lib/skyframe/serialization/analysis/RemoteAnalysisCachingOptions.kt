@@ -11,260 +11,235 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import com.google.common.base.Strings;
-import com.google.common.hash.HashCode;
-import com.google.common.hash.Hashing;
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.Converters.DurationConverter;
-import com.google.devtools.common.options.EnumConverter;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.time.Duration;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCacheStorageType
 
-/** Options for caching analysis results remotely. */
-@OptionsClass
-public abstract class RemoteAnalysisCachingOptions extends OptionsBase {
+/** Options for caching analysis results remotely.  */
+@com.google.devtools.common.options.OptionsClass
+abstract class RemoteAnalysisCachingOptions : com.google.devtools.common.options.OptionsBase() {
+    /** A converter for MD5 checksums.  */
+    class Md5Converter : com.google.devtools.common.options.Converter<com.google.common.hash.HashCode?> {
+        @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+        override fun convert(input: String?, conversionContext: Any?): com.google.common.hash.HashCode? {
+            if (com.google.common.base.Strings.isNullOrEmpty(input)) {
+                return null
+            }
 
-  /** A converter for MD5 checksums. */
-  public static final class Md5Converter implements Converter<HashCode> {
-    @Nullable
-    @Override
-    public HashCode convert(String input, @Nullable Object conversionContext)
-        throws OptionsParsingException {
-      if (Strings.isNullOrEmpty(input)) {
-        return null;
-      }
+            var result: com.google.common.hash.HashCode? = null
+            try {
+                result = com.google.common.hash.HashCode.fromString(input)
+            } catch (e: java.lang.IllegalArgumentException) {
+                // Handled just below in the if (result == null) branch
+            }
 
-      HashCode result = null;
-      try {
-        result = HashCode.fromString(input);
-      } catch (IllegalArgumentException e) {
-        // Handled just below in the if (result == null) branch
-      }
+            if (result == null || result.bits() != com.google.common.hash.Hashing.md5().bits()) {
+                throw com.google.devtools.common.options.OptionsParsingException("Blaze checksum must be exactly 32 hex characters")
+            }
 
-      if (result == null || result.bits() != Hashing.md5().bits()) {
-        throw new OptionsParsingException("Blaze checksum must be exactly 32 hex characters");
-      }
+            return result
+        }
 
-      return result;
+        val typeDescription: String
+            get() = ""
     }
 
-    @Override
-    public String getTypeDescription() {
-      return "";
+    @get:com.google.devtools.common.options.Option(
+        name = "serialized_frontier_profile",
+        defaultValue = "",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.OUTPUT_SELECTION,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_MONITORING],
+        help = "Dump a profile of serialized frontier bytes. Specifies the output path."
+    )
+    abstract val serializedFrontierProfile: String?
+
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_remote_analysis_cache_mode",
+        defaultValue = "off",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        converter = RemoteAnalysisCacheModeConverter::class,
+        help = "The transport direction for the remote analysis cache."
+    )
+    abstract var mode: RemoteAnalysisCacheMode?
+
+    /** * The transport direction for the remote analysis cache.  */
+    enum class RemoteAnalysisCacheMode {
+        /** Serializes and uploads Skyframe analysis nodes after the build command finishes.  */
+        UPLOAD,
+
+        /**
+         * Dumps the manifest of SkyKeys computed in the frontier and the active set. This mode does not
+         * serialize and upload the keys.
+         */
+        DUMP_UPLOAD_MANIFEST_ONLY,
+
+        /** Fetches and deserializes the Skyframe analysis nodes during the build.  */
+        DOWNLOAD,
+
+        /** Disabled.  */
+        OFF;
+
+        /** Returns true if the selected mode needs to connect to a backend.  */
+        fun requiresBackendConnectivity(): Boolean {
+            return when (this) {
+                RemoteAnalysisCacheMode.UPLOAD, RemoteAnalysisCacheMode.DOWNLOAD -> true
+                RemoteAnalysisCacheMode.DUMP_UPLOAD_MANIFEST_ONLY, RemoteAnalysisCacheMode.OFF -> false
+            }
+        }
+
+        val isRetrievalEnabled: Boolean
+            get() = this == RemoteAnalysisCacheMode.DOWNLOAD
+
+        /**
+         * Returns true if the mode serializes *values*.
+         * 
+         * 
+         * [DOWNLOAD] serializes keys, but not values.
+         */
+        fun serializesValues(): Boolean {
+            return when (this) {
+                RemoteAnalysisCacheMode.UPLOAD, RemoteAnalysisCacheMode.DUMP_UPLOAD_MANIFEST_ONLY -> true
+                RemoteAnalysisCacheMode.DOWNLOAD, RemoteAnalysisCacheMode.OFF -> false
+            }
+        }
     }
-  }
 
-  @Option(
-      name = "serialized_frontier_profile",
-      defaultValue = "",
-      documentationCategory = OptionDocumentationCategory.OUTPUT_SELECTION,
-      effectTags = {OptionEffectTag.BAZEL_MONITORING},
-      help = "Dump a profile of serialized frontier bytes. Specifies the output path.")
-  public abstract String getSerializedFrontierProfile();
+    /** Enum converter for [RemoteAnalysisCacheMode].  */
+    private class RemoteAnalysisCacheModeConverter
 
-  @Option(
-      name = "experimental_remote_analysis_cache_mode",
-      defaultValue = "off",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      converter = RemoteAnalysisCacheModeConverter.class,
-      help = "The transport direction for the remote analysis cache.")
-  public abstract RemoteAnalysisCacheMode getMode();
+        : com.google.devtools.common.options.EnumConverter<RemoteAnalysisCacheMode?>(
+        RemoteAnalysisCacheMode::class.java,
+        "Remote analysis cache mode"
+    )
 
-  public abstract void setMode(RemoteAnalysisCacheMode value);
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_remote_analysis_cache_max_batch_size",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        defaultValue = "4095",
+        help = "Batch size limit for remote analysis caching RPCs."
+    )
+    abstract val maxBatchSize: Int
 
-  /** * The transport direction for the remote analysis cache. */
-  public enum RemoteAnalysisCacheMode {
-    /** Serializes and uploads Skyframe analysis nodes after the build command finishes. */
-    UPLOAD,
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_remote_analysis_cache_concurrency",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        defaultValue = "4",
+        help = "Target concurrency for remote analysis caching RPCs."
+    )
+    abstract val concurrency: Int
 
-    /**
-     * Dumps the manifest of SkyKeys computed in the frontier and the active set. This mode does not
-     * serialize and upload the keys.
-     */
-    DUMP_UPLOAD_MANIFEST_ONLY,
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_remote_analysis_cache_deadline",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        defaultValue = "45s",
+        converter = com.google.devtools.common.options.Converters.DurationConverter::class,
+        help = "Deadline to use for remote analysis cache operations."
+    )
+    abstract val deadline: java.time.Duration?
 
-    /** Fetches and deserializes the Skyframe analysis nodes during the build. */
-    DOWNLOAD,
+    abstract fun setDeadline(value: java.time.Duration?)
 
-    /** Disabled. */
-    OFF;
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_analysis_cache_service",
+        defaultValue = "",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        help = "Locator for the AnalysisCacheService instance."
+    )
+    abstract var analysisCacheService: String?
 
-    /** Returns true if the selected mode needs to connect to a backend. */
-    public boolean requiresBackendConnectivity() {
-      return switch (this) {
-        case UPLOAD, DOWNLOAD -> true;
-        case DUMP_UPLOAD_MANIFEST_ONLY, OFF -> false;
-      };
-    }
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_remote_analysis_cache_storage",
+        defaultValue = "RAM",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        converter = RemoteAnalysisCacheStorageTypeConverter::class,
+        help = "The storage type for the remote analysis cache."
+    )
+    abstract val storageType: RemoteAnalysisCacheStorageType?
 
-    public boolean isRetrievalEnabled() {
-      return this == DOWNLOAD;
-    }
+    /** Enum converter for [RemoteAnalysisCacheStorageType].  */
+    class RemoteAnalysisCacheStorageTypeConverter
 
-    /**
-     * Returns true if the mode serializes <i>values</i>.
-     *
-     * <p>{@link DOWNLOAD} serializes keys, but not values.
-     */
-    public boolean serializesValues() {
-      return switch (this) {
-        case UPLOAD, DUMP_UPLOAD_MANIFEST_ONLY -> true;
-        case DOWNLOAD, OFF -> false;
-      };
-    }
-  }
+        : com.google.devtools.common.options.EnumConverter<RemoteAnalysisCacheStorageType?>(
+        RemoteAnalysisCacheStorageType::class.java,
+        "Remote analysis cache storage type"
+    )
 
-  /** Enum converter for {@link RemoteAnalysisCacheMode}. */
-  private static class RemoteAnalysisCacheModeConverter
-      extends EnumConverter<RemoteAnalysisCacheMode> {
-    RemoteAnalysisCacheModeConverter() {
-      super(RemoteAnalysisCacheMode.class, "Remote analysis cache mode");
-    }
-  }
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_remote_analysis_write_proxy",
+        defaultValue = "",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        help = ("The address of the SkycacheStorageWriteProxyService. If set, this service will be used "
+                + "for uploading analysis cache data.")
+    )
+    abstract var remoteAnalysisWriteProxy: String?
 
-  @Option(
-      name = "experimental_remote_analysis_cache_max_batch_size",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      defaultValue = "4095",
-      help = "Batch size limit for remote analysis caching RPCs.")
-  public abstract int getMaxBatchSize();
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_analysis_cache_key_distinguisher_for_testing",
+        defaultValue = "null",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        help = "An opaque string used as part of the cache key. Should only be used for testing."
+    )
+    abstract val analysisCacheKeyDistinguisherForTesting: String?
 
-  @Option(
-      name = "experimental_remote_analysis_cache_concurrency",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      defaultValue = "4",
-      help = "Target concurrency for remote analysis caching RPCs.")
-  public abstract int getConcurrency();
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_analysis_cache_enable_metadata_queries",
+        defaultValue = "true",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        help = "A flag to switch on/off inserting and querying the metadata db (b/425247333)."
+    )
+    abstract var analysisCacheEnableMetadataQueries: Boolean
 
-  @Option(
-      name = "experimental_remote_analysis_cache_deadline",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      defaultValue = "45s",
-      converter = DurationConverter.class,
-      help = "Deadline to use for remote analysis cache operations.")
-  public abstract Duration getDeadline();
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_analysis_cache_server_checksum_override",
+        converter = Md5Converter::class,
+        defaultValue = "null",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        help = ("If set, Blaze will use this checksum to look up entries in the remote analysis cache"
+                + " and not its own. WARNING: this might result in incorrect behavior. Only for"
+                + " debugging. It's best if the difference between the writer and the reader is only"
+                + " additional logging. In particular, the data structures that are being serialized "
+                + " and the observable behavior of the serialization machinery must not change.")
+    )
+    abstract val serverChecksumOverride: com.google.common.hash.HashCode?
 
-  public abstract void setDeadline(Duration value);
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_skycache_minimize_memory",
+        defaultValue = "false",
+        oldName = "experimental_discard_package_values_post_analysis",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        help = ("DO NOT USE: This flag is currently in development and does not work with every target."
+                + " If enabled, Blaze will discard values after the analysis phase is"
+                + " complete to provide Skycache writers with more headroom.")
+    )
+    abstract val skycacheMinimizeMemory: Boolean
 
-  @Option(
-      name = "experimental_analysis_cache_service",
-      defaultValue = "",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      help = "Locator for the AnalysisCacheService instance.")
-  public abstract String getAnalysisCacheService();
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_analysis_cache_bail_on_missing_fingerprint",
+        defaultValue = "false",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        help = ("If true, bails out from remote analysis cache retrieval if a single fingerprint is"
+                + " missing.")
+    )
+    abstract val analysisCacheBailOnMissingFingerprint: Boolean
 
-  public abstract void setAnalysisCacheService(String value);
-
-  @Option(
-      name = "experimental_remote_analysis_cache_storage",
-      defaultValue = "RAM",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      converter = RemoteAnalysisCacheStorageTypeConverter.class,
-      help = "The storage type for the remote analysis cache.")
-  public abstract RemoteAnalysisCacheStorageType getStorageType();
-
-  /** Enum converter for {@link RemoteAnalysisCacheStorageType}. */
-  public static class RemoteAnalysisCacheStorageTypeConverter
-      extends EnumConverter<RemoteAnalysisCacheStorageType> {
-    public RemoteAnalysisCacheStorageTypeConverter() {
-      super(RemoteAnalysisCacheStorageType.class, "Remote analysis cache storage type");
-    }
-  }
-
-  // Configuration Modes:
-  // 1. Write Proxy: If --experimental_remote_analysis_write_proxy is set, all uploads go through
-  //    the write proxy. --experimental_remote_analysis_cache_mode must be UPLOAD.
-  //    --experimental_analysis_cache_service and --experimental_remote_analysis_cache are ignored.
-  //
-  // 2. Read Proxy: If --experimental_analysis_cache_service is set but
-  //    --experimental_remote_analysis_cache is NOT set, downloads are proxied through the
-  //    AnalysisCacheService. --experimental_remote_analysis_cache_mode must be DOWNLOAD.
-
-  @Option(
-      name = "experimental_remote_analysis_write_proxy",
-      defaultValue = "",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      help =
-          "The address of the SkycacheStorageWriteProxyService. If set, this service will be used "
-              + "for uploading analysis cache data.")
-  public abstract String getRemoteAnalysisWriteProxy();
-
-  public abstract void setRemoteAnalysisWriteProxy(String value);
-
-  @Option(
-      name = "experimental_analysis_cache_key_distinguisher_for_testing",
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      help = "An opaque string used as part of the cache key. Should only be used for testing.")
-  public abstract String getAnalysisCacheKeyDistinguisherForTesting();
-
-  @Option(
-      name = "experimental_analysis_cache_enable_metadata_queries",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      help = "A flag to switch on/off inserting and querying the metadata db (b/425247333).")
-  public abstract boolean getAnalysisCacheEnableMetadataQueries();
-
-  public abstract void setAnalysisCacheEnableMetadataQueries(boolean value);
-
-  @Option(
-      name = "experimental_analysis_cache_server_checksum_override",
-      converter = Md5Converter.class,
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      help =
-          "If set, Blaze will use this checksum to look up entries in the remote analysis cache"
-              + " and not its own. WARNING: this might result in incorrect behavior. Only for"
-              + " debugging. It's best if the difference between the writer and the reader is only"
-              + " additional logging. In particular, the data structures that are being serialized "
-              + " and the observable behavior of the serialization machinery must not change.")
-  public abstract HashCode getServerChecksumOverride();
-
-  @Option(
-      name = "experimental_skycache_minimize_memory",
-      defaultValue = "false",
-      oldName = "experimental_discard_package_values_post_analysis",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      help =
-          "DO NOT USE: This flag is currently in development and does not work with every target."
-              + " If enabled, Blaze will discard values after the analysis phase is"
-              + " complete to provide Skycache writers with more headroom.")
-  public abstract boolean getSkycacheMinimizeMemory();
-
-  @Option(
-      name = "experimental_analysis_cache_bail_on_missing_fingerprint",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      help =
-          "If true, bails out from remote analysis cache retrieval if a single fingerprint is"
-              + " missing.")
-  public abstract boolean getAnalysisCacheBailOnMissingFingerprint();
-
-  @Option(
-      name = "experimental_skycache_analysis_only",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
-      help = "If true, Skycache will only be used for analysis phase.")
-  public abstract boolean getSkycacheAnalysisOnly();
+    @get:com.google.devtools.common.options.Option(
+        name = "experimental_skycache_analysis_only",
+        defaultValue = "false",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION],
+        help = "If true, Skycache will only be used for analysis phase."
+    )
+    abstract val skycacheAnalysisOnly: Boolean
 }

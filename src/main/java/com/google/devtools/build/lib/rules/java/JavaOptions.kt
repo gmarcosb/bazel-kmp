@@ -11,444 +11,413 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.java;
+package com.google.devtools.build.lib.rules.java
 
-import com.google.devtools.build.lib.analysis.config.CoreOptionConverters.EmptyToNullLabelConverter;
-import com.google.devtools.build.lib.analysis.config.CoreOptionConverters.LabelConverter;
-import com.google.devtools.build.lib.analysis.config.CoreOptionConverters.LabelListConverter;
-import com.google.devtools.build.lib.analysis.config.CoreOptionConverters.LabelMapConverter;
-import com.google.devtools.build.lib.analysis.config.CoreOptionConverters.StrictDepsConverter;
-import com.google.devtools.build.lib.analysis.config.CoreOptionConverters.StrictDepsMode;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.rules.java.JavaConfiguration.JavaClasspathMode;
-import com.google.devtools.build.lib.rules.java.JavaConfiguration.OneVersionEnforcementLevel;
-import com.google.devtools.common.options.EnumConverter;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionMetadataTag;
-import com.google.devtools.common.options.OptionsClass;
-import java.util.List;
-import java.util.Map;
+import com.google.devtools.build.lib.analysis.config.CoreOptionConverters.EmptyToNullLabelConverter
+import com.google.devtools.common.options.*
 
-/** Command-line options for building Java targets */
+/** Command-line options for building Java targets  */
 @OptionsClass
-public abstract class JavaOptions extends FragmentOptions {
-  /** Converter for the --java_classpath option. */
-  public static class JavaClasspathModeConverter extends EnumConverter<JavaClasspathMode> {
-    public JavaClasspathModeConverter() {
-      super(JavaClasspathMode.class, "Java classpath reduction strategy");
-    }
-  }
+abstract class JavaOptions : FragmentOptions() {
+    /** Converter for the --java_classpath option.  */
+    class JavaClasspathModeConverter :
+        EnumConverter<JavaClasspathMode?>(JavaClasspathMode::class.java, "Java classpath reduction strategy")
 
-  /** Converter for the --experimental_one_version_enforcement option */
-  public static class OneVersionEnforcementLevelConverter
-      extends EnumConverter<OneVersionEnforcementLevel> {
-    public OneVersionEnforcementLevelConverter() {
-      super(OneVersionEnforcementLevel.class, "Enforcement level for Java One Version violations");
-    }
-  }
+    /** Converter for the --experimental_one_version_enforcement option  */
+    class OneVersionEnforcementLevelConverter
 
-  @Option(
-      name = "javacopt",
-      allowMultiple = true,
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "Additional options to pass to javac.")
-  public abstract List<String> getJavacOpts();
+        : EnumConverter<OneVersionEnforcementLevel?>(
+        OneVersionEnforcementLevel::class.java,
+        "Enforcement level for Java One Version violations"
+    )
 
-  public abstract void setJavacOpts(List<String> value);
+    @get:Option(
+        name = "javacopt",
+        allowMultiple = true,
+        defaultValue = "null",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "Additional options to pass to javac."
+    )
+    abstract var javacOpts: MutableList<String?>?
 
-  @Option(
-      name = "host_javacopt",
-      allowMultiple = true,
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "Additional options to pass to javac when building tools that are executed during a"
-              + " build.")
-  public abstract List<String> getHostJavacOpts();
+    @get:Option(
+        name = "host_javacopt",
+        allowMultiple = true,
+        defaultValue = "null",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = ("Additional options to pass to javac when building tools that are executed during a"
+                + " build.")
+    )
+    abstract var hostJavacOpts: MutableList<String?>?
 
-  public abstract void setHostJavacOpts(List<String> value);
+    @get:Option(
+        name = "jvmopt",
+        allowMultiple = true,
+        defaultValue = "null",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = ("Additional options to pass to the Java VM. These options will get added to the "
+                + "VM startup options of each java_binary target.")
+    )
+    abstract val jvmOpts: MutableList<String?>?
 
-  @Option(
-      name = "jvmopt",
-      allowMultiple = true,
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "Additional options to pass to the Java VM. These options will get added to the "
-              + "VM startup options of each java_binary target.")
-  public abstract List<String> getJvmOpts();
+    @get:Option(
+        name = "host_jvmopt",
+        allowMultiple = true,
+        defaultValue = "null",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = ("Additional options to pass to the Java VM when building tools that are executed during "
+                + " the build. These options will get added to the VM startup options of each "
+                + " java_binary target.")
+    )
+    abstract val hostJvmOpts: MutableList<String?>?
 
-  @Option(
-      name = "host_jvmopt",
-      allowMultiple = true,
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "Additional options to pass to the Java VM when building tools that are executed during "
-              + " the build. These options will get added to the VM startup options of each "
-              + " java_binary target.")
-  public abstract List<String> getHostJvmOpts();
+    @get:Option(
+        name = "use_ijars",
+        defaultValue = "true",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = ("If enabled, this option causes Java compilation to use interface jars. "
+                + "This will result in faster incremental compilation, "
+                + "but error messages can be different.")
+    )
+    abstract val useIjars: Boolean
 
-  @Option(
-      name = "use_ijars",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "If enabled, this option causes Java compilation to use interface jars. "
-              + "This will result in faster incremental compilation, "
-              + "but error messages can be different.")
-  public abstract boolean getUseIjars();
+    @get:Option(
+        name = "java_header_compilation",
+        defaultValue = "true",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "Compile ijars directly from source.",
+        oldName = "experimental_java_header_compilation"
+    )
+    abstract val headerCompilation: Boolean
 
-  @Option(
-      name = "java_header_compilation",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "Compile ijars directly from source.",
-      oldName = "experimental_java_header_compilation")
-  public abstract boolean getHeaderCompilation();
+    @get:Option(
+        name = "java_deps",
+        defaultValue = "true",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "Generate dependency information (for now, compile-time classpath) per Java target."
+    )
+    abstract val javaDeps: Boolean
 
-  @Option(
-      name = "java_deps",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "Generate dependency information (for now, compile-time classpath) per Java target.")
-  public abstract boolean getJavaDeps();
+    @get:Option(
+        name = "experimental_java_classpath",
+        allowMultiple = false,
+        defaultValue = "bazel",
+        converter = JavaClasspathModeConverter::class,
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "Enables reduced classpaths for Java compilations.",
+        oldName = "java_classpath"
+    )
+    abstract val javaClasspath: JavaClasspathMode?
 
-  @Option(
-      name = "experimental_java_classpath",
-      allowMultiple = false,
-      defaultValue = "bazel",
-      converter = JavaClasspathModeConverter.class,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "Enables reduced classpaths for Java compilations.",
-      oldName = "java_classpath")
-  public abstract JavaClasspathMode getJavaClasspath();
+    @get:Option(
+        name = "experimental_inmemory_jdeps_files",
+        defaultValue = "true",
+        documentationCategory = OptionDocumentationCategory.BUILD_TIME_OPTIMIZATION,
+        effectTags = [OptionEffectTag.LOADING_AND_ANALYSIS, OptionEffectTag.EXECUTION, OptionEffectTag.AFFECTS_OUTPUTS
+        ],
+        metadataTags = [OptionMetadataTag.EXPERIMENTAL],
+        help = ("If enabled, the dependency (.jdeps) files generated from Java compilations will be "
+                + "passed through in memory directly from the remote build nodes instead of being "
+                + "written to disk.")
+    )
+    abstract val inmemoryJdepsFiles: Boolean
 
-  @Option(
-      name = "experimental_inmemory_jdeps_files",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.BUILD_TIME_OPTIMIZATION,
-      effectTags = {
-        OptionEffectTag.LOADING_AND_ANALYSIS,
-        OptionEffectTag.EXECUTION,
-        OptionEffectTag.AFFECTS_OUTPUTS
-      },
-      metadataTags = {OptionMetadataTag.EXPERIMENTAL},
-      help =
-          "If enabled, the dependency (.jdeps) files generated from Java compilations will be "
-              + "passed through in memory directly from the remote build nodes instead of being "
-              + "written to disk.")
-  public abstract boolean getInmemoryJdepsFiles();
+    @get:Option(
+        name = "java_debug",
+        defaultValue = "null",
+        expansion = ["--test_arg=--wrapper_script_flag=--debug", "--test_output=streamed", "--test_strategy=exclusive", "--test_timeout=9999" // Do not increase this without consulting b/459811767#comment3.
+            , "--nocache_test_results"
+        ],
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = ("Causes the Java virtual machine of a java test to wait for a connection from a "
+                + "JDWP-compliant debugger (such as jdb) before starting the test. Implies "
+                + "-test_output=streamed.")
+    )
+    abstract val javaTestDebug: Void?
 
-  @Option(
-      name = "java_debug",
-      defaultValue = "null",
-      expansion = {
-        "--test_arg=--wrapper_script_flag=--debug",
-        "--test_output=streamed",
-        "--test_strategy=exclusive",
-        "--test_timeout=9999", // Do not increase this without consulting b/459811767#comment3.
-        "--nocache_test_results"
-      },
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "Causes the Java virtual machine of a java test to wait for a connection from a "
-              + "JDWP-compliant debugger (such as jdb) before starting the test. Implies "
-              + "-test_output=streamed.")
-  public abstract Void getJavaTestDebug();
+    @get:Option(
+        name = "experimental_strict_java_deps",
+        allowMultiple = false,
+        defaultValue = "default",
+        converter = StrictDepsConverter::class,
+        documentationCategory = OptionDocumentationCategory.INPUT_STRICTNESS,
+        effectTags = [OptionEffectTag.BUILD_FILE_SEMANTICS, OptionEffectTag.EAGERNESS_TO_EXIT],
+        help = ("If true, checks that a Java target explicitly declares all directly used "
+                + "targets as dependencies."),
+        oldName = "strict_java_deps"
+    )
+    abstract val strictJavaDeps: StrictDepsMode?
 
-  @Option(
-      name = "experimental_strict_java_deps",
-      allowMultiple = false,
-      defaultValue = "default",
-      converter = StrictDepsConverter.class,
-      documentationCategory = OptionDocumentationCategory.INPUT_STRICTNESS,
-      effectTags = {OptionEffectTag.BUILD_FILE_SEMANTICS, OptionEffectTag.EAGERNESS_TO_EXIT},
-      help =
-          "If true, checks that a Java target explicitly declares all directly used "
-              + "targets as dependencies.",
-      oldName = "strict_java_deps")
-  public abstract StrictDepsMode getStrictJavaDeps();
+    @get:Option(
+        name = "experimental_fix_deps_tool",
+        defaultValue = "add_dep",
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [OptionEffectTag.BUILD_FILE_SEMANTICS],
+        help = "Specifies which tool should be used to resolve missing dependencies."
+    )
+    abstract val fixDepsTool: String?
 
-  @Option(
-      name = "experimental_fix_deps_tool",
-      defaultValue = "add_dep",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.BUILD_FILE_SEMANTICS},
-      help = "Specifies which tool should be used to resolve missing dependencies.")
-  public abstract String getFixDepsTool();
+    @get:Option(
+        name = "explicit_java_test_deps",
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = ("Explicitly specify a dependency to JUnit or Hamcrest in a java_test instead of "
+                + " accidentally obtaining from the TestRunner's deps. Only works for bazel right "
+                + "now.")
+    )
+    abstract val explicitJavaTestDeps: Boolean
 
-  // TODO(bazel-team): This flag should ideally default to true (and eventually removed). We have
-  // been accidentally supplying JUnit and Hamcrest deps to java_test targets indirectly via the
-  // BazelTestRunner, and setting this flag to true fixes that behaviour.
-  @Option(
-      name = "explicit_java_test_deps",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "Explicitly specify a dependency to JUnit or Hamcrest in a java_test instead of "
-              + " accidentally obtaining from the TestRunner's deps. Only works for bazel right "
-              + "now.")
-  public abstract boolean getExplicitJavaTestDeps();
+    @get:Option(
+        name = "host_java_launcher",
+        defaultValue = "null",
+        converter = EmptyToNullLabelConverter::class,
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "The Java launcher used by tools that are executed during a build."
+    )
+    abstract val hostJavaLauncher: Label?
 
-  @Option(
-      name = "host_java_launcher",
-      defaultValue = "null",
-      converter = EmptyToNullLabelConverter.class,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "The Java launcher used by tools that are executed during a build.")
-  public abstract Label getHostJavaLauncher();
+    @get:Option(
+        name = "java_launcher",
+        defaultValue = "null",
+        converter = EmptyToNullLabelConverter::class,
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = ("The Java launcher to use when building Java binaries. "
+                + " If this flag is set to the empty string, the JDK launcher is used. "
+                + "The \"launcher\" attribute overrides this flag. ")
+    )
+    abstract val javaLauncher: Label?
 
-  @Option(
-      name = "java_launcher",
-      defaultValue = "null",
-      converter = EmptyToNullLabelConverter.class,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "The Java launcher to use when building Java binaries. "
-              + " If this flag is set to the empty string, the JDK launcher is used. "
-              + "The \"launcher\" attribute overrides this flag. ")
-  public abstract Label getJavaLauncher();
+    @get:Option(
+        name = "proguard_top",
+        defaultValue = "null",
+        converter = LabelConverter::class,
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = ("Specifies which version of ProGuard to use for code removal when building a Java "
+                + "binary.")
+    )
+    abstract val proguard: Label?
 
-  @Option(
-      name = "proguard_top",
-      defaultValue = "null",
-      converter = LabelConverter.class,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "Specifies which version of ProGuard to use for code removal when building a Java "
-              + "binary.")
-  public abstract Label getProguard();
+    @get:Option(
+        name = "bytecode_optimizers",
+        defaultValue = "Proguard",
+        converter = LabelMapConverter::class,
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "Do not use.",
+        oldName = "experimental_bytecode_optimizers"
+    )
+    abstract val bytecodeOptimizers: MutableMap<String?, Label>?
 
-  /**
-   * Comma-separated list of Mnemonic=label pairs of optimizers to run in the given order, treating
-   * {@code Proguard} specially by substituting in the relevant Proguard binary automatically. All
-   * optimizers must understand the same flags as Proguard.
-   */
-  @Option(
-      name = "bytecode_optimizers",
-      defaultValue = "Proguard",
-      converter = LabelMapConverter.class,
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "Do not use.",
-      oldName = "experimental_bytecode_optimizers")
-  public abstract Map<String, Label> getBytecodeOptimizers();
+    @get:Option(
+        name = "experimental_local_java_optimizations",
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        metadataTags = [OptionMetadataTag.EXPERIMENTAL],
+        help = "Do not use."
+    )
+    abstract val runLocalJavaOptimizations: Boolean
 
-  /**
-   * If true, the bytecode optimizer will be used to incrementally optimize each compiled Java
-   * artifact.
-   */
-  @Option(
-      name = "experimental_local_java_optimizations",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      metadataTags = {OptionMetadataTag.EXPERIMENTAL},
-      help = "Do not use.")
-  public abstract boolean getRunLocalJavaOptimizations();
+    @get:Option(
+        name = "experimental_local_java_optimization_configuration",
+        defaultValue = "null",
+        converter = LabelConverter::class,
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "Do not use."
+    )
+    abstract val localJavaOptimizationConfiguration: Label?
 
-  /**
-   * Configuration for the bytecode optimizer if --experimental_local_java_optimizations is enabled.
-   */
-  @Option(
-      name = "experimental_local_java_optimization_configuration",
-      defaultValue = "null",
-      converter = LabelConverter.class,
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "Do not use.")
-  public abstract Label getLocalJavaOptimizationConfiguration();
+    // TODO(b/237004872) Remove this after rollout of bytecode_optimization_pass_actions.
+    @get:Option(
+        name = "split_bytecode_optimization_pass",
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "Do not use."
+    )
+    abstract val splitBytecodeOptimizationPass: Boolean
 
-  // TODO(b/237004872) Remove this after rollout of bytecode_optimization_pass_actions.
-  /** If true, the OPTIMIZATION stage of the bytecode optimizer will be split across two actions. */
-  @Option(
-      name = "split_bytecode_optimization_pass",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "Do not use.")
-  public abstract boolean getSplitBytecodeOptimizationPass();
+    @get:Option(
+        name = "bytecode_optimization_pass_actions",
+        defaultValue = "1",
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "Do not use."
+    )
+    abstract val bytecodeOptimizationPassActions: Int
 
-  /**
-   * This specifies the number of actions to divide the OPTIMIZATION stage of the bytecode optimizer
-   * into. Note that if split_bytecode_optimization_pass is set, bytecode_optimization_pass_actions
-   * will only effectively change build behavior if it is > 2.
-   */
-  @Option(
-      name = "bytecode_optimization_pass_actions",
-      defaultValue = "1",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "Do not use.")
-  public abstract int getBytecodeOptimizationPassActions();
+    @get:Option(
+        name = "enforce_proguard_file_extension",
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [OptionEffectTag.EAGERNESS_TO_EXIT],
+        help = ("If enabled, requires that ProGuard configuration files outside of third_party/ use the"
+                + " *.pgcfg file extension.")
+    )
+    abstract val enforceProguardFileExtension: Boolean
 
-  @Option(
-      name = "enforce_proguard_file_extension",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.EAGERNESS_TO_EXIT},
-      help =
-          "If enabled, requires that ProGuard configuration files outside of third_party/ use the"
-              + " *.pgcfg file extension.")
-  public abstract boolean getEnforceProguardFileExtension();
+    @get:Option(
+        name = "experimental_one_version_enforcement",
+        defaultValue = "OFF",
+        converter = OneVersionEnforcementLevelConverter::class,
+        documentationCategory = OptionDocumentationCategory.INPUT_STRICTNESS,
+        effectTags = [OptionEffectTag.LOADING_AND_ANALYSIS],
+        help = ("When enabled, enforce that a java_binary rule can't contain more than one version "
+                + "of the same class file on the classpath. This enforcement can break the build, or "
+                + "can just result in warnings.")
+    )
+    abstract val enforceOneVersion: OneVersionEnforcementLevel?
 
-  @Option(
-      name = "experimental_one_version_enforcement",
-      defaultValue = "OFF",
-      converter = OneVersionEnforcementLevelConverter.class,
-      documentationCategory = OptionDocumentationCategory.INPUT_STRICTNESS,
-      effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS},
-      help =
-          "When enabled, enforce that a java_binary rule can't contain more than one version "
-              + "of the same class file on the classpath. This enforcement can break the build, or "
-              + "can just result in warnings.")
-  public abstract OneVersionEnforcementLevel getEnforceOneVersion();
+    @get:Option(
+        name = "one_version_enforcement_on_java_tests",
+        defaultValue = "true",
+        documentationCategory = OptionDocumentationCategory.INPUT_STRICTNESS,
+        effectTags = [OptionEffectTag.LOADING_AND_ANALYSIS],
+        help = ("When enabled, and with experimental_one_version_enforcement set to a non-NONE value,"
+                + " enforce one version on java_test targets. This flag can be disabled to improve"
+                + " incremental test performance at the expense of missing potential one version"
+                + " violations.")
+    )
+    abstract val enforceOneVersionOnJavaTests: Boolean
 
-  @Option(
-      name = "one_version_enforcement_on_java_tests",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.INPUT_STRICTNESS,
-      effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS},
-      help =
-          "When enabled, and with experimental_one_version_enforcement set to a non-NONE value,"
-              + " enforce one version on java_test targets. This flag can be disabled to improve"
-              + " incremental test performance at the expense of missing potential one version"
-              + " violations.")
-  public abstract boolean getEnforceOneVersionOnJavaTests();
+    @get:Option(
+        name = "experimental_add_test_support_to_compile_time_deps",
+        defaultValue = "true",
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        metadataTags = [OptionMetadataTag.EXPERIMENTAL],
+        help = ("Flag to help transition away from adding test support libraries to the compile-time"
+                + " deps of Java test rules.")
+    )
+    abstract val addTestSupportToCompileTimeDeps: Boolean
 
-  @Option(
-      name = "experimental_add_test_support_to_compile_time_deps",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      metadataTags = {OptionMetadataTag.EXPERIMENTAL},
-      help =
-          "Flag to help transition away from adding test support libraries to the compile-time"
-              + " deps of Java test rules.")
-  public abstract boolean getAddTestSupportToCompileTimeDeps();
+    @get:Option(
+        name = "experimental_run_android_lint_on_java_rules",
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS],
+        metadataTags = [OptionMetadataTag.EXPERIMENTAL],
+        help = "Whether to validate java_* sources."
+    )
+    abstract val runAndroidLint: Boolean
 
-  @Option(
-      name = "experimental_run_android_lint_on_java_rules",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      metadataTags = {OptionMetadataTag.EXPERIMENTAL},
-      help = "Whether to validate java_* sources.")
-  public abstract boolean getRunAndroidLint();
+    @get:Option(
+        name = "plugin",
+        converter = LabelListConverter::class,
+        allowMultiple = true,
+        defaultValue = "null",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "Plugins to use in the build. Currently works with java_plugin."
+    )
+    abstract val pluginList: MutableList<Label>?
 
-  // Plugins are built using the exec config. To avoid cycles we just don't propagate this option to
-  // the exec config. If one day we decide to use plugins when building exec tools, we can improve
-  // this by (for example) creating a compiler configuration that is used only for building plugins.
-  @Option(
-      name = "plugin",
-      converter = LabelListConverter.class,
-      allowMultiple = true,
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "Plugins to use in the build. Currently works with java_plugin.")
-  public abstract List<Label> getPluginList();
+    @get:Option(
+        name = "experimental_turbine_annotation_processing",
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        metadataTags = [OptionMetadataTag.EXPERIMENTAL],
+        help = "If enabled, turbine is used for all annotation processing"
+    )
+    abstract val experimentalTurbineAnnotationProcessing: Boolean
 
-  @Option(
-      name = "experimental_turbine_annotation_processing",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      metadataTags = {OptionMetadataTag.EXPERIMENTAL},
-      help = "If enabled, turbine is used for all annotation processing")
-  public abstract boolean getExperimentalTurbineAnnotationProcessing();
+    @get:Option(
+        name = "experimental_turbine_cpu_reservation",
+        defaultValue = "1",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "The number of CPUs to reserve for Turbine."
+    )
+    abstract val turbineCpuReservation: Int
 
-  @Option(
-      name = "experimental_turbine_cpu_reservation",
-      defaultValue = "1",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "The number of CPUs to reserve for Turbine.")
-  public abstract int getTurbineCpuReservation();
+    @get:Option(
+        name = "java_runtime_version",
+        defaultValue = "local_jdk",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "The Java runtime version"
+    )
+    abstract val javaRuntimeVersion: String?
 
-  @Option(
-      name = "java_runtime_version",
-      defaultValue = "local_jdk",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "The Java runtime version")
-  public abstract String getJavaRuntimeVersion();
+    @get:Option(
+        name = "tool_java_runtime_version",
+        defaultValue = "remotejdk_11",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "The Java runtime version used to execute tools during the build"
+    )
+    abstract val hostJavaRuntimeVersion: String?
 
-  @Option(
-      name = "tool_java_runtime_version",
-      defaultValue = "remotejdk_11",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "The Java runtime version used to execute tools during the build")
-  public abstract String getHostJavaRuntimeVersion();
+    @get:Option(
+        name = "java_language_version",
+        defaultValue = "",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "The Java language version"
+    )
+    abstract val javaLanguageVersion: String?
 
-  @Option(
-      name = "java_language_version",
-      defaultValue = "",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "The Java language version")
-  public abstract String getJavaLanguageVersion();
+    @get:Option(
+        name = "tool_java_language_version",
+        defaultValue = "",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        help = "The Java language version used to execute the tools that are needed during a build"
+    )
+    abstract val hostJavaLanguageVersion: String?
 
-  @Option(
-      name = "tool_java_language_version",
-      defaultValue = "",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "The Java language version used to execute the tools that are needed during a build")
-  public abstract String getHostJavaLanguageVersion();
+    @get:Option(
+        name = "incompatible_multi_release_deploy_jars",
+        defaultValue = "true",
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        metadataTags = [OptionMetadataTag.INCOMPATIBLE_CHANGE],
+        help = "When enabled, java_binary creates Multi-Release deploy jars."
+    )
+    abstract val multiReleaseDeployJars: Boolean
 
-  @Option(
-      name = "incompatible_multi_release_deploy_jars",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      metadataTags = {OptionMetadataTag.INCOMPATIBLE_CHANGE},
-      help = "When enabled, java_binary creates Multi-Release deploy jars.")
-  public abstract boolean getMultiReleaseDeployJars();
+    @get:Option(
+        name = "incompatible_disallow_java_import_exports",
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        metadataTags = [OptionMetadataTag.INCOMPATIBLE_CHANGE],
+        help = "When enabled, java_import.exports is not supported."
+    )
+    abstract val disallowJavaImportExports: Boolean
 
-  @Option(
-      name = "incompatible_disallow_java_import_exports",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      metadataTags = {OptionMetadataTag.INCOMPATIBLE_CHANGE},
-      help = "When enabled, java_import.exports is not supported.")
-  public abstract boolean getDisallowJavaImportExports();
+    @get:Option(
+        name = "experimental_enable_jspecify",
+        defaultValue = "true",
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        metadataTags = [OptionMetadataTag.EXPERIMENTAL],
+        help = "Enable experimental jspecify integration."
+    )
+    abstract val experimentalEnableJspecify: Boolean
 
-  @Option(
-      name = "experimental_enable_jspecify",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      metadataTags = {OptionMetadataTag.EXPERIMENTAL},
-      help = "Enable experimental jspecify integration.")
-  public abstract boolean getExperimentalEnableJspecify();
-
-  @Option(
-      name = "experimental_java_test_auto_create_deploy_jar",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      metadataTags = {OptionMetadataTag.EXPERIMENTAL},
-      help = "DO NOT USE")
-  public abstract boolean getAutoCreateDeployJarForJavaTests();
+    @get:Option(
+        name = "experimental_java_test_auto_create_deploy_jar",
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        metadataTags = [OptionMetadataTag.EXPERIMENTAL],
+        help = "DO NOT USE"
+    )
+    abstract val autoCreateDeployJarForJavaTests: Boolean
 }

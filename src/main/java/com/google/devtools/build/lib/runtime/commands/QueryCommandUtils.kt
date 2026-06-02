@@ -11,76 +11,63 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime.commands;
+package com.google.devtools.build.lib.runtime.commands
 
-import static com.google.common.collect.ImmutableSet.toImmutableSet;
+import com.google.devtools.build.lib.runtime.CommandEnvironment
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.query2.engine.QueryException;
-import com.google.devtools.build.lib.query2.engine.QueryExpression;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.server.FailureDetails.ActionQuery;
-import com.google.devtools.build.lib.skyframe.serialization.DeserializedSkyValue;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import javax.annotation.Nullable;
+/** The utility class for [AqueryCommand] and [CqueryCommand]  */
+object QueryCommandUtils {
+    /**
+     * Get the list of top-level targets of the query from universe scope and the query expression.
+     * 
+     * @throws QueryException if targets were specified in the query expression together with
+     * --skyframe_state flag
+     */
+    @Throws(com.google.devtools.build.lib.query2.engine.QueryException::class)
+    fun getTopLevelTargets(
+        universeScope: MutableList<String?>, expr: QueryExpression?, queryCurrentSkyframeState: Boolean
+    ): com.google.common.collect.ImmutableList<String?> {
+        if (expr == null) {
+            return com.google.common.collect.ImmutableList.copyOf<String?>(universeScope)
+        }
 
-/** The utility class for {@link AqueryCommand} and {@link CqueryCommand} */
-public final class QueryCommandUtils {
+        val topLevelTargets: com.google.common.collect.ImmutableList<String?>
+        if (universeScope.isEmpty()) {
+            val targetPatternSet: MutableSet<String?> = LinkedHashSet<String?>()
+            expr.collectTargetPatterns(targetPatternSet)
+            topLevelTargets = com.google.common.collect.ImmutableList.copyOf<String?>(targetPatternSet)
+        } else {
+            topLevelTargets = com.google.common.collect.ImmutableList.copyOf<String?>(universeScope)
+        }
 
-  private QueryCommandUtils() {}
+        if (queryCurrentSkyframeState && !topLevelTargets.isEmpty()) {
+            throw com.google.devtools.build.lib.query2.engine.QueryException(
+                ("Error while parsing '"
+                        + expr.toTrunctatedString()
+                        + "': Specifying build target(s) "
+                        + topLevelTargets
+                        + " with --skyframe_state is currently not supported."),
+                ActionQuery.Code.TOP_LEVEL_TARGETS_WITH_SKYFRAME_STATE_NOT_SUPPORTED
+            )
+        }
 
-  /**
-   * Get the list of top-level targets of the query from universe scope and the query expression.
-   *
-   * @throws QueryException if targets were specified in the query expression together with
-   *     --skyframe_state flag
-   */
-  static ImmutableList<String> getTopLevelTargets(
-      List<String> universeScope, @Nullable QueryExpression expr, boolean queryCurrentSkyframeState)
-      throws QueryException {
-    if (expr == null) {
-      return ImmutableList.copyOf(universeScope);
+        return topLevelTargets
     }
 
-    ImmutableList<String> topLevelTargets;
-    if (universeScope.isEmpty()) {
-      Set<String> targetPatternSet = new LinkedHashSet<>();
-      expr.collectTargetPatterns(targetPatternSet);
-      topLevelTargets = ImmutableList.copyOf(targetPatternSet);
-    } else {
-      topLevelTargets = ImmutableList.copyOf(universeScope);
+    /**
+     * Delete any keys that have been deserialized by Skycache from the evaluator so that query
+     * commands evaluate them again. We know which keys have been deserialized because they are
+     * instances of DeserializedSkyValue
+     */
+    @com.google.common.annotations.VisibleForTesting
+    fun resetDeserializedKeysFromRemoteAnalysisCache(env: CommandEnvironment) {
+        val evaluator: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            env.getSkyframeExecutor().getEvaluator()
+        val deserializedKeysToDelete: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            evaluator.getDoneValues().entrySet().stream()
+                .filter({ e -> e.getValue() is DeserializedSkyValue })
+                .map({ java.util.Map.Entry.key })
+                .collect(com.google.common.collect.ImmutableSet.toImmutableSet<E?>())
+        evaluator.delete(deserializedKeysToDelete::contains)
     }
-
-    if (queryCurrentSkyframeState && !topLevelTargets.isEmpty()) {
-      throw new QueryException(
-          "Error while parsing '"
-              + expr.toTrunctatedString()
-              + "': Specifying build target(s) "
-              + topLevelTargets
-              + " with --skyframe_state is currently not supported.",
-          ActionQuery.Code.TOP_LEVEL_TARGETS_WITH_SKYFRAME_STATE_NOT_SUPPORTED);
-    }
-
-    return topLevelTargets;
-  }
-
-  /**
-   * Delete any keys that have been deserialized by Skycache from the evaluator so that query
-   * commands evaluate them again. We know which keys have been deserialized because they are
-   * instances of DeserializedSkyValue
-   */
-  @VisibleForTesting
-  public static void resetDeserializedKeysFromRemoteAnalysisCache(CommandEnvironment env) {
-    var evaluator = env.getSkyframeExecutor().getEvaluator();
-    var deserializedKeysToDelete =
-        evaluator.getDoneValues().entrySet().stream()
-            .filter(e -> e.getValue() instanceof DeserializedSkyValue)
-            .map(Map.Entry::getKey)
-            .collect(toImmutableSet());
-    evaluator.delete(deserializedKeysToDelete::contains);
-  }
 }

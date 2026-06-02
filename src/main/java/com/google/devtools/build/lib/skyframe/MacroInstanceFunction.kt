@@ -11,83 +11,62 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
-
-import com.google.devtools.build.lib.packages.MacroInstance;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.NoSuchPackagePieceException;
-import com.google.devtools.build.lib.packages.NoSuchThingException;
-import com.google.devtools.build.lib.packages.PackagePiece;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionException.Transience;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.packages.MacroInstance
 
 /**
- * A SkyFunction that looks up a {@link com.google.devtools.build.lib.packages.MacroInstance} in a
- * {@link com.google.devtools.build.lib.packages.PackagePiece}, producing a {@link
- * MacroInstanceValue}.
+ * A SkyFunction that looks up a [com.google.devtools.build.lib.packages.MacroInstance] in a
+ * [com.google.devtools.build.lib.packages.PackagePiece], producing a [ ].
  */
-public final class MacroInstanceFunction implements SkyFunction {
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws MacroInstanceFunctionException, InterruptedException {
-    MacroInstanceValue.Key key = (MacroInstanceValue.Key) skyKey.argument();
-    @Nullable PackagePieceValue packagePieceValue;
-    try {
-      packagePieceValue =
-          (PackagePieceValue)
-              env.getValueOrThrow(
-                  key.packagePieceId(),
-                  NoSuchPackageException.class,
-                  NoSuchPackagePieceException.class);
-    } catch (NoSuchPackageException e) {
-      throw new MacroInstanceFunctionException(e);
-    } catch (NoSuchPackagePieceException e) {
-      throw new MacroInstanceFunctionException(e);
-    }
-    if (packagePieceValue == null) {
-      return null;
+class MacroInstanceFunction : SkyFunction {
+    @Throws(MacroInstanceFunctionException::class, java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment): SkyValue? {
+        val key: MacroInstanceValue.Key = skyKey.argument() as MacroInstanceValue.Key
+        val packagePieceValue: PackagePieceValue?
+        try {
+            packagePieceValue =
+                env.getValueOrThrow<E1?, E2?>(
+                    key.packagePieceId(),
+                    NoSuchPackageException::class.java,
+                    NoSuchPackagePieceException::class.java
+                ) as PackagePieceValue?
+        } catch (e: NoSuchPackageException) {
+            throw MacroInstanceFunctionException(e)
+        } catch (e: NoSuchPackagePieceException) {
+            throw MacroInstanceFunctionException(e)
+        }
+        if (packagePieceValue == null) {
+            return null
+        }
+
+        val packagePiece: PackagePiece = packagePieceValue.packagePiece
+        val macroInstance: MacroInstance? = packagePiece.getMacroByName(key.macroInstanceName)
+        if (macroInstance == null) {
+            throw MacroInstanceFunctionException(NoSuchMacroInstanceException(key, packagePiece))
+        }
+        return MacroInstanceValue(macroInstance)
     }
 
-    PackagePiece packagePiece = packagePieceValue.getPackagePiece();
-    @Nullable MacroInstance macroInstance = packagePiece.getMacroByName(key.macroInstanceName());
-    if (macroInstance == null) {
-      throw new MacroInstanceFunctionException(new NoSuchMacroInstanceException(key, packagePiece));
-    }
-    return new MacroInstanceValue(macroInstance);
-  }
+    /**
+     * Wrapper for exceptions which can be thrown by [MacroInstanceFunctionException.compute].
+     */
+    class MacroInstanceFunctionException : SkyFunctionException {
+        internal constructor(cause: NoSuchPackageException?) : super(cause, Transience.PERSISTENT)
 
-  /**
-   * Wrapper for exceptions which can be thrown by {@link MacroInstanceFunctionException#compute}.
-   */
-  public static final class MacroInstanceFunctionException extends SkyFunctionException {
-    MacroInstanceFunctionException(NoSuchPackageException cause) {
-      super(cause, Transience.PERSISTENT);
+        internal constructor(cause: NoSuchPackagePieceException?) : super(cause, Transience.PERSISTENT)
+
+        internal constructor(cause: NoSuchMacroInstanceException?) : super(cause, Transience.PERSISTENT)
     }
 
-    MacroInstanceFunctionException(NoSuchPackagePieceException cause) {
-      super(cause, Transience.PERSISTENT);
-    }
-
-    MacroInstanceFunctionException(NoSuchMacroInstanceException cause) {
-      super(cause, Transience.PERSISTENT);
-    }
-  }
-
-  /**
-   * Exception indicating that the given macro instance does not exist in the given package piece.
-   */
-  public static final class NoSuchMacroInstanceException extends NoSuchThingException {
-    NoSuchMacroInstanceException(MacroInstanceValue.Key key, PackagePiece packagePiece) {
-      super(
-          String.format(
-              "Macro instance '%s' not found in %s",
-              key.macroInstanceName(), packagePiece.getShortDescription()));
-    }
-  }
+    /**
+     * Exception indicating that the given macro instance does not exist in the given package piece.
+     */
+    class NoSuchMacroInstanceException internal constructor(key: MacroInstanceValue.Key, packagePiece: PackagePiece) :
+        NoSuchThingException(
+            java.lang.String.format(
+                "Macro instance '%s' not found in %s",
+                key.macroInstanceName, packagePiece.getShortDescription()
+            )
+        )
 }

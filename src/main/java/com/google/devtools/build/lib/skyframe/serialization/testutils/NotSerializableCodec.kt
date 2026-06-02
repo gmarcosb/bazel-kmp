@@ -11,39 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization.testutils
 
-package com.google.devtools.build.lib.skyframe.serialization.testutils;
+import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.NotSerializableException
 
-import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec;
-import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.NotSerializableException;
+/** A testing helper to force serialization errors.  */
+class NotSerializableCodec(type: java.lang.Class<*>?) : LeafObjectCodec<Any?>() {
+    private val type: java.lang.Class<*>?
 
-/** A testing helper to force serialization errors. */
-public class NotSerializableCodec extends LeafObjectCodec<Object> {
-  private final Class<?> type;
+    init {
+        this.type = type
+    }
 
-  public NotSerializableCodec(Class<?> type) {
-    this.type = type;
-  }
+    override fun getEncodedClass(): java.lang.Class<*>? {
+        return type
+    }
 
-  @Override
-  public Class<?> getEncodedClass() {
-    return type;
-  }
+    @Throws(NotSerializableException::class)
+    override fun serialize(
+        context: LeafSerializationContext?, unusedObj: Any?, unusedCodedOut: CodedOutputStream?
+    ) {
+        throw NotSerializableException(type.toString() + " marked not serializable")
+    }
 
-  @Override
-  public void serialize(
-      LeafSerializationContext context, Object unusedObj, CodedOutputStream unusedCodedOut)
-      throws NotSerializableException {
-    throw new NotSerializableException(type + " marked not serializable");
-  }
-
-  @Override
-  public Object deserialize(LeafDeserializationContext context, CodedInputStream unusedCodedIn)
-      throws NotSerializableException {
-    throw new NotSerializableException(type + " marked not serializable");
-  }
+    @Throws(NotSerializableException::class)
+    override fun deserialize(context: LeafDeserializationContext?, unusedCodedIn: CodedInputStream?): Any? {
+        throw NotSerializableException(type.toString() + " marked not serializable")
+    }
 }

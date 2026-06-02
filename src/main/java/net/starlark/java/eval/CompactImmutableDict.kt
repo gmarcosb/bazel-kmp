@@ -11,674 +11,607 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.eval
 
-package net.starlark.java.eval;
-
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterators;
-import com.google.common.collect.Maps;
-import java.util.AbstractSet;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.NoSuchElementException;
-import java.util.Set;
-import java.util.function.BiConsumer;
+import com.google.devtools.build.lib.supplier.InterruptibleSupplier.get
+import java.util.AbstractSet
+import java.util.Collections
 
 /**
- * A deeply immutable {@link Dict} with a custom memory-efficient implementation.
- *
- * <p>Construct an instance by calling {@link #copyOf(Map)}. Iteration order of the given map is
+ * A deeply immutable [Dict] with a custom memory-efficient implementation.
+ * 
+ * 
+ * Construct an instance by calling [.copyOf]. Iteration order of the given map is
  * preserved.
- *
- * <p>Size cutoffs for the various specialized implementations were chosen using the frequency
+ * 
+ * 
+ * Size cutoffs for the various specialized implementations were chosen using the frequency
  * distribution of dict instances from an example large build in b/507408768#comment3. Compared to
- * {@link ImmutableMap}, additional memory savings come from:
- *
- * <ol>
- *   <li>All sizes: no caching of collection views in {@link #keySet}, {@link #values}, and {@link
- *       #entrySet}.
- *   <li>Size 2: dedicated {@link DoubletonImmutableDict}.
- *   <li>Sizes 3+: {@link ArrayImmutableDict} shares backing key and value arrays with {@link
- *       RegularImmutableStarlarkList}.
- *   <li>Sizes 3-8: {@link LinearImmutableDict} uses linear search with no hash table.
- *   <li>Sizes 9+: {@link HashImmutableDict} uses open hashing instead of entry wrappers.
- * </ol>
- *
- * <p>{@link #equals} and {@link #hashCode} are order-independent and compatible with arbitrary
- * {@link Map} instances. All {@link #equals} implementations catch {@link ClassCastException} and
- * {@link NullPointerException} when calling {@link Map#get} on the given map. This is required by
- * the {@link Map#equals} contract to safely handle comparisons with arbitrary or type-restricted
+ * [ImmutableMap], additional memory savings come from:
+ * 
+ * 
+ *  1. All sizes: no caching of collection views in [.keySet], [.values], and [       ][.entrySet].
+ *  1. Size 2: dedicated [DoubletonImmutableDict].
+ *  1. Sizes 3+: [ArrayImmutableDict] shares backing key and value arrays with [       ].
+ *  1. Sizes 3-8: [LinearImmutableDict] uses linear search with no hash table.
+ *  1. Sizes 9+: [HashImmutableDict] uses open hashing instead of entry wrappers.
+ * 
+ * 
+ * 
+ * [.equals] and [.hashCode] are order-independent and compatible with arbitrary
+ * [Map] instances. All [.equals] implementations catch [ClassCastException] and
+ * [NullPointerException] when calling [Map.get] on the given map. This is required by
+ * the [Map.equals] contract to safely handle comparisons with arbitrary or type-restricted
  * maps where our keys might be incompatible.
  */
-abstract sealed class CompactImmutableDict<K, V> extends Dict<K, V> {
-
-  @SuppressWarnings("unchecked")
-  public static <K, V> CompactImmutableDict<K, V> empty() {
-    return (CompactImmutableDict<K, V>) EmptyImmutableDict.INSTANCE;
-  }
-
-  /**
-   * Creates an immutable, compact version of the given map.
-   *
-   * <p>Callers are responsible for ensuring that all keys are {@linkplain Starlark#checkHashable
-   * hashable} and all values are {@linkplain Starlark#checkValid valid} starlark objects, which
-   * implies that they are non-null.
-   */
-  @SuppressWarnings("unchecked")
-  static <K, V> CompactImmutableDict<K, V> copyOf(Map<? extends K, ? extends V> m) {
-    if (m instanceof CompactImmutableDict<?, ?> dict) {
-      return (CompactImmutableDict<K, V>) dict;
+internal abstract class CompactImmutableDict<K, V> : net.starlark.java.eval.Dict<K?, V?>() {
+    override fun mutability(): net.starlark.java.eval.Mutability? {
+        return net.starlark.java.eval.Mutability.Companion.IMMUTABLE
     }
-    int size = m.size();
-    return switch (size) {
-      case 0 -> empty();
-      case 1 -> {
-        var e = m.entrySet().iterator().next();
-        yield new SingletonImmutableDict<>(e.getKey(), e.getValue());
-      }
-      case 2 -> {
-        var it = m.entrySet().iterator();
-        var e1 = it.next();
-        var e2 = it.next();
-        yield new DoubletonImmutableDict<>(e1.getKey(), e1.getValue(), e2.getKey(), e2.getValue());
-      }
-      default -> {
-        K[] ks = (K[]) new Object[size];
-        V[] vs = (V[]) new Object[size];
-        int i = 0;
-        for (var e : m.entrySet()) {
-          ks[i] = e.getKey();
-          vs[i] = e.getValue();
-          i++;
+
+    override fun updateIteratorCount(delta: Int): Boolean {
+        return false
+    }
+
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun putEntry(key: K?, value: V?) {
+        throw immutable()
+    }
+
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun <K2 : K?, V2 : V?> putEntries(map: MutableMap<K2?, V2?>?) {
+        throw immutable()
+    }
+
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun clearEntries() {
+        throw immutable()
+    }
+
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun pop(key: Any?, defaultValue: Any?, thread: net.starlark.java.eval.StarlarkThread?): Any? {
+        throw immutable()
+    }
+
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun popitem(): net.starlark.java.eval.Tuple? {
+        if (isEmpty()) {
+            throw net.starlark.java.eval.Starlark.Companion.errorf("popitem: empty dictionary")
         }
-        yield size <= 8 ? new LinearImmutableDict<>(ks, vs) : new HashImmutableDict<>(ks, vs);
-      }
-    };
-  }
-
-  @Override
-  public final Mutability mutability() {
-    return Mutability.IMMUTABLE;
-  }
-
-  @Override
-  public final boolean updateIteratorCount(int delta) {
-    return false;
-  }
-
-  @Override
-  public final void putEntry(K key, V value) throws EvalException {
-    throw immutable();
-  }
-
-  @Override
-  public final <K2 extends K, V2 extends V> void putEntries(Map<K2, V2> map) throws EvalException {
-    throw immutable();
-  }
-
-  @Override
-  public final void clearEntries() throws EvalException {
-    throw immutable();
-  }
-
-  @Override
-  public final Object pop(Object key, Object defaultValue, StarlarkThread thread)
-      throws EvalException {
-    throw immutable();
-  }
-
-  @Override
-  public final Tuple popitem() throws EvalException {
-    if (isEmpty()) {
-      throw Starlark.errorf("popitem: empty dictionary");
-    }
-    throw immutable();
-  }
-
-  @Override
-  public final V setdefault(K key, V defaultValue) throws EvalException {
-    throw immutable();
-  }
-
-  private EvalException immutable() throws EvalException {
-    Starlark.checkMutable(this);
-    throw new IllegalStateException();
-  }
-
-  /** Specialized singleton implementation for an empty dict. */
-  private static final class EmptyImmutableDict<K, V> extends CompactImmutableDict<K, V> {
-    static final EmptyImmutableDict<?, ?> INSTANCE = new EmptyImmutableDict<>();
-
-    @Override
-    public StarlarkList<?> values0(StarlarkThread thread) {
-      return StarlarkList.newList(thread.mutability());
+        throw immutable()
     }
 
-    @Override
-    public StarlarkList<?> items(StarlarkThread thread) {
-      return StarlarkList.newList(thread.mutability());
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun setdefault(key: K?, defaultValue: V?): V? {
+        throw immutable()
     }
 
-    @Override
-    public StarlarkList<?> keys(StarlarkThread thread) {
-      return StarlarkList.newList(thread.mutability());
+    @Throws(net.starlark.java.eval.EvalException::class)
+    private fun immutable(): net.starlark.java.eval.EvalException? {
+        net.starlark.java.eval.Starlark.Companion.checkMutable(this)
+        throw java.lang.IllegalStateException()
     }
 
-    @Override
-    public Iterator<K> iterator() {
-      return Collections.emptyIterator();
-    }
-
-    @Override
-    public int size() {
-      return 0;
-    }
-
-    @Override
-    public boolean containsKey(Object key) {
-      return false;
-    }
-
-    @Override
-    public boolean containsValue(Object value) {
-      return false;
-    }
-
-    @Override
-    public V get(Object key) {
-      return null;
-    }
-
-    @Override
-    public ImmutableSet<K> keySet() {
-      return ImmutableSet.of();
-    }
-
-    @Override
-    public ImmutableList<V> values() {
-      return ImmutableList.of();
-    }
-
-    @Override
-    public ImmutableSet<Entry<K, V>> entrySet() {
-      return ImmutableSet.of();
-    }
-
-    @Override
-    public void forEach(BiConsumer<? super K, ? super V> action) {
-      checkNotNull(action);
-    }
-
-    @Override
-    public int hashCode() {
-      return 0;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-      if (o == this) {
-        return true;
-      }
-      return o instanceof Map<?, ?> m && m.isEmpty();
-    }
-  }
-
-  /** Specialized implementation for a dict of size 1. */
-  private static final class SingletonImmutableDict<K, V> extends CompactImmutableDict<K, V> {
-    private final K k;
-    private final V v;
-
-    SingletonImmutableDict(K k, V v) {
-      this.k = k;
-      this.v = v;
-    }
-
-    @Override
-    public StarlarkList<?> values0(StarlarkThread thread) {
-      return StarlarkList.wrap(thread.mutability(), new Object[] {v});
-    }
-
-    @Override
-    public StarlarkList<?> items(StarlarkThread thread) {
-      return StarlarkList.wrap(thread.mutability(), new Object[] {Tuple.pair(k, v)});
-    }
-
-    @Override
-    public StarlarkList<?> keys(StarlarkThread thread) {
-      return StarlarkList.wrap(thread.mutability(), new Object[] {k});
-    }
-
-    @Override
-    public Iterator<K> iterator() {
-      return Iterators.singletonIterator(k);
-    }
-
-    @Override
-    public int size() {
-      return 1;
-    }
-
-    @Override
-    public boolean containsKey(Object key) {
-      return k.equals(key);
-    }
-
-    @Override
-    public boolean containsValue(Object value) {
-      return v.equals(value);
-    }
-
-    @Override
-    public V get(Object key) {
-      return k.equals(key) ? v : null;
-    }
-
-    @Override
-    public ImmutableSet<K> keySet() {
-      return ImmutableSet.of(k);
-    }
-
-    @Override
-    public ImmutableList<V> values() {
-      return ImmutableList.of(v);
-    }
-
-    @Override
-    public ImmutableSet<Entry<K, V>> entrySet() {
-      return ImmutableSet.of(Maps.immutableEntry(k, v));
-    }
-
-    @Override
-    public void forEach(BiConsumer<? super K, ? super V> action) {
-      action.accept(k, v);
-    }
-
-    @Override
-    public int hashCode() {
-      return k.hashCode() ^ v.hashCode();
-    }
-
-    @Override
-    public boolean equals(Object o) {
-      if (o == this) {
-        return true;
-      }
-      if (!(o instanceof Map<?, ?> m)) {
-        return false;
-      }
-      if (m.size() != 1) {
-        return false;
-      }
-      try {
-        return v.equals(m.get(k));
-      } catch (ClassCastException | NullPointerException unused) {
-        return false;
-      }
-    }
-  }
-
-  /** Specialized implementation for a dict of size 2. */
-  private static final class DoubletonImmutableDict<K, V> extends CompactImmutableDict<K, V> {
-    private final K k1;
-    private final V v1;
-    private final K k2;
-    private final V v2;
-
-    DoubletonImmutableDict(K k1, V v1, K k2, V v2) {
-      this.k1 = k1;
-      this.v1 = v1;
-      this.k2 = k2;
-      this.v2 = v2;
-    }
-
-    @Override
-    public StarlarkList<?> values0(StarlarkThread thread) {
-      return StarlarkList.wrap(thread.mutability(), new Object[] {v1, v2});
-    }
-
-    @Override
-    public StarlarkList<?> items(StarlarkThread thread) {
-      return StarlarkList.wrap(
-          thread.mutability(), new Object[] {Tuple.pair(k1, v1), Tuple.pair(k2, v2)});
-    }
-
-    @Override
-    public StarlarkList<?> keys(StarlarkThread thread) {
-      return StarlarkList.wrap(thread.mutability(), new Object[] {k1, k2});
-    }
-
-    @Override
-    public Iterator<K> iterator() {
-      return Iterators.forArray(k1, k2);
-    }
-
-    @Override
-    public int size() {
-      return 2;
-    }
-
-    @Override
-    public boolean containsKey(Object key) {
-      return k1.equals(key) || k2.equals(key);
-    }
-
-    @Override
-    public boolean containsValue(Object value) {
-      return v1.equals(value) || v2.equals(value);
-    }
-
-    @Override
-    public V get(Object key) {
-      if (k1.equals(key)) {
-        return v1;
-      }
-      if (k2.equals(key)) {
-        return v2;
-      }
-      return null;
-    }
-
-    @Override
-    public ImmutableSet<K> keySet() {
-      return ImmutableSet.of(k1, k2);
-    }
-
-    @Override
-    public ImmutableList<V> values() {
-      return ImmutableList.of(v1, v2);
-    }
-
-    @Override
-    public ImmutableSet<Entry<K, V>> entrySet() {
-      return ImmutableSet.of(Maps.immutableEntry(k1, v1), Maps.immutableEntry(k2, v2));
-    }
-
-    @Override
-    public void forEach(BiConsumer<? super K, ? super V> action) {
-      action.accept(k1, v1);
-      action.accept(k2, v2);
-    }
-
-    @Override
-    public int hashCode() {
-      return (k1.hashCode() ^ v1.hashCode()) + (k2.hashCode() ^ v2.hashCode());
-    }
-
-    @Override
-    public boolean equals(Object o) {
-      if (o == this) {
-        return true;
-      }
-      if (!(o instanceof Map<?, ?> m)) {
-        return false;
-      }
-      if (m.size() != 2) {
-        return false;
-      }
-      try {
-        return v1.equals(m.get(k1)) && v2.equals(m.get(k2));
-      } catch (ClassCastException | NullPointerException unused) {
-        return false;
-      }
-    }
-  }
-
-  /** Partial implementation based on parallel key-value arrays. */
-  private abstract static sealed class ArrayImmutableDict<K, V> extends CompactImmutableDict<K, V> {
-    final K[] ks;
-    final V[] vs;
-
-    ArrayImmutableDict(K[] ks, V[] vs) {
-      this.ks = ks;
-      this.vs = vs;
-    }
-
-    @Override
-    public final StarlarkList<?> values0(StarlarkThread thread) {
-      return StarlarkList.wrap(thread.mutability(), vs.clone());
-    }
-
-    @Override
-    public final StarlarkList<?> items(StarlarkThread thread) {
-      Object[] items = new Object[ks.length];
-      for (int i = 0; i < ks.length; i++) {
-        items[i] = Tuple.pair(ks[i], vs[i]);
-      }
-      return StarlarkList.wrap(thread.mutability(), items);
-    }
-
-    @Override
-    public final StarlarkList<?> keys(StarlarkThread thread) {
-      return StarlarkList.wrap(thread.mutability(), ks.clone());
-    }
-
-    @Override
-    public final Iterator<K> iterator() {
-      return Iterators.forArray(ks);
-    }
-
-    @Override
-    public final int size() {
-      return ks.length;
-    }
-
-    @Override
-    public final boolean containsValue(Object value) {
-      if (value == null) {
-        return false;
-      }
-      for (V v : vs) {
-        if (v.equals(value)) {
-          return true;
-        }
-      }
-      return false;
-    }
-
-    @Override
-    public final Set<K> keySet() {
-      return new AbstractSet<>() {
-        @Override
-        public Iterator<K> iterator() {
-          return Iterators.forArray(ks);
+    /** Specialized singleton implementation for an empty dict.  */
+    private class EmptyImmutableDict<K, V> : CompactImmutableDict<K?, V?>() {
+        override fun values0(thread: net.starlark.java.eval.StarlarkThread): net.starlark.java.eval.StarlarkList<*>? {
+            return net.starlark.java.eval.StarlarkList.Companion.newList<Any?>(thread.mutability())
         }
 
-        @Override
-        public int size() {
-          return ks.length;
+        override fun items(thread: net.starlark.java.eval.StarlarkThread): net.starlark.java.eval.StarlarkList<*>? {
+            return net.starlark.java.eval.StarlarkList.Companion.newList<Any?>(thread.mutability())
         }
 
-        @Override
-        public boolean contains(Object o) {
-          return containsKey(o);
+        override fun keys(thread: net.starlark.java.eval.StarlarkThread): net.starlark.java.eval.StarlarkList<*>? {
+            return net.starlark.java.eval.StarlarkList.Companion.newList<Any?>(thread.mutability())
         }
-      };
-    }
 
-    @Override
-    public final StarlarkList<V> values() {
-      return new RegularImmutableStarlarkList<>(vs);
-    }
+        override fun iterator(): MutableIterator<K?>? {
+            return Collections.emptyIterator<K?>()
+        }
 
-    @Override
-    public final Set<Entry<K, V>> entrySet() {
-      return new AbstractSet<>() {
-        @Override
-        public Iterator<Entry<K, V>> iterator() {
-          return new Iterator<>() {
-            private int i = 0;
+        override fun size(): Int {
+            return 0
+        }
 
-            @Override
-            public boolean hasNext() {
-              return i < ks.length;
+        override fun containsKey(key: Any?): Boolean {
+            return false
+        }
+
+        override fun containsValue(value: Any?): Boolean {
+            return false
+        }
+
+        override fun get(key: Any?): V? {
+            return null
+        }
+
+        override fun keySet(): com.google.common.collect.ImmutableSet<K?> {
+            return com.google.common.collect.ImmutableSet.of<K?>()
+        }
+
+        override fun values(): com.google.common.collect.ImmutableList<V?> {
+            return com.google.common.collect.ImmutableList.of<V?>()
+        }
+
+        override fun entrySet(): com.google.common.collect.ImmutableSet<MutableMap.MutableEntry<K?, V?>?> {
+            return com.google.common.collect.ImmutableSet.of<MutableMap.MutableEntry<K?, V?>?>()
+        }
+
+        override fun forEach(action: java.util.function.BiConsumer<in K?, in V?>?) {
+            com.google.common.base.Preconditions.checkNotNull(action)
+        }
+
+        override fun hashCode(): Int {
+            return 0
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (o === this) {
+                return true
             }
+            return o is MutableMap<*, *> && o.isEmpty()
+        }
 
-            @Override
-            public Entry<K, V> next() {
-              if (!hasNext()) {
-                throw new NoSuchElementException();
-              }
-              var e = Maps.immutableEntry(ks[i], vs[i]);
-              i++;
-              return e;
+        companion object {
+            val INSTANCE: EmptyImmutableDict<*, *> =
+                net.starlark.java.eval.CompactImmutableDict.EmptyImmutableDict<Any?, Any?>()
+        }
+    }
+
+    /** Specialized implementation for a dict of size 1.  */
+    private class SingletonImmutableDict<K, V>(private val k: K?, private val v: V?) : CompactImmutableDict<K?, V?>() {
+        override fun values0(thread: net.starlark.java.eval.StarlarkThread): net.starlark.java.eval.StarlarkList<*>? {
+            return net.starlark.java.eval.StarlarkList.Companion.wrap<Any?>(thread.mutability(), arrayOf<Any?>(v))
+        }
+
+        override fun items(thread: net.starlark.java.eval.StarlarkThread): net.starlark.java.eval.StarlarkList<*>? {
+            return net.starlark.java.eval.StarlarkList.Companion.wrap<Any?>(
+                thread.mutability(),
+                arrayOf<Any?>(net.starlark.java.eval.Tuple.Companion.pair(k, v))
+            )
+        }
+
+        override fun keys(thread: net.starlark.java.eval.StarlarkThread): net.starlark.java.eval.StarlarkList<*>? {
+            return net.starlark.java.eval.StarlarkList.Companion.wrap<Any?>(thread.mutability(), arrayOf<Any?>(k))
+        }
+
+        override fun iterator(): MutableIterator<K?> {
+            return com.google.common.collect.Iterators.singletonIterator<K?>(k)
+        }
+
+        override fun size(): Int {
+            return 1
+        }
+
+        override fun containsKey(key: Any?): Boolean {
+            return k == key
+        }
+
+        override fun containsValue(value: Any?): Boolean {
+            return v == value
+        }
+
+        override fun get(key: Any?): V? {
+            return if (k == key) v else null
+        }
+
+        override fun keySet(): com.google.common.collect.ImmutableSet<K?> {
+            return com.google.common.collect.ImmutableSet.of<K?>(k)
+        }
+
+        override fun values(): com.google.common.collect.ImmutableList<V?> {
+            return com.google.common.collect.ImmutableList.of<V?>(v)
+        }
+
+        override fun entrySet(): com.google.common.collect.ImmutableSet<MutableMap.MutableEntry<K?, V?>?> {
+            return com.google.common.collect.ImmutableSet.of<MutableMap.MutableEntry<K?, V?>?>(
+                com.google.common.collect.Maps.immutableEntry<K?, V?>(
+                    k,
+                    v
+                )
+            )
+        }
+
+        override fun forEach(action: java.util.function.BiConsumer<in K?, in V?>) {
+            action.accept(k, v)
+        }
+
+        override fun hashCode(): Int {
+            return k!!.hashCode() xor v!!.hashCode()
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (o === this) {
+                return true
             }
-          };
+            if (o !is MutableMap<*, *>) {
+                return false
+            }
+            if (o.size() != 1) {
+                return false
+            }
+            try {
+                return v == o.get(k)
+            } catch (unused: java.lang.ClassCastException) {
+                return false
+            } catch (unused: java.lang.NullPointerException) {
+                return false
+            }
+        }
+    }
+
+    /** Specialized implementation for a dict of size 2.  */
+    private class DoubletonImmutableDict<K, V>(
+        private val k1: K?,
+        private val v1: V?,
+        private val k2: K?,
+        private val v2: V?
+    ) : CompactImmutableDict<K?, V?>() {
+        override fun values0(thread: net.starlark.java.eval.StarlarkThread): net.starlark.java.eval.StarlarkList<*>? {
+            return net.starlark.java.eval.StarlarkList.Companion.wrap<Any?>(thread.mutability(), arrayOf<Any?>(v1, v2))
         }
 
-        @Override
-        public int size() {
-          return ks.length;
+        override fun items(thread: net.starlark.java.eval.StarlarkThread): net.starlark.java.eval.StarlarkList<*>? {
+            return net.starlark.java.eval.StarlarkList.Companion.wrap<Any?>(
+                thread.mutability(),
+                arrayOf<Any?>(
+                    net.starlark.java.eval.Tuple.Companion.pair(k1, v1),
+                    net.starlark.java.eval.Tuple.Companion.pair(k2, v2)
+                )
+            )
         }
 
-        @Override
-        public boolean contains(Object o) {
-          if (!(o instanceof Map.Entry<?, ?> e) || e.getValue() == null) {
-            return false;
-          }
-          return e.getValue().equals(get(e.getKey()));
+        override fun keys(thread: net.starlark.java.eval.StarlarkThread): net.starlark.java.eval.StarlarkList<*>? {
+            return net.starlark.java.eval.StarlarkList.Companion.wrap<Any?>(thread.mutability(), arrayOf<Any?>(k1, k2))
         }
-      };
-    }
 
-    @Override
-    public final void forEach(BiConsumer<? super K, ? super V> action) {
-      for (int i = 0; i < ks.length; i++) {
-        action.accept(ks[i], vs[i]);
-      }
-    }
-
-    @Override
-    public final int hashCode() {
-      int h = 0;
-      for (int i = 0; i < ks.length; i++) {
-        h += (ks[i].hashCode() ^ vs[i].hashCode());
-      }
-      return h;
-    }
-
-    @Override
-    public final boolean equals(Object o) {
-      if (o == this) {
-        return true;
-      }
-      if (!(o instanceof Map<?, ?> m)) {
-        return false;
-      }
-      if (m.size() != ks.length) {
-        return false;
-      }
-      try {
-        for (int i = 0; i < ks.length; i++) {
-          if (!vs[i].equals(m.get(ks[i]))) {
-            return false;
-          }
+        override fun iterator(): MutableIterator<K?> {
+            return com.google.common.collect.Iterators.forArray<K?>(k1, k2)
         }
-        return true;
-      } catch (ClassCastException | NullPointerException unused) {
-        return false;
-      }
-    }
-  }
 
-  /**
-   * Implementation for small dicts where linear search is expected to perform just as well as a
-   * hash table.
-   */
-  private static final class LinearImmutableDict<K, V> extends ArrayImmutableDict<K, V> {
-
-    LinearImmutableDict(K[] ks, V[] vs) {
-      super(ks, vs);
-    }
-
-    @Override
-    public boolean containsKey(Object key) {
-      if (key == null) {
-        return false;
-      }
-      for (K k : ks) {
-        if (key.equals(k)) {
-          return true;
+        override fun size(): Int {
+            return 2
         }
-      }
-      return false;
-    }
 
-    @Override
-    public V get(Object key) {
-      if (key == null) {
-        return null;
-      }
-      for (int i = 0; i < ks.length; i++) {
-        if (key.equals(ks[i])) {
-          return vs[i];
+        override fun containsKey(key: Any?): Boolean {
+            return k1 == key || k2 == key
         }
-      }
-      return null;
-    }
-  }
 
-  /** Open hash table implementation. */
-  private static final class HashImmutableDict<K, V> extends ArrayImmutableDict<K, V> {
-    // Values are the index of the corresponding element in ks and vs, or -1 for empty.
-    private final int[] table;
-
-    HashImmutableDict(K[] ks, V[] vs) {
-      super(ks, vs);
-
-      int n = ks.length;
-      int tableSize = n * 2; // 0.5 load factor.
-      int[] table = new int[tableSize];
-      Arrays.fill(table, -1);
-
-      for (int i = 0; i < n; i++) {
-        int idx = getTableIndex(ks[i], tableSize);
-        while (table[idx] != -1) {
-          if (++idx == tableSize) {
-            idx = 0;
-          }
+        override fun containsValue(value: Any?): Boolean {
+            return v1 == value || v2 == value
         }
-        table[idx] = i;
-      }
-      this.table = table;
-    }
 
-    private static int getTableIndex(Object k, int tableSize) {
-      int hash = k.hashCode();
-      hash = hash ^ (hash >>> 16);
-      return (hash & 0x7fffffff) % tableSize;
-    }
-
-    private int getTableIndex(Object k) {
-      return getTableIndex(k, table.length);
-    }
-
-    @Override
-    public boolean containsKey(Object key) {
-      return get(key) != null;
-    }
-
-    @Override
-    public V get(Object key) {
-      if (key == null) {
-        return null;
-      }
-      int tableIdx = getTableIndex(key);
-      int kvIdx;
-      while ((kvIdx = table[tableIdx]) != -1) {
-        if (key.equals(ks[kvIdx])) {
-          return vs[kvIdx];
+        override fun get(key: Any?): V? {
+            if (k1 == key) {
+                return v1
+            }
+            if (k2 == key) {
+                return v2
+            }
+            return null
         }
-        if (++tableIdx == table.length) {
-          tableIdx = 0;
+
+        override fun keySet(): com.google.common.collect.ImmutableSet<K?> {
+            return com.google.common.collect.ImmutableSet.of<K?>(k1, k2)
         }
-      }
-      return null;
+
+        override fun values(): com.google.common.collect.ImmutableList<V?> {
+            return com.google.common.collect.ImmutableList.of<V?>(v1, v2)
+        }
+
+        override fun entrySet(): com.google.common.collect.ImmutableSet<MutableMap.MutableEntry<K?, V?>?> {
+            return com.google.common.collect.ImmutableSet.of<MutableMap.MutableEntry<K?, V?>?>(
+                com.google.common.collect.Maps.immutableEntry<K?, V?>(
+                    k1,
+                    v1
+                ), com.google.common.collect.Maps.immutableEntry<K?, V?>(k2, v2)
+            )
+        }
+
+        override fun forEach(action: java.util.function.BiConsumer<in K?, in V?>) {
+            action.accept(k1, v1)
+            action.accept(k2, v2)
+        }
+
+        override fun hashCode(): Int {
+            return (k1!!.hashCode() xor v1!!.hashCode()) + (k2!!.hashCode() xor v2!!.hashCode())
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (o === this) {
+                return true
+            }
+            if (o !is MutableMap<*, *>) {
+                return false
+            }
+            if (o.size() != 2) {
+                return false
+            }
+            try {
+                return v1 == o.get(k1) && v2 == o.get(k2)
+            } catch (unused: java.lang.ClassCastException) {
+                return false
+            } catch (unused: java.lang.NullPointerException) {
+                return false
+            }
+        }
     }
-  }
+
+    /** Partial implementation based on parallel key-value arrays.  */
+    private abstract class ArrayImmutableDict<K, V>(val ks: Array<K?>, val vs: Array<V?>) :
+        CompactImmutableDict<K?, V?>() {
+        override fun values0(thread: net.starlark.java.eval.StarlarkThread): net.starlark.java.eval.StarlarkList<*>? {
+            return net.starlark.java.eval.StarlarkList.Companion.wrap<Any?>(thread.mutability(), vs.clone())
+        }
+
+        override fun items(thread: net.starlark.java.eval.StarlarkThread): net.starlark.java.eval.StarlarkList<*>? {
+            val items = arrayOfNulls<Any>(ks.size)
+            for (i in ks.indices) {
+                items[i] = net.starlark.java.eval.Tuple.Companion.pair(ks[i], vs[i])
+            }
+            return net.starlark.java.eval.StarlarkList.Companion.wrap<Any?>(thread.mutability(), items)
+        }
+
+        override fun keys(thread: net.starlark.java.eval.StarlarkThread): net.starlark.java.eval.StarlarkList<*>? {
+            return net.starlark.java.eval.StarlarkList.Companion.wrap<Any?>(thread.mutability(), ks.clone())
+        }
+
+        override fun iterator(): MutableIterator<K?> {
+            return com.google.common.collect.Iterators.forArray<K?>(*ks)
+        }
+
+        override fun size(): Int {
+            return ks.size
+        }
+
+        override fun containsValue(value: Any?): Boolean {
+            if (value == null) {
+                return false
+            }
+            for (v in vs) {
+                if (v == value) {
+                    return true
+                }
+            }
+            return false
+        }
+
+        override fun keySet(): MutableSet<K?> {
+            return object : AbstractSet<K?>() {
+                override fun iterator(): MutableIterator<K?> {
+                    return com.google.common.collect.Iterators.forArray<K?>(*ks)
+                }
+
+                override fun size(): Int {
+                    return ks.size
+                }
+
+                override fun contains(o: Any?): Boolean {
+                    return containsKey(o)
+                }
+            }
+        }
+
+        override fun values(): net.starlark.java.eval.StarlarkList<V?> {
+            return net.starlark.java.eval.RegularImmutableStarlarkList<V?>(vs)
+        }
+
+        override fun entrySet(): MutableSet<MutableMap.MutableEntry<K?, V?>?> {
+            return object : AbstractSet<MutableMap.MutableEntry<K?, V?>?>() {
+                override fun iterator(): MutableIterator<MutableMap.MutableEntry<K?, V?>?> {
+                    return object : MutableIterator<MutableMap.MutableEntry<K?, V?>?> {
+                        private var i = 0
+
+                        override fun hasNext(): Boolean {
+                            return i < ks.size
+                        }
+
+                        override fun next(): MutableMap.MutableEntry<K?, V?> {
+                            if (!hasNext()) {
+                                throw java.util.NoSuchElementException()
+                            }
+                            val e: MutableMap.MutableEntry<K?, V?> =
+                                com.google.common.collect.Maps.immutableEntry<K?, V?>(ks[i], vs[i])
+                            i++
+                            return e
+                        }
+                    }
+                }
+
+                override fun size(): Int {
+                    return ks.size
+                }
+
+                override fun contains(o: Any?): Boolean {
+                    if (o !is MutableMap.MutableEntry<*, *> || o.getValue() == null) {
+                        return false
+                    }
+                    return o.getValue() == get(o.getKey())
+                }
+            }
+        }
+
+        override fun forEach(action: java.util.function.BiConsumer<in K?, in V?>) {
+            for (i in ks.indices) {
+                action.accept(ks[i], vs[i])
+            }
+        }
+
+        override fun hashCode(): Int {
+            var h = 0
+            for (i in ks.indices) {
+                h += (ks[i]!!.hashCode() xor vs[i]!!.hashCode())
+            }
+            return h
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (o === this) {
+                return true
+            }
+            if (o !is MutableMap<*, *>) {
+                return false
+            }
+            if (o.size() != ks.size) {
+                return false
+            }
+            try {
+                for (i in ks.indices) {
+                    if (vs[i] != o.get(ks[i])) {
+                        return false
+                    }
+                }
+                return true
+            } catch (unused: java.lang.ClassCastException) {
+                return false
+            } catch (unused: java.lang.NullPointerException) {
+                return false
+            }
+        }
+    }
+
+    /**
+     * Implementation for small dicts where linear search is expected to perform just as well as a
+     * hash table.
+     */
+    private class LinearImmutableDict<K, V>(ks: Array<K?>, vs: Array<V?>) : ArrayImmutableDict<K?, V?>(ks, vs) {
+        override fun containsKey(key: Any?): Boolean {
+            if (key == null) {
+                return false
+            }
+            for (k in ks) {
+                if (key == k) {
+                    return true
+                }
+            }
+            return false
+        }
+
+        override fun get(key: Any?): V? {
+            if (key == null) {
+                return null
+            }
+            for (i in ks.indices) {
+                if (key == ks[i]) {
+                    return vs[i]
+                }
+            }
+            return null
+        }
+    }
+
+    /** Open hash table implementation.  */
+    private class HashImmutableDict<K, V>(ks: Array<K?>, vs: Array<V?>) : ArrayImmutableDict<K?, V?>(ks, vs) {
+        // Values are the index of the corresponding element in ks and vs, or -1 for empty.
+        private val table: IntArray
+
+        init {
+            val n = ks.size
+            val tableSize = n * 2 // 0.5 load factor.
+            val table = IntArray(tableSize)
+            java.util.Arrays.fill(table, -1)
+
+            for (i in 0..<n) {
+                var idx: Int = net.starlark.java.eval.CompactImmutableDict.HashImmutableDict.Companion.getTableIndex(
+                    ks[i],
+                    tableSize
+                )
+                while (table[idx] != -1) {
+                    if (++idx == tableSize) {
+                        idx = 0
+                    }
+                }
+                table[idx] = i
+            }
+            this.table = table
+        }
+
+        fun getTableIndex(k: Any): Int {
+            return net.starlark.java.eval.CompactImmutableDict.HashImmutableDict.Companion.getTableIndex(k, table.size)
+        }
+
+        override fun containsKey(key: Any?): Boolean {
+            return get(key) != null
+        }
+
+        override fun get(key: Any?): V? {
+            if (key == null) {
+                return null
+            }
+            var tableIdx = getTableIndex(key)
+            var kvIdx: Int
+            while ((table[tableIdx].also { kvIdx = it }) != -1) {
+                if (key == ks[kvIdx]) {
+                    return vs[kvIdx]
+                }
+                if (++tableIdx == table.size) {
+                    tableIdx = 0
+                }
+            }
+            return null
+        }
+
+        companion object {
+            private fun getTableIndex(k: Any, tableSize: Int): Int {
+                var hash = k.hashCode()
+                hash = hash xor (hash ushr 16)
+                return (hash and 0x7fffffff) % tableSize
+            }
+        }
+    }
+
+    companion object {
+        fun <K, V> empty(): CompactImmutableDict<K?, V?> {
+            return net.starlark.java.eval.CompactImmutableDict.EmptyImmutableDict.Companion.INSTANCE as CompactImmutableDict<K?, V?>
+        }
+
+        /**
+         * Creates an immutable, compact version of the given map.
+         * 
+         * 
+         * Callers are responsible for ensuring that all keys are [ hashable][Starlark.checkHashable] and all values are [valid][Starlark.checkValid] starlark objects, which
+         * implies that they are non-null.
+         */
+        fun <K, V> copyOf(m: MutableMap<out K?, out V?>): CompactImmutableDict<K?, V?>? {
+            if (m is CompactImmutableDict<*, *>) {
+                return m as CompactImmutableDict<K?, V?>
+            }
+            val size: Int = m.size()
+            return when (size) {
+                0 -> net.starlark.java.eval.CompactImmutableDict.Companion.empty<K?, V?>()
+                1 -> {
+                    val e: MutableMap.MutableEntry<out K?, out V?> = m.entrySet().iterator().next()
+                    net.starlark.java.eval.CompactImmutableDict.SingletonImmutableDict<K?, V?>(e.getKey(), e.getValue())
+                }
+
+                2 -> {
+                    val it: MutableIterator<MutableMap.MutableEntry<K?, V?>> = m.entrySet().iterator()
+                    val e1: MutableMap.MutableEntry<out K?, out V?> = it.next()
+                    val e2: MutableMap.MutableEntry<out K?, out V?> = it.next()
+                    net.starlark.java.eval.CompactImmutableDict.DoubletonImmutableDict<K?, V?>(
+                        e1.getKey(),
+                        e1.getValue(),
+                        e2.getKey(),
+                        e2.getValue()
+                    )
+                }
+
+                else -> {
+                    val ks = arrayOfNulls<Any>(size) as Array<K?>
+                    val vs = arrayOfNulls<Any>(size) as Array<V?>
+                    var i = 0
+                    for (e in m.entrySet()) {
+                        ks[i] = e.getKey()
+                        vs[i] = e.getValue()
+                        i++
+                    }
+                    if (size <= 8) net.starlark.java.eval.CompactImmutableDict.LinearImmutableDict<K?, V?>(
+                        ks,
+                        vs
+                    ) else net.starlark.java.eval.CompactImmutableDict.HashImmutableDict<K?, V?>(ks, vs)
+                }
+            }
+        }
+    }
 }

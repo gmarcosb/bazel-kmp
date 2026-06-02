@@ -11,11 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import com.google.devtools.build.lib.skyframe.serialization.analysis.proto.TopLevelTargetsMatchStatus;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.proto.TopLevelTargetsMatchStatus
 
-/** The result of a top-level targets lookup. */
-// TODO(b/484064646): add a shim for TopLevelTargetsMatchStatus so the IJ doesn't depend on a proto.
-public record LookupTopLevelTargetsResult(
-    TopLevelTargetsMatchStatus status, String statusMessage) {}
+/** The result of a top-level targets lookup.  */ // TODO(b/484064646): add a shim for TopLevelTargetsMatchStatus so the IJ doesn't depend on a proto.
+class LookupTopLevelTargetsResult(status: TopLevelTargetsMatchStatus?, statusMessage: String?) {
+    val status: TopLevelTargetsMatchStatus?
+    val statusMessage: String?
+
+    init {
+        this.status = status
+        this.statusMessage = statusMessage
+    }
+}

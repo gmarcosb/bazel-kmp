@@ -11,18 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.util
 
-package com.google.devtools.build.lib.util;
+import java.util.concurrent.TimeUnit
 
-import com.google.common.base.Preconditions;
-import java.util.concurrent.TimeUnit;
-
-/** Production implementation of {@link Sleeper} */
-public final class JavaSleeper implements Sleeper {
-
-  @Override
-  public void sleepMillis(long milliseconds) throws InterruptedException {
-    Preconditions.checkArgument(milliseconds >= 0, "sleeper can't time travel");
-    TimeUnit.MILLISECONDS.sleep(milliseconds);
-  }
+/** Production implementation of [Sleeper]  */
+class JavaSleeper : com.google.devtools.build.lib.util.Sleeper {
+    @Throws(java.lang.InterruptedException::class)
+    override fun sleepMillis(milliseconds: Long) {
+        com.google.common.base.Preconditions.checkArgument(milliseconds >= 0, "sleeper can't time travel")
+        TimeUnit.MILLISECONDS.sleep(milliseconds)
+    }
 }

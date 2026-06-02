@@ -11,76 +11,66 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.toolchains;
+package com.google.devtools.build.lib.skyframe.toolchains
 
-import com.google.auto.value.AutoValue;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.config.ToolchainTypeRequirement;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.util.Optional;
+import com.google.devtools.build.lib.analysis.config.ToolchainTypeRequirement
 
 /**
- * {@link SkyKey} implementation used for {@link ToolchainResolutionFunction} to produce {@link
- * UnloadedToolchainContextImpl} instances.
+ * [SkyKey] implementation used for [ToolchainResolutionFunction] to produce [ ] instances.
  */
 @AutoValue
-public abstract class ToolchainContextKey implements SkyKey {
-
-  private static final SkyKeyInterner<ToolchainContextKey> interner = SkyKey.newInterner();
-
-  /** Returns a new {@link Builder}. */
-  public static Builder key() {
-    return new AutoValue_ToolchainContextKey.Builder()
-        .toolchainTypes(ImmutableSet.of())
-        .execConstraintLabels(ImmutableSet.of())
-        .debugTarget(false);
-  }
-
-  @Override
-  public final SkyFunctionName functionName() {
-    return SkyFunctions.TOOLCHAIN_RESOLUTION;
-  }
-
-  @Override
-  public final SkyKeyInterner<?> getSkyKeyInterner() {
-    return interner;
-  }
-
-  public abstract BuildConfigurationKey configurationKey();
-
-  abstract ImmutableSet<ToolchainTypeRequirement> toolchainTypes();
-
-  abstract ImmutableSet<Label> execConstraintLabels();
-
-  abstract Optional<Label> forceExecutionPlatform();
-
-  public abstract boolean debugTarget();
-
-  /** Builder for {@link ToolchainContextKey}. */
-  @AutoValue.Builder
-  public abstract static class Builder {
-    public abstract Builder configurationKey(BuildConfigurationKey key);
-
-    public abstract Builder toolchainTypes(ImmutableSet<ToolchainTypeRequirement> toolchainTypes);
-
-    public abstract Builder toolchainTypes(ToolchainTypeRequirement... toolchainTypes);
-
-    public abstract Builder execConstraintLabels(ImmutableSet<Label> execConstraintLabels);
-
-    public abstract Builder execConstraintLabels(Label... execConstraintLabels);
-
-    public abstract Builder debugTarget(boolean flag);
-
-    public abstract Builder forceExecutionPlatform(Label execPlatform);
-
-    public final ToolchainContextKey build() {
-      return interner.intern(autoBuild());
+abstract class ToolchainContextKey : SkyKey {
+    override fun functionName(): SkyFunctionName {
+        return SkyFunctions.TOOLCHAIN_RESOLUTION
     }
 
-    abstract ToolchainContextKey autoBuild();
-  }
+    val skyKeyInterner: SkyKeyInterner<*>
+        get() = interner
+
+    abstract fun configurationKey(): BuildConfigurationKey?
+
+    abstract fun toolchainTypes(): com.google.common.collect.ImmutableSet<ToolchainTypeRequirement?>?
+
+    abstract fun execConstraintLabels(): com.google.common.collect.ImmutableSet<Label?>?
+
+    abstract fun forceExecutionPlatform(): java.util.Optional<Label?>?
+
+    abstract fun debugTarget(): Boolean
+
+    /** Builder for [ToolchainContextKey].  */
+    @AutoValue.Builder
+    abstract class Builder {
+        abstract fun configurationKey(key: BuildConfigurationKey?): Builder?
+
+        abstract fun toolchainTypes(toolchainTypes: com.google.common.collect.ImmutableSet<ToolchainTypeRequirement?>?): Builder?
+
+        abstract fun toolchainTypes(vararg toolchainTypes: ToolchainTypeRequirement?): Builder?
+
+        abstract fun execConstraintLabels(execConstraintLabels: com.google.common.collect.ImmutableSet<Label?>?): Builder?
+
+        abstract fun execConstraintLabels(vararg execConstraintLabels: Label?): Builder?
+
+        abstract fun debugTarget(flag: Boolean): Builder?
+
+        abstract fun forceExecutionPlatform(execPlatform: Label?): Builder?
+
+        fun build(): ToolchainContextKey {
+            return interner.intern(autoBuild())
+        }
+
+        abstract fun autoBuild(): ToolchainContextKey?
+    }
+
+    companion object {
+        private val interner: SkyKeyInterner<ToolchainContextKey?> = SkyKey.newInterner<ToolchainContextKey?>()
+
+        /** Returns a new [Builder].  */
+        @kotlin.jvm.JvmStatic
+        fun key(): Builder {
+            return Builder()
+                .toolchainTypes(com.google.common.collect.ImmutableSet.of<E?>())
+                .execConstraintLabels(com.google.common.collect.ImmutableSet.of<E?>())
+                .debugTarget(false)!!
+        }
+    }
 }

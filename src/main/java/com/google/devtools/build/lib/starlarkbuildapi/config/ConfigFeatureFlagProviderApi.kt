@@ -11,48 +11,38 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.config
 
-package com.google.devtools.build.lib.starlarkbuildapi.config;
+import com.google.devtools.build.lib.starlarkbuildapi.core.StructApi
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.starlarkbuildapi.core.StructApi;
-import javax.annotation.Nullable;
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-
-/** An info object for config_feature_flag rules. */
-@StarlarkBuiltin(
+/** An info object for config_feature_flag rules.  */
+@net.starlark.java.annot.StarlarkBuiltin(
     name = "FeatureFlagInfo",
-    category = DocCategory.PROVIDER,
-    doc = "A provider used to access information about config_feature_flag rules.")
-public interface ConfigFeatureFlagProviderApi extends StructApi {
+    category = com.google.devtools.build.docgen.annot.DocCategory.PROVIDER,
+    doc = "A provider used to access information about config_feature_flag rules."
+)
+interface ConfigFeatureFlagProviderApi : StructApi {
+    @get:net.starlark.java.annot.StarlarkMethod(
+        name = "value", doc = ("The current value of the flag in the flag's current configuration. None if there is an"
+                + " error."), structField = true, allowReturnNones = true
+    )
+    val flagValue: String?
 
-  @StarlarkMethod(
-      name = "value",
-      doc =
-          "The current value of the flag in the flag's current configuration. None if there is an"
-              + " error.",
-      structField = true,
-      allowReturnNones = true)
-  @Nullable
-  String getFlagValue();
+    @get:net.starlark.java.annot.StarlarkMethod(
+        name = "error",
+        doc = "If non-None, this error was generated when trying to compute current value of flag.",
+        structField = true,
+        allowReturnNones = true
+    )
+    val error: String?
 
-  // TODO(blaze-configurability-team, brandjon): Make part of the struct?
-  //   Technically, this is in union with value as both should never be non-empty.
-  @StarlarkMethod(
-      name = "error",
-      doc = "If non-None, this error was generated when trying to compute current value of flag.",
-      structField = true,
-      allowReturnNones = true)
-  @Nullable
-  String getError();
-
-  @StarlarkMethod(
-      name = "is_valid_value",
-      doc = "The value of the flag in the configuration used by the flag rule.",
-      parameters = {
-        @Param(name = "value", doc = "String, the value to check for validity for this flag."),
-      })
-  boolean isValidValue(String value);
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "is_valid_value",
+        doc = "The value of the flag in the configuration used by the flag rule.",
+        parameters = [net.starlark.java.annot.Param(
+            name = "value",
+            doc = "String, the value to check for validity for this flag."
+        )]
+    )
+    fun isValidValue(value: String?): Boolean
 }

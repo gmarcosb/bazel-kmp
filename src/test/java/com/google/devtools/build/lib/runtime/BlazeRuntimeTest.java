@@ -288,7 +288,7 @@ public class BlazeRuntimeTest {
     assertThat(gcIdleTasks).hasSize(1);
     var idleTask = (ActionCacheGarbageCollectorIdleTask) gcIdleTasks.get(0);
     assertThat(idleTask.delay()).isEqualTo(Duration.ofMinutes(5));
-    assertThat(idleTask.getThreshold()).isEqualTo(0.1f);
+    assertThat(idleTask.threshold).isEqualTo(0.1f);
     assertThat(idleTask.getMaxAge()).isEqualTo(Duration.ofDays(7));
   }
 

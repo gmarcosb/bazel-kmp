@@ -11,13 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-/** Provides key bytes for {@link FingerprintValueStore}. */
-public sealed interface KeyBytesProvider permits PackedFingerprint, StringKey {
-  /** Produces the {@code byte[]} representation of the key. */
-  byte[] toBytes();
+/** Provides key bytes for [FingerprintValueStore].  */
+interface KeyBytesProvider {
+    /** Produces the `byte[]` representation of the key.  */
+    fun toBytes(): ByteArray?
 
-  /** Concatenates {@code bytes} to the {@code byte[]} representation of this key. */
-  byte[] concat(byte[] bytes);
+    /** Concatenates `bytes` to the `byte[]` representation of this key.  */
+    fun concat(bytes: ByteArray?): ByteArray?
 }

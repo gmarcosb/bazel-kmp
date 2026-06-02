@@ -11,24 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi
 
-package com.google.devtools.build.lib.starlarkbuildapi;
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.cmdline.Label;
-import javax.annotation.Nullable;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.eval.StarlarkValue;
-
-/** The interface for files in Starlark. */
-@StarlarkBuiltin(
+/** The interface for files in Starlark.  */
+@net.starlark.java.annot.StarlarkBuiltin(
     name = "File",
-    category = DocCategory.BUILTIN,
-    doc =
-        "This object is created during the analysis phase to represent a file or directory that "
+    category = com.google.devtools.build.docgen.annot.DocCategory.BUILTIN,
+    doc = ("This object is created during the analysis phase to represent a file or directory that "
             + "will be read or written during the execution phase. It is not an open file"
             + " handle, "
             + "and cannot be used to directly read or write file contents. Rather, you use it to "
@@ -41,104 +32,108 @@ import net.starlark.java.eval.StarlarkValue;
             + " href='../builtins/Args.html'><code>Args</code></a> object without using a"
             + " <code>map_each</code> function, it is converted to a string by taking the value of"
             + " its <code>path</code> field.")
-public interface FileApi extends StarlarkValue {
+)
+interface FileApi : net.starlark.java.eval.StarlarkValue {
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "dirname",
+        structField = true,
+        useStarlarkSemantics = true,
+        doc = ("The name of the directory containing this file. It's taken from "
+                + "<a href=\"#path\">path</a> and is always relative to the execution directory.")
+    )
+    fun getDirnameForStarlark(semantics: net.starlark.java.eval.StarlarkSemantics?): String?
 
-  @StarlarkMethod(
-      name = "dirname",
-      structField = true,
-      useStarlarkSemantics = true,
-      doc =
-          "The name of the directory containing this file. It's taken from "
-              + "<a href=\"#path\">path</a> and is always relative to the execution directory.")
-  String getDirnameForStarlark(StarlarkSemantics semantics);
+    @get:net.starlark.java.annot.StarlarkMethod(
+        name = "basename",
+        structField = true,
+        doc = "The base name of this file. This is the name of the file inside the directory."
+    )
+    val filename: String?
 
-  @StarlarkMethod(
-      name = "basename",
-      structField = true,
-      doc = "The base name of this file. This is the name of the file inside the directory.")
-  String getFilename();
+    @get:net.starlark.java.annot.StarlarkMethod(
+        name = "extension",
+        structField = true,
+        doc = ("The file extension of this file, following (not including) the rightmost period. "
+                + "Empty string if the file's basename includes no periods.")
+    )
+    val extension: String?
 
-  @StarlarkMethod(
-      name = "extension",
-      structField = true,
-      doc =
-          "The file extension of this file, following (not including) the rightmost period. "
-              + "Empty string if the file's basename includes no periods.")
-  String getExtension();
+    @get:net.starlark.java.annot.StarlarkMethod(
+        name = "owner",
+        structField = true,
+        allowReturnNones = true,
+        doc = "A label of a target that produces this File."
+    )
+    val ownerLabel: Label?
 
-  @StarlarkMethod(
-      name = "owner",
-      structField = true,
-      allowReturnNones = true,
-      doc = "A label of a target that produces this File.")
-  @Nullable
-  Label getOwnerLabel();
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "root",
+        structField = true,
+        useStarlarkSemantics = true,
+        doc = "The root beneath which this file resides."
+    )
+    fun getRootForStarlark(semantics: net.starlark.java.eval.StarlarkSemantics?): FileRootApi?
 
-  @StarlarkMethod(
-      name = "root",
-      structField = true,
-      useStarlarkSemantics = true,
-      doc = "The root beneath which this file resides.")
-  FileRootApi getRootForStarlark(StarlarkSemantics semantics);
+    @get:net.starlark.java.annot.StarlarkMethod(
+        name = "is_source",
+        structField = true,
+        doc = "Returns true if this is a source file, i.e. it is not generated."
+    )
+    val isSourceArtifact: Boolean
 
-  @StarlarkMethod(
-      name = "is_source",
-      structField = true,
-      doc = "Returns true if this is a source file, i.e. it is not generated.")
-  boolean isSourceArtifact();
+    @get:net.starlark.java.annot.StarlarkMethod(
+        name = "is_directory",
+        structField = true,
+        doc = ("Returns true if this is a directory. This reflects the type the file was declared as"
+                + " (i.e. ctx.actions.declare_directory), not its type on the filesystem, which might"
+                + " differ.")
+    )
+    val isDirectory: Boolean
 
-  @StarlarkMethod(
-      name = "is_directory",
-      structField = true,
-      doc =
-          "Returns true if this is a directory. This reflects the type the file was declared as"
-              + " (i.e. ctx.actions.declare_directory), not its type on the filesystem, which might"
-              + " differ.")
-  boolean isDirectory();
+    @get:net.starlark.java.annot.StarlarkMethod(
+        name = "is_symlink",
+        structField = true,
+        doc = ("Returns true if this was declared as a symlink. This reflects the type the file was"
+                + " declared as (i.e. ctx.actions.declare_symlink), not its type on the filesystem,"
+                + " which might differ.")
+    )
+    val isSymlink: Boolean
 
-  @StarlarkMethod(
-      name = "is_symlink",
-      structField = true,
-      doc =
-          "Returns true if this was declared as a symlink. This reflects the type the file was"
-              + " declared as (i.e. ctx.actions.declare_symlink), not its type on the filesystem,"
-              + " which might differ.")
-  boolean isSymlink();
+    @get:net.starlark.java.annot.StarlarkMethod(
+        name = "short_path",
+        structField = true,
+        doc = ("The path of this file relative to its root. This excludes the aforementioned "
+                + "<i>root</i>, i.e. configuration-specific fragments of the path. This is also the "
+                + "path under which the file is mapped if it's in the runfiles of a binary.")
+    )
+    val runfilesPathString: String?
 
-  @StarlarkMethod(
-      name = "short_path",
-      structField = true,
-      doc =
-          "The path of this file relative to its root. This excludes the aforementioned "
-              + "<i>root</i>, i.e. configuration-specific fragments of the path. This is also the "
-              + "path under which the file is mapped if it's in the runfiles of a binary.")
-  String getRunfilesPathString();
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "path",
+        structField = true,
+        useStarlarkSemantics = true,
+        doc = ("The execution path of this file, relative to the workspace's execution directory. It"
+                + " consists of two parts, an optional first part called the <i>root</i> (see also"
+                + " the <a href=\"../builtins/root.html\">root</a> module), and the second part which"
+                + " is the <code>short_path</code>. The root may be empty, which it usually is for"
+                + " non-generated files. For generated files it usually contains a"
+                + " configuration-specific path fragment that encodes things like the target CPU"
+                + " architecture that was used while building said file. Use the"
+                + " <code>short_path</code> for the path under which the file is mapped if it's in"
+                + " the runfiles of a binary.")
+    )
+    fun getExecPathStringForStarlark(semantics: net.starlark.java.eval.StarlarkSemantics?): String?
 
-  @StarlarkMethod(
-      name = "path",
-      structField = true,
-      useStarlarkSemantics = true,
-      doc =
-          "The execution path of this file, relative to the workspace's execution directory. It"
-              + " consists of two parts, an optional first part called the <i>root</i> (see also"
-              + " the <a href=\"../builtins/root.html\">root</a> module), and the second part which"
-              + " is the <code>short_path</code>. The root may be empty, which it usually is for"
-              + " non-generated files. For generated files it usually contains a"
-              + " configuration-specific path fragment that encodes things like the target CPU"
-              + " architecture that was used while building said file. Use the"
-              + " <code>short_path</code> for the path under which the file is mapped if it's in"
-              + " the runfiles of a binary.")
-  String getExecPathStringForStarlark(StarlarkSemantics semantics);
-
-  @StarlarkMethod(
-      name = "tree_relative_path",
-      structField = true,
-      doc =
-          "The path of this file relative to the root of the ancestor's tree, if the ancestor's <a"
-              + " href=\"#is_directory\">is_directory</a> field is true."
-              + " <code>tree_relative_path</code> is only available for expanded files of a"
-              + " directory in an action command, i.e. <a"
-              + " href=\"../builtins/Args.html#add_all\">Args.add_all()</a>. For other types of"
-              + " files, it is an error to access this field.")
-  String getTreeRelativePathString() throws EvalException;
+    @get:Throws(net.starlark.java.eval.EvalException::class)
+    @get:net.starlark.java.annot.StarlarkMethod(
+        name = "tree_relative_path",
+        structField = true,
+        doc = ("The path of this file relative to the root of the ancestor's tree, if the ancestor's <a"
+                + " href=\"#is_directory\">is_directory</a> field is true."
+                + " <code>tree_relative_path</code> is only available for expanded files of a"
+                + " directory in an action command, i.e. <a"
+                + " href=\"../builtins/Args.html#add_all\">Args.add_all()</a>. For other types of"
+                + " files, it is an error to access this field.")
+    )
+    val treeRelativePathString: String?
 }

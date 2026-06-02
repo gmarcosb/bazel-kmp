@@ -11,63 +11,62 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
+package com.google.devtools.build.lib.util.io
 
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.io.IOException;
+import com.google.devtools.build.lib.util.io.AnsiTerminal
+import com.google.devtools.build.lib.util.io.AnsiTerminalWriter
+import java.io.IOException
 
 /**
  * Class providing the AnsiTerminalWriter interface from a terminal while additionally counting the
  * number of written lines.
  */
-public class LineCountingAnsiTerminalWriter implements AnsiTerminalWriter {
+class LineCountingAnsiTerminalWriter(terminal: AnsiTerminal) : AnsiTerminalWriter {
+    private val terminal: AnsiTerminal
 
-  private final AnsiTerminal terminal;
-  private int lineCount;
+    @get:Throws(IOException::class)
+    var writtenLines: Int
+        private set
 
-  public LineCountingAnsiTerminalWriter(AnsiTerminal terminal) {
-    this.terminal = terminal;
-    this.lineCount = 0;
-  }
+    init {
+        this.terminal = terminal
+        this.writtenLines = 0
+    }
 
-  @CanIgnoreReturnValue
-  @Override
-  public AnsiTerminalWriter append(String text) throws IOException {
-    terminal.writeString(text);
-    return this;
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(IOException::class)
+    override fun append(text: String): AnsiTerminalWriter {
+        terminal.writeString(text)
+        return this
+    }
 
-  @CanIgnoreReturnValue
-  @Override
-  public AnsiTerminalWriter newline() throws IOException {
-    terminal.writeString(System.lineSeparator());
-    lineCount++;
-    return this;
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(IOException::class)
+    override fun newline(): AnsiTerminalWriter {
+        terminal.writeString(java.lang.System.lineSeparator())
+        this.writtenLines++
+        return this
+    }
 
-  @CanIgnoreReturnValue
-  @Override
-  public AnsiTerminalWriter okStatus() throws IOException {
-    terminal.textGreen();
-    return this;
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(IOException::class)
+    override fun okStatus(): AnsiTerminalWriter {
+        terminal.textGreen()
+        return this
+    }
 
-  @CanIgnoreReturnValue
-  @Override
-  public AnsiTerminalWriter failStatus() throws IOException {
-    terminal.textRed();
-    terminal.textBold();
-    return this;
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(IOException::class)
+    override fun failStatus(): AnsiTerminalWriter {
+        terminal.textRed()
+        terminal.textBold()
+        return this
+    }
 
-  @CanIgnoreReturnValue
-  @Override
-  public AnsiTerminalWriter normal() throws IOException {
-    terminal.resetTerminal();
-    return this;
-  }
-
-  public int getWrittenLines() throws IOException {
-    return lineCount;
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(IOException::class)
+    override fun normal(): AnsiTerminalWriter {
+        terminal.resetTerminal()
+        return this
+    }
 }

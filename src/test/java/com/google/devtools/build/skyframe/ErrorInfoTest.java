@@ -55,10 +55,10 @@ public final class ErrorInfoTest {
 
     assertThat(errorInfo.getException()).isSameInstanceAs(exception);
     assertThat(errorInfo.getCycleInfo()).isEmpty();
-    assertThat(errorInfo.isDirectlyTransient()).isEqualTo(isDirectlyTransient);
-    assertThat(errorInfo.isTransitivelyTransient())
+    assertThat(errorInfo.isDirectlyTransient).isEqualTo(isDirectlyTransient);
+    assertThat(errorInfo.isTransitivelyTransient)
         .isEqualTo(isDirectlyTransient || isTransitivelyTransient);
-    assertThat(errorInfo.isCatastrophic()).isFalse();
+    assertThat(errorInfo.isCatastrophic).isFalse();
   }
 
   @Test
@@ -91,8 +91,8 @@ public final class ErrorInfoTest {
     ErrorInfo errorInfo = ErrorInfo.fromCycle(cycle);
 
     assertThat(errorInfo.getException()).isNull();
-    assertThat(errorInfo.isTransitivelyTransient()).isFalse();
-    assertThat(errorInfo.isCatastrophic()).isFalse();
+    assertThat(errorInfo.isTransitivelyTransient).isFalse();
+    assertThat(errorInfo.isCatastrophic).isFalse();
   }
 
   @Test
@@ -134,10 +134,10 @@ public final class ErrorInfoTest {
     assertThat(errorInfo.getCycleInfo())
         .containsExactly(
             CycleInfo.createCycleInfo(
-                ImmutableList.of(currentKey, Iterables.getOnlyElement(cycle.getPathToCycle())),
-                cycle.getCycle()));
-    assertThat(errorInfo.isTransitivelyTransient()).isTrue();
-    assertThat(errorInfo.isCatastrophic()).isTrue();
+                ImmutableList.of(currentKey, Iterables.getOnlyElement(cycle.pathToCycle)),
+                    cycle.cycle));
+    assertThat(errorInfo.isTransitivelyTransient).isTrue();
+    assertThat(errorInfo.isCatastrophic).isTrue();
   }
 
   @Test

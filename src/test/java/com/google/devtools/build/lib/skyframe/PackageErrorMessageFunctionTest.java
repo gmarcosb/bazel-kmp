@@ -34,7 +34,7 @@ public class PackageErrorMessageFunctionTest extends BuildViewTestCase {
   @Test
   public void testNoErrorMessage() throws Exception {
     scratch.file("a/BUILD");
-    assertThat(getPackageErrorMessageValue(/*keepGoing=*/ false).getResult())
+    assertThat(getPackageErrorMessageValue(/*keepGoing=*/ false).result)
         .isEqualTo(Result.NO_ERROR);
   }
 
@@ -45,7 +45,7 @@ public class PackageErrorMessageFunctionTest extends BuildViewTestCase {
 
     scratch.file("a/BUILD", "imaginary_macro(name = 'this macro is not defined')");
 
-    assertThat(getPackageErrorMessageValue(/*keepGoing=*/ false).getResult())
+    assertThat(getPackageErrorMessageValue(/*keepGoing=*/ false).result)
         .isEqualTo(Result.ERROR);
   }
 
@@ -55,8 +55,8 @@ public class PackageErrorMessageFunctionTest extends BuildViewTestCase {
 
     PackageErrorMessageValue packageErrorMessageValue =
         getPackageErrorMessageValue(/*keepGoing=*/ true);
-    assertThat(packageErrorMessageValue.getResult()).isEqualTo(Result.NO_SUCH_PACKAGE_EXCEPTION);
-    assertThat(packageErrorMessageValue.getNoSuchPackageExceptionMessage())
+    assertThat(packageErrorMessageValue.result).isEqualTo(Result.NO_SUCH_PACKAGE_EXCEPTION);
+    assertThat(packageErrorMessageValue.noSuchPackageExceptionMessage)
         .isEqualTo("error loading package 'a': cannot load '//a:does_not_exist.bzl': no such file");
   }
 

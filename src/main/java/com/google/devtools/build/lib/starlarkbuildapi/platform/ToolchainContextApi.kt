@@ -11,23 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.platform
 
-package com.google.devtools.build.lib.starlarkbuildapi.platform;
+import com.google.devtools.build.docgen.annot.DocCategory
+import com.google.devtools.build.lib.cmdline.Label
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
+import net.starlark.java.eval.Sequence
+import net.starlark.java.eval.StarlarkIndexable
+import net.starlark.java.eval.StarlarkValue
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.cmdline.Label;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.Sequence;
-import net.starlark.java.eval.StarlarkIndexable;
-import net.starlark.java.eval.StarlarkValue;
-
-/** Stores toolchains available to a given rule. */
+/** Stores toolchains available to a given rule.  */
 @StarlarkBuiltin(
     name = "ToolchainContext",
     category = DocCategory.BUILTIN,
-    doc =
-        "Holds toolchains available for a particular exec group. Toolchain targets are accessed by"
+    doc = ("Holds toolchains available for a particular exec group. Toolchain targets are accessed by"
             + " indexing with the toolchain type, as in"
             + " <code>ctx.toolchains[\"//pkg:my_toolchain_type\"]</code>. If the toolchain was"
             + " optional and no toolchain was resolved, this will return <code>None</code>."
@@ -38,8 +36,8 @@ import net.starlark.java.eval.StarlarkValue;
             + " target. It can be accessed by"
             + " <code>ctx.rule.toolchains[\"//pkg:my_toolchain_type\"]</code> and it returns the"
             + " list of providers resulted from applying the aspects on these toolchain targets. ")
-public interface ToolchainContextApi extends StarlarkValue, StarlarkIndexable.Threaded {
-
-  @StarlarkMethod(name = "toolchain_types", doc = "Returns the resolved toolchain type labels.")
-  Sequence<Label> toolchainTypes();
+)
+interface ToolchainContextApi : StarlarkValue, StarlarkIndexable.Threaded {
+    @StarlarkMethod(name = "toolchain_types", doc = "Returns the resolved toolchain type labels.")
+    fun toolchainTypes(): Sequence<Label?>?
 }

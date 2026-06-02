@@ -71,17 +71,17 @@ class DeterministicInMemoryGraph extends DeterministicHelper.DeterministicProces
 
   @Override
   public Map<SkyKey, SkyValue> getValues() {
-    return ((InMemoryGraph) delegate).getValues();
+    return ((InMemoryGraph) delegate).values;
   }
 
   @Override
   public Map<SkyKey, SkyValue> getDoneValues() {
-    return ((InMemoryGraph) delegate).getDoneValues();
+    return ((InMemoryGraph) delegate).doneValues;
   }
 
   @Override
   public Collection<InMemoryNodeEntry> getAllNodeEntries() {
-    return ((InMemoryGraph) delegate).getAllNodeEntries();
+    return ((InMemoryGraph) delegate).allNodeEntries;
   }
 
   @Override

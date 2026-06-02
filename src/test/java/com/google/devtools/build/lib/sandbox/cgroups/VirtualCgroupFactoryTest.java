@@ -86,7 +86,7 @@ public class VirtualCgroupFactoryTest {
     assertThat(vcg.paths()).isNotEmpty();
     assertThat(vcg.cpu()).isNotNull();
     assertThat(vcg.memory()).isNotNull();
-    assertThat(vcg.memory().getMaxBytes()).isEqualTo(100 * 1024 * 1024);
+    assertThat(vcg.memory().maxBytes).isEqualTo(100 * 1024 * 1024);
   }
 
   @Test
@@ -100,8 +100,8 @@ public class VirtualCgroupFactoryTest {
     assertThat(vcg.paths()).isNotEmpty();
     assertThat(vcg.cpu()).isNotNull();
     assertThat(vcg.memory()).isNotNull();
-    assertThat(vcg.cpu().getCpus()).isEqualTo(1);
-    assertThat(vcg.memory().getMaxBytes()).isEqualTo(200 * 1024 * 1024);
+    assertThat(vcg.cpu().cpus).isEqualTo(1);
+    assertThat(vcg.memory().maxBytes).isEqualTo(200 * 1024 * 1024);
   }
 
   @Test

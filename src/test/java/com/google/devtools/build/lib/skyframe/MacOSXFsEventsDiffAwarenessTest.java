@@ -87,7 +87,7 @@ public class MacOSXFsEventsDiffAwarenessTest {
             watchedPath, IgnoredSubdirectories.EMPTY, new FsEventsNativeDepsServiceImpl());
     LocalDiffAwareness.Options localDiffOptions =
         Options.getDefaults(LocalDiffAwareness.Options.class);
-    localDiffOptions.setWatchFS(true);
+    localDiffOptions.watchFS = true;
     watchFsEnabledProvider = FakeOptions.of(localDiffOptions);
   }
 

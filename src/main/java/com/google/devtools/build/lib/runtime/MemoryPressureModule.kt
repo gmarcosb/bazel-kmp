@@ -11,78 +11,68 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.eventbus.EventBus;
-import com.google.common.eventbus.Subscribe;
-import com.google.devtools.build.lib.pkgcache.TargetParsingCompleteEvent;
-import com.google.devtools.build.lib.runtime.MemoryPressure.MemoryPressureStats;
-import com.google.devtools.build.lib.skyframe.HighWaterMarkLimiter;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.errorprone.annotations.Keep;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.pkgcache.TargetParsingCompleteEvent
 
 /**
- * A {@link BlazeModule} that installs a {@link MemoryPressureListener} that reacts to memory
+ * A [BlazeModule] that installs a [MemoryPressureListener] that reacts to memory
  * pressure events.
  */
-public final class MemoryPressureModule extends BlazeModule {
-  private final MemoryPressureListener memoryPressureListener = MemoryPressureListener.create();
+class MemoryPressureModule : BlazeModule() {
+    private val memoryPressureListener: MemoryPressureListener = MemoryPressureListener.Companion.create()
 
-  // Null between commands.
-  @Nullable private HighWaterMarkLimiter highWaterMarkLimiter;
-  @Nullable private EventBus eventBus;
+    // Null between commands.
+    private var highWaterMarkLimiter: HighWaterMarkLimiter? = null
+    private var eventBus: com.google.common.eventbus.EventBus? = null
 
-  @Override
-  public ImmutableList<Class<? extends OptionsBase>> getCommonCommandOptions() {
-    return ImmutableList.of(MemoryPressureOptions.class);
-  }
+    val commonCommandOptions: com.google.common.collect.ImmutableList<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?>
+        get() = com.google.common.collect.ImmutableList.of<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?>(
+            MemoryPressureOptions::class.java
+        )
 
-  @Override
-  public void beforeCommand(CommandEnvironment env) {
-    eventBus = env.getEventBus();
-    MemoryPressureOptions options = env.getOptions().getOptions(MemoryPressureOptions.class);
-    memoryPressureListener.initForInvocation(
-        eventBus,
-        GcThrashingDetector.createForCommand(options),
-        GcChurningDetector.createForCommand(options));
-    highWaterMarkLimiter =
-        new HighWaterMarkLimiter(env.getSkyframeExecutor(), env.getSyscallCache(), options);
-    eventBus.register(this);
-    eventBus.register(highWaterMarkLimiter);
-  }
-
-  @Subscribe
-  public void targetParsingComplete(TargetParsingCompleteEvent event) {
-    memoryPressureListener.targetParsingComplete(event.getTargets().size());
-  }
-
-  @Override
-  public void afterCommand() {
-    postStats();
-    memoryPressureListener.reset();
-    eventBus = null;
-    highWaterMarkLimiter = null;
-  }
-
-  @Subscribe
-  @Keep
-  void onCrash(@SuppressWarnings("unused") CrashEvent event) {
-    postStats();
-  }
-
-  private void postStats() {
-    // Guard against crashes between commands or an async crash racing with afterCommand().
-    var highWaterMarkLimiter = this.highWaterMarkLimiter;
-    var eventBus = this.eventBus;
-    if (highWaterMarkLimiter == null || eventBus == null) {
-      return;
+    public override fun beforeCommand(env: CommandEnvironment) {
+        eventBus = env.getEventBus()
+        val options: MemoryPressureOptions = env.getOptions().getOptions(MemoryPressureOptions::class.java)
+        memoryPressureListener.initForInvocation(
+            eventBus,
+            GcThrashingDetector.Companion.createForCommand(options),
+            GcChurningDetector.Companion.createForCommand(options)
+        )
+        highWaterMarkLimiter =
+            HighWaterMarkLimiter(env.getSkyframeExecutor(), env.getSyscallCache(), options)
+        eventBus.register(this)
+        eventBus.register(highWaterMarkLimiter)
     }
-    MemoryPressureStats.Builder memoryPressureStatsBuilder = MemoryPressureStats.newBuilder();
-    highWaterMarkLimiter.populateStats(memoryPressureStatsBuilder);
-    memoryPressureListener.populateStats(memoryPressureStatsBuilder);
-    eventBus.post(memoryPressureStatsBuilder.build());
-  }
+
+    @com.google.common.eventbus.Subscribe
+    fun targetParsingComplete(event: TargetParsingCompleteEvent) {
+        memoryPressureListener.targetParsingComplete(event.getTargets().size())
+    }
+
+    public override fun afterCommand() {
+        postStats()
+        memoryPressureListener.reset()
+        eventBus = null
+        highWaterMarkLimiter = null
+    }
+
+    @com.google.common.eventbus.Subscribe
+    @com.google.errorprone.annotations.Keep
+    fun onCrash(@Suppress("unused") event: CrashEvent?) {
+        postStats()
+    }
+
+    private fun postStats() {
+        // Guard against crashes between commands or an async crash racing with afterCommand().
+        val highWaterMarkLimiter: HighWaterMarkLimiter? = this.highWaterMarkLimiter
+        val eventBus: com.google.common.eventbus.EventBus? = this.eventBus
+        if (highWaterMarkLimiter == null || eventBus == null) {
+            return
+        }
+        val memoryPressureStatsBuilder: MemoryPressureStats.Builder = MemoryPressureStats.newBuilder()
+        highWaterMarkLimiter.populateStats(memoryPressureStatsBuilder)
+        memoryPressureListener.populateStats(memoryPressureStatsBuilder)
+        eventBus.post(memoryPressureStatsBuilder.build())
+    }
 }

@@ -11,168 +11,158 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.config;
+package com.google.devtools.build.lib.skyframe.config
 
-import static com.google.devtools.build.lib.server.FailureDetails.TargetPatterns.Code.DEPENDENCY_NOT_FOUND;
-import static com.google.devtools.common.options.OptionsParser.STARLARK_SKIPPED_PREFIXES;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.Label.PackageContext;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.cmdline.TargetParsingException;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.NoSuchTargetException;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.runtime.StarlarkOptionsParser;
-import com.google.devtools.build.lib.skyframe.PackageValue;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.common.options.OptionsParser;
-import com.google.devtools.common.options.OptionsParsingException;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.server.FailureDetails.TargetPatterns.Code.DEPENDENCY_NOT_FOUND
 
 /**
- * Converts a list of command-line flags (like {@code --compilation_mode=dbg} or {@code
- * --//custom/starlark:flag=foo}) into a {@link NativeAndStarlarkFlags} instance. This is intended
+ * Converts a list of command-line flags (like `--compilation_mode=dbg` or `--//custom/starlark:flag=foo`) into a [NativeAndStarlarkFlags] instance. This is intended
  * as preparation for using the flags to create or update a build configuration in Bazel.
  */
-public final class ParsedFlagsFunction implements SkyFunction {
-  private final ImmutableSet<Class<? extends FragmentOptions>> optionsClasses;
+class ParsedFlagsFunction(optionsClasses: com.google.common.collect.ImmutableSet<java.lang.Class<out FragmentOptions?>?>?) :
+    SkyFunction {
+    private val optionsClasses: com.google.common.collect.ImmutableSet<java.lang.Class<out FragmentOptions?>?>?
 
-  public ParsedFlagsFunction(ImmutableSet<Class<? extends FragmentOptions>> optionsClasses) {
-    this.optionsClasses = optionsClasses;
-  }
-
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws InterruptedException, ParsedFlagsFunctionException {
-    ParsedFlagsValue.Key key = (ParsedFlagsValue.Key) skyKey.argument();
-
-    ImmutableList.Builder<String> nativeFlags = ImmutableList.builder();
-    ImmutableList.Builder<String> starlarkFlags = ImmutableList.builder();
-    ImmutableMap<String, Label> flagAliasMappings = key.flagAliasMappings();
-    for (String flagSetting : key.rawFlags()) {
-      if (!flagSetting.startsWith("--")) {
-        // This is either something like "-c" or an invalid setting. Let options parsing handle it.
-        nativeFlags.add(flagSetting);
-        continue;
-      }
-      String flagName;
-      String flagValue = "";
-      int delimiterIndex = flagSetting.indexOf("=");
-      boolean noPrefix = false;
-      if (delimiterIndex != -1) {
-        flagName = flagSetting.substring(2, delimiterIndex); // --flag=value
-        flagValue = flagSetting.substring(delimiterIndex + 1);
-      } else if (flagSetting.startsWith("--no")) {
-        flagName = flagSetting.substring(4); // --no<flag>
-        noPrefix = true;
-      } else {
-        flagName = flagSetting.substring(2); // --<flag>
-      }
-      // If --flag_alias=foo=//bar and we see --foo=1, use the canonical setting --//bar=1.
-      Label actualFlag = flagAliasMappings.get(flagName);
-      if (actualFlag != null) {
-        flagSetting =
-            "--%s%s%s"
-                .formatted(
-                    noPrefix ? "no" : "",
-                    actualFlag.getUnambiguousCanonicalForm(),
-                    delimiterIndex == -1 ? "" : "=" + flagValue);
-      }
-      if (STARLARK_SKIPPED_PREFIXES.stream().noneMatch(flagSetting::startsWith)) {
-        nativeFlags.add(flagSetting);
-      } else {
-        starlarkFlags.add(flagSetting);
-      }
-    }
-    // The StarlarkOptionsParser needs a native options parser to handle some forms of value
-    // conversion and as a place to inject the flag values.
-    // TODO: https://github.com/bazelbuild/bazel/issues/22365 - Clean this up as part of a general
-    // rewrite.
-    OptionsParser fakeNativeParser =
-        OptionsParser.builder().withConversionContext(key.packageContext()).build();
-    StarlarkOptionsParser starlarkFlagParser =
-        StarlarkOptionsParser.builder()
-            .buildSettingLoader(new SkyframeTargetLoader(env, key.packageContext()))
-            .nativeOptionsParser(fakeNativeParser)
-            .includeDefaultValues(key.includeDefaultValues())
-            .build();
-    try {
-      if (!starlarkFlagParser.parseGivenArgs(starlarkFlags.build())) {
-        return null;
-      }
-    } catch (OptionsParsingException e) {
-      throw new ParsedFlagsFunctionException(e);
-    }
-    NativeAndStarlarkFlags.Builder flags =
-        NativeAndStarlarkFlags.builder()
-            .nativeFlags(nativeFlags.build())
-            .starlarkFlags(starlarkFlagParser.getStarlarkOptions())
-            .starlarkOptionAllowingMultiple(starlarkFlagParser.getStarlarkOptionsAllowingMultiple())
-            .scopesAttributes(starlarkFlagParser.getScopesAttributes())
-            .optionsClasses(optionsClasses)
-            .repoMapping(key.packageContext().repoMapping());
-
-    if (key.includeDefaultValues()) {
-      flags.starlarkFlagDefaults(starlarkFlagParser.getDefaultValues());
+    init {
+        this.optionsClasses = optionsClasses
     }
 
-    try {
-      return ParsedFlagsValue.parseAndCreate(flags.build());
-    } catch (OptionsParsingException e) {
-      throw new ParsedFlagsFunctionException(e);
-    }
-  }
+    @Throws(java.lang.InterruptedException::class, ParsedFlagsFunctionException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment): SkyValue? {
+        val key: com.google.devtools.build.lib.skyframe.config.ParsedFlagsValue.Key =
+            skyKey.argument() as com.google.devtools.build.lib.skyframe.config.ParsedFlagsValue.Key
 
-  /**
-   * Lets {@link StarlarkOptionsParser} convert flag names to {@link Target}s through a Skyframe
-   * {@link PackageValue} lookup.
-   */
-  private static final class SkyframeTargetLoader
-      implements StarlarkOptionsParser.BuildSettingLoader {
-    private final Environment env;
-    private final PackageContext packageContext;
-
-    SkyframeTargetLoader(Environment env, PackageContext packageContext) {
-      this.env = env;
-      this.packageContext = packageContext;
-    }
-
-    @Nullable
-    @Override
-    public Target loadBuildSetting(String name)
-        throws InterruptedException, TargetParsingException {
-      Label asLabel;
-      try {
-        asLabel = Label.parseWithPackageContext(name, packageContext);
-      } catch (LabelSyntaxException e) {
-        throw new IllegalArgumentException(e);
-      }
-      try {
-        SkyKey pkgKey = asLabel.getPackageIdentifier();
-        PackageValue pkg = (PackageValue) env.getValueOrThrow(pkgKey, NoSuchPackageException.class);
-        if (pkg == null) {
-          return null;
+        val nativeFlags: com.google.common.collect.ImmutableList.Builder<String?> =
+            com.google.common.collect.ImmutableList.builder<String?>()
+        val starlarkFlags: com.google.common.collect.ImmutableList.Builder<String?> =
+            com.google.common.collect.ImmutableList.builder<String?>()
+        val flagAliasMappings: com.google.common.collect.ImmutableMap<String?, Label?> = key.flagAliasMappings()
+        for (flagSetting in key.rawFlags()) {
+            var flagSetting: String = flagSetting
+            if (!flagSetting.startsWith("--")) {
+                // This is either something like "-c" or an invalid setting. Let options parsing handle it.
+                nativeFlags.add(flagSetting)
+                continue
+            }
+            val flagName: String?
+            var flagValue = ""
+            val delimiterIndex: Int = flagSetting.indexOf("=")
+            var noPrefix = false
+            if (delimiterIndex != -1) {
+                flagName = flagSetting.substring(2, delimiterIndex) // --flag=value
+                flagValue = flagSetting.substring(delimiterIndex + 1)
+            } else if (flagSetting.startsWith("--no")) {
+                flagName = flagSetting.substring(4) // --no<flag>
+                noPrefix = true
+            } else {
+                flagName = flagSetting.substring(2) // --<flag>
+            }
+            // If --flag_alias=foo=//bar and we see --foo=1, use the canonical setting --//bar=1.
+            val actualFlag: Label? = flagAliasMappings.get(flagName)
+            if (actualFlag != null) {
+                flagSetting =
+                    "--%s%s%s"
+                        .formatted(
+                            if (noPrefix) "no" else "",
+                            actualFlag.getUnambiguousCanonicalForm(),
+                            if (delimiterIndex == -1) "" else "=" + flagValue
+                        )
+            }
+            if (com.google.devtools.common.options.OptionsParser.STARLARK_SKIPPED_PREFIXES.stream()
+                    .noneMatch(java.util.function.Predicate { prefix: String? -> flagSetting.startsWith(prefix) })
+            ) {
+                nativeFlags.add(flagSetting)
+            } else {
+                starlarkFlags.add(flagSetting)
+            }
         }
-        return pkg.getPackage().getTarget(asLabel.name);
-      } catch (NoSuchPackageException | NoSuchTargetException e) {
-        throw new TargetParsingException(
-            String.format("Failed to load %s", name), e, DEPENDENCY_NOT_FOUND);
-      }
-    }
-  }
+        // The StarlarkOptionsParser needs a native options parser to handle some forms of value
+        // conversion and as a place to inject the flag values.
+        // TODO: https://github.com/bazelbuild/bazel/issues/22365 - Clean this up as part of a general
+        // rewrite.
+        val fakeNativeParser: com.google.devtools.common.options.OptionsParser =
+            com.google.devtools.common.options.OptionsParser.builder().withConversionContext(key.packageContext())
+                .build()
+        val starlarkFlagParser: StarlarkOptionsParser =
+            StarlarkOptionsParser.builder()
+                .buildSettingLoader(
+                    com.google.devtools.build.lib.skyframe.config.ParsedFlagsFunction.SkyframeTargetLoader(
+                        env,
+                        key.packageContext()
+                    )
+                )
+                .nativeOptionsParser(fakeNativeParser)
+                .includeDefaultValues(key.includeDefaultValues())
+                .build()
+        try {
+            if (!starlarkFlagParser.parseGivenArgs(starlarkFlags.build())) {
+                return null
+            }
+        } catch (e: com.google.devtools.common.options.OptionsParsingException) {
+            throw ParsedFlagsFunctionException(e)
+        }
+        val flags: com.google.devtools.build.lib.skyframe.config.NativeAndStarlarkFlags.Builder =
+            NativeAndStarlarkFlags.Companion.builder()
+                .nativeFlags(nativeFlags.build())
+                .starlarkFlags(starlarkFlagParser.getStarlarkOptions())
+                .starlarkOptionAllowingMultiple(starlarkFlagParser.getStarlarkOptionsAllowingMultiple())
+                .scopesAttributes(starlarkFlagParser.getScopesAttributes())
+                .optionsClasses(optionsClasses)
+                .repoMapping(key.packageContext().repoMapping())
 
-  private static final class ParsedFlagsFunctionException extends SkyFunctionException {
-    ParsedFlagsFunctionException(OptionsParsingException e) {
-      super(e, Transience.PERSISTENT);
+        if (key.includeDefaultValues()) {
+            flags.starlarkFlagDefaults(starlarkFlagParser.getDefaultValues())
+        }
+
+        try {
+            return ParsedFlagsValue.Companion.parseAndCreate(flags.build())
+        } catch (e: com.google.devtools.common.options.OptionsParsingException) {
+            throw ParsedFlagsFunctionException(e)
+        }
     }
-  }
+
+    /**
+     * Lets [StarlarkOptionsParser] convert flag names to [Target]s through a Skyframe
+     * [PackageValue] lookup.
+     */
+    private class SkyframeTargetLoader
+        (env: SkyFunction.Environment, packageContext: PackageContext?) : StarlarkOptionsParser.BuildSettingLoader {
+        private val env: SkyFunction.Environment
+        private val packageContext: PackageContext?
+
+        init {
+            this.env = env
+            this.packageContext = packageContext
+        }
+
+        @Throws(java.lang.InterruptedException::class, TargetParsingException::class)
+        public override fun loadBuildSetting(name: String?): Target? {
+            val asLabel: Label
+            try {
+                asLabel = Label.parseWithPackageContext(name, packageContext)
+            } catch (e: LabelSyntaxException) {
+                throw java.lang.IllegalArgumentException(e)
+            }
+            try {
+                val pkgKey: SkyKey? = asLabel.getPackageIdentifier()
+                val pkg: PackageValue? =
+                    env.getValueOrThrow<E?>(pkgKey, NoSuchPackageException::class.java) as PackageValue?
+                if (pkg == null) {
+                    return null
+                }
+                return pkg.getPackage().getTarget(asLabel.name)
+            } catch (e: NoSuchPackageException) {
+                throw TargetParsingException(
+                    java.lang.String.format("Failed to load %s", name), e, DEPENDENCY_NOT_FOUND
+                )
+            } catch (e: NoSuchTargetException) {
+                throw TargetParsingException(
+                    java.lang.String.format("Failed to load %s", name), e, DEPENDENCY_NOT_FOUND
+                )
+            }
+        }
+    }
+
+    private class ParsedFlagsFunctionException(e: com.google.devtools.common.options.OptionsParsingException?) :
+        SkyFunctionException(e, Transience.PERSISTENT)
 }

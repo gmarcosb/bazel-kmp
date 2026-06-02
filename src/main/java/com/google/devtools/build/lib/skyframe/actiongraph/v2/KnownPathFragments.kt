@@ -11,42 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.actiongraph.v2;
+package com.google.devtools.build.lib.skyframe.actiongraph.v2
 
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.IOException;
+import com.google.devtools.build.lib.analysis.AnalysisProtosV2
 
-/** Cache for {@link PathFragment} in the action graph. */
-public class KnownPathFragments extends BaseCache<PathFragment, AnalysisProtosV2.PathFragment> {
-  KnownPathFragments(AqueryOutputHandler aqueryOutputHandler) {
-    super(aqueryOutputHandler);
-  }
+/** Cache for [PathFragment] in the action graph.  */
+class KnownPathFragments internal constructor(aqueryOutputHandler: AqueryOutputHandler?) :
+    BaseCache<PathFragment?, PathFragment?>(aqueryOutputHandler) {
+    @Throws(IOException::class, InterruptedException::class)
+    override fun createProto(pathFragment: PathFragment, id: Int): PathFragment {
+        val pathFragmentProtoBuilder: AnalysisProtosV2.PathFragment.Builder =
+            AnalysisProtosV2.PathFragment.newBuilder().setId(id).setLabel(pathFragment.getBaseName())
 
-  @Override
-  AnalysisProtosV2.PathFragment createProto(PathFragment pathFragment, int id)
-      throws IOException, InterruptedException {
-    AnalysisProtosV2.PathFragment.Builder pathFragmentProtoBuilder =
-        AnalysisProtosV2.PathFragment.newBuilder().setId(id).setLabel(pathFragment.getBaseName());
+        // Recursively create the ancestor path fragments.
+        // If pathFragment has no parent, leave parentId blank and avoid calling dataToId
+        // to prevent the cache from being polluted with a null entry.
+        if (hasParent(pathFragment)) {
+            pathFragmentProtoBuilder.setParentId(
+                dataToIdAndStreamOutputProto(pathFragment.getParentDirectory())
+            )
+        }
 
-    // Recursively create the ancestor path fragments.
-    // If pathFragment has no parent, leave parentId blank and avoid calling dataToId
-    // to prevent the cache from being polluted with a null entry.
-    if (hasParent(pathFragment)) {
-      pathFragmentProtoBuilder.setParentId(
-          dataToIdAndStreamOutputProto(pathFragment.getParentDirectory()));
+        return pathFragmentProtoBuilder.build()
     }
 
-    return pathFragmentProtoBuilder.build();
-  }
+    @Throws(IOException::class)
+    override fun toOutput(pathFragmentProto: PathFragment?) {
+        aqueryOutputHandler.outputPathFragment(pathFragmentProto)
+    }
 
-  @Override
-  void toOutput(AnalysisProtosV2.PathFragment pathFragmentProto) throws IOException {
-    aqueryOutputHandler.outputPathFragment(pathFragmentProto);
-  }
-
-  private static boolean hasParent(PathFragment pathFragment) {
-    return pathFragment.getParentDirectory() != null
-        && !pathFragment.getParentDirectory().getBaseName().isEmpty();
-  }
+    companion object {
+        private fun hasParent(pathFragment: PathFragment): Boolean {
+            return pathFragment.getParentDirectory() != null
+                    && !pathFragment.getParentDirectory().getBaseName().isEmpty()
+        }
+    }
 }

@@ -11,33 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.cpp
 
-package com.google.devtools.build.lib.starlarkbuildapi.cpp;
-
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkValue;
+import com.google.devtools.build.docgen.annot.DocCategory
+import com.google.devtools.build.lib.collect.nestedset.Depset
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
+import net.starlark.java.eval.StarlarkValue
 
 /**
  * Interface for C++ debug related objects, specifically when fission is used.
- *
- * <p>It is not expected for this to be used externally at this time. This API is experimental and
+ * 
+ * 
+ * It is not expected for this to be used externally at this time. This API is experimental and
  * subject to change, and its usage should be restricted to internal packages.
- *
- * <p>See javadoc for {@link com.google.devtools.build.lib.rules.cpp.CcModule}.
+ * 
+ * 
+ * See javadoc for [com.google.devtools.build.lib.rules.cpp.CcModule].
  */
 @StarlarkBuiltin(
     name = "DebugContext",
     category = DocCategory.PROVIDER,
     documented = false,
-    doc = "Immutable store of C++ debug information and artifacts.")
-public interface CcDebugInfoContextApi extends StarlarkValue {
+    doc = "Immutable store of C++ debug information and artifacts."
+)
+interface CcDebugInfoContextApi : StarlarkValue {
+    @get:StarlarkMethod(name = "files", structField = true, documented = false)
+    val starlarkTransitiveFiles: Depset?
 
-  @StarlarkMethod(name = "files", structField = true, documented = false)
-  Depset getStarlarkTransitiveFiles();
-
-  @StarlarkMethod(name = "pic_files", structField = true, documented = false)
-  Depset getStarlarkTransitivePicFiles();
+    @get:StarlarkMethod(name = "pic_files", structField = true, documented = false)
+    val starlarkTransitivePicFiles: Depset?
 }

@@ -89,8 +89,8 @@ public class WorkerParserTest {
   @Test
   public void createWorkerKey_understandsMultiplexSandboxing() {
     WorkerOptions options = Options.getDefaults(WorkerOptions.class);
-    options.setMultiplexSandboxing(false);
-    options.setWorkerMultiplex(true);
+    options.multiplexSandboxing = false;
+    options.workerMultiplex = true;
 
     WorkerKey keyNoMultiplexSandboxing =
         WorkerTestUtils.createWorkerKeyWithRequirements(
@@ -113,7 +113,7 @@ public class WorkerParserTest {
     assertThat(keyForcedeMultiplexSandboxing.isSandboxed()).isTrue();
     assertThat(keyForcedeMultiplexSandboxing.getWorkerTypeName()).isEqualTo("worker");
 
-    options.setMultiplexSandboxing(true);
+    options.multiplexSandboxing = true;
 
     WorkerKey keyBaseMultiplexNoSandbox =
         WorkerTestUtils.createWorkerKeyWithRequirements(
@@ -173,7 +173,7 @@ public class WorkerParserTest {
   public void splitSpawnArgsIntoWorkerArgsAndFlagFiles_addsFlagFiles() throws UserExecException {
     WorkerOptions options = Options.getDefaults(WorkerOptions.class);
     options.setWorkerExtraFlags(ImmutableList.of());
-    options.setStrictFlagfiles(false);
+    options.strictFlagfiles = false;
     WorkerParser parser = new WorkerParser(null, options, null, null);
     Spawn spawn =
         WorkerTestUtils.createSpawn(
@@ -195,7 +195,7 @@ public class WorkerParserTest {
       throws UserExecException {
     WorkerOptions options = Options.getDefaults(WorkerOptions.class);
     options.setWorkerExtraFlags(ImmutableList.of());
-    options.setStrictFlagfiles(true);
+    options.strictFlagfiles = true;
     WorkerParser parser = new WorkerParser(null, options, null, null);
     Spawn spawn =
         WorkerTestUtils.createSpawn(
@@ -226,7 +226,7 @@ public class WorkerParserTest {
   private void assertIllegalFlags(String message, String... args) {
     WorkerOptions options = Options.getDefaults(WorkerOptions.class);
     options.setWorkerExtraFlags(ImmutableList.of());
-    options.setStrictFlagfiles(true);
+    options.strictFlagfiles = true;
     WorkerParser parser = new WorkerParser(null, options, null, null);
     Spawn spawn = WorkerTestUtils.createSpawn(ImmutableList.copyOf(args), ImmutableMap.of());
 

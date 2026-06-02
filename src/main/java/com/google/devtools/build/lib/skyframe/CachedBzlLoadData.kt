@@ -11,154 +11,162 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
-
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Interner;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
+import com.google.devtools.build.lib.skyframe.BzlLoadValue
+import com.google.devtools.build.lib.skyframe.CachedBzlLoadData
+import com.google.devtools.build.skyframe.SkyKey
+import java.util.concurrent.atomic.AtomicReference
 
 /**
- * A saved {@link BzlLoadFunction} computation, used when inlining that Skyfunction.
- *
- * <p>This holds a requested key, its computed value, and the direct and transitive Skyframe
+ * A saved [BzlLoadFunction] computation, used when inlining that Skyfunction.
+ * 
+ * 
+ * This holds a requested key, its computed value, and the direct and transitive Skyframe
  * dependencies that are needed to compute it from scratch (i.e. if it weren't cached). Here
- * "transitive" means "underneath another {@code BzlLoadFunction} computation"; we split them into
- * other {@code CachedBzlLoadData} objects so they can be shared by other requesting bzls.
+ * "transitive" means "underneath another `BzlLoadFunction` computation"; we split them into
+ * other `CachedBzlLoadData` objects so they can be shared by other requesting bzls.
  */
-class CachedBzlLoadData {
-  private final BzlLoadValue.Key key;
-  private final BzlLoadValue value;
-  private final ImmutableList<Iterable<SkyKey>> directDeps;
-  private final ImmutableList<CachedBzlLoadData> transitiveDeps;
+internal class CachedBzlLoadData private constructor(
+    key: com.google.devtools.build.lib.skyframe.BzlLoadValue.Key,
+    value: BzlLoadValue?,
+    directDeps: com.google.common.collect.ImmutableList<Iterable<SkyKey?>?>,
+    transitiveDeps: com.google.common.collect.ImmutableList<CachedBzlLoadData>
+) {
+    private val key: com.google.devtools.build.lib.skyframe.BzlLoadValue.Key
+    private val value: BzlLoadValue?
+    private val directDeps: com.google.common.collect.ImmutableList<Iterable<SkyKey?>?>
+    private val transitiveDeps: com.google.common.collect.ImmutableList<CachedBzlLoadData>
 
-  private CachedBzlLoadData(
-      BzlLoadValue.Key key,
-      BzlLoadValue value,
-      ImmutableList<Iterable<SkyKey>> directDeps,
-      ImmutableList<CachedBzlLoadData> transitiveDeps) {
-    this.key = key;
-    this.value = value;
-    this.directDeps = directDeps;
-    this.transitiveDeps = transitiveDeps;
-  }
-
-  /**
-   * Adds all deps (direct and transitive) of this value to the {@code visitedDeps} set and passes
-   * them to the consumer (with unspecified order and grouping). The traversal does not include
-   * nodes already contained in {@code visitedDeps}.
-   */
-  void traverse(
-      Consumer<Iterable<SkyKey>> depGroupConsumer,
-      Map<BzlLoadValue.Key, CachedBzlLoadData> visitedDeps)
-      throws InterruptedException {
-    if (visitedDeps.putIfAbsent(key, this) != null) {
-      return;
+    init {
+        this.key = key
+        this.value = value
+        this.directDeps = directDeps
+        this.transitiveDeps = transitiveDeps
     }
 
-    for (Iterable<SkyKey> directDepGroup : directDeps) {
-      depGroupConsumer.accept(directDepGroup);
-    }
-    for (CachedBzlLoadData indirectDeps : transitiveDeps) {
-      indirectDeps.traverse(depGroupConsumer, visitedDeps);
-    }
-  }
+    /**
+     * Adds all deps (direct and transitive) of this value to the `visitedDeps` set and passes
+     * them to the consumer (with unspecified order and grouping). The traversal does not include
+     * nodes already contained in `visitedDeps`.
+     */
+    @Throws(java.lang.InterruptedException::class)
+    fun traverse(
+        depGroupConsumer: java.util.function.Consumer<Iterable<SkyKey?>?>,
+        visitedDeps: MutableMap<com.google.devtools.build.lib.skyframe.BzlLoadValue.Key?, CachedBzlLoadData?>
+    ) {
+        if (visitedDeps.putIfAbsent(key, this) != null) {
+            return
+        }
 
-  BzlLoadValue getValue() {
-    return value;
-  }
-
-  @Override
-  public boolean equals(Object obj) {
-    if (obj instanceof CachedBzlLoadData) {
-      // With the interner, force there to be exactly one cached value per key at any given point
-      // in time.
-      return this.key.equals(((CachedBzlLoadData) obj).key);
-    }
-    return false;
-  }
-
-  @Override
-  public int hashCode() {
-    return key.hashCode();
-  }
-
-  static class Builder {
-    Builder(Interner<CachedBzlLoadData> interner) {
-      this.interner = interner;
+        for (directDepGroup in directDeps) {
+            depGroupConsumer.accept(directDepGroup)
+        }
+        for (indirectDeps in transitiveDeps) {
+            indirectDeps.traverse(depGroupConsumer, visitedDeps)
+        }
     }
 
-    private final Interner<CachedBzlLoadData> interner;
-    private final List<Iterable<SkyKey>> directDeps = new ArrayList<>();
-    private final List<CachedBzlLoadData> transitiveDeps = new ArrayList<>();
-    private final AtomicReference<Exception> exceptionSeen = new AtomicReference<>(null);
-    private BzlLoadValue value;
-    private BzlLoadValue.Key key;
-
-    @CanIgnoreReturnValue
-    Builder addDep(SkyKey key) {
-      directDeps.add(ImmutableList.of(key));
-      return this;
+    fun getValue(): BzlLoadValue? {
+        return value
     }
 
-    @CanIgnoreReturnValue
-    Builder addDeps(Iterable<SkyKey> keys) {
-      directDeps.add(keys);
-      return this;
+    override fun equals(obj: Any?): Boolean {
+        if (obj is CachedBzlLoadData) {
+            // With the interner, force there to be exactly one cached value per key at any given point
+            // in time.
+            return this.key == obj.key
+        }
+        return false
     }
 
-    @CanIgnoreReturnValue
-    Builder noteException(Exception e) {
-      exceptionSeen.set(e);
-      return this;
+    override fun hashCode(): Int {
+        return key.hashCode()
     }
 
-    @CanIgnoreReturnValue
-    Builder addTransitiveDeps(CachedBzlLoadData transitiveDeps) {
-      this.transitiveDeps.add(transitiveDeps);
-      return this;
-    }
+    internal class Builder(interner: com.google.common.collect.Interner<CachedBzlLoadData>) {
+        private val interner: com.google.common.collect.Interner<CachedBzlLoadData>
+        private val directDeps: MutableList<Iterable<SkyKey?>?> = java.util.ArrayList<Iterable<SkyKey?>?>()
+        private val transitiveDeps: MutableList<CachedBzlLoadData?> = java.util.ArrayList<CachedBzlLoadData?>()
+        private val exceptionSeen: AtomicReference<java.lang.Exception?> = AtomicReference<java.lang.Exception?>(null)
+        private var value: BzlLoadValue? = null
+        private var key: com.google.devtools.build.lib.skyframe.BzlLoadValue.Key? = null
 
-    @CanIgnoreReturnValue
-    Builder setValue(BzlLoadValue value) {
-      this.value = value;
-      return this;
-    }
+        init {
+            this.interner = interner
+        }
 
-    @CanIgnoreReturnValue
-    Builder setKey(BzlLoadValue.Key key) {
-      this.key = key;
-      return this;
-    }
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addDep(key: SkyKey): Builder {
+            directDeps.add(com.google.common.collect.ImmutableList.of<SkyKey?>(key))
+            return this
+        }
 
-    CachedBzlLoadData build() {
-      // We expect that we don't handle any exceptions in BzlLoadFunction directly.
-      Preconditions.checkState(exceptionSeen.get() == null, "Caching a value in error?: %s", this);
-      Preconditions.checkNotNull(value, "Expected value to be set: %s", this);
-      Preconditions.checkNotNull(key, "Expected key to be set: %s", this);
-      return interner.intern(
-          new CachedBzlLoadData(
-              key, value, ImmutableList.copyOf(directDeps), ImmutableList.copyOf(transitiveDeps)));
-    }
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addDeps(keys: Iterable<SkyKey?>?): Builder {
+            directDeps.add(keys)
+            return this
+        }
 
-    @Override
-    public String toString() {
-      return MoreObjects.toStringHelper(CachedBzlLoadData.Builder.class)
-          .add("key", key)
-          .add("value", value)
-          .add("directDeps", directDeps)
-          .add("transitiveDeps", transitiveDeps)
-          .add("exceptionSeen", exceptionSeen)
-          .toString();
-    }
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun noteException(e: java.lang.Exception?): Builder {
+            exceptionSeen.set(e)
+            return this
+        }
 
-  }
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addTransitiveDeps(transitiveDeps: CachedBzlLoadData?): Builder {
+            this.transitiveDeps.add(transitiveDeps)
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setValue(value: BzlLoadValue?): Builder {
+            this.value = value
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setKey(key: com.google.devtools.build.lib.skyframe.BzlLoadValue.Key?): Builder {
+            this.key = key
+            return this
+        }
+
+        fun build(): CachedBzlLoadData {
+            // We expect that we don't handle any exceptions in BzlLoadFunction directly.
+            com.google.common.base.Preconditions.checkState(
+                exceptionSeen.get() == null,
+                "Caching a value in error?: %s",
+                this
+            )
+            com.google.common.base.Preconditions.checkNotNull<BzlLoadValue?>(
+                value,
+                "Expected value to be set: %s",
+                this
+            )
+            com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.lib.skyframe.BzlLoadValue.Key?>(
+                key,
+                "Expected key to be set: %s",
+                this
+            )
+            return interner.intern(
+                CachedBzlLoadData(
+                    key,
+                    value,
+                    com.google.common.collect.ImmutableList.copyOf<Iterable<SkyKey?>?>(directDeps),
+                    com.google.common.collect.ImmutableList.copyOf<CachedBzlLoadData?>(transitiveDeps)
+                )
+            )
+        }
+
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(com.google.devtools.build.lib.skyframe.CachedBzlLoadData.Builder::class.java)
+                .add("key", key)
+                .add("value", value)
+                .add("directDeps", directDeps)
+                .add("transitiveDeps", transitiveDeps)
+                .add("exceptionSeen", exceptionSeen)
+                .toString()
+        }
+    }
 }

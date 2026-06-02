@@ -11,109 +11,87 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
-
-import static com.google.common.base.Preconditions.checkState;
-
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.NoSuchPackagePieceException;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.TargetRecorder;
-import com.google.devtools.build.lib.server.FailureDetails.PackageLoading.Code;
-import com.google.devtools.build.lib.skyframe.MacroInstanceFunction.NoSuchMacroInstanceException;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionException.Transience;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
+import com.google.devtools.build.lib.packages.NoSuchPackageException
 
 /**
- * A SkyFunction that collects the non-finalizer-defined {@link
- * com.google.devtools.build.lib.packages.PackagePiece}s of a package, producing a {@link
- * NonFinalizerPackagePiecesValue}.
+ * A SkyFunction that collects the non-finalizer-defined [ ]s of a package, producing a [ ].
  */
-public final class NonFinalizerPackagePiecesFunction implements SkyFunction {
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws NonFinalizerPackagePiecesFunctionException, InterruptedException {
-    NonFinalizerPackagePiecesValue.Key key = (NonFinalizerPackagePiecesValue.Key) skyKey.argument();
-    EvalMacroFunction.RecursiveExpander expander = new EvalMacroFunction.RecursiveExpander();
-    try {
-      if (expander.expand(key.pkgId(), env, /* expandFinalizers= */ false) == null) {
-        // Restart
-        return null;
-      }
-    } catch (NoSuchPackageException e) {
-      throw new NonFinalizerPackagePiecesFunctionException(e);
-    } catch (NoSuchPackagePieceException e) {
-      throw new NonFinalizerPackagePiecesFunctionException(e);
-    } catch (NoSuchMacroInstanceException e) {
-      throw new NonFinalizerPackagePiecesFunctionException(e);
+class NonFinalizerPackagePiecesFunction : SkyFunction {
+    @Throws(NonFinalizerPackagePiecesFunctionException::class, java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment): SkyValue? {
+        val key: NonFinalizerPackagePiecesValue.Key = skyKey.argument() as NonFinalizerPackagePiecesValue.Key
+        val expander: RecursiveExpander = RecursiveExpander()
+        try {
+            if (expander.expand(key.pkgId(), env,  /* expandFinalizers= */false) == null) {
+                // Restart
+                return null
+            }
+        } catch (e: NoSuchPackageException) {
+            throw NonFinalizerPackagePiecesFunctionException(e)
+        } catch (e: NoSuchPackagePieceException) {
+            throw NonFinalizerPackagePiecesFunctionException(e)
+        } catch (e: NoSuchMacroInstanceException) {
+            throw NonFinalizerPackagePiecesFunctionException(e)
+        }
+
+        com.google.common.base.Preconditions.checkState(!expander.getPackagePieces().isEmpty())
+
+        if (expander.getPackagePieces().size() == 1) {
+            // Trivial case - BUILD file only; name conflicts were already checked by
+            // PackagePiece.ForBuildFile construction.
+            return NonFinalizerPackagePiecesValue(
+                expander.getPackagePieces(),
+                expander.getErrorKeys(),  /* nameConflictBetweenPackagePiecesException= */
+                null,  // All targets are top-level; no non-finalizer macros.
+                expander.getPackagePieceForBuildFile().getTargets(),
+                com.google.common.collect.ImmutableSortedMap.of<K?, V?>(),
+                expander.getStarlarkSemantics(),
+                expander.getMainRepositoryMapping()
+            )
+        }
+
+        val targetRecorder: TargetRecorder =
+            TargetRecorder( /* enableNameConflictChecking= */
+                true,  /* trackFullMacroInformation= */
+                false,  /* enableTargetMapSnapshotting= */
+                false
+            )
+        var nameConflictException: net.starlark.java.eval.EvalException? = null
+        try {
+            expander.recordTargetsAndMacros(targetRecorder)
+        } catch (e: net.starlark.java.eval.EvalException) {
+            nameConflictException = e
+            env.getListener()
+                .handle(
+                    Package.error(
+                        e.getInnermostLocation(), e.getMessageWithStack(), Code.STARLARK_EVAL_ERROR
+                    )
+                )
+        }
+
+        return NonFinalizerPackagePiecesValue(
+            expander.getPackagePieces(),
+            expander.getErrorKeys(),
+            nameConflictException,
+            com.google.common.collect.ImmutableSortedMap.copyOf(targetRecorder.getTargetMap()),
+            com.google.common.collect.ImmutableSortedMap.copyOf(targetRecorder.getMacroMap()),
+            expander.getStarlarkSemantics(),
+            expander.getMainRepositoryMapping()
+        )
     }
 
-    checkState(!expander.getPackagePieces().isEmpty());
+    /**
+     * Wrapper for exceptions which can be thrown by [ ][NonFinalizerPackagePiecesFunction.compute].
+     */
+    class NonFinalizerPackagePiecesFunctionException
 
-    if (expander.getPackagePieces().size() == 1) {
-      // Trivial case - BUILD file only; name conflicts were already checked by
-      // PackagePiece.ForBuildFile construction.
-      return new NonFinalizerPackagePiecesValue(
-          expander.getPackagePieces(),
-          expander.getErrorKeys(),
-          /* nameConflictBetweenPackagePiecesException= */ null,
-          // All targets are top-level; no non-finalizer macros.
-          expander.getPackagePieceForBuildFile().getTargets(),
-          ImmutableSortedMap.of(),
-          expander.getStarlarkSemantics(),
-          expander.getMainRepositoryMapping());
+        : SkyFunctionException {
+        internal constructor(cause: NoSuchPackageException?) : super(cause, Transience.PERSISTENT)
+
+        internal constructor(cause: NoSuchPackagePieceException?) : super(cause, Transience.PERSISTENT)
+
+        internal constructor(cause: NoSuchMacroInstanceException?) : super(cause, Transience.PERSISTENT)
     }
-
-    TargetRecorder targetRecorder =
-        new TargetRecorder(
-            /* enableNameConflictChecking= */ true,
-            /* trackFullMacroInformation= */ false,
-            /* enableTargetMapSnapshotting= */ false);
-    @Nullable EvalException nameConflictException = null;
-    try {
-      expander.recordTargetsAndMacros(targetRecorder);
-    } catch (EvalException e) {
-      nameConflictException = e;
-      env.getListener()
-          .handle(
-              Package.error(
-                  e.getInnermostLocation(), e.getMessageWithStack(), Code.STARLARK_EVAL_ERROR));
-    }
-
-    return new NonFinalizerPackagePiecesValue(
-        expander.getPackagePieces(),
-        expander.getErrorKeys(),
-        nameConflictException,
-        ImmutableSortedMap.copyOf(targetRecorder.getTargetMap()),
-        ImmutableSortedMap.copyOf(targetRecorder.getMacroMap()),
-        expander.getStarlarkSemantics(),
-        expander.getMainRepositoryMapping());
-  }
-
-  /**
-   * Wrapper for exceptions which can be thrown by {@link
-   * NonFinalizerPackagePiecesFunction#compute}.
-   */
-  public static final class NonFinalizerPackagePiecesFunctionException
-      extends SkyFunctionException {
-    NonFinalizerPackagePiecesFunctionException(NoSuchPackageException cause) {
-      super(cause, Transience.PERSISTENT);
-    }
-
-    NonFinalizerPackagePiecesFunctionException(NoSuchPackagePieceException cause) {
-      super(cause, Transience.PERSISTENT);
-    }
-
-    NonFinalizerPackagePiecesFunctionException(NoSuchMacroInstanceException cause) {
-      super(cause, Transience.PERSISTENT);
-    }
-  }
 }

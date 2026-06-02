@@ -75,7 +75,7 @@ public class LocalDiffAwarenessTest {
 
     LocalDiffAwareness.Options localDiffOptions =
         Options.getDefaults(LocalDiffAwareness.Options.class);
-    localDiffOptions.setWatchFS(true);
+    localDiffOptions.watchFS = true;
     watchFsEnabledProvider = FakeOptions.of(localDiffOptions);
 
     localDiff =
@@ -273,7 +273,7 @@ public class LocalDiffAwarenessTest {
   private static OptionsProvider createWatchFsDisabledProvider() {
     final LocalDiffAwareness.Options localDiffOptions =
         Options.getDefaults(LocalDiffAwareness.Options.class);
-    localDiffOptions.setWatchFS(false);
+    localDiffOptions.watchFS = false;
     return FakeOptions.of(localDiffOptions);
   }
 

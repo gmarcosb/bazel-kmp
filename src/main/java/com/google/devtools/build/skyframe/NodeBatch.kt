@@ -11,20 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.NodeEntry
+import com.google.devtools.build.skyframe.SkyKey
 
-/** A batch of nodes requested from a {@link QueryableGraph}. */
-@FunctionalInterface
-public interface NodeBatch {
-
-  /**
-   * Returns the {@link NodeEntry} for the given key, or {@code null} if it does not exist.
-   *
-   * <p>Must only be called with a {@link SkyKey} that was part of the graph request for this batch,
-   * otherwise behavior is undefined and may lead to incorrect evaluation results.
-   */
-  @Nullable
-  NodeEntry get(SkyKey key);
+/** A batch of nodes requested from a [QueryableGraph].  */
+fun interface NodeBatch {
+    /**
+     * Returns the [NodeEntry] for the given key, or `null` if it does not exist.
+     * 
+     * 
+     * Must only be called with a [SkyKey] that was part of the graph request for this batch,
+     * otherwise behavior is undefined and may lead to incorrect evaluation results.
+     */
+    fun get(key: SkyKey?): NodeEntry?
 }

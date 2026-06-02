@@ -259,32 +259,32 @@ public class ParallelBuilderTest extends TimestampBuilderTestCase {
 
                 @Override
                 public boolean isSymbolicLink() {
-                  return original.isSymbolicLink();
+                  return original.isSymbolicLink;
                 }
 
                 @Override
                 public boolean isFile() {
-                  return original.isFile();
+                  return original.isFile;
                 }
 
                 @Override
                 public boolean isDirectory() {
-                  return original.isDirectory();
+                  return original.isDirectory;
                 }
 
                 @Override
                 public boolean isSpecialFile() {
-                  return original.isSpecialFile();
+                  return original.isSpecialFile;
                 }
 
                 @Override
                 public long getSize() throws IOException {
-                  return original.getSize();
+                  return original.size;
                 }
 
                 @Override
                 public long getNodeId() throws IOException {
-                  return original.getNodeId();
+                  return original.nodeId;
                 }
 
                 @Override

@@ -11,164 +11,160 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.rewinding;
+package com.google.devtools.build.lib.skyframe.rewinding
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.collect.Streams.stream;
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.common.collect.ConcurrentHashMultiset;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSetMultimap;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.FilesetOutputSymlink;
-import com.google.devtools.build.lib.actions.ImportantOutputHandler;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.buildtool.BuildRequest;
-import com.google.devtools.build.lib.exec.ModuleActionContextRegistry;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.errorprone.annotations.ForOverride;
-import java.io.IOException;
-import java.util.Collection;
-import java.util.Map;
-import java.util.function.BiFunction;
-import java.util.stream.Stream;
+import com.google.devtools.build.lib.actions.ActionInput
 
 /**
- * Installs an {@link ImportantOutputHandler} that allows customizing lost outputs for rewinding
+ * Installs an [ImportantOutputHandler] that allows customizing lost outputs for rewinding
  * tests.
  */
-public class LostImportantOutputHandlerModule extends BlazeModule {
+class LostImportantOutputHandlerModule(digestFn: java.util.function.BiFunction<ByteArray?, Long?, String?>?) :
+    BlazeModule() {
+    // This is a multiset so an output can be marked lost more than once. This is necessary to test
+    // scenarios where there might be a restart in rewinding.
+    private val pathsToConsiderLost: com.google.common.collect.ConcurrentHashMultiset<String?> =
+        com.google.common.collect.ConcurrentHashMultiset.create<String?>()
+    private val digestFn: java.util.function.BiFunction<ByteArray?, Long?, String?>
+    private var outputHandlerEnabled = true
 
-  // This is a multiset so an output can be marked lost more than once. This is necessary to test
-  // scenarios where there might be a restart in rewinding.
-  private final ConcurrentHashMultiset<String> pathsToConsiderLost =
-      ConcurrentHashMultiset.create();
-  private final BiFunction<byte[], Long, String> digestFn;
-  private boolean outputHandlerEnabled = true;
-
-  public LostImportantOutputHandlerModule(BiFunction<byte[], Long, String> digestFn) {
-    this.digestFn = checkNotNull(digestFn);
-  }
-
-  /** Controls whether an {@link ImportantOutputHandler} will be installed. */
-  public final void setOutputHandlerEnabled(boolean enabled) {
-    outputHandlerEnabled = enabled;
-  }
-
-  public final void addLostOutput(String execPath) {
-    pathsToConsiderLost.add(execPath, 1);
-  }
-
-  public final void verifyAllLostOutputsConsumed() {
-    assertThat(pathsToConsiderLost).isEmpty();
-  }
-
-  @Override
-  public final void registerActionContexts(
-      ModuleActionContextRegistry.Builder registryBuilder,
-      CommandEnvironment env,
-      BuildRequest buildRequest) {
-    if (outputHandlerEnabled) {
-      registryBuilder.register(ImportantOutputHandler.class, createOutputHandler(env));
-    }
-  }
-
-  @ForOverride
-  protected ImportantOutputHandler createOutputHandler(CommandEnvironment env) {
-    return new MockImportantOutputHandler();
-  }
-
-  /**
-   * Returns whether the given output should be treated as lost.
-   *
-   * <p>If {@code true} is returned, the given output is removed from the set of lost outputs so
-   * that a subsequent call to this method with the same output will return {@code false}.
-   */
-  protected final boolean outputIsLost(PathFragment execPath) {
-    return pathsToConsiderLost.removeExactly(execPath.getPathString(), 1);
-  }
-
-  private final class MockImportantOutputHandler implements ImportantOutputHandler {
-
-    @Override
-    public LostArtifacts processOutputsAndGetLostArtifacts(
-        Iterable<Artifact> importantOutputs, InputMetadataProvider metadataProvider) {
-      return getLostOutputs(importantOutputs, metadataProvider);
+    init {
+        .also { this.digestFn = it } < BiFunction
+        TODO(
+            """
+            |Cannot convert element
+            |With text:
+            |Long, String>>checkNotNull(digestFn);
+            """.trimMargin()
+        )
     }
 
-    @Override
-    public LostArtifacts processRunfilesAndGetLostArtifacts(
-        PathFragment runfilesDir,
-        Map<PathFragment, Artifact> runfiles,
-        InputMetadataProvider metadataProvider,
-        String inputManifestExtension) {
-      return getLostOutputs(runfiles.values(), metadataProvider);
+    /** Controls whether an [ImportantOutputHandler] will be installed.  */
+    fun setOutputHandlerEnabled(enabled: Boolean) {
+        outputHandlerEnabled = enabled
     }
 
-    @Override
-    public void processTestOutputs(Collection<Path> testOutputs) {
-      throw new UnsupportedOperationException();
+    fun addLostOutput(execPath: String) {
+        pathsToConsiderLost.add(execPath, 1)
     }
 
-    @Override
-    public void processWorkspaceStatusOutputs(Path stableOutput, Path volatileOutput) {
-      throw new UnsupportedOperationException();
+    fun verifyAllLostOutputsConsumed() {
+        Truth.assertThat(pathsToConsiderLost).isEmpty()
     }
 
-    @Override
-    public void processTooLargeStdoutErr(Path stdoutErr) {
-      throw new UnsupportedOperationException();
-    }
-
-    private LostArtifacts getLostOutputs(
-        Iterable<Artifact> outputs, InputMetadataProvider metadataProvider) {
-      ImmutableSetMultimap.Builder<String, ActionInput> lost = ImmutableSetMultimap.builder();
-      for (ActionInput output : expand(outputs, metadataProvider)) {
-        if (!outputIsLost(output.getExecPath())) {
-          continue;
+    public override fun registerActionContexts(
+        registryBuilder: ModuleActionContextRegistry.Builder,
+        env: CommandEnvironment?,
+        buildRequest: BuildRequest?
+    ) {
+        if (outputHandlerEnabled) {
+            registryBuilder.register(ImportantOutputHandler::class.java, createOutputHandler(env))
         }
-        FileArtifactValue metadata;
-        try {
-          metadata = metadataProvider.getInputMetadata(output);
-        } catch (IOException e) {
-          throw new IllegalStateException(e);
+    }
+
+    @com.google.errorprone.annotations.ForOverride
+    protected fun createOutputHandler(env: CommandEnvironment?): ImportantOutputHandler? {
+        return MockImportantOutputHandler()
+    }
+
+    /**
+     * Returns whether the given output should be treated as lost.
+     * 
+     * 
+     * If `true` is returned, the given output is removed from the set of lost outputs so
+     * that a subsequent call to this method with the same output will return `false`.
+     */
+    protected fun outputIsLost(execPath: PathFragment): Boolean {
+        return pathsToConsiderLost.removeExactly(execPath.getPathString(), 1)
+    }
+
+    private inner class MockImportantOutputHandler : ImportantOutputHandler {
+        public override fun processOutputsAndGetLostArtifacts(
+            importantOutputs: Iterable<Artifact?>, metadataProvider: InputMetadataProvider
+        ): LostArtifacts {
+            return getLostOutputs(importantOutputs, metadataProvider)
         }
-        lost.put(digestFn.apply(metadata.getDigest(), metadata.getSize()), output);
-      }
-      return new LostArtifacts(lost.build());
-    }
 
-    private static ImmutableList<ActionInput> expand(
-        Iterable<Artifact> outputs, InputMetadataProvider inputMetadataProvider) {
-      return stream(outputs)
-          .flatMap(artifact -> expand(artifact, inputMetadataProvider))
-          .collect(toImmutableList());
-    }
+        public override fun processRunfilesAndGetLostArtifacts(
+            runfilesDir: PathFragment?,
+            runfiles: MutableMap<PathFragment?, Artifact?>,
+            metadataProvider: InputMetadataProvider,
+            inputManifestExtension: String?
+        ): LostArtifacts {
+            return getLostOutputs(runfiles.values(), metadataProvider)
+        }
 
-    private static Stream<? extends ActionInput> expand(
-        Artifact output, InputMetadataProvider inputMetadataProvider) {
-      if (output.isTreeArtifact()) {
-        TreeArtifactValue treeArtifactValue = inputMetadataProvider.getTreeMetadata(output);
-        var archivedTreeArtifact = treeArtifactValue.getArchivedArtifact();
-        var children = treeArtifactValue.getChildren().stream();
-        return archivedTreeArtifact == null
-            ? children
-            : Stream.concat(children, Stream.of(archivedTreeArtifact));
-      }
-      if (output.isFileset()) {
-        ImmutableList<FilesetOutputSymlink> links =
-            inputMetadataProvider.getFileset(output).symlinks();
-        return links.stream().map(FilesetOutputSymlink::target);
-      }
-      return Stream.of(output);
+        public override fun processTestOutputs(testOutputs: MutableCollection<com.google.devtools.build.lib.vfs.Path?>?) {
+            throw java.lang.UnsupportedOperationException()
+        }
+
+        public override fun processWorkspaceStatusOutputs(
+            stableOutput: com.google.devtools.build.lib.vfs.Path?,
+            volatileOutput: com.google.devtools.build.lib.vfs.Path?
+        ) {
+            throw java.lang.UnsupportedOperationException()
+        }
+
+        public override fun processTooLargeStdoutErr(stdoutErr: com.google.devtools.build.lib.vfs.Path?) {
+            throw java.lang.UnsupportedOperationException()
+        }
+
+        fun getLostOutputs(
+            outputs: Iterable<Artifact?>, metadataProvider: InputMetadataProvider
+        ): LostArtifacts {
+            val lost: com.google.common.collect.ImmutableSetMultimap.Builder<String?, ActionInput?> =
+                com.google.common.collect.ImmutableSetMultimap.builder<String?, ActionInput?>()
+            for (output in Companion.expand(outputs, metadataProvider)) {
+                if (!outputIsLost(output.getExecPath())) {
+                    continue
+                }
+                val metadata: FileArtifactValue
+                try {
+                    metadata = metadataProvider.getInputMetadata(output)
+                } catch (e: IOException) {
+                    throw java.lang.IllegalStateException(e)
+                }
+                lost.put(digestFn.apply(metadata.getDigest(), metadata.getSize()), output)
+            }
+            return LostArtifacts(lost.build())
+        }
+
+        companion object {
+            private fun expand(
+                outputs: Iterable<Artifact?>, inputMetadataProvider: InputMetadataProvider
+            ): com.google.common.collect.ImmutableList<ActionInput> {
+                return com.google.common.collect.Streams.stream<Artifact?>(outputs)
+                    .flatMap(java.util.function.Function { artifact: Artifact? ->
+                        Companion.expand(
+                            artifact,
+                            inputMetadataProvider
+                        )
+                    })
+                    .collect(com.google.common.collect.ImmutableList.toImmutableList<ActionInput?>())
+            }
+
+            private fun expand(
+                output: Artifact, inputMetadataProvider: InputMetadataProvider
+            ): java.util.stream.Stream<out ActionInput?>? {
+                if (output.isTreeArtifact()) {
+                    val treeArtifactValue: TreeArtifactValue = inputMetadataProvider.getTreeMetadata(output)
+                    val archivedTreeArtifact: ArchivedTreeArtifact? = treeArtifactValue.getArchivedArtifact()
+                    val children: java.util.stream.Stream<TreeFileArtifact?> = treeArtifactValue.getChildren().stream()
+                    return if (archivedTreeArtifact == null)
+                        children
+                    else
+                        java.util.stream.Stream.concat<TreeFileArtifact?>(
+                            children,
+                            java.util.stream.Stream.of<Any?>(archivedTreeArtifact)
+                        )
+                }
+                if (output.isFileset()) {
+                    val links: com.google.common.collect.ImmutableList<FilesetOutputSymlink?> =
+                        inputMetadataProvider.getFileset(output).symlinks()
+                    return links.stream().map<ActionInput?>(FilesetOutputSymlink::target)
+                }
+                return java.util.stream.Stream.< ActionInput > of < ActionInput ? > (output)
+            }
+        }
     }
-  }
 }

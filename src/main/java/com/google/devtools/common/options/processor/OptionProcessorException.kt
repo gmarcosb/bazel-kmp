@@ -11,25 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options.processor;
+package com.google.devtools.common.options.processor
 
-import javax.lang.model.element.Element;
+import java.lang.String
+import javax.lang.model.element.Element
+import kotlin.Any
+import kotlin.Exception
+import kotlin.Throwable
 
-/** Exception that indicates a problem in the processing of an {@link Option}. */
-class OptionProcessorException extends Exception {
-  private final Element elementInError;
+/** Exception that indicates a problem in the processing of an [Option].  */
+internal class OptionProcessorException : Exception {
+    private val elementInError: Element?
 
-  OptionProcessorException(Element element, String message, Object... args) {
-    super(String.format(message, args));
-    elementInError = element;
-  }
+    constructor(element: Element?, message: String, vararg args: Any?) : super(String.format(message, *args)) {
+        elementInError = element
+    }
 
-  OptionProcessorException(Element element, Throwable throwable, String message, Object... args) {
-    super(String.format(message, args), throwable);
-    elementInError = element;
-  }
+    constructor(
+        element: Element?,
+        throwable: Throwable?,
+        message: kotlin.String,
+        vararg args: Any?
+    ) : super(String.format(message, *args), throwable) {
+        elementInError = element
+    }
 
-  Element getElementInError() {
-    return elementInError;
-  }
+    fun getElementInError(): Element? {
+        return elementInError
+    }
 }

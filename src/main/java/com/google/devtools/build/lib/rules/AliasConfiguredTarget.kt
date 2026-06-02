@@ -11,251 +11,218 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules;
+package com.google.devtools.build.lib.rules
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.base.MoreObjects;
-import com.google.common.collect.ImmutableClassToInstanceMap;
-import com.google.common.collect.ImmutableCollection;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.AliasProvider;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.FileProvider;
-import com.google.devtools.build.lib.analysis.RequiredConfigFragmentsProvider;
-import com.google.devtools.build.lib.analysis.RuleContext;
-import com.google.devtools.build.lib.analysis.TransitiveInfoProvider;
-import com.google.devtools.build.lib.analysis.VisibilityProvider;
-import com.google.devtools.build.lib.analysis.VisibilityProviderImpl;
-import com.google.devtools.build.lib.analysis.config.ConfigMatchingProvider;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.Info;
-import com.google.devtools.build.lib.packages.PackageSpecification.PackageGroupContents;
-import com.google.devtools.build.lib.packages.Provider;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.eval.Structure;
+import com.google.devtools.build.lib.actions.ActionLookupKey
 
 /**
- * A {@link ConfiguredTarget} that pretends to be whatever type of target {@link #getActual} is,
+ * A [ConfiguredTarget] that pretends to be whatever type of target [.getActual] is,
  * mirroring its label and transitive info providers.
- *
- * <p>Transitive info providers may also be overridden. At a minimum, {@link #getProvider} provides
- * {@link AliasProvider} and an explicit {@link VisibilityProvider} which takes precedent over the
+ * 
+ * 
+ * Transitive info providers may also be overridden. At a minimum, [.getProvider] provides
+ * [AliasProvider] and an explicit [VisibilityProvider] which takes precedent over the
  * actual target's visibility.
- *
- * <p>The {@link ConfiguredTarget#getConfigurationKey} returns the configuration of the alias itself
- * and not the configuration of {@link AliasConfiguredTarget#actual} for the following reasons.
- *
- * <ul>
- *   <li>{@code actual} might be an input file, in which case its configuration key is null, and we
- *       don't want to have rules with a null configuration key.
- *   <li>{@code actual} has a self transition. Self transitions don't get applied to the alias rule,
- *       and so the configuration keys actually differ.
- * </ul>
- *
- * <p>An {@code alias} target may not be used to redirect a {@code package_group} target in a {@code
- * visibility} declaration or a {@code package_group}'s {@code includes} attribute.
+ * 
+ * 
+ * The [ConfiguredTarget.getConfigurationKey] returns the configuration of the alias itself
+ * and not the configuration of [AliasConfiguredTarget.actual] for the following reasons.
+ * 
+ * 
+ *  * `actual` might be an input file, in which case its configuration key is null, and we
+ * don't want to have rules with a null configuration key.
+ *  * `actual` has a self transition. Self transitions don't get applied to the alias rule,
+ * and so the configuration keys actually differ.
+ * 
+ * 
+ * 
+ * An `alias` target may not be used to redirect a `package_group` target in a `visibility` declaration or a `package_group`'s `includes` attribute.
  */
-@Immutable
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
 @AutoCodec
-public final class AliasConfiguredTarget implements ConfiguredTarget, Structure {
+class AliasConfiguredTarget @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization internal constructor(
+    actionLookupKey: ActionLookupKey,
+    actual: ConfiguredTarget?,
+    overrides: com.google.common.collect.ImmutableClassToInstanceMap<TransitiveInfoProvider?>?,
+    configConditions: com.google.common.collect.ImmutableMap<Label?, ConfigMatchingProvider?>?
+) : ConfiguredTarget, net.starlark.java.eval.Structure {
+    private val actionLookupKey: ActionLookupKey
+    private val actual: ConfiguredTarget
+    private val overrides: com.google.common.collect.ImmutableClassToInstanceMap<TransitiveInfoProvider?>
+    private val configConditions: com.google.common.collect.ImmutableMap<Label?, ConfigMatchingProvider?>? = null
 
-  /**
-   * Convenience wrapper for {@link #createWithOverrides} that does not specify any additional
-   * overrides.
-   */
-  public static AliasConfiguredTarget create(
-      RuleContext ruleContext,
-      ConfiguredTarget actual,
-      NestedSet<PackageGroupContents> visibility) {
-    return createWithOverrides(
-        ruleContext, actual, visibility, /*overrides=*/ ImmutableClassToInstanceMap.of());
-  }
-
-  /**
-   * Constructs an {@code AliasConfiguredTarget} that forwards most of the providers of {@code
-   * actual}, with certain providers shadowed.
-   *
-   * <p>The shadowed providers are anything given in {@code overrides}, plus the following built-in
-   * changes which take priority above both {@code actual} and {@code overrides}:
-   *
-   * <ul>
-   *   <li>{@link AliasProvider} is set to indicate that this is an alias configured target.
-   *   <li>{@link VisibilityProvider} has the information describing this alias target (as passed
-   *       here in the {@code visibility} parameter), not the information describing the {@code
-   *       actual} underlying target.
-   *   <li>{@link RequiredConfigFragmentsProvider} may be set}
-   * </ul>
-   */
-  public static AliasConfiguredTarget createWithOverrides(
-      RuleContext ruleContext,
-      ConfiguredTarget actual,
-      NestedSet<PackageGroupContents> visibility,
-      ImmutableClassToInstanceMap<TransitiveInfoProvider> overrides) {
-    ImmutableClassToInstanceMap.Builder<TransitiveInfoProvider> allOverrides =
-        ImmutableClassToInstanceMap.<TransitiveInfoProvider>builder()
-            .putAll(overrides)
-            .put(AliasProvider.class, AliasProvider.fromAliasRule(ruleContext.getRule(), actual))
-            .put(
-                VisibilityProvider.class,
-                new VisibilityProviderImpl(
-                    visibility,
-                    /* isCreatedInSymbolicMacro= */ ruleContext
-                        .getRule()
-                        .isCreatedInSymbolicMacro()));
-    if (ruleContext.getRequiredConfigFragments() != null) {
-      // This causes "blaze cquery --show_config_fragments=direct" to only show the
-      // fragments/options the alias directly uses, not those of its actual target. Since alias
-      // has a narrow API this practically means whatever a select() in the alias requires.
-      allOverrides.put(
-          RequiredConfigFragmentsProvider.class, ruleContext.getRequiredConfigFragments());
+    init {
+        this.actionLookupKey = actionLookupKey
+            .also {
+                this.actual = it
+            }<ConfiguredTarget> com . google . common . base . Preconditions . checkNotNull < kotlin . Any ? > (actual)
+            .also {
+                this.overrides = it
+            } < ImmutableClassToInstanceMap < TransitiveInfoProvider shr com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableClassToInstanceMap<TransitiveInfoProvider?>?>(
+            overrides
+        )
+        TODO(
+            """
+            |Cannot convert element
+            |With text:
+            |this.configConditions = <ImmutableMap<Label,ConfigMatchingProvider>>checkNotNull(configConditions);
+            """.trimMargin()
+        )
     }
-    return new AliasConfiguredTarget(
-        ruleContext.getOwner(), actual, allOverrides.build(), ruleContext.getConfigConditions());
-  }
 
-  private final ActionLookupKey actionLookupKey;
-  private final ConfiguredTarget actual;
-  private final ImmutableClassToInstanceMap<TransitiveInfoProvider> overrides;
-  private final ImmutableMap<Label, ConfigMatchingProvider> configConditions;
+    val actualNoFollow: ConfiguredTarget
+        get() = actual
 
-  @VisibleForSerialization
-  AliasConfiguredTarget(
-      ActionLookupKey actionLookupKey,
-      ConfiguredTarget actual,
-      ImmutableClassToInstanceMap<TransitiveInfoProvider> overrides,
-      ImmutableMap<Label, ConfigMatchingProvider> configConditions) {
-    this.actionLookupKey = actionLookupKey;
-    this.actual = checkNotNull(actual);
-    this.overrides = checkNotNull(overrides);
-    this.configConditions = checkNotNull(configConditions);
-  }
+    val lookupKey: ActionLookupKey
+        get() = this.actionLookupKey
 
-  @Override
-  public ConfiguredTarget getActualNoFollow() {
-    return actual;
-  }
+    val isImmutable: Boolean
+        get() = true // immutable and Starlark-hashable
 
-  @Override
-  public ActionLookupKey getLookupKey() {
-    return this.actionLookupKey;
-  }
-
-  @Override
-  public boolean isImmutable() {
-    return true; // immutable and Starlark-hashable
-  }
-
-  @Override
-  public ImmutableMap<Label, ConfigMatchingProvider> getConfigConditions() {
-    return configConditions;
-  }
-
-  @Override
-  public <P extends TransitiveInfoProvider> P getProvider(Class<P> provider) {
-    P p = overrides.getInstance(provider);
-    return p != null ? p : actual.getProvider(provider);
-  }
-
-  // TODO(bazel-team): It's a bit confusing that we're returning the label of the target we directly
-  // point to, rather than our own label, or the label of the eventual endpoint of the alias chain.
-  // Is there a reason we need to put that behavior in this override rather than having this return
-  // our own label and making a separate method to get the actual's label? (If so, update this
-  // comment.)
-  @Override
-  public Label getLabel() {
-    return actual.getLabel();
-  }
-
-  @Override
-  public Object get(String providerKey) {
-    return actual.get(providerKey);
-  }
-
-  @Nullable
-  @Override
-  public Info get(Provider.Key providerKey) {
-    return actual.get(providerKey);
-  }
-
-  @Override
-  public Object getIndex(StarlarkSemantics semantics, Object key) throws EvalException {
-    return actual.getIndex(semantics, key);
-  }
-
-  @Override
-  public boolean containsKey(StarlarkSemantics semantics, Object key) throws EvalException {
-    return actual.containsKey(semantics, key);
-  }
-
-  /* Structure methods */
-
-  @Override
-  public Object getValue(String name) {
-    if (name.equals(LABEL_FIELD)) {
-      return getLabel();
-    } else if (name.equals(FILES_FIELD)) {
-      // A shortcut for files to build in Starlark. FileConfiguredTarget and RuleConfiguredTarget
-      // always has FileProvider and Error- and PackageGroupConfiguredTarget-s shouldn't be
-      // accessible in Starlark.
-      return Depset.of(Artifact.class, getProvider(FileProvider.class).getFilesToBuild());
+    public override fun getConfigConditions(): com.google.common.collect.ImmutableMap<Label?, ConfigMatchingProvider?>? {
+        return configConditions
     }
-    return actual.getValue(name);
-  }
 
-  @Override
-  public ImmutableCollection<String> getFieldNames() {
-    return actual.getFieldNames();
-  }
+    public override fun <P : TransitiveInfoProvider?> getProvider(provider: java.lang.Class<P?>): P? {
+        val p: P? = overrides.getInstance<P?>(provider)
+        return if (p != null) p else actual.getProvider(provider)
+    }
 
-  @Nullable
-  @Override
-  public String getErrorMessageForUnknownField(String name) {
-    // Use the default error message.
-    return null;
-  }
+    val label: Label
+        // TODO(bazel-team): It's a bit confusing that we're returning the label of the target we directly
+        get() = actual.getLabel()
 
-  @Override
-  public ConfiguredTarget getActual() {
-    // This will either dereference an alias chain, or return the final ConfiguredTarget.
-    return actual.getActual();
-  }
+    public override fun get(providerKey: String?): Any {
+        return actual.get(providerKey)
+    }
 
-  @Override
-  public Label getOriginalLabel() {
-    return actionLookupKey.getLabel();
-  }
+    public override fun get(providerKey: Provider.Key?): Info? {
+        return actual.get(providerKey)
+    }
 
-  @Override
-  public Dict<String, Object> getProvidersDictForQuery() {
-    return actual.getProvidersDictForQuery();
-  }
+    @Throws(net.starlark.java.eval.EvalException::class)
+    public override fun getIndex(semantics: net.starlark.java.eval.StarlarkSemantics?, key: Any?): Any {
+        return actual.getIndex(semantics, key)
+    }
 
-  @Override
-  public void repr(Printer printer, StarlarkSemantics semantics) {
-    printer.append(
-        "<alias target " + actionLookupKey.getLabel() + " of " + actual.getLabel() + ">");
-  }
+    @Throws(net.starlark.java.eval.EvalException::class)
+    public override fun containsKey(semantics: net.starlark.java.eval.StarlarkSemantics?, key: Any?): Boolean {
+        return actual.containsKey(semantics, key)
+    }
 
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("label", actionLookupKey.getLabel())
-        .add("configurationKey", getConfigurationKey())
-        .add("actual", actual)
-        .add("overrides", overrides)
-        .add("configConditions", configConditions)
-        .toString();
-  }
+    /* Structure methods */
+    override fun getValue(name: String): Any? {
+        if (name == LABEL_FIELD) {
+            return this.label
+        } else if (name == FILES_FIELD) {
+            // A shortcut for files to build in Starlark. FileConfiguredTarget and RuleConfiguredTarget
+            // always has FileProvider and Error- and PackageGroupConfiguredTarget-s shouldn't be
+            // accessible in Starlark.
+            return Depset.of(
+                Artifact::class.java,
+                TODO("Cannot convert element")
+            )<P> getProvider < P ? > (FileProvider::class.java).getFilesToBuild()
+        }
+        return actual.getValue(name)
+    }
+
+    val fieldNames: com.google.common.collect.ImmutableCollection<String?>
+        get() = actual.getFieldNames()
+
+    override fun getErrorMessageForUnknownField(name: String?): String? {
+        // Use the default error message.
+        return null
+    }
+
+    public override fun getActual(): ConfiguredTarget {
+        // This will either dereference an alias chain, or return the final ConfiguredTarget.
+        return actual.getActual()
+    }
+
+    val originalLabel: Label
+        get() = actionLookupKey.getLabel()
+
+    val providersDictForQuery: net.starlark.java.eval.Dict<String?, Any?>
+        get() = actual.getProvidersDictForQuery()
+
+    override fun repr(printer: net.starlark.java.eval.Printer, semantics: net.starlark.java.eval.StarlarkSemantics?) {
+        printer.append(
+            "<alias target " + actionLookupKey.getLabel() + " of " + actual.getLabel() + ">"
+        )
+    }
+
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("label", actionLookupKey.getLabel())
+            .add("configurationKey", getConfigurationKey())
+            .add("actual", actual)
+            .add("overrides", overrides)
+            .add("configConditions", configConditions)
+            .toString()
+    }
+
+    companion object {
+        /**
+         * Convenience wrapper for [.createWithOverrides] that does not specify any additional
+         * overrides.
+         */
+        fun create(
+            ruleContext: RuleContext,
+            actual: ConfiguredTarget?,
+            visibility: NestedSet<PackageGroupContents?>?
+        ): AliasConfiguredTarget {
+            return createWithOverrides(
+                ruleContext,
+                actual,
+                visibility,  /*overrides=*/
+                com.google.common.collect.ImmutableClassToInstanceMap.of<TransitiveInfoProvider?>()
+            )
+        }
+
+        /**
+         * Constructs an `AliasConfiguredTarget` that forwards most of the providers of `actual`, with certain providers shadowed.
+         * 
+         * 
+         * The shadowed providers are anything given in `overrides`, plus the following built-in
+         * changes which take priority above both `actual` and `overrides`:
+         * 
+         * 
+         *  * [AliasProvider] is set to indicate that this is an alias configured target.
+         *  * [VisibilityProvider] has the information describing this alias target (as passed
+         * here in the `visibility` parameter), not the information describing the `actual` underlying target.
+         *  * [RequiredConfigFragmentsProvider] may be set}
+         * 
+         */
+        fun createWithOverrides(
+            ruleContext: RuleContext,
+            actual: ConfiguredTarget?,
+            visibility: NestedSet<PackageGroupContents?>?,
+            overrides: com.google.common.collect.ImmutableClassToInstanceMap<TransitiveInfoProvider?>
+        ): AliasConfiguredTarget {
+            val allOverrides: com.google.common.collect.ImmutableClassToInstanceMap.Builder<TransitiveInfoProvider?> =
+                com.google.common.collect.ImmutableClassToInstanceMap.builder<TransitiveInfoProvider?>()
+                    .putAll<TransitiveInfoProvider?>(overrides)
+                    .put<T?>(AliasProvider::class.java, AliasProvider.fromAliasRule(ruleContext.getRule(), actual))
+                    .put<T?>(
+                        VisibilityProvider::class.java,
+                        VisibilityProviderImpl(
+                            visibility,  /* isCreatedInSymbolicMacro= */
+                            ruleContext
+                                .getRule()
+                                .isCreatedInSymbolicMacro()
+                        )
+                    )
+            if (ruleContext.getRequiredConfigFragments() != null) {
+                // This causes "blaze cquery --show_config_fragments=direct" to only show the
+                // fragments/options the alias directly uses, not those of its actual target. Since alias
+                // has a narrow API this practically means whatever a select() in the alias requires.
+                allOverrides.put<T?>(
+                    RequiredConfigFragmentsProvider::class.java, ruleContext.getRequiredConfigFragments()
+                )
+            }
+            return AliasConfiguredTarget(
+                ruleContext.getOwner(), actual, allOverrides.build(), ruleContext.getConfigConditions()
+            )
+        }
+    }
 }

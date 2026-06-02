@@ -32,12 +32,11 @@ public final class ValueOrExceptionTest {
 
   @Test
   public void isPresent_basicBehavior() {
-    assertThat(ValueOrException.ofValue(new TestValue(123)).isPresent()).isTrue();
+    assertThat(ValueOrException.ofValue(new TestValue(123)).isPresent).isTrue();
     assertThat(
-            ValueOrException.ofValue(new TestException("error") /* as value, not as exception */)
-                .isPresent())
+            ValueOrException.ofValue(new TestException("error") /* as value, not as exception */).isPresent)
         .isTrue();
-    assertThat(ValueOrException.ofException(new TestException("error")).isPresent()).isFalse();
+    assertThat(ValueOrException.ofException(new TestException("error")).isPresent).isFalse();
   }
 
   @Test
@@ -64,11 +63,11 @@ public final class ValueOrExceptionTest {
   public void getException_basicBehavior() {
     TestValue value = new TestValue(42);
     TestException exception = new TestException("i/o error");
-    assertThrows(IllegalStateException.class, () -> ValueOrException.ofValue(value).getException());
+    assertThrows(IllegalStateException.class, () -> ValueOrException.ofValue(value).exception);
     assertThrows(
         IllegalStateException.class,
-        () -> ValueOrException.ofValue(exception /* as value, not as exception */).getException());
-    assertThat(ValueOrException.ofException(exception).getException()).isSameInstanceAs(exception);
+        () -> ValueOrException.ofValue(exception /* as value, not as exception */).exception);
+    assertThat(ValueOrException.ofException(exception).exception).isSameInstanceAs(exception);
   }
 
   @Test

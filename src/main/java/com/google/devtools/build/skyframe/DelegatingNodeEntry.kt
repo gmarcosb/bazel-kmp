@@ -11,224 +11,183 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.collect.ImmutableSet;
-import java.util.Collection;
-import java.util.List;
-import java.util.Set;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.GroupedDeps
+import com.google.devtools.build.skyframe.NodeEntry
+import com.google.devtools.build.skyframe.NodeEntry.DependencyState
+import com.google.devtools.build.skyframe.NodeEntry.DirtyType
+import com.google.devtools.build.skyframe.NodeEntry.LifecycleState
+import com.google.devtools.build.skyframe.NodeEntry.MarkedDirtyResult
+import com.google.devtools.build.skyframe.NodeEntry.NodeValueAndRdepsToSignal
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
 
-/** Convenience class for {@link NodeEntry} implementations that delegate many operations. */
-public abstract class DelegatingNodeEntry implements NodeEntry {
-  protected abstract NodeEntry getDelegate();
+/** Convenience class for [NodeEntry] implementations that delegate many operations.  */
+abstract class DelegatingNodeEntry : NodeEntry {
+    protected abstract val delegate: NodeEntry?
 
-  @Override
-  @Nullable
-  public SkyValue getValue() throws InterruptedException {
-    return getDelegate().getValue();
-  }
+    @get:Throws(java.lang.InterruptedException::class)
+    val value: SkyValue?
+        get() = this.delegate.getValue()
 
-  @Override
-  @Nullable
-  public SkyValue getValueMaybeWithMetadata() throws InterruptedException {
-    return getDelegate().getValueMaybeWithMetadata();
-  }
+    @get:Throws(java.lang.InterruptedException::class)
+    val valueMaybeWithMetadata: SkyValue?
+        get() = this.delegate.getValueMaybeWithMetadata()
 
-  @Override
-  @Nullable
-  public SkyValue toValue() throws InterruptedException {
-    return getDelegate().toValue();
-  }
+    @Throws(java.lang.InterruptedException::class)
+    override fun toValue(): SkyValue? {
+        return this.delegate.toValue()
+    }
 
-  @Nullable
-  @Override
-  public ErrorInfo getErrorInfo() throws InterruptedException {
-    return getDelegate().getErrorInfo();
-  }
+    @get:Throws(java.lang.InterruptedException::class)
+    val errorInfo: com.google.devtools.build.skyframe.ErrorInfo?
+        get() = this.delegate.getErrorInfo()
 
-  @Override
-  public Set<SkyKey> getInProgressReverseDeps() {
-    return getDelegate().getInProgressReverseDeps();
-  }
+    val inProgressReverseDeps: MutableSet<SkyKey>?
+        get() = this.delegate.getInProgressReverseDeps()
 
-  @Override
-  public Set<SkyKey> setValue(
-      SkyValue value, Version graphVersion, @Nullable Version maxTransitiveSourceVersion)
-      throws InterruptedException {
-    return getDelegate().setValue(value, graphVersion, maxTransitiveSourceVersion);
-  }
+    @Throws(java.lang.InterruptedException::class)
+    override fun setValue(
+        value: SkyValue?,
+        graphVersion: com.google.devtools.build.skyframe.Version?,
+        maxTransitiveSourceVersion: com.google.devtools.build.skyframe.Version?
+    ): MutableSet<SkyKey?>? {
+        return this.delegate.setValue(value, graphVersion, maxTransitiveSourceVersion)
+    }
 
-  @Override
-  public DependencyState addReverseDepAndCheckIfDone(@Nullable SkyKey reverseDep)
-      throws InterruptedException {
-    return getDelegate().addReverseDepAndCheckIfDone(reverseDep);
-  }
+    @Throws(java.lang.InterruptedException::class)
+    override fun addReverseDepAndCheckIfDone(reverseDep: SkyKey?): DependencyState? {
+        return this.delegate.addReverseDepAndCheckIfDone(reverseDep)
+    }
 
-  @Override
-  public DependencyState checkIfDoneForDirtyReverseDep(SkyKey reverseDep)
-      throws InterruptedException {
-    return getDelegate().checkIfDoneForDirtyReverseDep(reverseDep);
-  }
+    @Throws(java.lang.InterruptedException::class)
+    override fun checkIfDoneForDirtyReverseDep(reverseDep: SkyKey?): DependencyState? {
+        return this.delegate.checkIfDoneForDirtyReverseDep(reverseDep)
+    }
 
-  @Override
-  public boolean signalDep(Version childVersion, @Nullable SkyKey childForDebugging) {
-    return getDelegate().signalDep(childVersion, childForDebugging);
-  }
+    override fun signalDep(
+        childVersion: com.google.devtools.build.skyframe.Version?,
+        childForDebugging: SkyKey?
+    ): Boolean {
+        return this.delegate.signalDep(childVersion, childForDebugging)
+    }
 
-  @Override
-  public NodeValueAndRdepsToSignal markClean() throws InterruptedException {
-    return getDelegate().markClean();
-  }
+    @Throws(java.lang.InterruptedException::class)
+    override fun markClean(): NodeValueAndRdepsToSignal? {
+        return this.delegate.markClean()
+    }
 
-  @Override
-  public void forceRebuild() {
-    getDelegate().forceRebuild();
-  }
+    override fun forceRebuild() {
+        this.delegate.forceRebuild()
+    }
 
-  @Override
-  public Version getVersion() {
-    return getDelegate().getVersion();
-  }
+    val version: com.google.devtools.build.skyframe.Version?
+        get() = this.delegate.getVersion()
 
-  @Override
-  public Version getMaxTransitiveSourceVersion() {
-    return getDelegate().getMaxTransitiveSourceVersion();
-  }
+    val maxTransitiveSourceVersion: com.google.devtools.build.skyframe.Version?
+        get() = this.delegate.getMaxTransitiveSourceVersion()
 
-  @Override
-  public void setTemporaryMaxTransitiveSourceVersion(Version maxTransitiveSourceVersion) {
-    getDelegate().setTemporaryMaxTransitiveSourceVersion(maxTransitiveSourceVersion);
-  }
+    override fun setTemporaryMaxTransitiveSourceVersion(maxTransitiveSourceVersion: com.google.devtools.build.skyframe.Version?) {
+        this.delegate.setTemporaryMaxTransitiveSourceVersion(maxTransitiveSourceVersion)
+    }
 
-  @Override
-  public LifecycleState getLifecycleState() {
-    return getDelegate().getLifecycleState();
-  }
+    val lifecycleState: LifecycleState?
+        get() = this.delegate.getLifecycleState()
 
-  @Override
-  public List<SkyKey> getNextDirtyDirectDeps() throws InterruptedException {
-    return getDelegate().getNextDirtyDirectDeps();
-  }
+    @get:Throws(java.lang.InterruptedException::class)
+    val nextDirtyDirectDeps: MutableList<SkyKey>?
+        get() = this.delegate.getNextDirtyDirectDeps()
 
-  @Override
-  public ImmutableSet<SkyKey> getAllDirectDepsForIncompleteNode() throws InterruptedException {
-    return getDelegate().getAllDirectDepsForIncompleteNode();
-  }
+    @get:Throws(java.lang.InterruptedException::class)
+    val allDirectDepsForIncompleteNode: com.google.common.collect.ImmutableSet<SkyKey?>?
+        get() = this.delegate.getAllDirectDepsForIncompleteNode()
 
-  @Override
-  public ImmutableSet<SkyKey> getAllRemainingDirtyDirectDeps() throws InterruptedException {
-    return getDelegate().getAllRemainingDirtyDirectDeps();
-  }
+    @get:Throws(java.lang.InterruptedException::class)
+    val allRemainingDirtyDirectDeps: com.google.common.collect.ImmutableSet<SkyKey?>?
+        get() = this.delegate.getAllRemainingDirtyDirectDeps()
 
-  @Override
-  public Collection<SkyKey> getAllReverseDepsForNodeBeingDeleted() {
-    return getDelegate().getAllReverseDepsForNodeBeingDeleted();
-  }
+    val allReverseDepsForNodeBeingDeleted: MutableCollection<SkyKey>?
+        get() = this.delegate.getAllReverseDepsForNodeBeingDeleted()
 
-  @Override
-  public void markRebuilding() {
-    getDelegate().markRebuilding();
-  }
+    override fun markRebuilding() {
+        this.delegate.markRebuilding()
+    }
 
-  @Override
-  public GroupedDeps getTemporaryDirectDeps() {
-    return getDelegate().getTemporaryDirectDeps();
-  }
+    val temporaryDirectDeps: GroupedDeps?
+        get() = this.delegate.getTemporaryDirectDeps()
 
-  @Override
-  public boolean noDepsLastBuild() {
-    return getDelegate().noDepsLastBuild();
-  }
+    override fun noDepsLastBuild(): Boolean {
+        return this.delegate.noDepsLastBuild()
+    }
 
-  @Override
-  public void removeUnfinishedDeps(Set<SkyKey> unfinishedDeps) {
-    getDelegate().removeUnfinishedDeps(unfinishedDeps);
-  }
+    override fun removeUnfinishedDeps(unfinishedDeps: MutableSet<SkyKey?>?) {
+        this.delegate.removeUnfinishedDeps(unfinishedDeps)
+    }
 
-  @Override
-  public void resetEvaluationFromScratch() {
-    getDelegate().resetEvaluationFromScratch();
-  }
+    override fun resetEvaluationFromScratch() {
+        this.delegate.resetEvaluationFromScratch()
+    }
 
-  @Override
-  public ImmutableSet<SkyKey> getResetDirectDeps() {
-    return getDelegate().getResetDirectDeps();
-  }
+    val resetDirectDeps: com.google.common.collect.ImmutableSet<SkyKey?>?
+        get() = this.delegate.getResetDirectDeps()
 
-  @Override
-  public void addSingletonTemporaryDirectDep(SkyKey dep) {
-    getDelegate().addSingletonTemporaryDirectDep(dep);
-  }
+    override fun addSingletonTemporaryDirectDep(dep: SkyKey?) {
+        this.delegate.addSingletonTemporaryDirectDep(dep)
+    }
 
-  @Override
-  public void addTemporaryDirectDepGroup(List<SkyKey> group) {
-    getDelegate().addTemporaryDirectDepGroup(group);
-  }
+    override fun addTemporaryDirectDepGroup(group: MutableList<SkyKey?>?) {
+        this.delegate.addTemporaryDirectDepGroup(group)
+    }
 
-  @Override
-  public void addTemporaryDirectDepsInGroups(Set<SkyKey> deps, List<Integer> groupSizes) {
-    getDelegate().addTemporaryDirectDepsInGroups(deps, groupSizes);
-  }
+    override fun addTemporaryDirectDepsInGroups(deps: MutableSet<SkyKey?>?, groupSizes: MutableList<Int?>?) {
+        this.delegate.addTemporaryDirectDepsInGroups(deps, groupSizes)
+    }
 
-  @Override
-  public boolean isReadyToEvaluate() {
-    return getDelegate().isReadyToEvaluate();
-  }
+    val isReadyToEvaluate: Boolean
+        get() = this.delegate.isReadyToEvaluate()
 
-  @Override
-  public boolean hasUnsignaledDeps() {
-    return getDelegate().hasUnsignaledDeps();
-  }
+    override fun hasUnsignaledDeps(): Boolean {
+        return this.delegate.hasUnsignaledDeps()
+    }
 
-  @Override
-  public boolean isDone() {
-    return getDelegate().isDone();
-  }
+    val isDone: Boolean
+        get() = this.delegate.isDone()
 
-  @Override
-  public Iterable<SkyKey> getDirectDeps() throws InterruptedException {
-    return getDelegate().getDirectDeps();
-  }
+    @get:Throws(java.lang.InterruptedException::class)
+    val directDeps: Iterable<SkyKey>?
+        get() = this.delegate.getDirectDeps()
 
-  @Override
-  public boolean hasAtLeastOneDep() throws InterruptedException {
-    return getDelegate().hasAtLeastOneDep();
-  }
+    @Throws(java.lang.InterruptedException::class)
+    override fun hasAtLeastOneDep(): Boolean {
+        return this.delegate.hasAtLeastOneDep()
+    }
 
-  @Override
-  public void removeReverseDep(SkyKey reverseDep) throws InterruptedException {
-    getDelegate().removeReverseDep(reverseDep);
-  }
+    @Throws(java.lang.InterruptedException::class)
+    override fun removeReverseDep(reverseDep: SkyKey?) {
+        this.delegate.removeReverseDep(reverseDep)
+    }
 
-  @Override
-  public void removeReverseDepsFromDoneEntryDueToDeletion(Set<SkyKey> deletedKeys) {
-    getDelegate().removeReverseDepsFromDoneEntryDueToDeletion(deletedKeys);
-  }
+    override fun removeReverseDepsFromDoneEntryDueToDeletion(deletedKeys: MutableSet<SkyKey?>?) {
+        this.delegate.removeReverseDepsFromDoneEntryDueToDeletion(deletedKeys)
+    }
 
-  @Override
-  public Collection<SkyKey> getReverseDepsForDoneEntry() throws InterruptedException {
-    return getDelegate().getReverseDepsForDoneEntry();
-  }
+    @get:Throws(java.lang.InterruptedException::class)
+    val reverseDepsForDoneEntry: MutableCollection<SkyKey>?
+        get() = this.delegate.getReverseDepsForDoneEntry()
 
-  @Override
-  public boolean isDirty() {
-    return getDelegate().isDirty();
-  }
+    val isDirty: Boolean
+        get() = this.delegate.isDirty()
 
-  @Override
-  public boolean isChanged() {
-    return getDelegate().isChanged();
-  }
+    val isChanged: Boolean
+        get() = this.delegate.isChanged()
 
-  @Override
-  @Nullable
-  public MarkedDirtyResult markDirty(DirtyType dirtyType) throws InterruptedException {
-    return getDelegate().markDirty(dirtyType);
-  }
+    @Throws(java.lang.InterruptedException::class)
+    override fun markDirty(dirtyType: DirtyType?): MarkedDirtyResult? {
+        return this.delegate.markDirty(dirtyType)
+    }
 
-  @Override
-  public void addExternalDep() {
-    getDelegate().addExternalDep();
-  }
+    override fun addExternalDep() {
+        this.delegate.addExternalDep()
+    }
 }

@@ -11,78 +11,74 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
+package com.google.devtools.build.lib.util.io
 
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.io.IOException;
+import com.google.devtools.build.lib.util.io.AnsiTerminalWriter
+import java.io.IOException
 
 /**
- * Wrap an {@link AnsiTerminalWriter} into one that is aware of the position
+ * Wrap an [AnsiTerminalWriter] into one that is aware of the position
  * within the current line. Newline characters, which presumably are supposed
- * to end a line, are translated into calls to the {@link AnsiTerminalWriter#newline()}
+ * to end a line, are translated into calls to the [AnsiTerminalWriter.newline]
  * method.
  */
-public class PositionAwareAnsiTerminalWriter implements AnsiTerminalWriter {
+class PositionAwareAnsiTerminalWriter(terminalWriter: AnsiTerminalWriter) : AnsiTerminalWriter {
+    private val terminalWriter: AnsiTerminalWriter
+    var position: Int
+        private set
 
-  private final AnsiTerminalWriter terminalWriter;
-  private int position;
-
-  public PositionAwareAnsiTerminalWriter(AnsiTerminalWriter terminalWriter) {
-    this.terminalWriter = terminalWriter;
-    this.position = 0;
-  }
-
-  @CanIgnoreReturnValue
-  @Override
-  public AnsiTerminalWriter append(String text) throws IOException {
-    int i = 0;
-    while (i < text.length()) {
-       int next = text.indexOf('\n', i);
-       if (next == -1) {
-         terminalWriter.append(text.substring(i));
-         position += text.length() - i;
-         i = text.length();
-       } else {
-         terminalWriter.append(text.substring(i, next));
-         terminalWriter.newline();
-         i = next + 1;
-         position = 0;
-       }
+    init {
+        this.terminalWriter = terminalWriter
+        this.position = 0
     }
 
-    return this;
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(IOException::class)
+    override fun append(text: String): AnsiTerminalWriter {
+        var i = 0
+        while (i < text.length) {
+            val next: Int = text.indexOf('\n', i)
+            if (next == -1) {
+                terminalWriter.append(text.substring(i))
+                position += text.length - i
+                i = text.length
+            } else {
+                terminalWriter.append(text.substring(i, next))
+                terminalWriter.newline()
+                i = next + 1
+                position = 0
+            }
+        }
 
-  @CanIgnoreReturnValue
-  @Override
-  public AnsiTerminalWriter newline() throws IOException {
-    terminalWriter.newline();
-    position = 0;
-    return this;
-  }
+        return this
+    }
 
-  @CanIgnoreReturnValue
-  @Override
-  public AnsiTerminalWriter okStatus() throws IOException {
-    terminalWriter.okStatus();
-    return this;
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(IOException::class)
+    override fun newline(): AnsiTerminalWriter {
+        terminalWriter.newline()
+        position = 0
+        return this
+    }
 
-  @CanIgnoreReturnValue
-  @Override
-  public AnsiTerminalWriter failStatus() throws IOException {
-    terminalWriter.failStatus();
-    return this;
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(IOException::class)
+    override fun okStatus(): AnsiTerminalWriter {
+        terminalWriter.okStatus()
+        return this
+    }
 
-  @CanIgnoreReturnValue
-  @Override
-  public AnsiTerminalWriter normal() throws IOException {
-    terminalWriter.normal();
-    return this;
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(IOException::class)
+    override fun failStatus(): AnsiTerminalWriter {
+        terminalWriter.failStatus()
+        return this
+    }
 
-  public int getPosition() {
-    return position;
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(IOException::class)
+    override fun normal(): AnsiTerminalWriter {
+        terminalWriter.normal()
+        return this
+    }
 }

@@ -11,103 +11,84 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules;
+package com.google.devtools.build.lib.rules
 
-import static com.google.devtools.build.lib.packages.Attribute.ANY_RULE;
-import static com.google.devtools.build.lib.packages.Attribute.attr;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL;
-
-import com.google.devtools.build.lib.actions.ActionConflictException;
-import com.google.devtools.build.lib.analysis.BaseRuleClasses;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.RuleConfiguredTargetFactory;
-import com.google.devtools.build.lib.analysis.RuleContext;
-import com.google.devtools.build.lib.analysis.RuleDefinition;
-import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment;
-import com.google.devtools.build.lib.packages.BuildType;
-import com.google.devtools.build.lib.packages.RawAttributeMapper;
-import com.google.devtools.build.lib.packages.RuleClass;
-import com.google.devtools.build.lib.util.FileTypeSet;
+import com.google.devtools.build.lib.packages.Attribute.ANY_RULE
 
 /**
- * Implementation of the <code>alias</code> rule.
+ * Implementation of the `alias` rule.
  */
-public class Alias implements RuleConfiguredTargetFactory {
+class Alias : RuleConfiguredTargetFactory {
+    @Throws(java.lang.InterruptedException::class, RuleErrorException::class, ActionConflictException::class)
+    public override fun create(ruleContext: RuleContext): ConfiguredTarget? {
+        val actual: ConfiguredTarget? = ruleContext.getPrerequisite("actual") as ConfiguredTarget?
 
-  public static final String RULE_NAME = "alias";
-  private static final String ACTUAL_ATTRIBUTE_NAME = "actual";
+        // TODO(b/129045294): Remove the logic below completely when repo is deleted.
+        if (ruleContext.getLabel().getCanonicalForm().startsWith("@bazel_tools//platforms")) {
+            throw ruleContext.throwWithRuleError(
+                ("Constraints from @bazel_tools//platforms have been "
+                        + "removed. Please use constraints from @platforms repository embedded in "
+                        + "Bazel, or preferably declare dependency on "
+                        + "https://github.com/bazelbuild/platforms. See "
+                        + "https://github.com/bazelbuild/bazel/issues/8622 for details.")
+            )
+        }
 
-  @Override
-  public ConfiguredTarget create(RuleContext ruleContext)
-      throws InterruptedException, RuleErrorException, ActionConflictException {
-    ConfiguredTarget actual = (ConfiguredTarget) ruleContext.getPrerequisite("actual");
-
-    // TODO(b/129045294): Remove the logic below completely when repo is deleted.
-    if (ruleContext.getLabel().getCanonicalForm().startsWith("@bazel_tools//platforms")) {
-      throw ruleContext.throwWithRuleError(
-          "Constraints from @bazel_tools//platforms have been "
-              + "removed. Please use constraints from @platforms repository embedded in "
-              + "Bazel, or preferably declare dependency on "
-              + "https://github.com/bazelbuild/platforms. See "
-              + "https://github.com/bazelbuild/bazel/issues/8622 for details.");
+        return AliasConfiguredTarget.Companion.create(ruleContext, actual, ruleContext.getVisibility())
     }
 
-    return AliasConfiguredTarget.create(ruleContext, actual, ruleContext.getVisibility());
-  }
-
-  /**
-   * Rule definition.
-   */
-  public static class AliasRule implements RuleDefinition {
-    @Override
-    public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment environment) {
-      // If transitions are added here, AspectFunction should be modified to follow all
-      // configurations along alias chains.
-      return builder
-          /*<!-- #BLAZE_RULE(alias).ATTRIBUTE(actual) -->
+    /**
+     * Rule definition.
+     */
+    class AliasRule : RuleDefinition {
+        public override fun build(builder: RuleClass.Builder, environment: RuleDefinitionEnvironment?): RuleClass {
+            // If transitions are added here, AspectFunction should be modified to follow all
+            // configurations along alias chains.
+            return builder /*<!-- #BLAZE_RULE(alias).ATTRIBUTE(actual) -->
           The target this alias refers to. It does not need to be a rule, it can also be an input
           file.
           <!-- #END_BLAZE_RULE.ATTRIBUTE -->*/
-          .removeAttribute("licenses")
-          .removeAttribute("distribs")
-          .removeAttribute(":action_listener")
-          .add(
-              attr(ACTUAL_ATTRIBUTE_NAME, LABEL)
-                  .allowedFileTypes(FileTypeSet.ANY_FILE)
-                  .allowedRuleClasses(ANY_RULE)
-                  .mandatory())
-          .canHaveAnyProvider()
-          // Aliases themselves do not need toolchains or an execution platform, so this is fine.
-          // The actual target will resolve platforms and toolchains with no issues regardless of
-          // this setting. In some circumstances an alias directly needs the platform:
-          // - when it has a select() on a constraint_setting, or
-          // - when it has a target_compatible_with attribute.
-          // Special-case enable those instances too.
-          .toolchainResolutionMode(
-              (rule) -> {
-                RawAttributeMapper attr = RawAttributeMapper.of(rule);
-                return ((attr.has(RuleClass.CONFIG_SETTING_DEPS_ATTRIBUTE)
-                        && !attr.get(RuleClass.CONFIG_SETTING_DEPS_ATTRIBUTE, BuildType.LABEL_LIST)
+                .removeAttribute("licenses")
+                .removeAttribute("distribs")
+                .removeAttribute(":action_listener")
+                .add(
+                    attr(ACTUAL_ATTRIBUTE_NAME, LABEL)
+                        .allowedFileTypes(FileTypeSet.ANY_FILE)
+                        .allowedRuleClasses(ANY_RULE)
+                        .mandatory()
+                )
+                .canHaveAnyProvider() // Aliases themselves do not need toolchains or an execution platform, so this is fine.
+                // The actual target will resolve platforms and toolchains with no issues regardless of
+                // this setting. In some circumstances an alias directly needs the platform:
+                // - when it has a select() on a constraint_setting, or
+                // - when it has a target_compatible_with attribute.
+                // Special-case enable those instances too.
+                .toolchainResolutionMode(
+                    { rule ->
+                        val attr: RawAttributeMapper = RawAttributeMapper.of(rule)
+                        ((attr.has(RuleClass.CONFIG_SETTING_DEPS_ATTRIBUTE)
+                                && !attr.get(RuleClass.CONFIG_SETTING_DEPS_ATTRIBUTE, BuildType.LABEL_LIST)
                             .isEmpty())
-                    || (attr.has(RuleClass.TARGET_COMPATIBLE_WITH_ATTR)
-                        && !attr.get(RuleClass.TARGET_COMPATIBLE_WITH_ATTR, BuildType.LABEL_LIST)
-                            .isEmpty()));
-              })
-          .build();
+                                || (attr.has(RuleClass.TARGET_COMPATIBLE_WITH_ATTR)
+                                && !attr.get(RuleClass.TARGET_COMPATIBLE_WITH_ATTR, BuildType.LABEL_LIST)
+                            .isEmpty()))
+                    })
+                .build()
+        }
+
+        val metadata: Metadata
+            get() = Metadata.builder()
+                .name(RULE_NAME)
+                .factoryClass(Alias::class.java)
+                .ancestors(BaseRuleClasses.NativeBuildRule::class.java)
+                .build()
     }
 
-    @Override
-    public Metadata getMetadata() {
-      return Metadata.builder()
-          .name(RULE_NAME)
-          .factoryClass(Alias.class)
-          .ancestors(BaseRuleClasses.NativeBuildRule.class)
-          .build();
+    companion object {
+        const val RULE_NAME: String = "alias"
+        private const val ACTUAL_ATTRIBUTE_NAME = "actual"
     }
-  }
-}
-
-/*<!-- #BLAZE_RULE (NAME = alias, FAMILY = General)[GENERIC_RULE] -->
+} /*<!-- #BLAZE_RULE (NAME = alias, FAMILY = General)[GENERIC_RULE] -->
 
 <p>
   The <code>alias</code> rule creates another name a rule can be referred to as.
@@ -160,3 +141,4 @@ alias(
 </pre>
 
 <!-- #END_BLAZE_RULE -->*/
+

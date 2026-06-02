@@ -11,20 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import java.util.Set;
+import com.google.devtools.build.lib.runtime.TestSummary
 
 /**
  * Used to notify interested parties of test results.
  */
-public interface TestResultNotifier {
-
-  /**
-   * @param summaries Summary of all targets that were supposed to be tested
-   *                  (regardless whether they actually were executed).
-   * @param numberOfExecutedTargets the number of targets that were actually run.
-   *                                Must not exceed summaries.size().
-   */
-  void notify(Set<TestSummary> summaries, int numberOfExecutedTargets);
+interface TestResultNotifier {
+    /**
+     * @param summaries Summary of all targets that were supposed to be tested
+     * (regardless whether they actually were executed).
+     * @param numberOfExecutedTargets the number of targets that were actually run.
+     * Must not exceed summaries.size().
+     */
+    fun notify(summaries: MutableSet<TestSummary?>?, numberOfExecutedTargets: Int)
 }

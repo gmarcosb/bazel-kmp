@@ -11,26 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.repository
 
-package com.google.devtools.build.lib.starlarkbuildapi.repository;
-
-import com.google.common.collect.ImmutableMap.Builder;
-import com.google.devtools.build.lib.starlarkbuildapi.core.Bootstrap;
-import net.starlark.java.eval.Starlark;
+import com.google.common.collect.ImmutableMap
+import com.google.devtools.build.lib.starlarkbuildapi.core.Bootstrap
+import net.starlark.java.eval.Starlark
 
 /**
- * A {@link Bootstrap} for repository-related libraries of the build API.
+ * A [Bootstrap] for repository-related libraries of the build API.
  */
-public class RepositoryBootstrap implements Bootstrap {
-
-  private final RepositoryModuleApi repositoryModuleApi;
-
-  public RepositoryBootstrap(RepositoryModuleApi repositoryModuleApi) {
-    this.repositoryModuleApi = repositoryModuleApi;
-  }
-
-  @Override
-  public void addBindingsToBuilder(Builder<String, Object> builder) {
-    Starlark.addMethods(builder, repositoryModuleApi);
-  }
+class RepositoryBootstrap(private val repositoryModuleApi: RepositoryModuleApi?) : Bootstrap {
+    override fun addBindingsToBuilder(builder: ImmutableMap.Builder<String?, Any?>?) {
+        Starlark.addMethods(builder, repositoryModuleApi)
+    }
 }

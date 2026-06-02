@@ -11,39 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.platform
 
-package com.google.devtools.build.lib.rules.platform;
+import com.google.devtools.build.lib.actions.ActionConflictException
 
-import com.google.devtools.build.lib.actions.ActionConflictException;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.FileProvider;
-import com.google.devtools.build.lib.analysis.FilesToRunProvider;
-import com.google.devtools.build.lib.analysis.RuleConfiguredTargetBuilder;
-import com.google.devtools.build.lib.analysis.RuleConfiguredTargetFactory;
-import com.google.devtools.build.lib.analysis.RuleContext;
-import com.google.devtools.build.lib.analysis.RunfilesProvider;
-import com.google.devtools.build.lib.analysis.platform.ConstraintSettingInfo;
-import com.google.devtools.build.lib.analysis.platform.ConstraintValueInfo;
-import com.google.devtools.build.lib.analysis.platform.PlatformProviderUtils;
-import javax.annotation.Nullable;
+/** Defines a potential value of a constraint.  */
+class ConstraintValue : RuleConfiguredTargetFactory {
+    @Throws(InterruptedException::class, RuleErrorException::class, ActionConflictException::class)
+    public override fun create(ruleContext: RuleContext): ConfiguredTarget? {
+        val constraint: ConstraintSettingInfo? =
+            PlatformProviderUtils.constraintSetting(
+                ruleContext.getPrerequisite(ConstraintValueRule.Companion.CONSTRAINT_SETTING_ATTR)
+            )
 
-/** Defines a potential value of a constraint. */
-public class ConstraintValue implements RuleConfiguredTargetFactory {
-
-  @Override
-  @Nullable
-  public ConfiguredTarget create(RuleContext ruleContext)
-      throws InterruptedException, RuleErrorException, ActionConflictException {
-
-    ConstraintSettingInfo constraint =
-        PlatformProviderUtils.constraintSetting(
-            ruleContext.getPrerequisite(ConstraintValueRule.CONSTRAINT_SETTING_ATTR));
-
-    return new RuleConfiguredTargetBuilder(ruleContext)
-        .addProvider(RunfilesProvider.class, RunfilesProvider.EMPTY)
-        .addProvider(FileProvider.class, FileProvider.EMPTY)
-        .addProvider(FilesToRunProvider.class, FilesToRunProvider.EMPTY)
-        .addNativeDeclaredProvider(ConstraintValueInfo.create(constraint, ruleContext.getLabel()))
-        .build();
-  }
+        return RuleConfiguredTargetBuilder(ruleContext)
+            .addProvider(RunfilesProvider::class.java, RunfilesProvider.EMPTY)
+            .addProvider(FileProvider::class.java, FileProvider.EMPTY)
+            .addProvider(FilesToRunProvider::class.java, FilesToRunProvider.EMPTY)
+            .addNativeDeclaredProvider(ConstraintValueInfo.create(constraint, ruleContext.getLabel()))
+            .build()
+    }
 }

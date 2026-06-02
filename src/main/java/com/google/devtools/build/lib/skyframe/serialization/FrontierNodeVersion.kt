@@ -11,211 +11,191 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static java.nio.charset.StandardCharsets.UTF_8;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.ClientId
 
-import com.google.common.base.MoreObjects;
-import com.google.common.hash.HashCode;
-import com.google.common.hash.Hashing;
-import com.google.common.primitives.Bytes;
-import com.google.common.primitives.Longs;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.ClientId;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.ClientId.SnapshotClientId;
-import com.google.devtools.build.skyframe.IntVersion;
-import java.util.Arrays;
-import java.util.Objects;
-import java.util.Optional;
+/** A tuple representing the version of a cached SkyValue in the frontier.  */
+class FrontierNodeVersion(
+    topLevelConfigChecksum: String,
+    blazeInstallMD5: com.google.common.hash.HashCode,
+    starlarkSemanticsFingerprint: ByteArray?,
+    evaluatingVersion: IntVersion,
+    distinguisherBytesForTesting: String,
+    useFakeStampData: Boolean,
+    clientId: java.util.Optional<ClientId?>?
+) {
+    /**
+     * The checksum of the top-level configuration (trimmed of test options).
+     * 
+     * 
+     * The configuration of any node in the build graph includes a mnemonic (e.g. k8-opt) that is
+     * part of its output path. If a transition is applied, this mnemonic is computed based on the
+     * delta between the node's configuration and the top-level configuration producing an ST-hash.
+     * 
+     * 
+     * If the top-level configuration changes, the output paths of artifacts may change even if the
+     * node's configuration remains distinct and identical (e.g. in a transition). Including this
+     * checksum ensures that we do not reuse nodes that would produce artifacts at incorrect paths
+     * relative to the current build's top-level configuration.
+     * 
+     * 
+     * See b/360073915.
+     */
+    val topLevelConfigChecksum: String?
 
-/** A tuple representing the version of a cached SkyValue in the frontier. */
-public final class FrontierNodeVersion {
-  public static final FrontierNodeVersion CONSTANT_FOR_TESTING =
-      new FrontierNodeVersion(
-          "123",
-          HashCode.fromInt(42),
-          new byte[] {1, 2, 3},
-          IntVersion.of(9000),
-          "distinguisher",
-          /* useFakeStampData= */ true,
-          Optional.of(new SnapshotClientId("for_testing", 123)));
+    val topLevelConfigFingerprint: ByteArray
 
-  /**
-   * The checksum of the top-level configuration (trimmed of test options).
-   *
-   * <p>The configuration of any node in the build graph includes a mnemonic (e.g. k8-opt) that is
-   * part of its output path. If a transition is applied, this mnemonic is computed based on the
-   * delta between the node's configuration and the top-level configuration producing an ST-hash.
-   *
-   * <p>If the top-level configuration changes, the output paths of artifacts may change even if the
-   * node's configuration remains distinct and identical (e.g. in a transition). Including this
-   * checksum ensures that we do not reuse nodes that would produce artifacts at incorrect paths
-   * relative to the current build's top-level configuration.
-   *
-   * <p>See b/360073915.
-   */
-  private final String topLevelConfigChecksum;
+    /**
+     * The MD5 hash of the Bazel installation.
+     * 
+     * 
+     * Ensures that cache entries are invalid if the Bazel binary itself changes (e.g. updated
+     * version or locally modified binary). Different Bazel versions may produce different analysis
+     * graphs from the same source code.
+     */
+    private val blazeInstallMD5: com.google.common.hash.HashCode?
 
-  private final byte[] topLevelConfigFingerprint;
+    private val blazeInstallMD5Fingerprint: ByteArray
 
-  /**
-   * The MD5 hash of the Bazel installation.
-   *
-   * <p>Ensures that cache entries are invalid if the Bazel binary itself changes (e.g. updated
-   * version or locally modified binary). Different Bazel versions may produce different analysis
-   * graphs from the same source code.
-   */
-  private final HashCode blazeInstallMD5;
+    /**
+     * The fingerprint of the [net.starlark.java.eval.StarlarkSemantics].
+     * 
+     * 
+     * Starlark semantics affect the behavior of Starlark code, which in turn affects the analysis
+     * graph.
+     */
+    private val starlarkSemanticsFingerprint: ByteArray
 
-  private final byte[] blazeInstallMD5Fingerprint;
+    /**
+     * The version of the source code (workspace) being evaluated.
+     * 
+     * 
+     * This corresponds to the state of the BUILD files, .bzl files, and source files. Any change
+     * to the source code likely changes the analysis graph, so this version is critical for
+     * correctness.
+     */
+    val evaluatingVersion: Long
 
-  /**
-   * The fingerprint of the {@link net.starlark.java.eval.StarlarkSemantics}.
-   *
-   * <p>Starlark semantics affect the behavior of Starlark code, which in turn affects the analysis
-   * graph.
-   */
-  private final byte[] starlarkSemanticsFingerprint;
+    private val evaluatingVersionFingerprint: ByteArray
 
-  /**
-   * The version of the source code (workspace) being evaluated.
-   *
-   * <p>This corresponds to the state of the BUILD files, .bzl files, and source files. Any change
-   * to the source code likely changes the analysis graph, so this version is critical for
-   * correctness.
-   */
-  private final long evaluatingVersion;
+    /**
+     * A distinguisher used to separate cache entries for different test cases or scenarios.
+     * 
+     * 
+     * Allows integration tests to share a single cache backend without collision, or to force
+     * specific cache keys for testing purposes.
+     */
+    private val distinguisherBytesForTesting: ByteArray
 
-  private final byte[] evaluatingVersionFingerprint;
+    /** Whether this invocations use fake data for stamping (volatile) information.  */
+    val useFakeStampData: Boolean
 
-  /**
-   * A distinguisher used to separate cache entries for different test cases or scenarios.
-   *
-   * <p>Allows integration tests to share a single cache backend without collision, or to force
-   * specific cache keys for testing purposes.
-   */
-  private final byte[] distinguisherBytesForTesting;
+    /**
+     * The precomputed fingerprint of this node version.
+     * 
+     * 
+     * This is the concatenation of the fingerprints of the other fields, providing a single hash
+     * value for the entire version.
+     */
+    @kotlin.jvm.JvmField
+    val precomputedFingerprint: ByteArray
 
-  /** Whether this invocations use fake data for stamping (volatile) information. */
-  private final boolean useFakeStampData;
+    /**
+     * A pointer to the specific workspace snapshot in the remote system.
+     * 
+     * 
+     * This is NOT part of the cache key identity (hash/equals). It is used to retrieve
+     * invalidation data or metadata associated with the specific state corresponding to [ ][.evaluatingVersion].
+     */
+    private val clientId: java.util.Optional<ClientId?>
 
-  /**
-   * The precomputed fingerprint of this node version.
-   *
-   * <p>This is the concatenation of the fingerprints of the other fields, providing a single hash
-   * value for the entire version.
-   */
-  private final byte[] precomputedFingerprint;
+    init {
+        this.topLevelConfigChecksum = topLevelConfigChecksum
+        this.topLevelConfigFingerprint = topLevelConfigChecksum.getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        this.blazeInstallMD5 = blazeInstallMD5
+        this.blazeInstallMD5Fingerprint = blazeInstallMD5.asBytes()
+        this.starlarkSemanticsFingerprint = java.util.Objects.requireNonNull<ByteArray>(starlarkSemanticsFingerprint)
+        this.evaluatingVersion = evaluatingVersion.getVal()
+        this.evaluatingVersionFingerprint = com.google.common.primitives.Longs.toByteArray(evaluatingVersion.getVal())
+        this.distinguisherBytesForTesting =
+            distinguisherBytesForTesting.getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        this.useFakeStampData = useFakeStampData
+        this.precomputedFingerprint =
+            com.google.common.hash.Hashing.sha256()
+                .newHasher()
+                .putInt(topLevelConfigFingerprint.size)
+                .putBytes(topLevelConfigFingerprint)
+                .putInt(blazeInstallMD5Fingerprint.size)
+                .putBytes(blazeInstallMD5Fingerprint)
+                .putInt(this.starlarkSemanticsFingerprint.size)
+                .putBytes(this.starlarkSemanticsFingerprint)
+                .putLong(this.evaluatingVersion)
+                .putInt(this.distinguisherBytesForTesting.size)
+                .putBytes(this.distinguisherBytesForTesting)
+                .putBoolean(useFakeStampData)
+                .hash()
+                .asBytes()
 
-  /**
-   * A pointer to the specific workspace snapshot in the remote system.
-   *
-   * <p>This is NOT part of the cache key identity (hash/equals). It is used to retrieve
-   * invalidation data or metadata associated with the specific state corresponding to {@link
-   * #evaluatingVersion}.
-   */
-  private final Optional<ClientId> clientId;
-
-  public FrontierNodeVersion(
-      String topLevelConfigChecksum,
-      HashCode blazeInstallMD5,
-      byte[] starlarkSemanticsFingerprint,
-      IntVersion evaluatingVersion,
-      String distinguisherBytesForTesting,
-      boolean useFakeStampData,
-      Optional<ClientId> clientId) {
-    this.topLevelConfigChecksum = topLevelConfigChecksum;
-    this.topLevelConfigFingerprint = topLevelConfigChecksum.getBytes(UTF_8);
-    this.blazeInstallMD5 = blazeInstallMD5;
-    this.blazeInstallMD5Fingerprint = blazeInstallMD5.asBytes();
-    this.starlarkSemanticsFingerprint = Objects.requireNonNull(starlarkSemanticsFingerprint);
-    this.evaluatingVersion = evaluatingVersion.getVal();
-    this.evaluatingVersionFingerprint = Longs.toByteArray(evaluatingVersion.getVal());
-    this.distinguisherBytesForTesting = distinguisherBytesForTesting.getBytes(UTF_8);
-    this.useFakeStampData = useFakeStampData;
-    this.precomputedFingerprint =
-        Hashing.sha256()
-            .newHasher()
-            .putInt(topLevelConfigFingerprint.length)
-            .putBytes(topLevelConfigFingerprint)
-            .putInt(blazeInstallMD5Fingerprint.length)
-            .putBytes(blazeInstallMD5Fingerprint)
-            .putInt(this.starlarkSemanticsFingerprint.length)
-            .putBytes(this.starlarkSemanticsFingerprint)
-            .putLong(this.evaluatingVersion)
-            .putInt(this.distinguisherBytesForTesting.length)
-            .putBytes(this.distinguisherBytesForTesting)
-            .putBoolean(useFakeStampData)
-            .hash()
-            .asBytes();
-
-    // This is undigested.
-    this.clientId = Objects.requireNonNull(clientId);
-  }
-
-  /**
-   * Returns the snapshot of the workspace.
-   *
-   * <p>Can be empty if snapshots are not supported by the workspace.
-   */
-  @SuppressWarnings("unused") // to be integrated
-  public Optional<ClientId> getClientId() {
-    return clientId;
-  }
-
-  public byte[] getTopLevelConfigFingerprint() {
-    return topLevelConfigFingerprint;
-  }
-
-  public byte[] getPrecomputedFingerprint() {
-    return precomputedFingerprint;
-  }
-
-  public byte[] concat(byte[] input) {
-    return Bytes.concat(precomputedFingerprint, input);
-  }
-
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("topLevelConfig", Arrays.hashCode(topLevelConfigFingerprint))
-        .add("blazeInstall", Arrays.hashCode(blazeInstallMD5Fingerprint))
-        .add("starlarkSemantics", Arrays.hashCode(starlarkSemanticsFingerprint))
-        .add("evaluatingVersion", Arrays.hashCode(evaluatingVersionFingerprint))
-        .add("distinguisherBytesForTesting", Arrays.hashCode(distinguisherBytesForTesting))
-        .add("useFakeStampData", useFakeStampData)
-        .add("precomputed", hashCode())
-        .toString();
-  }
-
-  @Override
-  public int hashCode() {
-    return Arrays.hashCode(precomputedFingerprint);
-  }
-
-  @Override
-  public boolean equals(Object obj) {
-    if (this == obj) {
-      return true;
+        // This is undigested.
+        this.clientId = java.util.Objects.requireNonNull<java.util.Optional<ClientId?>>(clientId)
     }
-    if (!(obj instanceof FrontierNodeVersion that)) {
-      return false;
+
+    /**
+     * Returns the snapshot of the workspace.
+     * 
+     * 
+     * Can be empty if snapshots are not supported by the workspace.
+     */
+    @Suppress("unused") // to be integrated
+    fun getClientId(): java.util.Optional<ClientId?> {
+        return clientId
     }
-    return Arrays.equals(precomputedFingerprint, that.precomputedFingerprint);
-  }
 
-  public HashCode getBlazeInstallMD5() {
-    return blazeInstallMD5;
-  }
+    fun concat(input: ByteArray?): ByteArray {
+        return com.google.common.primitives.Bytes.concat(precomputedFingerprint, input)
+    }
 
-  public long getEvaluatingVersion() {
-    return evaluatingVersion;
-  }
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("topLevelConfig", java.util.Arrays.hashCode(topLevelConfigFingerprint))
+            .add("blazeInstall", java.util.Arrays.hashCode(blazeInstallMD5Fingerprint))
+            .add("starlarkSemantics", java.util.Arrays.hashCode(starlarkSemanticsFingerprint))
+            .add("evaluatingVersion", java.util.Arrays.hashCode(evaluatingVersionFingerprint))
+            .add("distinguisherBytesForTesting", java.util.Arrays.hashCode(distinguisherBytesForTesting))
+            .add("useFakeStampData", useFakeStampData)
+            .add("precomputed", hashCode())
+            .toString()
+    }
 
-  public boolean getUseFakeStampData() {
-    return useFakeStampData;
-  }
+    override fun hashCode(): Int {
+        return java.util.Arrays.hashCode(precomputedFingerprint)
+    }
 
-  public String getTopLevelConfigChecksum() {
-    return topLevelConfigChecksum;
-  }
+    override fun equals(obj: Any?): Boolean {
+        if (this === obj) {
+            return true
+        }
+        if (obj !is FrontierNodeVersion) {
+            return false
+        }
+        return java.util.Arrays.equals(precomputedFingerprint, obj.precomputedFingerprint)
+    }
+
+    fun getBlazeInstallMD5(): com.google.common.hash.HashCode? {
+        return blazeInstallMD5
+    }
+
+    companion object {
+        @kotlin.jvm.JvmField
+        val CONSTANT_FOR_TESTING: FrontierNodeVersion = FrontierNodeVersion(
+            "123",
+            com.google.common.hash.HashCode.fromInt(42),
+            byteArrayOf(1, 2, 3),
+            IntVersion.of(9000),
+            "distinguisher",  /* useFakeStampData= */
+            true,
+            java.util.Optional.of<ClientId?>(SnapshotClientId("for_testing", 123))
+        )
+    }
 }

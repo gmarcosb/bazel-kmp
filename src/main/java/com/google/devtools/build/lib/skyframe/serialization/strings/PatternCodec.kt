@@ -11,37 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.strings;
+package com.google.devtools.build.lib.skyframe.serialization.strings
 
-import static com.google.devtools.build.lib.skyframe.serialization.strings.UnsafeStringCodec.stringCodec;
+import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext
+import com.google.devtools.build.lib.skyframe.serialization.strings.UnsafeStringCodec
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
-import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec;
-import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import java.util.regex.Pattern;
+internal class PatternCodec : LeafObjectCodec<java.util.regex.Pattern?>() {
+    override fun getEncodedClass(): java.lang.Class<java.util.regex.Pattern?> {
+        return java.util.regex.Pattern::class.java
+    }
 
-class PatternCodec extends LeafObjectCodec<Pattern> {
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun serialize(
+        context: LeafSerializationContext, pattern: java.util.regex.Pattern, codedOut: CodedOutputStream
+    ) {
+        context.serializeLeaf<String?>(pattern.pattern(), UnsafeStringCodec.Companion.stringCodec(), codedOut)
+        codedOut.writeInt32NoTag(pattern.flags())
+    }
 
-  @Override
-  public Class<Pattern> getEncodedClass() {
-    return Pattern.class;
-  }
-
-  @Override
-  public void serialize(
-      LeafSerializationContext context, Pattern pattern, CodedOutputStream codedOut)
-      throws SerializationException, IOException {
-    context.serializeLeaf(pattern.pattern(), stringCodec(), codedOut);
-    codedOut.writeInt32NoTag(pattern.flags());
-  }
-
-  @Override
-  public Pattern deserialize(LeafDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    return Pattern.compile(context.deserializeLeaf(codedIn, stringCodec()), codedIn.readInt32());
-  }
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun deserialize(context: LeafDeserializationContext, codedIn: CodedInputStream): java.util.regex.Pattern {
+        return java.util.regex.Pattern.compile(
+            context.deserializeLeaf<String?>(
+                codedIn,
+                UnsafeStringCodec.Companion.stringCodec()
+            ), codedIn.readInt32()
+        )
+    }
 }

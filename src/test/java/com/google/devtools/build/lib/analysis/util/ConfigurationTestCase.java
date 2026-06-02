@@ -219,7 +219,7 @@ public abstract class ConfigurationTestCase extends FoundationTestCase {
   /** Parses purported commandline options into a BuildOptions (assumes default parsing context.) */
   protected BuildOptions parseBuildOptions(
       ImmutableMap<String, Object> starlarkOptions, String... args) throws Exception {
-    return parseBuildOptionsWithTestOptions(starlarkOptions, args).getFirst();
+    return parseBuildOptionsWithTestOptions(starlarkOptions, args).first;
   }
 
   /** Parses purported commandline options into a BuildOptions (assumes default parsing context.) */

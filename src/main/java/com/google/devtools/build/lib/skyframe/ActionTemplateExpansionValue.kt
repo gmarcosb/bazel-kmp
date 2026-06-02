@@ -11,111 +11,88 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.MoreObjects;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.actions.BasicActionLookupValue;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
+import com.google.devtools.build.lib.actions.ActionAnalysisMetadata
 
-/** Value that stores expanded actions from ActionTemplate. */
-public final class ActionTemplateExpansionValue extends BasicActionLookupValue {
+/** Value that stores expanded actions from ActionTemplate.  */
+class ActionTemplateExpansionValue internal constructor(generatingActions: com.google.common.collect.ImmutableList<ActionAnalysisMetadata?>?) :
+    BasicActionLookupValue(generatingActions) {
+    /** Key for [ActionTemplateExpansionValue] nodes.  */
+    @AutoCodec
+    class ActionTemplateExpansionKey private constructor(actionLookupKey: ActionLookupKey, actionIndex: Int) :
+        ActionLookupKey {
+        private val actionLookupKey: ActionLookupKey
 
-  ActionTemplateExpansionValue(ImmutableList<ActionAnalysisMetadata> generatingActions) {
-    super(generatingActions);
-  }
+        /**
+         * Index of the action in question in the node keyed by [.getActionLookupKey]. Should be
+         * passed to [com.google.devtools.build.lib.actions.ActionLookupValue.getAction].
+         */
+        val actionIndex: Int
 
-  public static ActionTemplateExpansionKey key(ActionLookupKey actionLookupKey, int actionIndex) {
-    return ActionTemplateExpansionKey.of(actionLookupKey, actionIndex);
-  }
+        init {
+            this.actionLookupKey = actionLookupKey
+            this.actionIndex = actionIndex
+        }
 
-  /** Key for {@link ActionTemplateExpansionValue} nodes. */
-  @AutoCodec
-  public static final class ActionTemplateExpansionKey implements ActionLookupKey {
-    private static final SkyKeyInterner<ActionTemplateExpansionKey> interner = SkyKey.newInterner();
+        public override fun functionName(): SkyFunctionName {
+            return SkyFunctions.ACTION_TEMPLATE_EXPANSION
+        }
 
-    private final ActionLookupKey actionLookupKey;
-    private final int actionIndex;
+        val label: Label
+            get() = actionLookupKey.getLabel()
 
-    private ActionTemplateExpansionKey(ActionLookupKey actionLookupKey, int actionIndex) {
-      this.actionLookupKey = actionLookupKey;
-      this.actionIndex = actionIndex;
+        val configurationKey: BuildConfigurationKey
+            get() = actionLookupKey.getConfigurationKey()
+
+        fun getActionLookupKey(): ActionLookupKey {
+            return actionLookupKey
+        }
+
+        val skyKeyInterner: SkyKeyInterner<ActionTemplateExpansionKey?>
+            get() = interner
+
+        override fun hashCode(): Int {
+            return 37 * actionLookupKey.hashCode() + actionIndex
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            if (this === obj) {
+                return true
+            }
+            if (obj !is ActionTemplateExpansionKey) {
+                return false
+            }
+            return this.actionIndex == obj.actionIndex
+                    && this.actionLookupKey.equals(obj.actionLookupKey)
+        }
+
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(this)
+                .add("actionLookupKey", actionLookupKey)
+                .add("actionIndex", actionIndex)
+                .toString()
+        }
+
+        companion object {
+            private val interner: SkyKeyInterner<ActionTemplateExpansionKey?> = SkyKey.newInterner<SkyKey?>()
+
+            @com.google.common.annotations.VisibleForTesting
+            fun of(actionLookupKey: ActionLookupKey, actionIndex: Int): ActionTemplateExpansionKey {
+                return interner.intern(ActionTemplateExpansionKey(actionLookupKey, actionIndex))
+            }
+
+            @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+            @AutoCodec.Interner
+            fun intern(key: ActionTemplateExpansionKey?): ActionTemplateExpansionKey {
+                return interner.intern(key)
+            }
+        }
     }
 
-    @VisibleForTesting
-    public static ActionTemplateExpansionKey of(ActionLookupKey actionLookupKey, int actionIndex) {
-      return interner.intern(new ActionTemplateExpansionKey(actionLookupKey, actionIndex));
+    companion object {
+        fun key(actionLookupKey: ActionLookupKey, actionIndex: Int): ActionTemplateExpansionKey {
+            return ActionTemplateExpansionKey.Companion.of(actionLookupKey, actionIndex)
+        }
     }
-
-    @VisibleForSerialization
-    @AutoCodec.Interner
-    static ActionTemplateExpansionKey intern(ActionTemplateExpansionKey key) {
-      return interner.intern(key);
-    }
-
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.ACTION_TEMPLATE_EXPANSION;
-    }
-
-    @Override
-    public Label getLabel() {
-      return actionLookupKey.getLabel();
-    }
-
-    @Override
-    public BuildConfigurationKey getConfigurationKey() {
-      return actionLookupKey.getConfigurationKey();
-    }
-
-    public ActionLookupKey getActionLookupKey() {
-      return actionLookupKey;
-    }
-
-    /**
-     * Index of the action in question in the node keyed by {@link #getActionLookupKey}. Should be
-     * passed to {@link com.google.devtools.build.lib.actions.ActionLookupValue#getAction}.
-     */
-    public int getActionIndex() {
-      return actionIndex;
-    }
-
-    @Override
-    public SkyKeyInterner<ActionTemplateExpansionKey> getSkyKeyInterner() {
-      return interner;
-    }
-
-    @Override
-    public int hashCode() {
-      return 37 * actionLookupKey.hashCode() + actionIndex;
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      if (this == obj) {
-        return true;
-      }
-      if (!(obj instanceof ActionTemplateExpansionKey that)) {
-        return false;
-      }
-      return this.actionIndex == that.actionIndex
-          && this.actionLookupKey.equals(that.actionLookupKey);
-    }
-
-    @Override
-    public String toString() {
-      return MoreObjects.toStringHelper(this)
-          .add("actionLookupKey", actionLookupKey)
-          .add("actionIndex", actionIndex)
-          .toString();
-    }
-  }
 }

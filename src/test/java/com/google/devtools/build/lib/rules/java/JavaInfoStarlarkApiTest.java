@@ -229,9 +229,9 @@ public class JavaInfoStarlarkApiTest extends BuildViewTestCase {
 
     assertThat(javaInfo).isNotNull();
     assertThat(javaInfo.getJavaModuleFlagsInfo()).isNotNull();
-    assertThat(javaInfo.getJavaModuleFlagsInfo().getAddExports().toList())
+    assertThat(javaInfo.getJavaModuleFlagsInfo().addExports.toList())
         .containsExactly("export1", "export2");
-    assertThat(javaInfo.getJavaModuleFlagsInfo().getAddOpens().toList())
+    assertThat(javaInfo.getJavaModuleFlagsInfo().addOpens.toList())
         .containsExactly("open1", "open2");
   }
 

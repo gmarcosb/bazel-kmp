@@ -11,24 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.skyframe.SkyValue;
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
 
-/** A subclass of BuildDriverValue, meant to represent an exclusive test. */
-public class ExclusiveTestBuildDriverValue extends BuildDriverValue {
+/** A subclass of BuildDriverValue, meant to represent an exclusive test.  */
+class ExclusiveTestBuildDriverValue internal constructor(
+    wrappedSkyValue: SkyValue?,
+    exclusiveTestConfiguredTarget: ConfiguredTarget?
+) : BuildDriverValue(wrappedSkyValue,  /*skipped=*/false) {
+    private val exclusiveTestConfiguredTarget: ConfiguredTarget?
 
-  private final ConfiguredTarget exclusiveTestConfiguredTarget;
+    init {
+        // If an exclusive test was run at all, it wasn't skipped.
+        this.exclusiveTestConfiguredTarget = exclusiveTestConfiguredTarget
+    }
 
-  ExclusiveTestBuildDriverValue(
-      SkyValue wrappedSkyValue, ConfiguredTarget exclusiveTestConfiguredTarget) {
-    // If an exclusive test was run at all, it wasn't skipped.
-    super(wrappedSkyValue, /*skipped=*/ false);
-    this.exclusiveTestConfiguredTarget = exclusiveTestConfiguredTarget;
-  }
-
-  public ConfiguredTarget getExclusiveTestConfiguredTarget() {
-    return exclusiveTestConfiguredTarget;
-  }
+    fun getExclusiveTestConfiguredTarget(): ConfiguredTarget? {
+        return exclusiveTestConfiguredTarget
+    }
 }

@@ -11,38 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
+import com.google.devtools.build.lib.cmdline.RepositoryName
 
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.skyframe.SkyFunction;
-import java.io.IOException;
+/** A remote cache for the contents of external repositories.  */
+interface RemoteRepoContentsCache {
+    /** Adds a repository that has been fetched locally to the remote cache.  */
+    @Throws(java.lang.InterruptedException::class)
+    fun addToCache(
+        repoName: RepositoryName?,
+        fetchedRepoDir: com.google.devtools.build.lib.vfs.Path?,
+        fetchedRepoMarkerFile: com.google.devtools.build.lib.vfs.Path?,
+        predeclaredInputHash: String?,
+        reporter: ExtendedEventHandler?
+    )
 
-/** A remote cache for the contents of external repositories. */
-public interface RemoteRepoContentsCache {
-  /** Adds a repository that has been fetched locally to the remote cache. */
-  void addToCache(
-      RepositoryName repoName,
-      Path fetchedRepoDir,
-      Path fetchedRepoMarkerFile,
-      String predeclaredInputHash,
-      ExtendedEventHandler reporter)
-      throws InterruptedException;
-
-  /**
-   * Retrieves a repository from the remote cache if possible.
-   *
-   * <p>Callers have to check {@code env.valuesMissing()} after this method returns.
-   *
-   * @return true if there was a cache hit and the repository has been fetched into the given
-   *     directory.
-   */
-  boolean lookupCache(
-      RepositoryName repoName,
-      Path repoDir,
-      String predeclaredInputHash,
-      SkyFunction.Environment env)
-      throws IOException, InterruptedException;
+    /**
+     * Retrieves a repository from the remote cache if possible.
+     * 
+     * 
+     * Callers have to check `env.valuesMissing()` after this method returns.
+     * 
+     * @return true if there was a cache hit and the repository has been fetched into the given
+     * directory.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun lookupCache(
+        repoName: RepositoryName?,
+        repoDir: com.google.devtools.build.lib.vfs.Path?,
+        predeclaredInputHash: String?,
+        env: com.google.devtools.build.skyframe.SkyFunction.Environment?
+    ): Boolean
 }

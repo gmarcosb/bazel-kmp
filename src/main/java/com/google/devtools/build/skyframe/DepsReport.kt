@@ -11,138 +11,120 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.base.MoreObjects;
-import com.google.common.collect.Iterators;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Iterator;
+import com.google.devtools.build.skyframe.SkyKey
 
 /**
- * Result of {@link ProcessableGraph#analyzeDepsDoneness}: Equivalent to an {@code
- * Optional<Collection<SkyKey>>} but without the overhead of the wrapper {@code Optional}.
+ * Result of [ProcessableGraph.analyzeDepsDoneness]: Equivalent to an `Optional<Collection<SkyKey>>` but without the overhead of the wrapper `Optional`.
  */
-public class DepsReport implements Collection<SkyKey> {
-  public static final DepsReport NO_INFORMATION = new DepsReport(-1, null);
+class DepsReport private constructor(private val size: Int, arr: Array<SkyKey?>?) : MutableCollection<SkyKey?> {
+    /** Note that this array may have trailing null elements past [.size].  */
+    private val arr: Array<SkyKey?>?
 
-  private final int size;
-  /** Note that this array may have trailing null elements past {@link #size}. */
-  private final SkyKey[] arr;
-
-  private DepsReport(int size, SkyKey[] arr) {
-    this.size = size;
-    this.arr = arr;
-  }
-
-  boolean hasInformation() {
-    return arr != null;
-  }
-
-  @Override
-  public int size() {
-    return size;
-  }
-
-  @Override
-  public boolean isEmpty() {
-    return size == 0;
-  }
-
-  @Override
-  public Iterator<SkyKey> iterator() {
-    return Iterators.limit(Iterators.forArray(arr), size);
-  }
-
-  private UnsupportedOperationException throwUnsupported() {
-    throw new UnsupportedOperationException(this.toString());
-  }
-
-  @Override
-  public boolean contains(Object o) {
-    throw throwUnsupported();
-  }
-
-  @Override
-  public Object[] toArray() {
-    throw throwUnsupported();
-  }
-
-  @Override
-  public <T> T[] toArray(T[] a) {
-    throw throwUnsupported();
-  }
-
-  @Override
-  public boolean add(SkyKey skyKey) {
-    throw throwUnsupported();
-  }
-
-  @Override
-  public boolean remove(Object o) {
-    throw throwUnsupported();
-  }
-
-  @Override
-  public boolean containsAll(Collection<?> c) {
-    throw throwUnsupported();
-  }
-
-  @Override
-  public boolean addAll(Collection<? extends SkyKey> c) {
-    throw throwUnsupported();
-  }
-
-  @Override
-  public boolean removeAll(Collection<?> c) {
-    throw throwUnsupported();
-  }
-
-  @Override
-  public boolean retainAll(Collection<?> c) {
-    throw throwUnsupported();
-  }
-
-  @Override
-  public void clear() {
-    throw throwUnsupported();
-  }
-
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("size", size)
-        .add("arr", Arrays.toString(arr))
-        .toString();
-  }
-
-  /** Builder for {@link DepsReport}. */
-  public static class Builder {
-    private int size = 0;
-    private final SkyKey[] arr;
-
-    public Builder(int maxSize) {
-      arr = new SkyKey[maxSize];
+    init {
+        this.arr = arr
     }
 
-    public void add(SkyKey key) {
-      if (size >= arr.length) {
-        throw new IllegalStateException("Too many adds: " + key + ", " + this);
-      }
-      arr[size] = key;
-      size++;
+    fun hasInformation(): Boolean {
+        return arr != null
     }
 
-    public DepsReport build() {
-      return new DepsReport(size, arr);
+    override fun size(): Int {
+        return size
     }
 
-    @Override
-    public String toString() {
-      return MoreObjects.toStringHelper(this)
-          .add("size", size)
-          .add("arr", Arrays.toString(arr))
-          .toString();
+    override fun isEmpty(): Boolean {
+        return size == 0
     }
-  }
+
+    override fun iterator(): MutableIterator<SkyKey?> {
+        return com.google.common.collect.Iterators.limit<SkyKey?>(
+            com.google.common.collect.Iterators.forArray<SkyKey?>(
+                *arr
+            ), size
+        )
+    }
+
+    private fun throwUnsupported(): java.lang.UnsupportedOperationException? {
+        throw java.lang.UnsupportedOperationException(this.toString())
+    }
+
+    override fun contains(o: Any?): Boolean {
+        throw throwUnsupported()
+    }
+
+    override fun toArray(): Array<Any?>? {
+        throw throwUnsupported()
+    }
+
+    override fun <T> toArray(a: Array<T?>?): Array<T?>? {
+        throw throwUnsupported()
+    }
+
+    override fun add(skyKey: SkyKey?): Boolean {
+        throw throwUnsupported()
+    }
+
+    override fun remove(o: Any?): Boolean {
+        throw throwUnsupported()
+    }
+
+    override fun containsAll(c: MutableCollection<*>?): Boolean {
+        throw throwUnsupported()
+    }
+
+    override fun addAll(c: MutableCollection<out SkyKey?>?): Boolean {
+        throw throwUnsupported()
+    }
+
+    override fun removeAll(c: MutableCollection<*>?): Boolean {
+        throw throwUnsupported()
+    }
+
+    override fun retainAll(c: MutableCollection<*>?): Boolean {
+        throw throwUnsupported()
+    }
+
+    override fun clear() {
+        throw throwUnsupported()
+    }
+
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("size", size)
+            .add("arr", java.util.Arrays.toString(arr))
+            .toString()
+    }
+
+    /** Builder for [DepsReport].  */
+    class Builder(maxSize: Int) {
+        private var size = 0
+        private val arr: Array<SkyKey?>
+
+        init {
+            arr = arrayOfNulls<SkyKey>(maxSize)
+        }
+
+        fun add(key: SkyKey?) {
+            check(size < arr.size) { "Too many adds: " + key + ", " + this }
+            arr[size] = key
+            size++
+        }
+
+        fun build(): DepsReport {
+            return DepsReport(size, arr)
+        }
+
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(this)
+                .add("size", size)
+                .add("arr", java.util.Arrays.toString(arr))
+                .toString()
+        }
+    }
+
+    companion object {
+        val NO_INFORMATION: DepsReport = DepsReport(-1, null)
+    }
 }

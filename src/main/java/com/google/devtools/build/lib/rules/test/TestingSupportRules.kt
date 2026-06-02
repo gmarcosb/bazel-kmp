@@ -11,39 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.test;
+package com.google.devtools.build.lib.rules.test
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider.RuleSet;
-import com.google.devtools.build.lib.analysis.test.AnalysisFailureInfo;
-import com.google.devtools.build.lib.analysis.test.AnalysisTestResultInfo;
-import com.google.devtools.build.lib.analysis.test.CoverageCommon;
-import com.google.devtools.build.lib.analysis.test.InstrumentedFilesInfo;
-import com.google.devtools.build.lib.rules.core.CoreRules;
-import com.google.devtools.build.lib.starlarkbuildapi.test.TestingBootstrap;
+import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider
 
-/** Rules exposing testing infrastructure to Starlark */
-public final class TestingSupportRules implements RuleSet {
-  public static final TestingSupportRules INSTANCE = new TestingSupportRules();
+/** Rules exposing testing infrastructure to Starlark  */
+class TestingSupportRules private constructor() : RuleSet {
+    public override fun init(builder: ConfiguredRuleClassProvider.Builder) {
+        builder.addStarlarkBootstrap(
+            TestingBootstrap(
+                StarlarkTestingModule(),
+                CoverageCommon(),
+                InstrumentedFilesInfo.provider,
+                AnalysisFailureInfo.provider,
+                AnalysisTestResultInfo.provider
+            )
+        )
+    }
 
-  private TestingSupportRules() {
-    // Use the static INSTANCE field instead.
-  }
+    public override fun requires(): com.google.common.collect.ImmutableList<RuleSet?> {
+        return com.google.common.collect.ImmutableList.of<E?>(CoreRules.Companion.INSTANCE)
+    }
 
-  @Override
-  public void init(ConfiguredRuleClassProvider.Builder builder) {
-    builder.addStarlarkBootstrap(
-        new TestingBootstrap(
-            new StarlarkTestingModule(),
-            new CoverageCommon(),
-            InstrumentedFilesInfo.provider,
-            AnalysisFailureInfo.provider,
-            AnalysisTestResultInfo.provider));
-  }
-
-  @Override
-  public ImmutableList<RuleSet> requires() {
-    return ImmutableList.of(CoreRules.INSTANCE);
-  }
+    companion object {
+        val INSTANCE: TestingSupportRules = TestingSupportRules()
+    }
 }

@@ -11,19 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Interner;
-import com.google.devtools.build.lib.concurrent.BlazeInterners;
+import com.google.devtools.build.lib.concurrent.BlazeInterners
 
 /**
  * Container for a pending operation on the reverse deps set. We use subclasses to save 8 bytes of
- * memory instead of keeping a field in this class, and we store {@link Op#CHECK} or {@link Op#ADD}
- * operations as the bare {@link SkyKey} in order to save the wrapper object in that case.
- *
- * <p>When a list of {@link KeyToConsolidate} operations is processed, each operation is performed
+ * memory instead of keeping a field in this class, and we store [Op.CHECK] or [Op.ADD]
+ * operations as the bare [SkyKey] in order to save the wrapper object in that case.
+ * 
+ * 
+ * When a list of [KeyToConsolidate] operations is processed, each operation is performed
  * in order. Operations on a done or freshly evaluating node entry are straightforward: they apply
  * to the entry's reverse deps. Operations on a re-evaluating node entry have a double meaning: they
  * will eventually be applied to the node entry's existing reverse deps, just as for a done node
@@ -31,145 +29,138 @@ import com.google.devtools.build.lib.concurrent.BlazeInterners;
  * entry during this evaluation (and will thus need to be signaled when this entry finishes
  * evaluating).
  */
-public abstract class KeyToConsolidate {
-  enum Op {
-    /**
-     * If the entry is re-evaluating, assert that the reverse dep is already present in the set of
-     * reverse deps and add this reverse dep to the set of reverse deps to signal when this entry is
-     * done. If the entry is already done, do nothing.
-     */
-    CHECK,
-    /**
-     * Add the reverse dep to the set of reverse deps and assert it was not already present. If the
-     * entry is re-evaluating, add this reverse dep to the set of reverse deps to signal when this
-     * entry is done.
-     */
-    ADD,
-    /**
-     * Remove the reverse dep from the set of reverse deps and assert it was present. If the entry
-     * is re-evaluating, also remove the reverse dep from the set of reverse deps to signal when
-     * this entry is done.
-     */
-    REMOVE
-  }
+abstract class KeyToConsolidate private constructor(key: SkyKey) {
+    internal enum class Op {
+        /**
+         * If the entry is re-evaluating, assert that the reverse dep is already present in the set of
+         * reverse deps and add this reverse dep to the set of reverse deps to signal when this entry is
+         * done. If the entry is already done, do nothing.
+         */
+        CHECK,
 
-  private static final Interner<KeyToConsolidate> consolidateInterner =
-      BlazeInterners.newWeakInterner();
+        /**
+         * Add the reverse dep to the set of reverse deps and assert it was not already present. If the
+         * entry is re-evaluating, add this reverse dep to the set of reverse deps to signal when this
+         * entry is done.
+         */
+        ADD,
 
-  private final SkyKey key;
-
-  /** Do not call directly -- use the {@link #create} static method instead. */
-  private KeyToConsolidate(SkyKey key) {
-    this.key = key;
-  }
-
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this).add("key", key).toString();
-  }
-
-  /**
-   * Gets which operation was delayed for the given object, created using {@link #create}. The same
-   * {@code opToStoreBare} passed in to {@link #create} should be passed in here.
-   */
-  static Op op(Object obj, Op opToStoreBare) {
-    if (obj instanceof SkyKey) {
-      return opToStoreBare;
-    }
-    if (obj instanceof KeyToAdd) {
-      return Op.ADD;
-    }
-    if (obj instanceof KeyToCheck) {
-      return Op.CHECK;
-    }
-    if (obj instanceof KeyToRemove) {
-      return Op.REMOVE;
-    }
-    throw new IllegalStateException(
-        "Unknown object type: " + obj + ", " + opToStoreBare + ", " + obj.getClass());
-  }
-
-  /** Gets the key whose operation was delayed for the given object. */
-  static SkyKey key(Object obj) {
-    if (obj instanceof SkyKey skyKey) {
-      return skyKey;
-    }
-    Preconditions.checkState(obj instanceof KeyToConsolidate, obj);
-    return ((KeyToConsolidate) obj).key;
-  }
-
-  /**
-   * Creates a new operation, encoding the operation {@code op} with reverse dep {@code key}. To
-   * save memory, the caller should specify the most common operation expected as {@code
-   * opToStoreBare}. That operation will be encoded as the raw {@code key}, saving the memory of an
-   * object wrapper. Whatever {@code opToStoreBare} is set to here, the same value must be passed in
-   * to {@link #op} when decoding an operation emitted by this method.
-   */
-  static Object create(SkyKey key, Op op, IncrementalInMemoryNodeEntry entry) {
-    Preconditions.checkNotNull(key);
-    if (op == ReverseDepsUtility.getOpToStoreBare(entry)) {
-      return key;
-    }
-    switch (op) {
-      case CHECK:
-        return consolidateInterner.intern(new KeyToCheck(key));
-      case REMOVE:
-        return consolidateInterner.intern(new KeyToRemove(key));
-      case ADD:
-        return consolidateInterner.intern(new KeyToAdd(key));
-      default:
-        throw new IllegalStateException(op + ", " + key);
-    }
-  }
-
-  @Override
-  public boolean equals(Object obj) {
-    if (obj == null) {
-      return false;
-    }
-    return this.getClass() == obj.getClass() && this.key.equals(((KeyToConsolidate) obj).key);
-  }
-
-  int keyHashCode() {
-    return key.hashCode();
-  }
-
-  @Override
-  public int hashCode() {
-    // Overridden in subclasses.
-    throw new UnsupportedOperationException(key.toString());
-  }
-
-  private static final class KeyToAdd extends KeyToConsolidate {
-    KeyToAdd(SkyKey key) {
-      super(key);
+        /**
+         * Remove the reverse dep from the set of reverse deps and assert it was present. If the entry
+         * is re-evaluating, also remove the reverse dep from the set of reverse deps to signal when
+         * this entry is done.
+         */
+        REMOVE
     }
 
-    @Override
-    public int hashCode() {
-      return keyHashCode();
-    }
-  }
+    private val key: SkyKey
 
-  private static final class KeyToCheck extends KeyToConsolidate {
-    KeyToCheck(SkyKey key) {
-      super(key);
+    /** Do not call directly -- use the [.create] static method instead.  */
+    init {
+        this.key = key
     }
 
-    @Override
-    public int hashCode() {
-      return 31 + 43 * keyHashCode();
-    }
-  }
-
-  private static final class KeyToRemove extends KeyToConsolidate {
-    KeyToRemove(SkyKey key) {
-      super(key);
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this).add("key", key).toString()
     }
 
-    @Override
-    public int hashCode() {
-      return 42 + 37 * keyHashCode();
+    override fun equals(obj: Any?): Boolean {
+        if (obj == null) {
+            return false
+        }
+        return this.getClass() == obj.getClass() && this.key == (obj as KeyToConsolidate).key
     }
-  }
+
+    fun keyHashCode(): Int {
+        return key.hashCode()
+    }
+
+    override fun hashCode(): Int {
+        // Overridden in subclasses.
+        throw java.lang.UnsupportedOperationException(key.toString())
+    }
+
+    private class KeyToAdd(key: SkyKey) : KeyToConsolidate(key) {
+        override fun hashCode(): Int {
+            return keyHashCode()
+        }
+    }
+
+    private class KeyToCheck(key: SkyKey) : KeyToConsolidate(key) {
+        override fun hashCode(): Int {
+            return 31 + 43 * keyHashCode()
+        }
+    }
+
+    private class KeyToRemove(key: SkyKey) : KeyToConsolidate(key) {
+        override fun hashCode(): Int {
+            return 42 + 37 * keyHashCode()
+        }
+    }
+
+    companion object {
+        private val consolidateInterner: com.google.common.collect.Interner<KeyToConsolidate> =
+            BlazeInterners.newWeakInterner()
+
+        /**
+         * Gets which operation was delayed for the given object, created using [.create]. The same
+         * `opToStoreBare` passed in to [.create] should be passed in here.
+         */
+        fun op(obj: Any, opToStoreBare: Op?): Op? {
+            if (obj is SkyKey) {
+                return opToStoreBare
+            }
+            if (obj is KeyToAdd) {
+                return com.google.devtools.build.skyframe.KeyToConsolidate.Op.ADD
+            }
+            if (obj is KeyToCheck) {
+                return com.google.devtools.build.skyframe.KeyToConsolidate.Op.CHECK
+            }
+            if (obj is KeyToRemove) {
+                return com.google.devtools.build.skyframe.KeyToConsolidate.Op.REMOVE
+            }
+            throw java.lang.IllegalStateException(
+                "Unknown object type: " + obj + ", " + opToStoreBare + ", " + obj.getClass()
+            )
+        }
+
+        /** Gets the key whose operation was delayed for the given object.  */
+        fun key(obj: Any?): SkyKey? {
+            if (obj is SkyKey) {
+                return obj
+            }
+            com.google.common.base.Preconditions.checkState(obj is KeyToConsolidate, obj)
+            return (obj as KeyToConsolidate).key
+        }
+
+        /**
+         * Creates a new operation, encoding the operation `op` with reverse dep `key`. To
+         * save memory, the caller should specify the most common operation expected as `opToStoreBare`. That operation will be encoded as the raw `key`, saving the memory of an
+         * object wrapper. Whatever `opToStoreBare` is set to here, the same value must be passed in
+         * to [.op] when decoding an operation emitted by this method.
+         */
+        fun create(key: SkyKey, op: Op, entry: IncrementalInMemoryNodeEntry): Any {
+            com.google.common.base.Preconditions.checkNotNull<SkyKey?>(key)
+            if (op == ReverseDepsUtility.getOpToStoreBare(entry)) {
+                return key
+            }
+            when (op) {
+                com.google.devtools.build.skyframe.KeyToConsolidate.Op.CHECK -> return consolidateInterner.intern(
+                    KeyToCheck(key)
+                )
+
+                com.google.devtools.build.skyframe.KeyToConsolidate.Op.REMOVE -> return consolidateInterner.intern(
+                    KeyToRemove(key)
+                )
+
+                com.google.devtools.build.skyframe.KeyToConsolidate.Op.ADD -> return consolidateInterner.intern(
+                    KeyToAdd(
+                        key
+                    )
+                )
+
+                else -> throw java.lang.IllegalStateException(op.toString() + ", " + key)
+            }
+        }
+    }
 }

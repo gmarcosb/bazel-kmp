@@ -11,20 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.ResolvedTargets;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Collection;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * A value referring to a computed set of resolved targets. This is used for the results of target
@@ -32,65 +21,63 @@ import java.util.Collection;
  */
 @Immutable
 @ThreadSafe
-@VisibleForTesting
-public final class TestsForTargetPatternValue implements SkyValue {
-  private final ResolvedTargets<Label> labels;
+@com.google.common.annotations.VisibleForTesting
+class TestsForTargetPatternValue internal constructor(labels: ResolvedTargets<Label?>?) : SkyValue {
+    private val labels: ResolvedTargets<Label?>
 
-  TestsForTargetPatternValue(ResolvedTargets<Label> labels) {
-    this.labels = Preconditions.checkNotNull(labels);
-  }
-
-  public ResolvedTargets<Label> getLabels() {
-    return labels;
-  }
-
-  /**
-   * Create a target pattern value key.
-   *
-   * @param targets the set of targets to be expanded
-   */
-  @ThreadSafe
-  public static SkyKey key(Collection<Label> targets) {
-    return new TestsForTargetPatternKey(ImmutableSortedSet.copyOf(targets));
-  }
-
-  /** A list of targets of which all test suites should be expanded. */
-  @ThreadSafe
-  static final class TestsForTargetPatternKey implements SkyKey {
-    private final ImmutableSortedSet<Label> targets;
-
-    TestsForTargetPatternKey(ImmutableSortedSet<Label> targets) {
-      this.targets = targets;
+    init {
+        this.labels = com.google.common.base.Preconditions.checkNotNull<ResolvedTargets<Label?>>(labels)
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.TEST_SUITE_EXPANSION;
+    fun getLabels(): ResolvedTargets<Label?> {
+        return labels
     }
 
-    public ImmutableSet<Label> getTargets() {
-      return targets;
+    /** A list of targets of which all test suites should be expanded.  */
+    @ThreadSafe
+    internal class TestsForTargetPatternKey(targets: com.google.common.collect.ImmutableSortedSet<Label?>) : SkyKey {
+        private val targets: com.google.common.collect.ImmutableSortedSet<Label?>
+
+        init {
+            this.targets = targets
+        }
+
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.TEST_SUITE_EXPANSION
+        }
+
+        fun getTargets(): com.google.common.collect.ImmutableSet<Label?> {
+            return targets
+        }
+
+        override fun toString(): String {
+            return "ExpandTestSuites(" + targets.toString() + ")"
+        }
+
+        override fun hashCode(): Int {
+            return targets.hashCode()
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            if (this === obj) {
+                return true
+            }
+            if (obj !is TestsForTargetPatternKey) {
+                return false
+            }
+            return obj.targets == targets
+        }
     }
 
-    @Override
-    public String toString() {
-      return "ExpandTestSuites(" + targets.toString() + ")";
+    companion object {
+        /**
+         * Create a target pattern value key.
+         * 
+         * @param targets the set of targets to be expanded
+         */
+        @ThreadSafe
+        fun key(targets: MutableCollection<Label?>): SkyKey {
+            return TestsForTargetPatternKey(com.google.common.collect.ImmutableSortedSet.copyOf<Label?>(targets))
+        }
     }
-
-    @Override
-    public int hashCode() {
-      return targets.hashCode();
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      if (this == obj) {
-        return true;
-      }
-      if (!(obj instanceof TestsForTargetPatternKey other)) {
-        return false;
-      }
-      return other.targets.equals(targets);
-    }
-  }
 }

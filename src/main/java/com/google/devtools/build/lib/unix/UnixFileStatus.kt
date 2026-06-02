@@ -11,92 +11,61 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.unix;
+package com.google.devtools.build.lib.unix
 
-import com.google.common.base.MoreObjects;
-import com.google.devtools.build.lib.vfs.Dirent;
-import com.google.devtools.build.lib.vfs.FileStatus;
+import com.google.devtools.build.lib.unix.NativePosixFilesService.Stat
+import com.google.devtools.build.lib.unix.UnixMode
+import com.google.devtools.build.lib.vfs.FileStatus
 
 /**
- * An implementation of {@link FileStatus} backed by the result of a stat(2) system call.
- *
- * <p>This class is optimized for memory usage. Fields not required by Bazel are omitted.
+ * An implementation of [FileStatus] backed by the result of a stat(2) system call.
+ * 
+ * 
+ * This class is optimized for memory usage. Fields not required by Bazel are omitted.
  */
-public final class UnixFileStatus implements FileStatus {
+class UnixFileStatus internal constructor(stat: Stat) : FileStatus {
+    private val mode: Int
+    val lastModifiedTime: Long // milliseconds since Unix epoch
+    val lastChangeTime: Long // milliseconds since Unix epoch
+    val size: Long
 
-  private final int mode;
-  private final long mtime; // milliseconds since Unix epoch
-  private final long ctime; // milliseconds since Unix epoch
-  private final long size;
-  private final long ino;
-
-  /** Constructs a {@link UnixFileStatus} from a {@link NativePosixFilesService.Stat}. */
-  UnixFileStatus(NativePosixFilesService.Stat stat) {
-    this.mode = stat.mode();
-    this.mtime = stat.mtime();
-    this.ctime = stat.ctime();
-    this.size = stat.size();
-    this.ino = stat.ino();
-  }
-
-  public Dirent.Type getDirentType() {
-    return UnixMode.getDirentTypeFromMode(mode);
-  }
-
-  @Override
-  public long getNodeId() {
     // TODO(tjgq): Consider deriving this value from both st_dev and st_ino.
-    return ino;
-  }
+    val nodeId: Long
 
-  @Override
-  public boolean isFile() {
-    return UnixMode.isFile(mode);
-  }
+    /** Constructs a [UnixFileStatus] from a [NativePosixFilesService.Stat].  */
+    init {
+        this.mode = stat.mode
+        this.lastModifiedTime = stat.mtime
+        this.lastChangeTime = stat.ctime
+        this.size = stat.size
+        this.nodeId = stat.ino
+    }
 
-  @Override
-  public boolean isSpecialFile() {
-    return UnixMode.isSpecialFile(mode);
-  }
+    val direntType: com.google.devtools.build.lib.vfs.Dirent.Type?
+        get() = UnixMode.getDirentTypeFromMode(mode)
 
-  @Override
-  public boolean isDirectory() {
-    return UnixMode.isDirectory(mode);
-  }
+    val isFile: Boolean
+        get() = UnixMode.isFile(mode)
 
-  @Override
-  public boolean isSymbolicLink() {
-    return UnixMode.isSymbolicLink(mode);
-  }
+    val isSpecialFile: Boolean
+        get() = UnixMode.isSpecialFile(mode)
 
-  @Override
-  public int getPermissions() {
-    return UnixMode.getPermissions(mode);
-  }
+    val isDirectory: Boolean
+        get() = UnixMode.isDirectory(mode)
 
-  @Override
-  public long getSize() {
-    return size;
-  }
+    val isSymbolicLink: Boolean
+        get() = UnixMode.isSymbolicLink(mode)
 
-  @Override
-  public long getLastModifiedTime() {
-    return mtime;
-  }
+    val permissions: Int
+        get() = UnixMode.getPermissions(mode)
 
-  @Override
-  public long getLastChangeTime() {
-    return ctime;
-  }
-
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("mode", String.format("0%06o", mode))
-        .add("mtime", mtime)
-        .add("ctime", ctime)
-        .add("size", size)
-        .add("ino", ino)
-        .toString();
-  }
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("mode", java.lang.String.format("0%06o", mode))
+            .add("mtime", this.lastModifiedTime)
+            .add("ctime", this.lastChangeTime)
+            .add("size", size)
+            .add("ino", this.nodeId)
+            .toString()
+    }
 }

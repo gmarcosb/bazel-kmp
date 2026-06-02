@@ -11,35 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
-
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.ActionLookupValue;
-import com.google.devtools.build.lib.analysis.AspectValue;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator.AspectKey;
+import com.google.devtools.build.lib.actions.ActionAnalysisMetadata
 
 /**
- * SkyValue for {@code TopLevelAspectsKey} wraps a list of the {@code AspectValue} of the top level
+ * SkyValue for `TopLevelAspectsKey` wraps a list of the `AspectValue` of the top level
  * aspects applied on the same top level target.
  */
-public final class TopLevelAspectsValue implements ActionLookupValue {
-  private final ImmutableMap<AspectKey, AspectValue> topLevelAspectsMap;
+class TopLevelAspectsValue(topLevelAspectsMap: com.google.common.collect.ImmutableMap<AspectKey?, AspectValue?>?) :
+    ActionLookupValue {
+    private val topLevelAspectsMap: com.google.common.collect.ImmutableMap<AspectKey?, AspectValue?>
 
-  public TopLevelAspectsValue(ImmutableMap<AspectKey, AspectValue> topLevelAspectsMap) {
-    this.topLevelAspectsMap = checkNotNull(topLevelAspectsMap);
-  }
+    init {
+        this.topLevelAspectsMap =
+            com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableMap<AspectKey?, AspectValue?>>(
+                topLevelAspectsMap
+            )
+    }
 
-  public ImmutableMap<AspectKey, AspectValue> getTopLevelAspectsMap() {
-    return topLevelAspectsMap;
-  }
+    fun getTopLevelAspectsMap(): com.google.common.collect.ImmutableMap<AspectKey?, AspectValue?> {
+        return topLevelAspectsMap
+    }
 
-  @Override
-  public ImmutableList<ActionAnalysisMetadata> getActions() {
-    return ImmutableList.of();
-  }
+    val actions: com.google.common.collect.ImmutableList<ActionAnalysisMetadata?>
+        get() = com.google.common.collect.ImmutableList.of<ActionAnalysisMetadata?>()
 }

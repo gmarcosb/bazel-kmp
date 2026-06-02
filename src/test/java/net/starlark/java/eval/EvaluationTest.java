@@ -121,7 +121,7 @@ public final class EvaluationTest {
         Module.withPredeclared(StarlarkSemantics.DEFAULT, ImmutableMap.of("interrupt", interrupt));
     try (Mutability mu = Mutability.create("test")) {
       StarlarkThread thread = StarlarkThread.createTransient(mu, StarlarkSemantics.DEFAULT);
-      thread.setPrintHandler((_thread, msg) -> printEvents.add(msg));
+      thread.printHandler = (_thread, msg) -> printEvents.add(msg);
       Starlark.execFile(input, FileOptions.DEFAULT, module, thread);
     } finally {
       // Reset interrupt bit in case the test failed to do so.
@@ -140,9 +140,9 @@ public final class EvaluationTest {
         Module module =
             Module.withPredeclared(
                 StarlarkSemantics.DEFAULT, ImmutableMap.of("n", StarlarkInt.of(n)));
-        long steps0 = thread.getExecutedSteps();
+        long steps0 = thread.executedSteps;
         Starlark.execFile(input, FileOptions.DEFAULT, module, thread);
-        return thread.getExecutedSteps() - steps0;
+        return thread.executedSteps - steps0;
       }
     }
 
@@ -159,7 +159,7 @@ public final class EvaluationTest {
     }
 
     // Exceeding the limit causes cancellation.
-    thread.setMaxExecutionSteps(1000);
+    thread.maxExecutionSteps = 1000;
     EvalException ex = assertThrows(EvalException.class, () -> new C().run(1000));
     assertThat(ex).hasMessageThat().contains("Starlark computation cancelled: too many steps");
   }
@@ -738,22 +738,20 @@ public final class EvaluationTest {
 
     StarlarkThread bThread =
         StarlarkThread.createTransient(Mutability.create(), StarlarkSemantics.DEFAULT);
-    bThread.setLoader(
-        module -> {
-          assertThat(module).isEqualTo("a.bzl");
-          return a;
-        });
+    bThread.loader = module -> {
+      assertThat(module).isEqualTo("a.bzl");
+      return a;
+    };
     Module b = Module.create();
     Starlark.execFile(
         ParserInput.fromString("load('a.bzl', 'x')", "b.bzl"), FileOptions.DEFAULT, b, bThread);
 
     StarlarkThread cThread =
         StarlarkThread.createTransient(Mutability.create(), StarlarkSemantics.DEFAULT);
-    cThread.setLoader(
-        module -> {
-          assertThat(module).isEqualTo("b.bzl");
-          return b;
-        });
+    cThread.loader = module -> {
+      assertThat(module).isEqualTo("b.bzl");
+      return b;
+    };
     EvalException ex =
         assertThrows(
             EvalException.class,
@@ -781,7 +779,7 @@ public final class EvaluationTest {
     Module m2 = Module.create();
     try (Mutability mu = Mutability.create("test")) {
       StarlarkThread thread = StarlarkThread.createTransient(mu, StarlarkSemantics.DEFAULT);
-      thread.setLoader((name) -> m1);
+      thread.loader = (name) -> m1;
       Starlark.execFile(input, options, m2, thread);
     }
     assertThat(m2.getGlobal("x")).isEqualTo("two");
@@ -790,7 +788,7 @@ public final class EvaluationTest {
   @Test
   public void moduleWithDocString() throws Exception {
     Module module = Module.create();
-    assertThat(module.getDocumentation()).isNull();
+    assertThat(module.documentation).isNull();
     ParserInput input =
         ParserInput.fromLines(
             "\"\"\"",
@@ -808,7 +806,7 @@ public final class EvaluationTest {
       StarlarkThread thread = StarlarkThread.createTransient(mu, StarlarkSemantics.DEFAULT);
       Starlark.execFile(input, FileOptions.DEFAULT, module, thread);
     }
-    assertThat(module.getDocumentation()).isEqualTo("Module doc header\n\nModule doc details");
+    assertThat(module.documentation).isEqualTo("Module doc header\n\nModule doc details");
   }
 
   @Test
@@ -825,13 +823,13 @@ public final class EvaluationTest {
       StarlarkThread thread = StarlarkThread.createTransient(mu, StarlarkSemantics.DEFAULT);
       Starlark.execFile(input, FileOptions.DEFAULT, module, thread);
     }
-    assertThat(module.getDocumentation()).isNull();
+    assertThat(module.documentation).isNull();
   }
 
   @Test
   public void moduleWithMultiplePrograms_usesFirstNonNullDocString() throws Exception {
     Module module = Module.create();
-    assertThat(module.getDocumentation()).isNull();
+    assertThat(module.documentation).isNull();
     ParserInput inputWithoutModuleDocstring = ParserInput.fromLines("x = \"Not a module doc\"");
     ParserInput inputWithModuleDocstring1 =
         ParserInput.fromLines(
@@ -847,14 +845,14 @@ public final class EvaluationTest {
       Starlark.execFile(inputWithModuleDocstring1, FileOptions.DEFAULT, module, thread);
       Starlark.execFile(inputWithModuleDocstring2, FileOptions.DEFAULT, module, thread);
     }
-    assertThat(module.getDocumentation()).isEqualTo("First non-null module doc");
+    assertThat(module.documentation).isEqualTo("First non-null module doc");
   }
 
   @Test
   public void moduleWithPresetDocstring() throws Exception {
     Module module = Module.create();
-    module.setDocumentation("preset docstring");
-    assertThat(module.getDocumentation()).isEqualTo("preset docstring");
+    module.documentation = "preset docstring";
+    assertThat(module.documentation).isEqualTo("preset docstring");
     ParserInput input =
         ParserInput.fromLines(
             "\"\"\"Module doc from file\"\"\"", //
@@ -863,7 +861,7 @@ public final class EvaluationTest {
       StarlarkThread thread = StarlarkThread.createTransient(mu, StarlarkSemantics.DEFAULT);
       Starlark.execFile(input, FileOptions.DEFAULT, module, thread);
     }
-    assertThat(module.getDocumentation()).isEqualTo("preset docstring");
+    assertThat(module.documentation).isEqualTo("preset docstring");
   }
 
   @Test

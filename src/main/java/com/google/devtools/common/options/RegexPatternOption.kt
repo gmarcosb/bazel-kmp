@@ -11,61 +11,58 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options;
+package com.google.devtools.common.options
 
-import com.google.auto.value.AutoValue;
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.util.regex.RegexUtil;
-import java.util.function.Predicate;
-import java.util.regex.Pattern;
+import com.google.auto.value.AutoValue
 
 /**
- * Option class wrapping a {@link Pattern class}. We wrap the {@link Pattern} class instance since
- * it uses reference equality, which breaks the assumption of {@link Converter} that {@code
- * converter.convert(sameString).equals(converter.convert(sameString)}.
- *
- * <p>Please note that the equality implementation is based solely on the input regex, therefore
- * patterns expressing the same intent with different regular expressions (e.g. {@code "a"} and
- * {@code "[a]"} will not be treated as equal.
+ * Option class wrapping a [class][Pattern]. We wrap the [Pattern] class instance since
+ * it uses reference equality, which breaks the assumption of [Converter] that `converter.convert(sameString).equals(converter.convert(sameString)`.
+ * 
+ * 
+ * Please note that the equality implementation is based solely on the input regex, therefore
+ * patterns expressing the same intent with different regular expressions (e.g. `"a"` and
+ * `"[a]"` will not be treated as equal.
  */
 @AutoValue
-public abstract class RegexPatternOption {
-  static RegexPatternOption create(Pattern regexPattern) {
-    return new AutoValue_RegexPatternOption(
-        Preconditions.checkNotNull(regexPattern),
-        RegexUtil.asOptimizedMatchingPredicate(regexPattern));
-  }
+abstract class RegexPatternOption {
+    /**
+     * The original regex pattern.
+     * 
+     * 
+     * Note: Strings passed to the [Pattern] and [java.util.regex.Matcher] API have to
+     * be converted to "Unicode" form first (see [ ][com.google.devtools.build.lib.util.StringEncoding.internalToUnicode].
+     */
+    abstract fun regexPattern(): java.util.regex.Pattern?
 
-  /**
-   * The original regex pattern.
-   *
-   * <p>Note: Strings passed to the {@link Pattern} and {@link java.util.regex.Matcher} API have to
-   * be converted to "Unicode" form first (see {@link
-   * com.google.devtools.build.lib.util.StringEncoding#internalToUnicode}.
-   */
-  public abstract Pattern regexPattern();
+    /**
+     * A potentially optimized [Predicate] that matches the entire input string against the
+     * regex pattern.
+     */
+    abstract fun matcher(): java.util.function.Predicate<String?>?
 
-  /**
-   * A potentially optimized {@link Predicate} that matches the entire input string against the
-   * regex pattern.
-   */
-  public abstract Predicate<String> matcher();
+    override fun equals(other: Any?): Boolean {
+        if (this === other) {
+            return true
+        }
+        if (other !is RegexPatternOption) {
+            return false
+        }
 
-  @Override
-  public final boolean equals(Object other) {
-    if (this == other) {
-      return true;
-    }
-    if (!(other instanceof RegexPatternOption)) {
-      return false;
+        val otherOption = other
+        return otherOption.regexPattern().pattern() == regexPattern().pattern()
     }
 
-    RegexPatternOption otherOption = (RegexPatternOption) other;
-    return otherOption.regexPattern().pattern().equals(regexPattern().pattern());
-  }
+    override fun hashCode(): Int {
+        return regexPattern().pattern().hashCode()
+    }
 
-  @Override
-  public final int hashCode() {
-    return regexPattern().pattern().hashCode();
-  }
+    companion object {
+        fun create(regexPattern: java.util.regex.Pattern?): RegexPatternOption {
+            return AutoValue_RegexPatternOption(
+                com.google.common.base.Preconditions.checkNotNull<T?>(regexPattern),
+                com.google.devtools.build.lib.util.regex.RegexUtil.asOptimizedMatchingPredicate(regexPattern)
+            )
+        }
+    }
 }

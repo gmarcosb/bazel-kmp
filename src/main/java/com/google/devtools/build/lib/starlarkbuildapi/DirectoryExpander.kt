@@ -11,39 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi
 
-package com.google.devtools.build.lib.starlarkbuildapi;
+import com.google.devtools.build.lib.starlarkbuildapi.FileApi
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.docgen.annot.DocCategory;
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.StarlarkValue;
-
-/** A class that can be used to expand directories at execution time. */
-@StarlarkBuiltin(
+/** A class that can be used to expand directories at execution time.  */
+@net.starlark.java.annot.StarlarkBuiltin(
     name = "DirectoryExpander",
-    category = DocCategory.BUILTIN,
-    doc =
-        "Expands directories created by <a href='../builtins/actions.html#declare_directory'>"
+    category = com.google.devtools.build.docgen.annot.DocCategory.BUILTIN,
+    doc = ("Expands directories created by <a href='../builtins/actions.html#declare_directory'>"
             + "<code>ctx.actions.declare_directory</code></a>"
             + " during the execution phase. This is useful to expand directories in "
             + "<a href='../builtins/Args.html#add_all.map_each'><code>map_each</code></a>.")
-public interface DirectoryExpander extends StarlarkValue {
-  @StarlarkMethod(
-      name = "expand",
-      doc =
-          "If the given <code>File</code> is a directory, this returns a list of <code>File"
-              + "</code>s recursively underneath the directory. Otherwise, this returns a list "
-              + "containing just the given <code>File</code> itself.",
-      parameters = {
-        @Param(
+)
+interface DirectoryExpander : net.starlark.java.eval.StarlarkValue {
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "expand",
+        doc = ("If the given <code>File</code> is a directory, this returns a list of <code>File"
+                + "</code>s recursively underneath the directory. Otherwise, this returns a list "
+                + "containing just the given <code>File</code> itself."),
+        parameters = [net.starlark.java.annot.Param(
             name = "file",
             positional = true,
             named = false,
-            doc = "The directory or file to expand."),
-      })
-  ImmutableList<FileApi> list(FileApi artifact) throws EvalException;
+            doc = "The directory or file to expand."
+        )]
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun list(artifact: FileApi?): com.google.common.collect.ImmutableList<FileApi?>?
 }

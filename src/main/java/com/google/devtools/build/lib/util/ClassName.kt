@@ -11,22 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-/** Utilities providing user-friendly class names. */
-public final class ClassName {
-
-  /**
-   * Returns a class's {@link Class#getSimpleName}, but also includes the outer class's simple name
-   * if this is an inner class.
-   *
-   * <p>For example, given {@code MyInnerClass} under {@code MyOuterClass}, returns {@code
-   * "MyOuterClass$MyInnerClass"}.
-   */
-  public static String getSimpleNameWithOuter(Class<?> clazz) {
-    String name = clazz.getName();
-    return name.substring(name.lastIndexOf(".") + 1);
-  }
-
-  private ClassName() {}
+/** Utilities providing user-friendly class names.  */
+object ClassName {
+    /**
+     * Returns a class's [Class.getSimpleName], but also includes the outer class's simple name
+     * if this is an inner class.
+     * 
+     * 
+     * For example, given `MyInnerClass` under `MyOuterClass`, returns `"MyOuterClass$MyInnerClass"`.
+     */
+    fun getSimpleNameWithOuter(clazz: java.lang.Class<*>): String {
+        val name: String = clazz.getName()
+        return name.substring(name.lastIndexOf(".") + 1)
+    }
 }

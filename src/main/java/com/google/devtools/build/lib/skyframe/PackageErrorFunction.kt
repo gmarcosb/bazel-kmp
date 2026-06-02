@@ -11,93 +11,76 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.packages.BuildFileContainsErrorsException;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.AbstractSkyKey;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionException.Transience;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
 /**
- * SkyFunction that throws a {@link BuildFileContainsErrorsException} for {@link Package} that
+ * SkyFunction that throws a [BuildFileContainsErrorsException] for [Package] that
  * loaded, but was in error. Must only be requested when a SkyFunction wishes to ignore the Skyframe
- * error from a {@link PackageValue} in keep_going mode, but to shut down the build in nokeep_going
- * mode. Thus, this SkyFunction should only be requested when the corresponding {@link
- * PackageFunction} has already been successfully called and the resulting Package contains an
+ * error from a [PackageValue] in keep_going mode, but to shut down the build in nokeep_going
+ * mode. Thus, this SkyFunction should only be requested when the corresponding [ ] has already been successfully called and the resulting Package contains an
  * error.
- *
- * <p>This SkyFunction always throws a {@link BuildFileContainsErrorsException}. It also should
+ * 
+ * 
+ * This SkyFunction always throws a [BuildFileContainsErrorsException]. It also should
  * never request a skyframe restart, since all of its dependencies should already be present.
  */
-public class PackageErrorFunction implements SkyFunction {
-  public static Key key(PackageIdentifier packageIdentifier) {
-    return Key.create(packageIdentifier);
-  }
+class PackageErrorFunction : SkyFunction {
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    @AutoCodec
+    internal class Key private constructor(arg: PackageIdentifier?) : AbstractSkyKey<PackageIdentifier?>(arg) {
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.PACKAGE_ERROR
+        }
 
-  @VisibleForSerialization
-  @AutoCodec
-  static class Key extends AbstractSkyKey<PackageIdentifier> {
-    private static final SkyKeyInterner<Key> interner = SkyKey.newInterner();
+        val skyKeyInterner: SkyKeyInterner<Key?>
+            get() = com.google.devtools.build.lib.skyframe.PackageErrorFunction.Key.Companion.interner
 
-    private Key(PackageIdentifier arg) {
-      super(arg);
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
+
+            private fun create(arg: PackageIdentifier?): Key {
+                return com.google.devtools.build.lib.skyframe.PackageErrorFunction.Key.Companion.interner.intern(
+                    com.google.devtools.build.lib.skyframe.PackageErrorFunction.Key(
+                        arg
+                    )
+                )
+            }
+
+            @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+            @AutoCodec.Interner
+            fun intern(key: Key?): Key {
+                return com.google.devtools.build.lib.skyframe.PackageErrorFunction.Key.Companion.interner.intern(key)
+            }
+        }
     }
 
-    private static Key create(PackageIdentifier arg) {
-      return interner.intern(new Key(arg));
+    @Throws(PackageErrorFunctionException::class, java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment): SkyValue? {
+        val packageIdentifier: PackageIdentifier? = skyKey.argument() as PackageIdentifier?
+        try {
+            // Callers must have tried to load the package already and gotten the package successfully.
+            val pkg: Package =
+                (env.getValueOrThrow<E?>(packageIdentifier, NoSuchPackageException::class.java) as PackageValue)
+                    .getPackage()
+            com.google.common.base.Preconditions.checkState(pkg.containsErrors(), skyKey)
+            throw PackageErrorFunctionException(
+                BuildFileContainsErrorsException(packageIdentifier), Transience.PERSISTENT
+            )
+        } catch (e: NoSuchPackageException) {
+            throw java.lang.IllegalStateException(
+                "Function should not have been called on package with exception", e
+            )
+        }
     }
 
-    @VisibleForSerialization
-    @AutoCodec.Interner
-    static Key intern(Key key) {
-      return interner.intern(key);
-    }
+    private class PackageErrorFunctionException(cause: BuildFileContainsErrorsException?, transience: Transience?) :
+        SkyFunctionException(cause, transience)
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.PACKAGE_ERROR;
+    companion object {
+        fun key(packageIdentifier: PackageIdentifier?): Key {
+            return com.google.devtools.build.lib.skyframe.PackageErrorFunction.Key.Companion.create(packageIdentifier)
+        }
     }
-
-    @Override
-    public SkyKeyInterner<Key> getSkyKeyInterner() {
-      return interner;
-    }
-  }
-
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws PackageErrorFunctionException, InterruptedException {
-    PackageIdentifier packageIdentifier = (PackageIdentifier) skyKey.argument();
-    try {
-      // Callers must have tried to load the package already and gotten the package successfully.
-      Package pkg =
-          ((PackageValue) env.getValueOrThrow(packageIdentifier, NoSuchPackageException.class))
-              .getPackage();
-      Preconditions.checkState(pkg.containsErrors(), skyKey);
-      throw new PackageErrorFunctionException(
-          new BuildFileContainsErrorsException(packageIdentifier), Transience.PERSISTENT);
-    } catch (NoSuchPackageException e) {
-      throw new IllegalStateException(
-          "Function should not have been called on package with exception", e);
-    }
-  }
-
-  private static class PackageErrorFunctionException extends SkyFunctionException {
-    public PackageErrorFunctionException(
-        BuildFileContainsErrorsException cause, Transience transience) {
-      super(cause, transience);
-    }
-  }
 }

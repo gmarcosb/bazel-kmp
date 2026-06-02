@@ -11,18 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
-
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.SkyValue;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
+import com.google.devtools.build.skyframe.SkyValue
 
 /**
  * The value of an environmental variable from an environment (client env, action env or repository
- * env). These are invalidated and injected by {@link SequencedSkyframeExecutor}.
- *
+ * env). These are invalidated and injected by [SequencedSkyframeExecutor].
+ * 
  * @param value the value in the client environment or null if unset in the environment.
  */
 @AutoCodec
-public record EnvironmentVariableValue(@Nullable String value) implements SkyValue {}
+@kotlin.jvm.JvmRecord
+data class EnvironmentVariableValue(@kotlin.jvm.JvmField val value: String?) : SkyValue

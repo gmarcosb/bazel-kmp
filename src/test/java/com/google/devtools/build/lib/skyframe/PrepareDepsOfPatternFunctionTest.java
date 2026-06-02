@@ -45,8 +45,8 @@ public final class PrepareDepsOfPatternFunctionTest extends BuildViewTestCase {
   private static SkyKey createPrepDepsKey(String pattern) {
     PrepareDepsOfPatternSkyKeysAndExceptions keysAndExceptions =
         PrepareDepsOfPatternValue.keys(ImmutableList.of(pattern), TargetPattern.defaultParser());
-    assertThat(keysAndExceptions.getExceptions()).isEmpty();
-    return Iterables.getOnlyElement(keysAndExceptions.getValues()).getSkyKey();
+    assertThat(keysAndExceptions.exceptions).isEmpty();
+    return Iterables.getOnlyElement(keysAndExceptions.values).getSkyKey();
   }
 
   private EvaluationResult<PrepareDepsOfPatternValue> getEvaluationResult(SkyKey key)
@@ -74,9 +74,9 @@ public final class PrepareDepsOfPatternFunctionTest extends BuildViewTestCase {
         createPrepDepsKeysMaybe(unparsablePatternList);
 
     // Then it returns a wrapped TargetParsingException.
-    assertThat(keysAndExceptionsResult.getValues()).isEmpty();
+    assertThat(keysAndExceptionsResult.values).isEmpty();
     assertThat(
-            Iterables.getOnlyElement(keysAndExceptionsResult.getExceptions()).getOriginalPattern())
+            Iterables.getOnlyElement(keysAndExceptionsResult.exceptions).originalPattern)
         .isEqualTo(unparsablePattern);
   }
 

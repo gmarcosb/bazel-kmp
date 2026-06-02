@@ -70,7 +70,7 @@ public class GlobDescriptorTest {
             original.getPackageId(),
             original.getPackageRoot(),
             original.getSubdir(),
-            original.getPattern(),
+                original.pattern,
             original.globberOperation());
     assertThat(sameCopy).isSameInstanceAs(original);
 
@@ -79,7 +79,7 @@ public class GlobDescriptorTest {
             original.getPackageId(),
             original.getPackageRoot(),
             original.getSubdir(),
-            original.getPattern(),
+                original.pattern,
             Globber.Operation.FILES);
     assertThat(diffCopy).isNotEqualTo(original);
   }

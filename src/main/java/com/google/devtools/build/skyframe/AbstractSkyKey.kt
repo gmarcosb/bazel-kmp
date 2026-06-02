@@ -11,73 +11,67 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.skyframe
 
-package com.google.devtools.build.skyframe;
-
-import static com.google.common.base.Preconditions.checkNotNull;
+import com.google.devtools.build.skyframe.SkyKey
 
 /**
- * For use when the {@link #argument} of the {@link SkyKey} cannot be a {@link SkyKey} itself,
- * either because it is a type like List or because it is already a different {@link SkyKey}.
+ * For use when the [.argument] of the [SkyKey] cannot be a [SkyKey] itself,
+ * either because it is a type like List or because it is already a different [SkyKey].
  * Provides convenient boilerplate.
  */
-public abstract class AbstractSkyKey<T> implements SkyKey {
+abstract class AbstractSkyKey<T> protected constructor(arg: T?) : SkyKey {
+    // Visible for serialization.
+    @kotlin.jvm.JvmField
+    protected val arg: T?
 
-  // Visible for serialization.
-  protected final T arg;
-
-  protected AbstractSkyKey(T arg) {
-    this.arg = checkNotNull(arg);
-  }
-
-  @Override
-  public final T argument() {
-    return arg;
-  }
-
-  @Override
-  public int hashCode() {
-    return 31 * functionName().hashCode() + arg.hashCode();
-  }
-
-  @Override
-  public final boolean equals(Object obj) {
-    if (this == obj) {
-      return true;
-    }
-    if (obj == null || getClass() != obj.getClass()) {
-      return false;
-    }
-    if (this instanceof WithCachedHashCode && hashCode() != obj.hashCode()) {
-      return false;
-    }
-    AbstractSkyKey<?> that = (AbstractSkyKey<?>) obj;
-    return functionName().equals(that.functionName()) && arg.equals(that.arg);
-  }
-
-  @Override
-  public String toString() {
-    return functionName() + ":" + arg;
-  }
-
-  /**
-   * An {@link AbstractSkyKey} that computes and caches its hash code upon creation.
-   *
-   * <p>Only subclass this class when caching the hash code is worth spending a field on it. If the
-   * hash code computation for the key's argument is already fast, just subclass {@link
-   * AbstractSkyKey} to save memory.
-   */
-  public abstract static class WithCachedHashCode<T> extends AbstractSkyKey<T> {
-    private final transient int hashCode;
-
-    protected WithCachedHashCode(T arg) {
-      super(arg);
-      this.hashCode = super.hashCode();
+    init {
+        this.arg = com.google.common.base.Preconditions.checkNotNull<T?>(arg)
     }
 
-    @Override
-    public final int hashCode() {
-      return hashCode;
+    override fun argument(): T? {
+        return arg
     }
-  }
+
+    override fun hashCode(): Int {
+        return 31 * functionName().hashCode() + arg!!.hashCode()
+    }
+
+    override fun equals(obj: Any?): Boolean {
+        if (this === obj) {
+            return true
+        }
+        if (obj == null || getClass() != obj.getClass()) {
+            return false
+        }
+        if (this is WithCachedHashCode<*> && hashCode() != obj.hashCode()) {
+            return false
+        }
+        val that = obj as AbstractSkyKey<*>
+        return functionName() == that.functionName() && arg == that.arg
+    }
+
+    override fun toString(): String {
+        return functionName().toString() + ":" + arg
+    }
+
+    /**
+     * An [AbstractSkyKey] that computes and caches its hash code upon creation.
+     * 
+     * 
+     * Only subclass this class when caching the hash code is worth spending a field on it. If the
+     * hash code computation for the key's argument is already fast, just subclass [ ] to save memory.
+     */
+    abstract class WithCachedHashCode<T> protected constructor(arg: T?) : AbstractSkyKey<T?>(arg) {
+        @Transient
+        private val hashCode: Int
+
+        init {
+            this.hashCode = super.hashCode()
+        }
+
+        override fun hashCode(): Int {
+            return hashCode
+        }
+    }
 }

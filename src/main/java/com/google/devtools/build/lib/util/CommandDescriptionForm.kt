@@ -11,24 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
 /**
- * Forms in which a command can be described by {@link CommandFailureUtils#describeCommand}.
+ * Forms in which a command can be described by [CommandFailureUtils.describeCommand].
  */
-public enum CommandDescriptionForm {
-  /**
-   * A form that is usually suitable for identifying the command but not for
-   * re-executing it.  The working directory and environment are not shown, and
-   * the arguments are truncated to a maximum of a few hundred bytes.
-   */
-  ABBREVIATED,
+enum class CommandDescriptionForm {
+    /**
+     * A form that is usually suitable for identifying the command but not for
+     * re-executing it.  The working directory and environment are not shown, and
+     * the arguments are truncated to a maximum of a few hundred bytes.
+     */
+    ABBREVIATED,
 
-  /**
-   * A form that is complete and suitable for a user to copy and paste into a shell. On Linux, the
-   * command is placed in a subshell so it has no side effects on the user's shell. On Windows, this
-   * is not implemented, but the side effects in question are less severe (no "exec").
-   */
-  COMPLETE,
+    /**
+     * A form that is complete and suitable for a user to copy and paste into a shell. On Linux, the
+     * command is placed in a subshell so it has no side effects on the user's shell. On Windows, this
+     * is not implemented, but the side effects in question are less severe (no "exec").
+     */
+    COMPLETE,
 }

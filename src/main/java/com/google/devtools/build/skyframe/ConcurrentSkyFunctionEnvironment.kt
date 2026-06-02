@@ -11,110 +11,116 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import static com.google.common.base.Preconditions.checkState;
-
-import com.google.devtools.build.skyframe.SkyFunction.LookupEnvironment;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.SkyFunction.LookupEnvironment
+import com.google.devtools.build.skyframe.SkyFunctionEnvironment
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
+import com.google.devtools.build.skyframe.SkyframeLookupResult
+import com.google.devtools.build.skyframe.SkyframeLookupResult.QueryDepCallback
 
 /**
- * Used when multiple bazel State Machines' {@link com.google.devtools.build.skyframe.state.Driver}s
- * need to concurrently access {@link LookupEnvironment} and {@link SkyframeLookupResult} to query
+ * Used when multiple bazel State Machines' [com.google.devtools.build.skyframe.state.Driver]s
+ * need to concurrently access [LookupEnvironment] and [SkyframeLookupResult] to query
  * and fetch dependency values.
- *
- * <p>In the bazel State Machine logic, we assume that {@link LookupEnvironment} and {@link
- * SkyframeLookupResult} refer to the same instance. So {@link ConcurrentSkyFunctionEnvironment}
+ * 
+ * 
+ * In the bazel State Machine logic, we assume that [LookupEnvironment] and [ ] refer to the same instance. So [ConcurrentSkyFunctionEnvironment]
  * implements methods from both interfaces and all relevant operations are thread-safe.
  */
-public final class ConcurrentSkyFunctionEnvironment
-    implements LookupEnvironment, SkyframeLookupResult {
-  private final SkyFunctionEnvironment delegate;
+class ConcurrentSkyFunctionEnvironment
+    (delegate: SkyFunctionEnvironment) : LookupEnvironment, SkyframeLookupResult {
+    private val delegate: SkyFunctionEnvironment
 
-  public ConcurrentSkyFunctionEnvironment(SkyFunctionEnvironment delegate) {
-    this.delegate = delegate;
-  }
+    init {
+        this.delegate = delegate
+    }
 
-  @Nullable
-  @Override
-  public synchronized SkyValue getValue(SkyKey valueName) throws InterruptedException {
-    return delegate.getValue(valueName);
-  }
+    @kotlin.jvm.Synchronized
+    @Throws(java.lang.InterruptedException::class)
+    override fun getValue(valueName: SkyKey?): SkyValue? {
+        return delegate.getValue(valueName)
+    }
 
-  @Nullable
-  @Override
-  public synchronized <E extends Exception> SkyValue getValueOrThrow(
-      SkyKey depKey, Class<E> exceptionClass) throws E, InterruptedException {
-    return delegate.getValueOrThrow(depKey, exceptionClass);
-  }
+    @kotlin.jvm.Synchronized
+    @Throws(E::class, java.lang.InterruptedException::class)
+    override fun <E : java.lang.Exception?> getValueOrThrow(
+        depKey: SkyKey?, exceptionClass: java.lang.Class<E?>?
+    ): SkyValue? {
+        return delegate.getValueOrThrow<E?>(depKey, exceptionClass)
+    }
 
-  @Nullable
-  @Override
-  public synchronized <E1 extends Exception, E2 extends Exception> SkyValue getValueOrThrow(
-      SkyKey depKey, Class<E1> exceptionClass1, Class<E2> exceptionClass2)
-      throws E1, E2, InterruptedException {
-    return delegate.getValueOrThrow(depKey, exceptionClass1, exceptionClass2);
-  }
+    @kotlin.jvm.Synchronized
+    @Throws(E1::class, E2::class, java.lang.InterruptedException::class)
+    override fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?> getValueOrThrow(
+        depKey: SkyKey?, exceptionClass1: java.lang.Class<E1?>?, exceptionClass2: java.lang.Class<E2?>?
+    ): SkyValue? {
+        return delegate.getValueOrThrow<E1?, E2?>(depKey, exceptionClass1, exceptionClass2)
+    }
 
-  @Nullable
-  @Override
-  public synchronized <E1 extends Exception, E2 extends Exception, E3 extends Exception>
-      SkyValue getValueOrThrow(
-          SkyKey depKey,
-          Class<E1> exceptionClass1,
-          Class<E2> exceptionClass2,
-          Class<E3> exceptionClass3)
-          throws E1, E2, E3, InterruptedException {
-    return delegate.getValueOrThrow(depKey, exceptionClass1, exceptionClass2, exceptionClass3);
-  }
+    @kotlin.jvm.Synchronized
+    @Throws(E1::class, E2::class, E3::class, java.lang.InterruptedException::class)
+    override fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?, E3 : java.lang.Exception?>
+            getValueOrThrow(
+        depKey: SkyKey?,
+        exceptionClass1: java.lang.Class<E1?>?,
+        exceptionClass2: java.lang.Class<E2?>?,
+        exceptionClass3: java.lang.Class<E3?>?
+    ): SkyValue? {
+        return delegate.getValueOrThrow<E1?, E2?, E3?>(depKey, exceptionClass1, exceptionClass2, exceptionClass3)
+    }
 
-  @Nullable
-  @Override
-  public synchronized <
-          E1 extends Exception, E2 extends Exception, E3 extends Exception, E4 extends Exception>
-      SkyValue getValueOrThrow(
-          SkyKey depKey,
-          Class<E1> exceptionClass1,
-          Class<E2> exceptionClass2,
-          Class<E3> exceptionClass3,
-          Class<E4> exceptionClass4)
-          throws E1, E2, E3, E4, InterruptedException {
-    return delegate.getValueOrThrow(
-        depKey, exceptionClass1, exceptionClass2, exceptionClass3, exceptionClass4);
-  }
+    @kotlin.jvm.Synchronized
+    @Throws(E1::class, E2::class, E3::class, E4::class, java.lang.InterruptedException::class)
+    override fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?, E3 : java.lang.Exception?, E4 : java.lang.Exception?>
+            getValueOrThrow(
+        depKey: SkyKey?,
+        exceptionClass1: java.lang.Class<E1?>?,
+        exceptionClass2: java.lang.Class<E2?>?,
+        exceptionClass3: java.lang.Class<E3?>?,
+        exceptionClass4: java.lang.Class<E4?>?
+    ): SkyValue? {
+        return delegate.getValueOrThrow<E1?, E2?, E3?, E4?>(
+            depKey, exceptionClass1, exceptionClass2, exceptionClass3, exceptionClass4
+        )
+    }
 
-  @Override
-  public synchronized SkyframeLookupResult getValuesAndExceptions(
-      Iterable<? extends SkyKey> depKeys) throws InterruptedException {
-    // When calling `SkyFunctionEnvironment#getValuesAndExceptions`, `delegate` looks up deps in the
-    // dependency graph and returns itself as a `SkyframeLookupResult` instance. The `checkState`
-    // verifies the returned instance does not change.
-    //
-    // `getLookupHandleForPreviouslyRequestedDeps` below follows the same intuition.
-    checkState(delegate.getValuesAndExceptions(depKeys) == delegate);
-    return this;
-  }
+    @kotlin.jvm.Synchronized
+    @Throws(java.lang.InterruptedException::class)
+    override fun getValuesAndExceptions(
+        depKeys: Iterable<out SkyKey?>
+    ): SkyframeLookupResult {
+        // When calling `SkyFunctionEnvironment#getValuesAndExceptions`, `delegate` looks up deps in the
+        // dependency graph and returns itself as a `SkyframeLookupResult` instance. The `checkState`
+        // verifies the returned instance does not change.
+        //
+        // `getLookupHandleForPreviouslyRequestedDeps` below follows the same intuition.
+        com.google.common.base.Preconditions.checkState(delegate.getValuesAndExceptions(depKeys) === delegate)
+        return this
+    }
 
-  @Override
-  public synchronized SkyframeLookupResult getLookupHandleForPreviouslyRequestedDeps() {
-    checkState(delegate.getLookupHandleForPreviouslyRequestedDeps() == delegate);
-    return this;
-  }
+    @get:kotlin.jvm.Synchronized
+    val lookupHandleForPreviouslyRequestedDeps: SkyframeLookupResult
+        get() {
+            com.google.common.base.Preconditions.checkState(delegate.getLookupHandleForPreviouslyRequestedDeps() === delegate)
+            return this
+        }
 
-  @Nullable
-  @Override
-  public synchronized <E1 extends Exception, E2 extends Exception, E3 extends Exception>
-      SkyValue getOrThrow(
-          SkyKey skyKey,
-          @Nullable Class<E1> exceptionClass1,
-          @Nullable Class<E2> exceptionClass2,
-          @Nullable Class<E3> exceptionClass3)
-          throws E1, E2, E3 {
-    return delegate.getOrThrow(skyKey, exceptionClass1, exceptionClass2, exceptionClass3);
-  }
+    @kotlin.jvm.Synchronized
+    @Throws(E1::class, E2::class, E3::class)
+    override fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?, E3 : java.lang.Exception?>
+            getOrThrow(
+        skyKey: SkyKey?,
+        exceptionClass1: java.lang.Class<E1?>?,
+        exceptionClass2: java.lang.Class<E2?>?,
+        exceptionClass3: java.lang.Class<E3?>?
+    ): SkyValue? {
+        return delegate.getOrThrow<E1?, E2?, E3?>(skyKey, exceptionClass1, exceptionClass2, exceptionClass3)
+    }
 
-  @Override
-  public synchronized boolean queryDep(SkyKey key, QueryDepCallback resultCallback) {
-    return delegate.queryDep(key, resultCallback);
-  }
+    @kotlin.jvm.Synchronized
+    override fun queryDep(key: SkyKey?, resultCallback: QueryDepCallback?): Boolean {
+        return delegate.queryDep(key, resultCallback)
+    }
 }

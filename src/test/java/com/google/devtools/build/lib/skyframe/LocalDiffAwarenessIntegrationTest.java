@@ -300,7 +300,7 @@ public class LocalDiffAwarenessIntegrationTest extends SkyframeIntegrationTestBa
   // detected without --watchfs.
   @Test
   public void ignoreOutputFilesThenCheckAgainDoesCheck() throws Exception {
-    if ("bazel".equals(this.getRuntime().getProductName())) {
+    if ("bazel".equals(this.getRuntime().productName)) {
       // Repository options only in Bazel.
       addOptions("--noexperimental_check_external_repository_files");
     }
@@ -333,7 +333,7 @@ public class LocalDiffAwarenessIntegrationTest extends SkyframeIntegrationTestBa
   @Test
   public void externalSymlink_doesNotTriggerFullGraphTraversal() throws Exception {
     addOptions("--symlink_prefix=/");
-    if ("bazel".equals(this.getRuntime().getProductName())) {
+    if ("bazel".equals(this.getRuntime().productName)) {
       // Repository options only in Bazel.
       addOptions("--noexperimental_check_external_repository_files");
     }

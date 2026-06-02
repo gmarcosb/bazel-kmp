@@ -78,7 +78,7 @@ public final class ActionExecutionValueTransformSharedTreeArtifactsTest {
     ActionExecutionValue transformedValue =
         actionExecutionValue.transformForSharedAction(new NullAction(tree2));
 
-    assertThat(transformedValue.getAllFileValues()).isEmpty();
+    assertThat(transformedValue.allFileValues).isEmpty();
     assertThat(transformedValue.getAllTreeArtifactValues().keySet()).containsExactly(tree2);
     assertEqualsWithNewParent(value, tree2, transformedValue.getTreeArtifactValue(tree2));
   }
@@ -94,7 +94,7 @@ public final class ActionExecutionValueTransformSharedTreeArtifactsTest {
     ActionExecutionValue transformedValue =
         actionExecutionValue.transformForSharedAction(new NullAction(tree2));
 
-    assertThat(transformedValue.getAllFileValues()).isEmpty();
+    assertThat(transformedValue.allFileValues).isEmpty();
     assertThat(transformedValue.getAllTreeArtifactValues().keySet()).containsExactly(tree2);
     assertEqualsWithNewParent(value, tree2, transformedValue.getTreeArtifactValue(tree2));
   }
@@ -113,7 +113,7 @@ public final class ActionExecutionValueTransformSharedTreeArtifactsTest {
     ActionExecutionValue transformedValue =
         actionExecutionValue.transformForSharedAction(new NullAction(sharedTree1, sharedTree2));
 
-    assertThat(transformedValue.getAllFileValues()).isEmpty();
+    assertThat(transformedValue.allFileValues).isEmpty();
     assertThat(transformedValue.getAllTreeArtifactValues().keySet())
         .containsExactly(sharedTree1, sharedTree2);
     assertEqualsWithNewParent(
@@ -138,8 +138,8 @@ public final class ActionExecutionValueTransformSharedTreeArtifactsTest {
     ActionExecutionValue transformedValue =
         actionExecutionValue.transformForSharedAction(new NullAction(sharedFile, sharedTree));
 
-    assertThat(transformedValue.getAllFileValues().keySet()).containsExactly(sharedFile);
-    assertThat(transformedValue.getAllFileValues().get(sharedFile)).isSameInstanceAs(fileValue);
+    assertThat(transformedValue.allFileValues.keySet()).containsExactly(sharedFile);
+    assertThat(transformedValue.allFileValues.get(sharedFile)).isSameInstanceAs(fileValue);
     assertThat(transformedValue.getAllTreeArtifactValues().keySet()).containsExactly(sharedTree);
     assertEqualsWithNewParent(
         treeValue, sharedTree, transformedValue.getTreeArtifactValue(sharedTree));

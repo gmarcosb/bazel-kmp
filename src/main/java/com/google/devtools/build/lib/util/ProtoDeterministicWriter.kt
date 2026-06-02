@@ -11,43 +11,41 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import com.google.protobuf.AbstractMessageLite;
-import com.google.protobuf.ByteString;
-import java.io.IOException;
-import java.io.OutputStream;
+import com.google.protobuf.AbstractMessageLite
+import com.google.protobuf.ByteString
+import java.io.IOException
 
-/** A {@link DeterministicWriter} wrapping an {@link AbstractMessageLite} supplier. */
-public class ProtoDeterministicWriter implements DeterministicWriter {
-  private final MessageSupplier messageSupplier;
+/** A [DeterministicWriter] wrapping an [AbstractMessageLite] supplier.  */
+class ProtoDeterministicWriter : DeterministicWriter {
+    private val messageSupplier: MessageSupplier
 
-  /** Constructs a {@link ProtoDeterministicWriter} with an eagerly constructed message. */
-  public ProtoDeterministicWriter(AbstractMessageLite<?, ?> message) {
-    this.messageSupplier = () -> message;
-  }
+    /** Constructs a [ProtoDeterministicWriter] with an eagerly constructed message.  */
+    constructor(message: AbstractMessageLite<*, *>?) {
+        this.messageSupplier = MessageSupplier { message }
+    }
 
-  /**
-   * Constructs a {@link ProtoDeterministicWriter} with the given supplier. The supplier may be
-   * called multiple times, but must supply the same message every time.
-   */
-  public ProtoDeterministicWriter(MessageSupplier supplier) {
-    this.messageSupplier = supplier;
-  }
+    /**
+     * Constructs a [ProtoDeterministicWriter] with the given supplier. The supplier may be
+     * called multiple times, but must supply the same message every time.
+     */
+    constructor(supplier: MessageSupplier) {
+        this.messageSupplier = supplier
+    }
 
-  @Override
-  public void writeTo(OutputStream out) throws IOException {
-    messageSupplier.getMessage().writeTo(out);
-  }
+    @Throws(IOException::class)
+    public override fun writeTo(out: java.io.OutputStream?) {
+        messageSupplier.getMessage().writeTo(out)
+    }
 
-  @Override
-  public ByteString getBytes() throws IOException {
-    return messageSupplier.getMessage().toByteString();
-  }
+    @get:Throws(IOException::class)
+    val bytes: ByteString?
+        get() = messageSupplier.getMessage().toByteString()
 
-  /** Supplies an {@link AbstractMessageLite}, possibly throwing {@link IOException}. */
-  @FunctionalInterface
-  public interface MessageSupplier {
-    AbstractMessageLite<?, ?> getMessage() throws IOException;
-  }
+    /** Supplies an [AbstractMessageLite], possibly throwing [IOException].  */
+    fun interface MessageSupplier {
+        @Throws(IOException::class)
+        fun getMessage(): AbstractMessageLite<*, *>?
+    }
 }

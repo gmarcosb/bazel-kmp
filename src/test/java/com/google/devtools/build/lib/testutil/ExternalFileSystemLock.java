@@ -57,7 +57,7 @@ public class ExternalFileSystemLock implements AutoCloseable {
     // Wait for child to report that the lock has been acquired.
     // We could read the entire stdout/stderr here to obtain additional debugging information,
     // but for some reason that hangs forever on Windows, even if we close them on the child side.
-    if (subprocess.getInputStream().read() != '!') {
+    if (subprocess.inputStream.read() != '!') {
       throw new IOException("external helper process failed");
     }
   }

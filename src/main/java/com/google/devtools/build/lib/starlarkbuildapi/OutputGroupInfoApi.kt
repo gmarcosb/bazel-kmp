@@ -11,44 +11,38 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi
 
-package com.google.devtools.build.lib.starlarkbuildapi;
+import com.google.devtools.build.lib.starlarkbuildapi.core.ProviderApi
+import com.google.devtools.build.lib.starlarkbuildapi.core.StructApi
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.docgen.annot.StarlarkConstructor;
-import com.google.devtools.build.lib.starlarkbuildapi.core.ProviderApi;
-import com.google.devtools.build.lib.starlarkbuildapi.core.StructApi;
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.EvalException;
-
-/** Interface for an info object that indicates what output groups a rule has. */
-@StarlarkBuiltin(
+/** Interface for an info object that indicates what output groups a rule has.  */
+@net.starlark.java.annot.StarlarkBuiltin(
     name = "OutputGroupInfo",
-    category = DocCategory.PROVIDER,
-    doc =
-        "A provider that indicates what output groups a rule has.<br>See <a"
+    category = com.google.devtools.build.docgen.annot.DocCategory.PROVIDER,
+    doc = ("A provider that indicates what output groups a rule has.<br>See <a"
             + " href=\"https://bazel.build/extending/rules#requesting_output_files\">"
             + "Requesting output files</a> for more information.")
-public interface OutputGroupInfoApi extends StructApi {
-
-  /** Provider for {@link OutputGroupInfoApi}. */
-  @StarlarkBuiltin(name = "Provider", documented = false, doc = "")
-  interface OutputGroupInfoApiProvider extends ProviderApi {
-
-    @StarlarkMethod(
-        name = "OutputGroupInfo",
-        doc =
-            "Instantiate this provider with <br><pre class=language-python>OutputGroupInfo(group1 ="
-                + " &lt;files&gt;, group2 = &lt;files&gt;...)</pre>See <a"
-                + " href=\"https://bazel.build/extending/rules#requesting_output_files\">"
-                + "Requesting output files </a> for more information.",
-        extraKeywords =
-            @Param(name = "kwargs", defaultValue = "{}", doc = "Dictionary of arguments."),
-        selfCall = true)
-    @StarlarkConstructor
-    OutputGroupInfoApi constructor(Dict<String, Object> kwargs) throws EvalException;
-  }
+)
+interface OutputGroupInfoApi : StructApi {
+    /** Provider for [OutputGroupInfoApi].  */
+    @net.starlark.java.annot.StarlarkBuiltin(name = "Provider", documented = false, doc = "")
+    interface OutputGroupInfoApiProvider : ProviderApi {
+        @net.starlark.java.annot.StarlarkMethod(
+            name = "OutputGroupInfo",
+            doc = ("Instantiate this provider with <br><pre class=language-python>OutputGroupInfo(group1 ="
+                    + " &lt;files&gt;, group2 = &lt;files&gt;...)</pre>See <a"
+                    + " href=\"https://bazel.build/extending/rules#requesting_output_files\">"
+                    + "Requesting output files </a> for more information."),
+            extraKeywords = net.starlark.java.annot.Param(
+                name = "kwargs",
+                defaultValue = "{}",
+                doc = "Dictionary of arguments."
+            ),
+            selfCall = true
+        )
+        @com.google.devtools.build.docgen.annot.StarlarkConstructor
+        @Throws(net.starlark.java.eval.EvalException::class)
+        fun constructor(kwargs: net.starlark.java.eval.Dict<String?, Any?>?): OutputGroupInfoApi?
+    }
 }

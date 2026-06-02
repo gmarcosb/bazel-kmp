@@ -11,21 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.sandbox
 
-package com.google.devtools.build.lib.sandbox;
+import com.google.devtools.build.lib.exec.TreeDeleter
 
-import com.google.devtools.build.lib.exec.TreeDeleter;
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.IOException;
+/** Executes file system tree deletions synchronously.  */
+class SynchronousTreeDeleter : TreeDeleter {
+    @Throws(IOException::class)
+    public override fun deleteTree(path: com.google.devtools.build.lib.vfs.Path) {
+        path.deleteTree()
+    }
 
-/** Executes file system tree deletions synchronously. */
-public class SynchronousTreeDeleter implements TreeDeleter {
-
-  @Override
-  public void deleteTree(Path path) throws IOException {
-    path.deleteTree();
-  }
-
-  @Override
-  public void shutdown() {}
+    public override fun shutdown() {}
 }

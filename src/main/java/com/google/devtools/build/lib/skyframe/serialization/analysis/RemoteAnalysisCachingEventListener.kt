@@ -11,197 +11,183 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.RemoteAnalysisCacheStatistics.InvalidationLookupMetrics
 
-import com.google.common.collect.HashMultiset;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Multiset;
-import com.google.common.eventbus.AllowConcurrentEvents;
-import com.google.common.eventbus.Subscribe;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.RemoteAnalysisCacheStatistics.InvalidationLookupMetrics;
-import com.google.devtools.build.lib.concurrent.ThreadSafety;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueStore;
-import com.google.devtools.build.lib.skyframe.serialization.FrontierNodeVersion;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.devtools.build.lib.skyframe.serialization.SkyValueRetriever.NoCachedData;
-import com.google.devtools.build.lib.skyframe.serialization.SkyValueRetriever.Restart;
-import com.google.devtools.build.lib.skyframe.serialization.SkyValueRetriever.RetrievalResult;
-import com.google.devtools.build.lib.skyframe.serialization.SkyValueRetriever.RetrievedValue;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.proto.MissReason;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
-import javax.annotation.Nullable;
-
-/** An {@link com.google.common.eventbus.EventBus} listener for remote analysis caching events. */
+/** An [com.google.common.eventbus.EventBus] listener for remote analysis caching events.  */
 @ThreadSafety.ThreadSafe
-public class RemoteAnalysisCachingEventListener {
+class RemoteAnalysisCachingEventListener {
+    /**
+     * An event for when a Skyframe node has been serialized, but its associated write futures (i.e.
+     * RPC latency) may not be done yet.
+     */
+    class SerializedNodeEvent(key: SkyKey?) {
+        val key: SkyKey?
 
-  /**
-   * An event for when a Skyframe node has been serialized, but its associated write futures (i.e.
-   * RPC latency) may not be done yet.
-   */
-  public record SerializedNodeEvent(SkyKey key) {
-    public SerializedNodeEvent {
-      checkNotNull(key);
-    }
-  }
-
-  private final Set<SkyKey> serializedKeys = ConcurrentHashMap.newKeySet();
-  private final Set<SkyKey> cacheHits = ConcurrentHashMap.newKeySet();
-  private final Set<SkyKey> cacheMisses = ConcurrentHashMap.newKeySet();
-  private final Set<SerializationException> serializationExceptions = ConcurrentHashMap.newKeySet();
-  private final ConcurrentHashMap<SkyFunctionName, AtomicLong> hitsBySkyFunctionName =
-      new ConcurrentHashMap<>();
-  private final ConcurrentHashMap<SkyFunctionName, AtomicLong> missesBySkyFunctionName =
-      new ConcurrentHashMap<>();
-
-  private final ConcurrentHashMap<MissReason, AtomicLong> missesByReason =
-      new ConcurrentHashMap<>();
-  private final AtomicReference<InvalidationLookupMetrics> invalidationLookupMetrics =
-      new AtomicReference<>();
-
-  private final AtomicReference<FrontierNodeVersion> skyValueVersion = new AtomicReference<>();
-
-  private FingerprintValueStore.Stats fingerprintValueStoreStats =
-      FingerprintValueStore.EMPTY_STATS;
-  private RemoteAnalysisCacheClient.Stats remoteAnalysisCacheStats =
-      RemoteAnalysisCacheClient.EMPTY_STATS;
-
-  @Nullable private ClientId clientId;
-
-  @Subscribe
-  @AllowConcurrentEvents
-  @SuppressWarnings("unused")
-  public void onSerializationComplete(SerializedNodeEvent event) {
-    serializedKeys.add(event.key());
-  }
-
-  /** Returns the counts of {@link SkyFunctionName} from serialized nodes of this invocation. */
-  public Multiset<SkyFunctionName> getSkyfunctionCounts() {
-    Multiset<SkyFunctionName> counts = HashMultiset.create();
-    serializedKeys.forEach(key -> counts.add(key.functionName()));
-    return counts;
-  }
-
-  /** Returns the count of serialized nodes of this invocation. */
-  public int getSerializedKeysCount() {
-    return serializedKeys.size();
-  }
-
-  public Set<SkyKey> getSerializedKeys() {
-    return ImmutableSet.copyOf(serializedKeys);
-  }
-
-  public Set<SkyKey> getCacheHits() {
-    return ImmutableSet.copyOf(cacheHits);
-  }
-
-  public Set<SkyKey> getCacheMisses() {
-    return ImmutableSet.copyOf(cacheMisses);
-  }
-
-  public void recordServiceStats(
-      FingerprintValueStore.Stats fvsStats, RemoteAnalysisCacheClient.Stats raccStats) {
-    fingerprintValueStoreStats = checkNotNull(fvsStats);
-    remoteAnalysisCacheStats = checkNotNull(raccStats);
-  }
-
-  public FingerprintValueStore.Stats getFingerprintValueStoreStats() {
-    return fingerprintValueStoreStats;
-  }
-
-  public RemoteAnalysisCacheClient.Stats getRemoteAnalysisCacheStats() {
-    return remoteAnalysisCacheStats;
-  }
-
-  @ThreadSafe
-  public void recordRetrievalResult(RetrievalResult result, SkyKey key) {
-    switch (result) {
-      case RetrievedValue unusedValue -> {
-        if (!cacheHits.add(key)) {
-          return;
+        init {
+            this.key = key
+            com.google.common.base.Preconditions.checkNotNull<SkyKey?>(key)
         }
-        hitsBySkyFunctionName
-            .computeIfAbsent(key.functionName(), k -> new AtomicLong())
-            .incrementAndGet();
-      }
-      case NoCachedData(MissReason reason) -> recordCacheMiss(key, reason);
-      case Restart.RESTART -> {}
-    }
-  }
-
-  /** Returns the number of cache hits grouped by SkyFunction name. */
-  public ImmutableMap<SkyFunctionName, AtomicLong> getHitsBySkyFunctionName() {
-    return ImmutableMap.copyOf(hitsBySkyFunctionName);
-  }
-
-  /** Returns the number of cache misses grouped by SkyFunction name. */
-  public ImmutableMap<SkyFunctionName, AtomicLong> getMissesBySkyFunctionName() {
-    return ImmutableMap.copyOf(missesBySkyFunctionName);
-  }
-
-  public ImmutableMap<MissReason, AtomicLong> getMissesByReason() {
-    return ImmutableMap.copyOf(missesByReason);
-  }
-
-  /** Records a {@link SerializationException} encountered during SkyValue retrievals. */
-  public void recordSerializationException(SerializationException e, SkyKey key) {
-    serializationExceptions.add(e);
-    recordCacheMiss(key, e.getReason());
-  }
-
-  /**
-   * Returns the number of {@link SerializationException}s that were thrown during this invocation.
-   */
-  public int getSerializationExceptionCounts() {
-    return serializationExceptions.size();
-  }
-
-  public void recordSkyValueVersion(FrontierNodeVersion version) {
-    this.skyValueVersion.set(version);
-  }
-
-  public FrontierNodeVersion getSkyValueVersion() {
-    return skyValueVersion.get();
-  }
-
-  public void setClientId(ClientId clientId) {
-    this.clientId = clientId;
-  }
-
-  public ClientId getClientId() {
-    return clientId;
-  }
-
-  public void setInvalidationLookupMetrics(InvalidationLookupMetrics invalidationLookupMetrics) {
-    this.invalidationLookupMetrics.set(invalidationLookupMetrics);
-  }
-
-  public InvalidationLookupMetrics getInvalidationLookupMetrics() {
-    return invalidationLookupMetrics.get();
-  }
-
-  private void recordCacheMiss(SkyKey key, MissReason reason) {
-    if (reason == MissReason.MISS_REASON_NOT_ATTEMPTED) {
-      // Not actually a cache miss
-      return;
     }
 
-    if (!cacheMisses.add(key)) {
-      return;
-    }
-    missesBySkyFunctionName
-        .computeIfAbsent(key.functionName(), k -> new AtomicLong())
-        .incrementAndGet();
+    private val serializedKeys: MutableSet<SkyKey?> = ConcurrentHashMap.newKeySet<SkyKey?>()
+    private val cacheHits: MutableSet<SkyKey?> = ConcurrentHashMap.newKeySet<SkyKey?>()
+    private val cacheMisses: MutableSet<SkyKey?> = ConcurrentHashMap.newKeySet<SkyKey?>()
+    private val serializationExceptions: MutableSet<com.google.devtools.build.lib.skyframe.serialization.SerializationException?> =
+        ConcurrentHashMap.newKeySet<com.google.devtools.build.lib.skyframe.serialization.SerializationException?>()
+    private val hitsBySkyFunctionName: ConcurrentHashMap<SkyFunctionName?, AtomicLong?> =
+        ConcurrentHashMap<SkyFunctionName?, AtomicLong?>()
+    private val missesBySkyFunctionName: ConcurrentHashMap<SkyFunctionName?, AtomicLong?> =
+        ConcurrentHashMap<SkyFunctionName?, AtomicLong?>()
 
-    missesByReason.computeIfAbsent(reason, r -> new AtomicLong()).incrementAndGet();
-  }
+    private val missesByReason: ConcurrentHashMap<MissReason?, AtomicLong?> =
+        ConcurrentHashMap<MissReason?, AtomicLong?>()
+    private val invalidationLookupMetrics: AtomicReference<InvalidationLookupMetrics?> =
+        AtomicReference<InvalidationLookupMetrics?>()
+
+    private val skyValueVersion: AtomicReference<FrontierNodeVersion?> = AtomicReference<FrontierNodeVersion?>()
+
+    private var fingerprintValueStoreStats: FingerprintValueStore.Stats = FingerprintValueStore.EMPTY_STATS
+    private var remoteAnalysisCacheStats: RemoteAnalysisCacheClient.Stats = RemoteAnalysisCacheClient.EMPTY_STATS
+
+    private var clientId: com.google.devtools.build.lib.skyframe.serialization.analysis.ClientId? = null
+
+    @com.google.common.eventbus.Subscribe
+    @com.google.common.eventbus.AllowConcurrentEvents
+    @Suppress("unused")
+    fun onSerializationComplete(event: SerializedNodeEvent) {
+        serializedKeys.add(event.key)
+    }
+
+    val skyfunctionCounts: com.google.common.collect.Multiset<SkyFunctionName?>
+        /** Returns the counts of [SkyFunctionName] from serialized nodes of this invocation.  */
+        get() {
+            val counts: com.google.common.collect.Multiset<SkyFunctionName?> =
+                com.google.common.collect.HashMultiset.create<SkyFunctionName?>()
+            serializedKeys.forEach(java.util.function.Consumer { key: SkyKey? -> counts.add(key.functionName()) })
+            return counts
+        }
+
+    val serializedKeysCount: Int
+        /** Returns the count of serialized nodes of this invocation.  */
+        get() = serializedKeys.size()
+
+    fun getSerializedKeys(): MutableSet<SkyKey?> {
+        return com.google.common.collect.ImmutableSet.copyOf<SkyKey?>(serializedKeys)
+    }
+
+    fun getCacheHits(): MutableSet<SkyKey?> {
+        return com.google.common.collect.ImmutableSet.copyOf<SkyKey?>(cacheHits)
+    }
+
+    fun getCacheMisses(): MutableSet<SkyKey?> {
+        return com.google.common.collect.ImmutableSet.copyOf<SkyKey?>(cacheMisses)
+    }
+
+    fun recordServiceStats(
+        fvsStats: FingerprintValueStore.Stats?, raccStats: RemoteAnalysisCacheClient.Stats?
+    ) {
+        fingerprintValueStoreStats =
+            com.google.common.base.Preconditions.checkNotNull<FingerprintValueStore.Stats>(fvsStats)
+        remoteAnalysisCacheStats =
+            com.google.common.base.Preconditions.checkNotNull<RemoteAnalysisCacheClient.Stats>(raccStats)
+    }
+
+    fun getFingerprintValueStoreStats(): FingerprintValueStore.Stats {
+        return fingerprintValueStoreStats
+    }
+
+    fun getRemoteAnalysisCacheStats(): RemoteAnalysisCacheClient.Stats {
+        return remoteAnalysisCacheStats
+    }
+
+    @ThreadSafe
+    fun recordRetrievalResult(result: RetrievalResult, key: SkyKey) {
+        when (result) {
+            -> {
+                if (!cacheHits.add(key)) {
+                    return
+                }
+                hitsBySkyFunctionName
+                    .computeIfAbsent(
+                        key.functionName(),
+                        java.util.function.Function { k: SkyFunctionName? -> AtomicLong() })
+                    .incrementAndGet()
+            }
+
+            -> recordCacheMiss(key, reason)
+            Restart.RESTART -> {}
+        }
+    }
+
+    /** Returns the number of cache hits grouped by SkyFunction name.  */
+    fun getHitsBySkyFunctionName(): com.google.common.collect.ImmutableMap<SkyFunctionName?, AtomicLong?> {
+        return com.google.common.collect.ImmutableMap.copyOf<SkyFunctionName?, AtomicLong?>(hitsBySkyFunctionName)
+    }
+
+    /** Returns the number of cache misses grouped by SkyFunction name.  */
+    fun getMissesBySkyFunctionName(): com.google.common.collect.ImmutableMap<SkyFunctionName?, AtomicLong?> {
+        return com.google.common.collect.ImmutableMap.copyOf<SkyFunctionName?, AtomicLong?>(missesBySkyFunctionName)
+    }
+
+    fun getMissesByReason(): com.google.common.collect.ImmutableMap<MissReason?, AtomicLong?> {
+        return com.google.common.collect.ImmutableMap.copyOf<MissReason?, AtomicLong?>(missesByReason)
+    }
+
+    /** Records a [SerializationException] encountered during SkyValue retrievals.  */
+    fun recordSerializationException(
+        e: com.google.devtools.build.lib.skyframe.serialization.SerializationException,
+        key: SkyKey
+    ) {
+        serializationExceptions.add(e)
+        recordCacheMiss(key, e.getReason())
+    }
+
+    val serializationExceptionCounts: Int
+        /**
+         * Returns the number of [SerializationException]s that were thrown during this invocation.
+         */
+        get() = serializationExceptions.size()
+
+    fun recordSkyValueVersion(version: FrontierNodeVersion?) {
+        this.skyValueVersion.set(version)
+    }
+
+    fun getSkyValueVersion(): FrontierNodeVersion? {
+        return skyValueVersion.get()
+    }
+
+    fun setClientId(clientId: com.google.devtools.build.lib.skyframe.serialization.analysis.ClientId?) {
+        this.clientId = clientId
+    }
+
+    fun getClientId(): com.google.devtools.build.lib.skyframe.serialization.analysis.ClientId? {
+        return clientId
+    }
+
+    fun setInvalidationLookupMetrics(invalidationLookupMetrics: InvalidationLookupMetrics?) {
+        this.invalidationLookupMetrics.set(invalidationLookupMetrics)
+    }
+
+    fun getInvalidationLookupMetrics(): InvalidationLookupMetrics? {
+        return invalidationLookupMetrics.get()
+    }
+
+    private fun recordCacheMiss(key: SkyKey, reason: MissReason?) {
+        if (reason === MissReason.MISS_REASON_NOT_ATTEMPTED) {
+            // Not actually a cache miss
+            return
+        }
+
+        if (!cacheMisses.add(key)) {
+            return
+        }
+        missesBySkyFunctionName
+            .computeIfAbsent(key.functionName(), java.util.function.Function { k: SkyFunctionName? -> AtomicLong() })
+            .incrementAndGet()
+
+        missesByReason.computeIfAbsent(reason, java.util.function.Function { r: MissReason? -> AtomicLong() })
+            .incrementAndGet()
+    }
 }

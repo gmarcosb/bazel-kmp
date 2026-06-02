@@ -11,32 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.common.io.ByteSource;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
+import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
-/** Codec for {@link ByteSource} that serializes the byte source as a byte array. */
-final class ByteSourceCodec extends LeafObjectCodec<ByteSource> {
-  @Override
-  public Class<ByteSource> getEncodedClass() {
-    return ByteSource.class;
-  }
+/** Codec for [ByteSource] that serializes the byte source as a byte array.  */
+internal class ByteSourceCodec private constructor() : LeafObjectCodec<com.google.common.io.ByteSource?>() {
+    val encodedClass: java.lang.Class<com.google.common.io.ByteSource?>
+        get() = com.google.common.io.ByteSource::class.java
 
-  @Override
-  public void serialize(
-      LeafSerializationContext context, ByteSource obj, CodedOutputStream codedOut)
-      throws IOException {
-    codedOut.writeByteArrayNoTag(obj.read());
-  }
+    @Throws(IOException::class)
+    override fun serialize(
+        context: LeafSerializationContext?, obj: com.google.common.io.ByteSource, codedOut: CodedOutputStream
+    ) {
+        codedOut.writeByteArrayNoTag(obj.read())
+    }
 
-  @Override
-  public ByteSource deserialize(LeafDeserializationContext context, CodedInputStream codedIn)
-      throws IOException {
-    return ByteSource.wrap(codedIn.readByteArray());
-  }
-
-  private ByteSourceCodec() {}
+    @Throws(IOException::class)
+    override fun deserialize(
+        context: LeafDeserializationContext?,
+        codedIn: CodedInputStream
+    ): com.google.common.io.ByteSource {
+        return com.google.common.io.ByteSource.wrap(codedIn.readByteArray())
+    }
 }

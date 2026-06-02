@@ -11,40 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
 
-/** Result of {@link ProcessPackageDirectory#getPackageExistenceAndSubdirDeps}. */
-public class ProcessPackageDirectoryResult {
-  public static final ProcessPackageDirectoryResult EMPTY_RESULT =
-      new ProcessPackageDirectoryResult(false, ImmutableList.<SkyKey>of(), ImmutableMap.of());
-  private final boolean packageExists;
-  private final Iterable<SkyKey> childDeps;
-  private final ImmutableMap<SkyKey, SkyValue> additionalValuesToAggregate;
+/** Result of [ProcessPackageDirectory.getPackageExistenceAndSubdirDeps].  */
+class ProcessPackageDirectoryResult(
+    private val packageExists: Boolean,
+    childDeps: Iterable<SkyKey?>?,
+    additionalValuesToAggregate: com.google.common.collect.ImmutableMap<SkyKey?, SkyValue?>?
+) {
+    private val childDeps: Iterable<SkyKey?>?
+    private val additionalValuesToAggregate: com.google.common.collect.ImmutableMap<SkyKey?, SkyValue?>?
 
-  /** {@code childDeps} and {@code additionalValuesToAggregate} must be disjoint. */
-  public ProcessPackageDirectoryResult(
-      boolean packageExists,
-      Iterable<SkyKey> childDeps,
-      ImmutableMap<SkyKey, SkyValue> additionalValuesToAggregate) {
-    this.packageExists = packageExists;
-    this.childDeps = childDeps;
-    this.additionalValuesToAggregate = additionalValuesToAggregate;
-  }
+    /** `childDeps` and `additionalValuesToAggregate` must be disjoint.  */
+    init {
+        this.childDeps = childDeps
+        this.additionalValuesToAggregate = additionalValuesToAggregate
+    }
 
-  public boolean packageExists() {
-    return packageExists;
-  }
+    fun packageExists(): Boolean {
+        return packageExists
+    }
 
-  public Iterable<SkyKey> getChildDeps() {
-    return childDeps;
-  }
+    fun getChildDeps(): Iterable<SkyKey?>? {
+        return childDeps
+    }
 
-  public ImmutableMap<SkyKey, SkyValue> getAdditionalValuesToAggregate() {
-    return additionalValuesToAggregate;
-  }
+    fun getAdditionalValuesToAggregate(): com.google.common.collect.ImmutableMap<SkyKey?, SkyValue?>? {
+        return additionalValuesToAggregate
+    }
+
+    companion object {
+        val EMPTY_RESULT: ProcessPackageDirectoryResult = ProcessPackageDirectoryResult(
+            false,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(),
+            com.google.common.collect.ImmutableMap.of<SkyKey?, SkyValue?>()
+        )
+    }
 }

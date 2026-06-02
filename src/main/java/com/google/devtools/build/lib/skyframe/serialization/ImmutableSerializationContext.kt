@@ -11,77 +11,75 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.common.collect.ImmutableClassToInstanceMap;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext
+import com.google.devtools.build.lib.skyframe.serialization.ObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecRegistry
+import com.google.devtools.build.lib.skyframe.serialization.ProfileRecorder
+import com.google.devtools.build.lib.skyframe.serialization.SerializationContext
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
 /**
- * An explicitly immutable implementation of {@link SerializationContext}.
- *
- * <p>Immutability makes this class thread safe.
+ * An explicitly immutable implementation of [SerializationContext].
+ * 
+ * 
+ * Immutability makes this class thread safe.
  */
-final class ImmutableSerializationContext extends SerializationContext {
-  ImmutableSerializationContext(
-      ObjectCodecRegistry codecRegistry, ImmutableClassToInstanceMap<Object> dependencies) {
-    super(codecRegistry, dependencies);
-  }
-
-  @Override
-  public ImmutableSerializationContext getFreshContext() {
-    return this;
-  }
-
-  @Override
-  public void addExplicitlyAllowedClass(Class<?> allowedClass) throws SerializationException {
-    throw new SerializationException(
-        "Cannot add explicitly allowed class %s without memoization: " + allowedClass);
-  }
-
-  @Override
-  public <T> void checkClassExplicitlyAllowed(Class<T> allowedClass, T objectForDebugging)
-      throws SerializationException {
-    throw new SerializationException(
-        "Cannot check explicitly allowed class "
-            + allowedClass
-            + " without memoization ("
-            + objectForDebugging
-            + ")");
-  }
-
-  @Override
-  void serializeWithCodec(ObjectCodec<Object> codec, Object obj, CodedOutputStream codedOut)
-      throws SerializationException, IOException {
-    codec.serialize(this, obj, codedOut);
-  }
-
-  @Override
-  public <T> void serializeLeaf(
-      @Nullable T obj, LeafObjectCodec<T> codec, CodedOutputStream codedOut)
-      throws SerializationException, IOException {
-    if (writeIfNullOrConstant(obj, codedOut)) {
-      return;
+internal class ImmutableSerializationContext(
+    codecRegistry: ObjectCodecRegistry?,
+    dependencies: com.google.common.collect.ImmutableClassToInstanceMap<Any?>?
+) : SerializationContext(codecRegistry, dependencies) {
+    override fun getFreshContext(): ImmutableSerializationContext {
+        return this
     }
-    // It was not constant or null. Emits -1 to signal an immediate value and serializes the value.
-    codedOut.writeSInt32NoTag(-1);
-    codec.serialize((LeafSerializationContext) this, obj, codedOut);
-  }
 
-  @Override
-  boolean writeBackReferenceIfMemoized(Object obj, CodedOutputStream codedOut, boolean isLeafType) {
-    return false;
-  }
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    override fun addExplicitlyAllowedClass(allowedClass: java.lang.Class<*>?) {
+        throw com.google.devtools.build.lib.skyframe.serialization.SerializationException(
+            "Cannot add explicitly allowed class %s without memoization: " + allowedClass
+        )
+    }
 
-  @Override
-  public boolean isMemoizing() {
-    return false;
-  }
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    override fun <T> checkClassExplicitlyAllowed(allowedClass: java.lang.Class<T?>?, objectForDebugging: T?) {
+        throw com.google.devtools.build.lib.skyframe.serialization.SerializationException(
+            ("Cannot check explicitly allowed class "
+                    + allowedClass
+                    + " without memoization ("
+                    + objectForDebugging
+                    + ")")
+        )
+    }
 
-  @Override
-  @Nullable
-  ProfileRecorder getProfileRecorder() {
-    return null;
-  }
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun serializeWithCodec(codec: ObjectCodec<Any?>, obj: Any?, codedOut: CodedOutputStream?) {
+        codec.serialize(this, obj, codedOut)
+    }
+
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun <T> serializeLeaf(
+        obj: T?, codec: LeafObjectCodec<T?>, codedOut: CodedOutputStream
+    ) {
+        if (writeIfNullOrConstant(obj, codedOut)) {
+            return
+        }
+        // It was not constant or null. Emits -1 to signal an immediate value and serializes the value.
+        codedOut.writeSInt32NoTag(-1)
+        codec.serialize(this as LeafSerializationContext, obj, codedOut)
+    }
+
+    override fun writeBackReferenceIfMemoized(obj: Any?, codedOut: CodedOutputStream?, isLeafType: Boolean): Boolean {
+        return false
+    }
+
+    override fun isMemoizing(): Boolean {
+        return false
+    }
+
+    override fun getProfileRecorder(): ProfileRecorder? {
+        return null
+    }
 }

@@ -11,54 +11,52 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.util
 
-package com.google.devtools.build.lib.util;
+import com.google.devtools.build.lib.server.FailureDetails.FailureDetail
 
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.Interrupted;
-import com.google.devtools.build.lib.server.FailureDetails.Interrupted.Code;
-
-/** Factory method for producing {@link Interrupted}-type {@link FailureDetail} messages. */
-public class InterruptedFailureDetails {
-
-  private InterruptedFailureDetails() {}
-
-  /**
-   * Returns a {@link DetailedExitCode} with {@link ExitCode#INTERRUPTED}, {@link
-   * Interrupted.Code#INTERRUPTED}, and the provided detail message.
-   */
-  public static DetailedExitCode detailedExitCode(String message) {
-    return DetailedExitCode.of(
-        FailureDetail.newBuilder()
-            .setMessage(message)
-            .setInterrupted(Interrupted.newBuilder().setCode(Code.INTERRUPTED))
-            .build());
-  }
-
-  /**
-   * Returns an {@link AbruptExitException} with a {@link DetailedExitCode} from {@link
-   * #detailedExitCode}.
-   */
-  public static AbruptExitException abruptExitException(String message) {
-    return new AbruptExitException(
-        DetailedExitCode.of(
+/** Factory method for producing [Interrupted]-type [FailureDetail] messages.  */
+object InterruptedFailureDetails {
+    /**
+     * Returns a [DetailedExitCode] with [ExitCode.INTERRUPTED], [ ][Interrupted.Code.INTERRUPTED], and the provided detail message.
+     */
+    @kotlin.jvm.JvmStatic
+    fun detailedExitCode(message: String?): DetailedExitCode {
+        return DetailedExitCode.of(
             FailureDetail.newBuilder()
                 .setMessage(message)
                 .setInterrupted(Interrupted.newBuilder().setCode(Code.INTERRUPTED))
-                .build()));
-  }
+                .build()
+        )
+    }
 
-  /**
-   * Returns an {@link AbruptExitException} with a {@link DetailedExitCode} from {@link
-   * #detailedExitCode} and the provided {@code cause}.
-   */
-  public static AbruptExitException abruptExitException(String message, Exception cause) {
-    return new AbruptExitException(
-        DetailedExitCode.of(
-            FailureDetail.newBuilder()
-                .setMessage(message)
-                .setInterrupted(Interrupted.newBuilder().setCode(Code.INTERRUPTED))
-                .build()),
-        cause);
-  }
+    /**
+     * Returns an [AbruptExitException] with a [DetailedExitCode] from [ ][.detailedExitCode].
+     */
+    fun abruptExitException(message: String?): AbruptExitException {
+        return AbruptExitException(
+            DetailedExitCode.of(
+                FailureDetail.newBuilder()
+                    .setMessage(message)
+                    .setInterrupted(Interrupted.newBuilder().setCode(Code.INTERRUPTED))
+                    .build()
+            )
+        )
+    }
+
+    /**
+     * Returns an [AbruptExitException] with a [DetailedExitCode] from [ ][.detailedExitCode] and the provided `cause`.
+     */
+    @kotlin.jvm.JvmStatic
+    fun abruptExitException(message: String?, cause: java.lang.Exception?): AbruptExitException {
+        return AbruptExitException(
+            DetailedExitCode.of(
+                FailureDetail.newBuilder()
+                    .setMessage(message)
+                    .setInterrupted(Interrupted.newBuilder().setCode(Code.INTERRUPTED))
+                    .build()
+            ),
+            cause
+        )
+    }
 }

@@ -11,159 +11,143 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.java
 
-package com.google.devtools.build.lib.rules.java;
+import com.github.benmanes.caffeine.cache.CacheLoader
+import com.github.benmanes.caffeine.cache.LoadingCache
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.concurrent.ThreadSafety
+import com.google.devtools.build.lib.packages.BuildType.LABEL
+import net.starlark.java.eval.EvalException
+import net.starlark.java.eval.Starlark
+import net.starlark.java.eval.StarlarkInt
+import java.lang.String
+import kotlin.Int
+import kotlin.plus
 
-import static com.google.devtools.build.lib.packages.BuildType.LABEL;
-import static com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild;
-
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.LoadingCache;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.RuleContext;
-import com.google.devtools.build.lib.analysis.TransitiveInfoCollection;
-import com.google.devtools.build.lib.analysis.platform.ToolchainInfo;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.Info;
-import com.google.devtools.build.lib.packages.RuleClass.ConfiguredTargetFactory.RuleErrorException;
-import com.google.devtools.build.lib.packages.StarlarkInfo;
-import com.google.devtools.build.lib.packages.StarlarkInfoWithSchema;
-import com.google.devtools.build.lib.packages.StarlarkProviderWrapper;
-import com.google.devtools.build.lib.skyframe.BzlLoadValue;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkInt;
-
-/** Information about the Java runtime used by the <code>java_*</code> rules. */
-@Immutable
-public final class JavaRuntimeInfo extends StarlarkInfoWrapper {
-
-  public static final StarlarkProviderWrapper<JavaRuntimeInfo> RULES_JAVA_PROVIDER =
-      new RulesJavaProvider();
-  public static final StarlarkProviderWrapper<JavaRuntimeInfo> PROVIDER = new Provider();
-
-  // Ensures that we use a canonical PathFragment instance per java binary exec path to save memory.
-  private static final LoadingCache<String, PathFragment> javaBinaryExecPathCache =
-      Caffeine.newBuilder().weakKeys().build(PathFragment::create);
-
-  // Helper methods to access an instance of JavaRuntimeInfo.
-
-  public static JavaRuntimeInfo forHost(RuleContext ruleContext) throws RuleErrorException {
-    return JavaToolchainProvider.from(ruleContext).getJavaRuntime();
-  }
-
-  public static JavaRuntimeInfo from(RuleContext ruleContext, Label javaRuntimeToolchainType) {
-    ToolchainInfo toolchainInfo = ruleContext.getToolchainInfo(javaRuntimeToolchainType);
-    return from(ruleContext, toolchainInfo);
-  }
-
-  @Nullable
-  public static JavaRuntimeInfo from(RuleContext ruleContext, String attributeName) {
-    if (!ruleContext.attributes().has(attributeName, LABEL)) {
-      return null;
-    }
-    TransitiveInfoCollection prerequisite = ruleContext.getPrerequisite(attributeName);
-    if (prerequisite == null) {
-      return null;
+/** Information about the Java runtime used by the `java_*` rules.  */
+@ThreadSafety.Immutable
+class JavaRuntimeInfo private constructor(underlying: StarlarkInfo?) : StarlarkInfoWrapper(underlying) {
+    /** All input artifacts in the javabase.  */
+    @Throws(RuleErrorException::class)
+    fun javaBaseInputs(): NestedSet<Artifact?>? {
+        return getUnderlyingNestedSet<Artifact?>("files", Artifact::class.java)
     }
 
-    ToolchainInfo toolchainInfo = prerequisite.get(ToolchainInfo.PROVIDER);
-    return from(ruleContext, toolchainInfo);
-  }
+    /** The root directory of the Java installation.  */
+    @Throws(RuleErrorException::class)
+    fun javaHome(): String? {
+        return getUnderlyingValue<String?>("java_home", String::class.java)
+    }
 
-  @Nullable
-  private static JavaRuntimeInfo from(RuleContext ruleContext, ToolchainInfo toolchainInfo) {
-    if (toolchainInfo != null) {
-      try {
-        JavaRuntimeInfo result =
-            wrap(toolchainInfo.getValue("java_runtime", Info.class), "java_runtime");
-        if (result != null) {
-          return result;
+    @Throws(RuleErrorException::class)
+    fun javaBinaryExecPathFragment(): PathFragment? {
+        return javaBinaryExecPathCache.get(
+            getUnderlyingValue<String?>("java_executable_exec_path", String::class.java)
+        )
+    }
+
+    @Throws(RuleErrorException::class)
+    fun hermeticStaticLibs(): ImmutableList<StarlarkInfo?>? {
+        return getUnderlyingSequence<StarlarkInfo?>("hermetic_static_libs", StarlarkInfo::class.java).getImmutableList()
+    }
+
+    @Throws(RuleErrorException::class)
+    fun version(): Int {
+        return getUnderlyingValue<StarlarkInt?>("version", StarlarkInt::class.java).toIntUnchecked()
+    }
+
+    private class RulesJavaProvider :
+        Provider(BzlLoadValue.keyForBuild(Label.parseCanonicalUnchecked("//java/common/rules:java_runtime.bzl")))
+
+    private open class Provider(
+        key: BzlLoadValue.Key? = BzlLoadValue.keyForBuild(
+            Label.parseCanonicalUnchecked(
+                JavaSemantics.Companion.RULES_JAVA_PROVIDER_LABELS_PREFIX
+                        + "java/common/rules:java_runtime.bzl"
+            )
+        )
+    ) : StarlarkProviderWrapper<JavaRuntimeInfo?>(key, "JavaRuntimeInfo") {
+        @Throws(RuleErrorException::class)
+        public override fun wrap(value: Info): JavaRuntimeInfo {
+            if (value is StarlarkInfoWithSchema
+                && value.getProvider().getKey().equals(getKey())
+            ) {
+                return JavaRuntimeInfo(value as StarlarkInfo)
+            } else {
+                throw RuleErrorException(
+                    "got value of type '" + Starlark.type(value) + "', want 'JavaRuntimeInfo'"
+                )
+            }
         }
-      } catch (EvalException | RuleErrorException e) {
-        ruleContext.ruleError(String.format("There was an error reading the Java runtime: %s", e));
-        return null;
-      }
-    }
-    ruleContext.ruleError("The selected Java runtime is not a JavaRuntimeInfo");
-    return null;
-  }
-
-  private JavaRuntimeInfo(StarlarkInfo underlying) {
-    super(underlying);
-  }
-
-  public static JavaRuntimeInfo wrap(Info info, String what) throws RuleErrorException {
-    if (info == null) {
-      throw new RuleErrorException("expected a JavaRuntimeInfo, but " + what + " was unset.");
-    }
-    com.google.devtools.build.lib.packages.Provider.Key key = info.getProvider().getKey();
-    if (key.equals(PROVIDER.getKey())) {
-      return PROVIDER.wrap(info);
-    } else if (key.equals(RULES_JAVA_PROVIDER.getKey())) {
-      return RULES_JAVA_PROVIDER.wrap(info);
-    } else {
-      throw new RuleErrorException("expected JavaRuntimeInfo, got: " + key);
-    }
-  }
-
-  /** All input artifacts in the javabase. */
-  public NestedSet<Artifact> javaBaseInputs() throws RuleErrorException {
-    return getUnderlyingNestedSet("files", Artifact.class);
-  }
-
-  /** The root directory of the Java installation. */
-  public String javaHome() throws RuleErrorException {
-    return getUnderlyingValue("java_home", String.class);
-  }
-
-  PathFragment javaBinaryExecPathFragment() throws RuleErrorException {
-    return javaBinaryExecPathCache.get(
-        getUnderlyingValue("java_executable_exec_path", String.class));
-  }
-
-  public ImmutableList<StarlarkInfo> hermeticStaticLibs() throws RuleErrorException {
-    return getUnderlyingSequence("hermetic_static_libs", StarlarkInfo.class).getImmutableList();
-  }
-
-  public int version() throws RuleErrorException {
-    return getUnderlyingValue("version", StarlarkInt.class).toIntUnchecked();
-  }
-
-  private static class RulesJavaProvider extends Provider {
-    private RulesJavaProvider() {
-      super(keyForBuild(Label.parseCanonicalUnchecked("//java/common/rules:java_runtime.bzl")));
-    }
-  }
-
-  private static class Provider extends StarlarkProviderWrapper<JavaRuntimeInfo> {
-
-    private Provider() {
-      this(
-          keyForBuild(
-              Label.parseCanonicalUnchecked(
-                  JavaSemantics.RULES_JAVA_PROVIDER_LABELS_PREFIX
-                      + "java/common/rules:java_runtime.bzl")));
     }
 
-    private Provider(BzlLoadValue.Key key) {
-      super(key, "JavaRuntimeInfo");
-    }
+    companion object {
+        val RULES_JAVA_PROVIDER: StarlarkProviderWrapper<JavaRuntimeInfo?> = RulesJavaProvider()
+        val PROVIDER: StarlarkProviderWrapper<JavaRuntimeInfo?> = Provider()
 
-    @Override
-    public JavaRuntimeInfo wrap(Info value) throws RuleErrorException {
-      if (value instanceof StarlarkInfoWithSchema
-          && value.getProvider().getKey().equals(getKey())) {
-        return new JavaRuntimeInfo((StarlarkInfo) value);
-      } else {
-        throw new RuleErrorException(
-            "got value of type '" + Starlark.type(value) + "', want 'JavaRuntimeInfo'");
-      }
+        // Ensures that we use a canonical PathFragment instance per java binary exec path to save memory.
+        private val javaBinaryExecPathCache: LoadingCache<String?, PathFragment?> =
+            Caffeine.newBuilder().weakKeys().build<String?, PathFragment?>(
+                CacheLoader { path: String? -> PathFragment.create(path) })
+
+        // Helper methods to access an instance of JavaRuntimeInfo.
+        @Throws(RuleErrorException::class)
+        fun forHost(ruleContext: RuleContext): JavaRuntimeInfo? {
+            return JavaToolchainProvider.Companion.from(ruleContext).getJavaRuntime()
+        }
+
+        fun from(ruleContext: RuleContext, javaRuntimeToolchainType: Label?): JavaRuntimeInfo? {
+            val toolchainInfo: ToolchainInfo? = ruleContext.getToolchainInfo(javaRuntimeToolchainType)
+            return Companion.from(ruleContext, toolchainInfo)
+        }
+
+        fun from(ruleContext: RuleContext, attributeName: String?): JavaRuntimeInfo? {
+            if (!ruleContext.attributes().has(attributeName, LABEL)) {
+                return null
+            }
+            val prerequisite: TransitiveInfoCollection? = ruleContext.getPrerequisite(attributeName)
+            if (prerequisite == null) {
+                return null
+            }
+
+            val toolchainInfo: ToolchainInfo? = prerequisite.get(ToolchainInfo.PROVIDER)
+            return Companion.from(ruleContext, toolchainInfo)
+        }
+
+        private fun from(ruleContext: RuleContext, toolchainInfo: ToolchainInfo?): JavaRuntimeInfo? {
+            if (toolchainInfo != null) {
+                try {
+                    val result: JavaRuntimeInfo? =
+                        wrap(toolchainInfo.getValue("java_runtime", Info::class.java), "java_runtime")
+                    if (result != null) {
+                        return result
+                    }
+                } catch (e: EvalException) {
+                    ruleContext.ruleError(String.format("There was an error reading the Java runtime: %s", e))
+                    return null
+                } catch (e: RuleErrorException) {
+                    ruleContext.ruleError(String.format("There was an error reading the Java runtime: %s", e))
+                    return null
+                }
+            }
+            ruleContext.ruleError("The selected Java runtime is not a JavaRuntimeInfo")
+            return null
+        }
+
+        @Throws(RuleErrorException::class)
+        fun wrap(info: Info, what: kotlin.String?): JavaRuntimeInfo {
+            if (info == null) {
+                throw RuleErrorException("expected a JavaRuntimeInfo, but " + what + " was unset.")
+            }
+            val key: com.google.devtools.build.lib.packages.Provider.Key = info.getProvider().getKey()
+            if (key.equals(PROVIDER.getKey())) {
+                return PROVIDER.wrap(info)
+            } else if (key.equals(RULES_JAVA_PROVIDER.getKey())) {
+                return RULES_JAVA_PROVIDER.wrap(info)
+            } else {
+                throw RuleErrorException("expected JavaRuntimeInfo, got: " + key)
+            }
+        }
     }
-  }
 }

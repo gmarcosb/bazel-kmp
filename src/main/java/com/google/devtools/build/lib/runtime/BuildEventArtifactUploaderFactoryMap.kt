@@ -11,51 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import com.google.common.collect.ImmutableMap;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.SortedMap;
-import java.util.TreeMap;
-import javax.annotation.Nullable;
-import javax.annotation.concurrent.ThreadSafe;
+import com.google.devtools.build.lib.runtime.BuildEventArtifactUploaderFactory
+import java.util.SortedMap
+import java.util.TreeMap
 
-/** Selects between multiple available upload strategies. */
-@ThreadSafe
-public class BuildEventArtifactUploaderFactoryMap {
-  private final ImmutableMap<String, BuildEventArtifactUploaderFactory> uploaders;
+/** Selects between multiple available upload strategies.  */
+@javax.annotation.concurrent.ThreadSafe
+class BuildEventArtifactUploaderFactoryMap private constructor(uploaders: com.google.common.collect.ImmutableMap<String?, BuildEventArtifactUploaderFactory?>) {
+    private val uploaders: com.google.common.collect.ImmutableMap<String?, BuildEventArtifactUploaderFactory?>
 
-  private BuildEventArtifactUploaderFactoryMap(
-      ImmutableMap<String, BuildEventArtifactUploaderFactory> uploaders) {
-    this.uploaders = uploaders;
-  }
-
-  public BuildEventArtifactUploaderFactory select(@Nullable String name) {
-    if (name == null && !uploaders.values().isEmpty()) {
-      // TODO(b/110235226): We currently choose the strategy with alphabetically first strategy,
-      // which happens to be backwards-compatible; we need to set
-      // experimental_build_event_upload_strategy to appropriate default values instead, and then
-      // make it an error to pass null.
-      return uploaders.values().iterator().next();
-    }
-    return uploaders.getOrDefault(
-        name, BuildEventArtifactUploaderFactory.LOCAL_FILES_UPLOADER_FACTORY);
-  }
-
-  /** Builder class for {@link BuildEventArtifactUploaderFactoryMap}. */
-  public static class Builder {
-    private final SortedMap<String, BuildEventArtifactUploaderFactory> uploaders = new TreeMap<>();
-
-    public Builder() {}
-
-    @CanIgnoreReturnValue
-    public Builder add(String name, BuildEventArtifactUploaderFactory uploader) {
-      uploaders.put(name, uploader);
-      return this;
+    init {
+        this.uploaders = uploaders
     }
 
-    public BuildEventArtifactUploaderFactoryMap build() {
-      return new BuildEventArtifactUploaderFactoryMap(ImmutableMap.copyOf(uploaders));
+    fun select(name: String?): BuildEventArtifactUploaderFactory? {
+        if (name == null && !uploaders.values().isEmpty()) {
+            // TODO(b/110235226): We currently choose the strategy with alphabetically first strategy,
+            // which happens to be backwards-compatible; we need to set
+            // experimental_build_event_upload_strategy to appropriate default values instead, and then
+            // make it an error to pass null.
+            return uploaders.values().iterator().next()
+        }
+        return uploaders.getOrDefault(
+            name, BuildEventArtifactUploaderFactory.Companion.LOCAL_FILES_UPLOADER_FACTORY
+        )
     }
-  }
+
+    /** Builder class for [BuildEventArtifactUploaderFactoryMap].  */
+    class Builder {
+        private val uploaders: SortedMap<String?, BuildEventArtifactUploaderFactory?> =
+            TreeMap<String?, BuildEventArtifactUploaderFactory?>()
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun add(name: String?, uploader: BuildEventArtifactUploaderFactory?): Builder {
+            uploaders.put(name, uploader)
+            return this
+        }
+
+        fun build(): BuildEventArtifactUploaderFactoryMap {
+            return BuildEventArtifactUploaderFactoryMap(
+                com.google.common.collect.ImmutableMap.copyOf<String?, BuildEventArtifactUploaderFactory?>(
+                    uploaders
+                )
+            )
+        }
+    }
 }

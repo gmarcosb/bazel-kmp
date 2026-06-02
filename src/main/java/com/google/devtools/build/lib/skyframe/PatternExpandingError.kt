@@ -11,75 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventContext;
-import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.buildeventstream.GenericBuildEvent;
-import java.util.Collection;
-import java.util.List;
+import com.google.devtools.build.lib.buildeventstream.BuildEvent
 
-/** Event reporting about failure to expand a target pattern properly. */
-public final class PatternExpandingError implements BuildEvent {
+/** Event reporting about failure to expand a target pattern properly.  */
+class PatternExpandingError private constructor(
+  @kotlin.jvm.JvmField val pattern: MutableList<String?>?,
+  private val message: String?,
+  private val skipped: Boolean
+) : BuildEvent {
+    val eventId: BuildEventId
+        get() {
+            if (skipped) {
+                return BuildEventIdUtil.targetPatternSkipped(pattern)
+            } else {
+                return BuildEventIdUtil.targetPatternExpanded(pattern)
+            }
+        }
 
-  private final List<String> pattern;
-  private final String message;
-  private final boolean skipped;
+    val childrenEvents: MutableCollection<BuildEventId>
+        get() = com.google.common.collect.ImmutableList.of<BuildEventId?>()
 
-  private PatternExpandingError(List<String> pattern, String message, boolean skipped) {
-    this.pattern = pattern;
-    this.message = message;
-    this.skipped = skipped;
-  }
-
-  public List<String> getPattern() {
-    return pattern;
-  }
-
-  public static PatternExpandingError failed(List<String> pattern, String message) {
-    return new PatternExpandingError(pattern, message, false);
-  }
-
-  public static PatternExpandingError failed(String term, String message) {
-    return new PatternExpandingError(ImmutableList.of(term), message, false);
-  }
-
-  // This is unused right now - when we generate the error, we don't know if we're in keep_going
-  // mode or not.
-  public static PatternExpandingError skipped(String term, String message) {
-    return new PatternExpandingError(ImmutableList.of(term), message, true);
-  }
-
-  @Override
-  public BuildEventId getEventId() {
-    if (skipped) {
-      return BuildEventIdUtil.targetPatternSkipped(pattern);
-    } else {
-      return BuildEventIdUtil.targetPatternExpanded(pattern);
+    public override fun asStreamProto(converters: BuildEventContext?): BuildEventStreamProtos.BuildEvent {
+        val failure: BuildEventStreamProtos.Aborted? =
+            BuildEventStreamProtos.Aborted.newBuilder()
+                .setReason(BuildEventStreamProtos.Aborted.AbortReason.LOADING_FAILURE)
+                .setDescription(message)
+                .build()
+        return GenericBuildEvent.protoChaining(this).setAborted(failure).build()
     }
-  }
 
-  @Override
-  public Collection<BuildEventId> getChildrenEvents() {
-    return ImmutableList.of();
-  }
+    public override fun storeForReplay(): Boolean {
+        return true
+    }
 
-  @Override
-  public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
-    BuildEventStreamProtos.Aborted failure =
-        BuildEventStreamProtos.Aborted.newBuilder()
-            .setReason(BuildEventStreamProtos.Aborted.AbortReason.LOADING_FAILURE)
-            .setDescription(message)
-            .build();
-    return GenericBuildEvent.protoChaining(this).setAborted(failure).build();
-  }
+    companion object {
+        fun failed(pattern: MutableList<String?>?, message: String?): PatternExpandingError {
+            return PatternExpandingError(pattern, message, false)
+        }
 
-  @Override
-  public boolean storeForReplay() {
-    return true;
-  }
+        @kotlin.jvm.JvmStatic
+        fun failed(term: String, message: String?): PatternExpandingError {
+            return PatternExpandingError(com.google.common.collect.ImmutableList.of<String?>(term), message, false)
+        }
+
+        // This is unused right now - when we generate the error, we don't know if we're in keep_going
+        // mode or not.
+        @kotlin.jvm.JvmStatic
+        fun skipped(term: String, message: String?): PatternExpandingError {
+            return PatternExpandingError(com.google.common.collect.ImmutableList.of<String?>(term), message, true)
+        }
+    }
 }

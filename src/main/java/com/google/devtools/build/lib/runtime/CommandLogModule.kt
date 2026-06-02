@@ -11,125 +11,112 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue
 
-import com.google.common.base.Supplier;
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.runtime.InstrumentationOutputFactory.DestinationRelativeTo;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import com.google.devtools.build.lib.util.io.OutErr;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.common.options.OptionsParsingResult;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.util.Objects;
-import javax.annotation.Nullable;
+/** This module logs complete stdout / stderr output of Bazel to a local file.  */
+class CommandLogModule : BlazeModule() {
+    private var env: CommandEnvironment? = null
+    private var logOutputStream: java.io.OutputStream? = null
 
-/** This module logs complete stdout / stderr output of Bazel to a local file. */
-public class CommandLogModule extends BlazeModule {
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
-
-  private CommandEnvironment env;
-  private OutputStream logOutputStream;
-
-  @Override
-  public void serverInit(OptionsParsingResult startupOptions, ServerBuilder builder) {
-    builder.addInfoItems(new CommandLogInfoItem());
-  }
-
-  @Override
-  public void beforeCommand(CommandEnvironment env) {
-    this.env = env;
-  }
-
-  @Override
-  @Nullable
-  public OutErr getOutputListener() {
-    if (!env.getOptions()
-        .getOptions(CommonCommandOptions.class)
-        .getRedirectLocalInstrumentationOutputWrites()) {
-      // When instrumentation output are locally written, we need to unlink old local command log
-      // from previous build, if present.
-      Path commandLog = getCommandLogPath(env.getOutputBase());
-      try {
-        commandLog.delete();
-      } catch (IOException ioException) {
-        env.getReporter()
-            .handle(Event.warn("Unable to delete command log: " + ioException.getMessage()));
-      }
+    public override fun serverInit(
+        startupOptions: com.google.devtools.common.options.OptionsParsingResult?,
+        builder: ServerBuilder
+    ) {
+        builder.addInfoItems(CommandLogInfoItem())
     }
 
-    try {
-      CommonCommandOptions commandOptions = env.getOptions().getOptions(CommonCommandOptions.class);
-      if (commandOptions.getWriteCommandLog() && !Objects.equals(env.getCommandName(), "clean")) {
-        InstrumentationOutput commandLogOutput =
-            env.getRuntime()
-                .getInstrumentationOutputFactory()
-                .createInstrumentationOutput(
-                    "command_log",
-                    PathFragment.create("command.log"),
-                    DestinationRelativeTo.OUTPUT_BASE,
-                    env,
-                    env.getReporter(),
-                    /* append= */ false,
-                    /* internal= */ true);
-        logOutputStream = commandLogOutput.createOutputStream();
-        return OutErr.create(logOutputStream, logOutputStream);
-      }
-    } catch (IOException ioException) {
-      env.getReporter()
-          .handle(Event.warn("Unable to open command log: " + ioException.getMessage()));
+    public override fun beforeCommand(env: CommandEnvironment?) {
+        this.env = env
     }
-    return null;
-  }
 
-  /** For a given output_base directory, returns the command log file path. */
-  static Path getCommandLogPath(Path outputBase) {
-    return outputBase.getRelative("command.log");
-  }
+    val outputListener: OutErr?
+        get() {
+            if (!env.getOptions()
+                    .getOptions(CommonCommandOptions::class.java)
+                    .getRedirectLocalInstrumentationOutputWrites()
+            ) {
+                // When instrumentation output are locally written, we need to unlink old local command log
+                // from previous build, if present.
+                val commandLog: com.google.devtools.build.lib.vfs.Path =
+                    getCommandLogPath(env.getOutputBase())
+                try {
+                    commandLog.delete()
+                } catch (ioException: IOException) {
+                    env.getReporter()
+                        .handle(com.google.devtools.build.lib.events.Event.warn("Unable to delete command log: " + ioException.message))
+                }
+            }
 
-  @Override
-  public void commandComplete() {
-    CommandEnvironment localEnv = this.env;
-    this.env = null;
-    if (logOutputStream != null) {
-      try {
-        logOutputStream.flush();
-        logOutputStream.close();
-      } catch (IOException e) {
-        logger.atWarning().withCause(e).log("I/O exception closing log");
-        String msg = "I/O exception closing log: " + e.getMessage();
-        if (localEnv != null) {
-          localEnv.getReporter().handle(Event.error(msg));
-        } else {
-          System.err.println(msg);
+            try {
+                val commandOptions: CommonCommandOptions =
+                    env.getOptions().getOptions(CommonCommandOptions::class.java)
+                if (commandOptions.getWriteCommandLog() && env.getCommandName() != "clean") {
+                    val commandLogOutput: InstrumentationOutput =
+                        env.getRuntime()
+                            .getInstrumentationOutputFactory()
+                            .createInstrumentationOutput(
+                                "command_log",
+                                PathFragment.create("command.log"),
+                                DestinationRelativeTo.OUTPUT_BASE,
+                                env,
+                                env.getReporter(),  /* append= */
+                                false,  /* internal= */
+                                true
+                            )
+                    logOutputStream = commandLogOutput.createOutputStream()
+                    return OutErr.create(logOutputStream, logOutputStream)
+                }
+            } catch (ioException: IOException) {
+                env.getReporter()
+                    .handle(com.google.devtools.build.lib.events.Event.warn("Unable to open command log: " + ioException.message))
+            }
+            return null
         }
-      } finally {
-        logOutputStream = null;
-      }
-    }
-  }
 
-  /** Info item for the command log */
-  public static final class CommandLogInfoItem extends InfoItem {
-    public CommandLogInfoItem() {
-      super(
-          "command_log",
-          "Location of the log containing the output from the build commands.",
-          false);
+    public override fun commandComplete() {
+        val localEnv: CommandEnvironment? = this.env
+        this.env = null
+        if (logOutputStream != null) {
+            try {
+                logOutputStream.flush()
+                logOutputStream.close()
+            } catch (e: IOException) {
+                logger.atWarning().withCause(e).log("I/O exception closing log")
+                val msg = "I/O exception closing log: " + e.message
+                if (localEnv != null) {
+                    localEnv.getReporter().handle(com.google.devtools.build.lib.events.Event.error(msg))
+                } else {
+                    java.lang.System.err.println(msg)
+                }
+            } finally {
+                logOutputStream = null
+            }
+        }
     }
 
-    @Override
-    public byte[] get(
-        Supplier<BuildConfigurationValue> configurationSupplier, CommandEnvironment env)
-        throws AbruptExitException {
-      checkNotNull(env);
-      return print(getCommandLogPath(env.getRuntime().getWorkspace().getOutputBase()));
+    /** Info item for the command log  */
+    class CommandLogInfoItem : InfoItem(
+        "command_log",
+        "Location of the log containing the output from the build commands.",
+        false
+    ) {
+        @Throws(AbruptExitException::class)
+        public override fun get(
+            configurationSupplier: com.google.common.base.Supplier<BuildConfigurationValue?>?, env: CommandEnvironment?
+        ): ByteArray {
+            com.google.common.base.Preconditions.checkNotNull<Any?>(env)
+            return print(getCommandLogPath(env.getRuntime().getWorkspace().getOutputBase()))
+        }
     }
-  }
+
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+
+        /** For a given output_base directory, returns the command log file path.  */
+        fun getCommandLogPath(outputBase: com.google.devtools.build.lib.vfs.Path): com.google.devtools.build.lib.vfs.Path {
+            return outputBase.getRelative("command.log")
+        }
+    }
 }

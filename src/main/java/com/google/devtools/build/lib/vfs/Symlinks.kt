@@ -11,20 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
 /**
- * An enumeration for selecting between {@code stat}- and {@code lstat}-like
- * behavior in various {@link Path} operations.
+ * An enumeration for selecting between `stat`- and `lstat`-like
+ * behavior in various [Path] operations.
  */
-public enum Symlinks {
+enum class Symlinks {
+    /** Follow symbolic links; stat(2)-like behaviour.  */
+    FOLLOW,
 
-  /** Follow symbolic links; stat(2)-like behaviour. */
-  FOLLOW,
+    /** Do not follow symbolic links; lstat(2)-like behaviour.  */
+    NOFOLLOW;
 
-  /** Do not follow symbolic links; lstat(2)-like behaviour. */
-  NOFOLLOW;
-
-  boolean toBoolean() { return this == FOLLOW; }
-
+    fun toBoolean(): Boolean {
+        return this == Symlinks.FOLLOW
+    }
 }

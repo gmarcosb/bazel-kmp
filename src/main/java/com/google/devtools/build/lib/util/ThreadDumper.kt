@@ -11,23 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import java.io.IOException;
-import java.io.OutputStream;
+import java.io.IOException
 
-/** Wrapper for {@link jdk.internal.vm.ThreadDumper}. */
-public final class ThreadDumper {
-
-  private ThreadDumper() {}
-
-  /**
-   * Generate a thread dump in plain text format to the given output stream, UTF-8 encoded.
-   *
-   * @throws IOException if an I/O error occurs
-   */
-  @SuppressWarnings("CheckedExceptionNotThrown") // intentional for compatibility with JDK 25
-  public static void dumpThreads(OutputStream out) throws IOException {
-    jdk.internal.vm.ThreadDumper.dumpThreads(out);
-  }
+/** Wrapper for [jdk.internal.vm.ThreadDumper].  */
+object ThreadDumper {
+    /**
+     * Generate a thread dump in plain text format to the given output stream, UTF-8 encoded.
+     * 
+     * @throws IOException if an I/O error occurs
+     */
+    @Throws(IOException::class)  // intentional for compatibility with JDK 25
+    fun dumpThreads(out: java.io.OutputStream?) {
+        jdk.internal.vm.ThreadDumper.dumpThreads(out)
+    }
 }

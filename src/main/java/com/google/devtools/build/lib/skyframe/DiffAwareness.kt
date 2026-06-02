@@ -11,81 +11,81 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories;
-import com.google.devtools.build.lib.vfs.ModifiedFileSet;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.common.options.OptionsProvider;
-import java.io.Closeable;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories
 
 /**
  * Interface for computing modifications of files under a package path entry.
- *
- * <p> Skyframe has a {@link DiffAwareness} instance per package-path entry, and each instance is
+ * 
+ * 
+ *  Skyframe has a [DiffAwareness] instance per package-path entry, and each instance is
  * responsible for all files under its path entry. At the beginning of each incremental build,
- * skyframe queries for changes using {@link #getDiff}. Ideally, {@link #getDiff} should be
+ * skyframe queries for changes using [.getDiff]. Ideally, [.getDiff] should be
  * constant-time; if it were linear in the number of files of interest, we might as well just
  * detect modifications manually.
  */
-public interface DiffAwareness extends Closeable {
-
-  /** Factory for creating {@link DiffAwareness} instances. */
-  interface Factory {
-    /**
-     * Returns a {@link DiffAwareness} instance suitable for managing changes to files under the
-     * given package path entry, or {@code null} if this factory cannot create such an instance. The
-     * instance will not report any changes to files within the given set of ignored paths.
-     *
-     * <p>Skyframe has a collection of factories, and will create a {@link DiffAwareness} instance
-     * per package path entry using one of the factories that returns a non-null value.
-     */
-    @Nullable
-    DiffAwareness maybeCreate(
-        Root pathEntry, IgnoredSubdirectories ignoredPaths, OptionsProvider optionsProvider);
-  }
-
-  /** Opaque view of the filesystem under a package path entry at a specific point in time. */
-  interface View {
-    /** Returns workspace info unanimously associated with the package path or null. */
-    @Nullable
-    default WorkspaceInfoFromDiff getWorkspaceInfo() {
-      return null;
+interface DiffAwareness : java.io.Closeable {
+    /** Factory for creating [DiffAwareness] instances.  */
+    interface Factory {
+        /**
+         * Returns a [DiffAwareness] instance suitable for managing changes to files under the
+         * given package path entry, or `null` if this factory cannot create such an instance. The
+         * instance will not report any changes to files within the given set of ignored paths.
+         * 
+         * 
+         * Skyframe has a collection of factories, and will create a [DiffAwareness] instance
+         * per package path entry using one of the factories that returns a non-null value.
+         */
+        fun maybeCreate(
+            pathEntry: Root?,
+            ignoredPaths: IgnoredSubdirectories?,
+            optionsProvider: com.google.devtools.common.options.OptionsProvider?
+        ): DiffAwareness?
     }
-  }
 
-  /**
-   * Returns the live view of the filesystem under the package path entry.
-   *
-   * @throws BrokenDiffAwarenessException if something is wrong and the caller should discard this
-   *     {@link DiffAwareness} instance. The {@link DiffAwareness} is expected to close itself in
-   *     this case.
-   */
-  View getCurrentView(OptionsProvider options) throws BrokenDiffAwarenessException;
+    /** Opaque view of the filesystem under a package path entry at a specific point in time.  */
+    interface View {
+        val workspaceInfo: WorkspaceInfoFromDiff?
+            /** Returns workspace info unanimously associated with the package path or null.  */
+            get() = null
+    }
 
-  /**
-   * Returns the set of files of interest that have been modified between the given two views.
-   *
-   * <p>The given views must have come from previous calls to {@link #getCurrentView} on the {@link
-   * DiffAwareness} instance (i.e. using a {@link View} from another instance is not supported).
-   *
-   * @throws IncompatibleViewException if the given views are not compatible with this {@link
-   *     DiffAwareness} instance. This probably indicates a bug.
-   * @throws BrokenDiffAwarenessException if something is wrong and the caller should discard this
-   *     {@link DiffAwareness} instance. The {@link DiffAwareness} is expected to close itself in
-   *     this case.
-   */
-  ModifiedFileSet getDiff(@Nullable View oldView, View newView)
-      throws IncompatibleViewException, InterruptedException, BrokenDiffAwarenessException;
+    /**
+     * Returns the live view of the filesystem under the package path entry.
+     * 
+     * @throws BrokenDiffAwarenessException if something is wrong and the caller should discard this
+     * [DiffAwareness] instance. The [DiffAwareness] is expected to close itself in
+     * this case.
+     */
+    @Throws(BrokenDiffAwarenessException::class)
+    fun getCurrentView(options: com.google.devtools.common.options.OptionsProvider?): View?
 
-  /** @return the name of this implementation */
-  String name();
+    /**
+     * Returns the set of files of interest that have been modified between the given two views.
+     * 
+     * 
+     * The given views must have come from previous calls to [.getCurrentView] on the [ ] instance (i.e. using a [View] from another instance is not supported).
+     * 
+     * @throws IncompatibleViewException if the given views are not compatible with this [     ] instance. This probably indicates a bug.
+     * @throws BrokenDiffAwarenessException if something is wrong and the caller should discard this
+     * [DiffAwareness] instance. The [DiffAwareness] is expected to close itself in
+     * this case.
+     */
+    @Throws(
+        IncompatibleViewException::class,
+        java.lang.InterruptedException::class,
+        BrokenDiffAwarenessException::class
+    )
+    fun getDiff(oldView: View?, newView: View?): ModifiedFileSet?
 
-  /**
-   * Must be called whenever the {@link DiffAwareness} object is to be discarded. Using a
-   * {@link DiffAwareness} instance after calling {@link #close} on it is unspecified behavior.
-   */
-  @Override
-  void close();
+    /** @return the name of this implementation
+     */
+    fun name(): String?
+
+    /**
+     * Must be called whenever the [DiffAwareness] object is to be discarded. Using a
+     * [DiffAwareness] instance after calling [.close] on it is unspecified behavior.
+     */
+    override fun close()
 }

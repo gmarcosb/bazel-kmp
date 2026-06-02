@@ -11,147 +11,145 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
-import static com.google.common.util.concurrent.Uninterruptibles.getUninterruptibly;
+import com.google.devtools.build.lib.bugreport.BugReporter
+import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueStore.MissingFingerprintValueException
+import java.io.IOException
+import java.util.concurrent.ExecutionException
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.util.concurrent.FutureCallback;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.bugreport.BugReporter;
-import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueStore.MissingFingerprintValueException;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.io.IOException;
-import java.util.concurrent.ExecutionException;
-
-/** Helpers for serialization futures. */
-public final class FutureHelpers {
-
-  /**
-   * Waits for {@code future} and returns the result.
-   *
-   * <p>Handles exceptions by converting them into {@link SerializationException}.
-   */
-  @VisibleForTesting // package-private
-  @CanIgnoreReturnValue // may be called for side effects
-  public static <T> T waitForSerializationFuture(ListenableFuture<T> future)
-      throws SerializationException {
-    try {
-      // TODO: b/297857068 - revisit whether this should handle to interrupts. As of 02/09/24,
-      // serialization doesn't handle interrupts so introducing them here could lead to unforseen
-      // problems.
-      return getUninterruptibly(future);
-    } catch (ExecutionException e) {
-      throw asSerializationException(e.getCause());
-    }
-  }
-
-  /**
-   * Gets the done value of {@code future}.
-   *
-   * <p>Handles exceptions by converting them into {@link SerializationException}.
-   */
-  static <T> T getDoneSerializationFuture(ListenableFuture<T> future)
-      throws SerializationException {
-    try {
-      return Futures.getDone(future);
-    } catch (ExecutionException e) {
-      throw asSerializationException(e.getCause());
-    }
-  }
-
-  /**
-   * Waits for {@code future} and returns the result.
-   *
-   * <p>Handles exceptions by converting them into {@link SerializationException}. The {@link
-   * SerializationException} may have a {@link MissingFingerprintValueException} cause.
-   *
-   * <p>The {@link MissingFingerprintValueException} needs special case handling anywhere this
-   * method is used. Outside of test code, this is only possible for via {@link
-   * SharedValueDeserializationContext#deserializeWithSharedValues}, which explicitly handles it.
-   */
-  @CanIgnoreReturnValue // may be called for side effects
-  static <T> T waitForDeserializationFuture(ListenableFuture<T> future)
-      throws SerializationException {
-    try {
-      // TODO: b/297857068 - revisit whether this should handle to interrupts. As of 02/09/24,
-      // serialization doesn't handle interrupts so introducing them here could lead to unforseen
-      // problems.
-      return getUninterruptibly(future);
-    } catch (ExecutionException e) {
-      throw asDeserializationException(e.getCause());
-    }
-  }
-
-  /**
-   * Gets the done value of {@code future}.
-   *
-   * <p>May throw an {@link IllegalStateException} if the future is not done. See {@link
-   * #waitForDeserializationFuture} for a description the {@link SerializationException}.
-   */
-  static <T> T getDoneDeserializationFuture(ListenableFuture<T> future)
-      throws SerializationException {
-    try {
-      return Futures.getDone(future);
-    } catch (ExecutionException e) {
-      throw asDeserializationException(e.getCause());
-    }
-  }
-
-  /**
-   * Reports any errors that occur on {@code combiner}.
-   *
-   * <p>Used when a future value is going to be discarded, but it would be inappropriate to ignore
-   * possible errors.
-   */
-  static void reportAnyFailures(Futures.FutureCombiner<?> combiner) {
-    Futures.addCallback(
-        combiner.call(() -> null, directExecutor()), FAILURE_REPORTING_CALLBACK, directExecutor());
-  }
-
-  /**
-   * A callback for {@link ListenableFuture} that only cares about the result status (success or
-   * failure) and not the result value itself.
-   */
-  public abstract static class FutureStatusCallback implements FutureCallback<Object> {
-    @Override
-    public final void onSuccess(Object unused) {
-      onSuccess();
-    }
-
-    /** Called when the future completes successfully. */
-    public abstract void onSuccess();
-  }
-
-  static final FutureStatusCallback FAILURE_REPORTING_CALLBACK =
-      new FutureStatusCallback() {
-        @Override
-        public void onSuccess() {}
-
-        @Override
-        public void onFailure(Throwable t) {
-          BugReporter.defaultInstance().sendBugReport(t);
+/** Helpers for serialization futures.  */
+object FutureHelpers {
+    /**
+     * Waits for `future` and returns the result.
+     * 
+     * 
+     * Handles exceptions by converting them into [SerializationException].
+     */
+    @com.google.common.annotations.VisibleForTesting // package-private
+    @com.google.errorprone.annotations.CanIgnoreReturnValue // may be called for side effects
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    fun <T> waitForSerializationFuture(future: com.google.common.util.concurrent.ListenableFuture<T?>): T? {
+        try {
+            // TODO: b/297857068 - revisit whether this should handle to interrupts. As of 02/09/24,
+            // serialization doesn't handle interrupts so introducing them here could lead to unforseen
+            // problems.
+            return com.google.common.util.concurrent.Uninterruptibles.getUninterruptibly<T?>(future)
+        } catch (e: ExecutionException) {
+            throw asSerializationException(e.getCause())
         }
-      };
-
-  private static SerializationException asDeserializationException(Throwable cause) {
-    if (cause instanceof MissingFingerprintValueException) {
-      return new SerializationException(cause);
     }
-    return asSerializationException(cause);
-  }
 
-  private static SerializationException asSerializationException(Throwable cause) {
-    if (cause instanceof SerializationException serializationException) {
-      return serializationException;
+    /**
+     * Gets the done value of `future`.
+     * 
+     * 
+     * Handles exceptions by converting them into [SerializationException].
+     */
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    fun <T> getDoneSerializationFuture(future: com.google.common.util.concurrent.ListenableFuture<T?>): T? {
+        try {
+            return com.google.common.util.concurrent.Futures.getDone<T?>(future)
+        } catch (e: ExecutionException) {
+            throw asSerializationException(e.getCause())
+        }
     }
-    if (cause instanceof IOException) {
-      return new SerializationException("serialization I/O error", cause);
-    }
-    return new SerializationException("unexpected serialization error", cause);
-  }
 
-  private FutureHelpers() {}
+    /**
+     * Waits for `future` and returns the result.
+     * 
+     * 
+     * Handles exceptions by converting them into [SerializationException]. The [ ] may have a [MissingFingerprintValueException] cause.
+     * 
+     * 
+     * The [MissingFingerprintValueException] needs special case handling anywhere this
+     * method is used. Outside of test code, this is only possible for via [ ][SharedValueDeserializationContext.deserializeWithSharedValues], which explicitly handles it.
+     */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue // may be called for side effects
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    fun <T> waitForDeserializationFuture(future: com.google.common.util.concurrent.ListenableFuture<T?>): T? {
+        try {
+            // TODO: b/297857068 - revisit whether this should handle to interrupts. As of 02/09/24,
+            // serialization doesn't handle interrupts so introducing them here could lead to unforseen
+            // problems.
+            return com.google.common.util.concurrent.Uninterruptibles.getUninterruptibly<T?>(future)
+        } catch (e: ExecutionException) {
+            throw asDeserializationException(e.getCause())
+        }
+    }
+
+    /**
+     * Gets the done value of `future`.
+     * 
+     * 
+     * May throw an [IllegalStateException] if the future is not done. See [ ][.waitForDeserializationFuture] for a description the [SerializationException].
+     */
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    fun <T> getDoneDeserializationFuture(future: com.google.common.util.concurrent.ListenableFuture<T?>): T? {
+        try {
+            return com.google.common.util.concurrent.Futures.getDone<T?>(future)
+        } catch (e: ExecutionException) {
+            throw asDeserializationException(e.getCause())
+        }
+    }
+
+    /**
+     * Reports any errors that occur on `combiner`.
+     * 
+     * 
+     * Used when a future value is going to be discarded, but it would be inappropriate to ignore
+     * possible errors.
+     */
+    fun reportAnyFailures(combiner: com.google.common.util.concurrent.Futures.FutureCombiner<*>) {
+        com.google.common.util.concurrent.Futures.addCallback<Any?>(
+            combiner.call<Any?>(
+                java.util.concurrent.Callable { null },
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            ), FAILURE_REPORTING_CALLBACK, com.google.common.util.concurrent.MoreExecutors.directExecutor()
+        )
+    }
+
+    val FAILURE_REPORTING_CALLBACK: FutureStatusCallback = object : FutureStatusCallback() {
+        override fun onSuccess() {}
+
+        override fun onFailure(t: Throwable) {
+            BugReporter.defaultInstance().sendBugReport(t)
+        }
+    }
+
+    private fun asDeserializationException(cause: Throwable?): com.google.devtools.build.lib.skyframe.serialization.SerializationException? {
+        if (cause is MissingFingerprintValueException) {
+            return com.google.devtools.build.lib.skyframe.serialization.SerializationException(cause)
+        }
+        return asSerializationException(cause)
+    }
+
+    private fun asSerializationException(cause: Throwable?): com.google.devtools.build.lib.skyframe.serialization.SerializationException {
+        if (cause is com.google.devtools.build.lib.skyframe.serialization.SerializationException) {
+            return cause
+        }
+        if (cause is IOException) {
+            return com.google.devtools.build.lib.skyframe.serialization.SerializationException(
+                "serialization I/O error",
+                cause
+            )
+        }
+        return com.google.devtools.build.lib.skyframe.serialization.SerializationException(
+            "unexpected serialization error",
+            cause
+        )
+    }
+
+    /**
+     * A callback for [ListenableFuture] that only cares about the result status (success or
+     * failure) and not the result value itself.
+     */
+    abstract class FutureStatusCallback : com.google.common.util.concurrent.FutureCallback<Any?> {
+        override fun onSuccess(unused: Any?) {
+            onSuccess()
+        }
+
+        /** Called when the future completes successfully.  */
+        abstract fun onSuccess()
+    }
 }

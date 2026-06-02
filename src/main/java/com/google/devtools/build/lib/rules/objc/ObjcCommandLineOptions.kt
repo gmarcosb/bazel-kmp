@@ -11,96 +11,88 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.objc
 
-package com.google.devtools.build.lib.rules.objc;
+import com.google.devtools.build.lib.analysis.config.FragmentOptions
+import com.google.devtools.common.options.*
 
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionMetadataTag;
-import com.google.devtools.common.options.OptionsClass;
-
-/** Command-line options for building Objective-C targets. */
+/** Command-line options for building Objective-C targets.  */
 @OptionsClass
-public abstract class ObjcCommandLineOptions extends FragmentOptions {
-  @Option(
-      name = "device_debug_entitlements",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.SIGNING,
-      effectTags = {OptionEffectTag.CHANGES_INPUTS},
-      help =
-          "If set, and compilation mode is not 'opt', objc apps will include debug entitlements "
-              + "when signing.")
-  public abstract boolean getDeviceDebugEntitlements();
+abstract class ObjcCommandLineOptions : FragmentOptions() {
+    @get:Option(
+        name = "device_debug_entitlements",
+        defaultValue = "true",
+        documentationCategory = OptionDocumentationCategory.SIGNING,
+        effectTags = [OptionEffectTag.CHANGES_INPUTS],
+        help = ("If set, and compilation mode is not 'opt', objc apps will include debug entitlements "
+                + "when signing.")
+    )
+    abstract val deviceDebugEntitlements: Boolean
 
-  @Option(
-      name = "incompatible_disallow_sdk_frameworks_attributes",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.STARLARK_SEMANTICS,
-      effectTags = {OptionEffectTag.BUILD_FILE_SEMANTICS},
-      metadataTags = {OptionMetadataTag.INCOMPATIBLE_CHANGE},
-      help =
-          "If true, disallow sdk_frameworks and weak_sdk_frameworks attributes in objc_library and"
-              + " objc_import.")
-  public abstract boolean getIncompatibleDisallowSdkFrameworksAttributes();
+    @get:Option(
+        name = "incompatible_disallow_sdk_frameworks_attributes",
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.STARLARK_SEMANTICS,
+        effectTags = [OptionEffectTag.BUILD_FILE_SEMANTICS],
+        metadataTags = [OptionMetadataTag.INCOMPATIBLE_CHANGE],
+        help = ("If true, disallow sdk_frameworks and weak_sdk_frameworks attributes in objc_library and"
+                + " objc_import.")
+    )
+    abstract val incompatibleDisallowSdkFrameworksAttributes: Boolean
 
-  @Option(
-      name = "incompatible_objc_alwayslink_by_default",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.STARLARK_SEMANTICS,
-      effectTags = {OptionEffectTag.BUILD_FILE_SEMANTICS},
-      metadataTags = {OptionMetadataTag.INCOMPATIBLE_CHANGE},
-      help =
-          "If true, make the default value true for alwayslink attributes in objc_library and"
-              + " objc_import.")
-  public abstract boolean getIncompatibleObjcAlwayslinkByDefault();
+    @get:Option(
+        name = "incompatible_objc_alwayslink_by_default",
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.STARLARK_SEMANTICS,
+        effectTags = [OptionEffectTag.BUILD_FILE_SEMANTICS],
+        metadataTags = [OptionMetadataTag.INCOMPATIBLE_CHANGE],
+        help = ("If true, make the default value true for alwayslink attributes in objc_library and"
+                + " objc_import.")
+    )
+    abstract val incompatibleObjcAlwayslinkByDefault: Boolean
 
-  /**
-   * @deprecated delete when we are sure it's not used anywhere.
-   */
-  @Deprecated
-  @Option(
-      name = "incompatible_disable_native_apple_binary_rule",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.INPUT_STRICTNESS,
-      effectTags = {
-        OptionEffectTag.EAGERNESS_TO_EXIT,
-      },
-      metadataTags = {OptionMetadataTag.INCOMPATIBLE_CHANGE, OptionMetadataTag.DEPRECATED},
-      help = "No-op. Kept here for backwards compatibility.")
-  public abstract boolean getIncompatibleDisableNativeAppleBinaryRule();
+    @get:Deprecated("delete when we are sure it's not used anywhere.")
+    @get:Option(
+        name = "incompatible_disable_native_apple_binary_rule",
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.INPUT_STRICTNESS,
+        effectTags = [OptionEffectTag.EAGERNESS_TO_EXIT
+        ],
+        metadataTags = [OptionMetadataTag.INCOMPATIBLE_CHANGE, OptionMetadataTag.DEPRECATED],
+        help = "No-op. Kept here for backwards compatibility."
+    )
+    abstract val incompatibleDisableNativeAppleBinaryRule: Boolean
 
-  @Option(
-      name = "incompatible_strip_executable_safely",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
-      effectTags = {OptionEffectTag.ACTION_COMMAND_LINES},
-      metadataTags = {OptionMetadataTag.INCOMPATIBLE_CHANGE},
-      help =
-          "If true, strip action for executables will use flag -x, which does not break dynamic "
-              + "symbol resolution.")
-  public abstract boolean getIncompatibleStripExecutableSafely();
+    @get:Option(
+        name = "incompatible_strip_executable_safely",
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
+        effectTags = [OptionEffectTag.ACTION_COMMAND_LINES],
+        metadataTags = [OptionMetadataTag.INCOMPATIBLE_CHANGE],
+        help = ("If true, strip action for executables will use flag -x, which does not break dynamic "
+                + "symbol resolution.")
+    )
+    abstract val incompatibleStripExecutableSafely: Boolean
 
-  @Option(
-      name = "incompatible_builtin_objc_strip_action",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
-      effectTags = {OptionEffectTag.ACTION_COMMAND_LINES},
-      metadataTags = {OptionMetadataTag.INCOMPATIBLE_CHANGE},
-      help = "Whether to emit a strip action as part of objc linking.")
-  public abstract boolean getIncompatibleBuiltinObjcStripAction();
+    @get:Option(
+        name = "incompatible_builtin_objc_strip_action",
+        defaultValue = "true",
+        documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
+        effectTags = [OptionEffectTag.ACTION_COMMAND_LINES],
+        metadataTags = [OptionMetadataTag.INCOMPATIBLE_CHANGE],
+        help = "Whether to emit a strip action as part of objc linking."
+    )
+    abstract val incompatibleBuiltinObjcStripAction: Boolean
 
-  // Tracked in #28082.
-  @Option(
-      name = "incompatible_remove_ctx_objc_fragment",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.BUILD_FILE_SEMANTICS},
-      metadataTags = {OptionMetadataTag.INCOMPATIBLE_CHANGE},
-      help =
-          "When true, Apple build flags are defined with Apple rules (in BUIILD files) and"
-              + " ctx.fragments.objc is undefined. This is a migration flag to move all Apple"
-              + " flags from core Bazel to Apple rules.")
-  public abstract boolean getDisableObjcFragment();
+    @get:Option(
+        name = "incompatible_remove_ctx_objc_fragment",
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [OptionEffectTag.BUILD_FILE_SEMANTICS],
+        metadataTags = [OptionMetadataTag.INCOMPATIBLE_CHANGE],
+        help = ("When true, Apple build flags are defined with Apple rules (in BUIILD files) and"
+                + " ctx.fragments.objc is undefined. This is a migration flag to move all Apple"
+                + " flags from core Bazel to Apple rules.")
+    )
+    abstract val disableObjcFragment: Boolean
 }

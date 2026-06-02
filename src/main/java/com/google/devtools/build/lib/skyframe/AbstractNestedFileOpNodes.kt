@@ -11,140 +11,138 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.devtools.build.lib.skyframe.FileOpNodeOrFuture.EmptyFileOpNode.EMPTY_FILE_OP_NODE;
-
-import com.google.devtools.build.lib.skyframe.FileOpNodeOrFuture.FileOpNode;
-import com.google.devtools.build.lib.skyframe.FileOpNodeOrFuture.FileOpNodeOrEmpty;
-import java.util.Collection;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.skyframe.FileOpNodeOrFuture.EmptyFileOpNode
+import com.google.devtools.build.lib.skyframe.FileOpNodeOrFuture.FileOpNode
+import com.google.devtools.build.lib.skyframe.FileOpNodeOrFuture.FileOpNodeOrEmpty
 
 /**
- * Represents a collection of {@link FileOpNode}s, allowing for nested structures to represent
+ * Represents a collection of [FileOpNode]s, allowing for nested structures to represent
  * complex file dependencies.
- *
- * <p>This class serves as a container for multiple {@link FileOpNode} instances, enabling the
+ * 
+ * 
+ * This class serves as a container for multiple [FileOpNode] instances, enabling the
  * representation of file operation dependencies in a hierarchical manner. It differentiates between
  * analysis dependencies (for example, BUILD and .bzl files) and "source" dependencies, used during
  * execution (for example, .cpp, .h or .java files). It keeps them together to optimize storage.
- *
- * <p><b>Source vs. Analysis Dependencies:</b>
- *
- * <ul>
- *   <li><b>Analysis:</b> During the analysis phase, source files are declared, but configured
- *       targets (which define actions) do not depend on the <i>contents</i> of these source files,
- *       for example, .cpp, .h or .java files.
- *   <li><b>Execution:</b> The execution phase creates actual dependencies on the contents of source
- *       files as actions are run.
- * </ul>
- *
- * <p><b>Why combine them?</b> <br>
- * Logically, source and analysis dependencies could be tracked separately with different {@link
- * FileOpNode}s. However, this would duplicate the dependency graph structure in persistent storage,
+ * 
+ * 
+ * **Source vs. Analysis Dependencies:**
+ * 
+ * 
+ *  * **Analysis:** During the analysis phase, source files are declared, but configured
+ * targets (which define actions) do not depend on the *contents* of these source files,
+ * for example, .cpp, .h or .java files.
+ *  * **Execution:** The execution phase creates actual dependencies on the contents of source
+ * files as actions are run.
+ * 
+ * 
+ * 
+ * **Why combine them?** <br></br>
+ * Logically, source and analysis dependencies could be tracked separately with different [ ]s. However, this would duplicate the dependency graph structure in persistent storage,
  * which is expensive. This class keeps them together, trading off a bit of complexity for reduced
  * storage overhead. The structure is written only once, and the interpretation of dependencies must
  * be handled by the client.
- *
- * <p><b>Subclasses:</b>
- *
- * <ul>
- *   <li>{@link NestedFileOpNodes}: Represents a set of {@link FileOpNode}s without any immediate
- *       source file dependencies.
- *   <li>{@link NestedFileOpNodesWithSource}: Represents a set of {@link FileOpNode}s along with an
- *       immediate source file dependency ({@link FileKey}s).
- * </ul>
+ * 
+ * 
+ * **Subclasses:**
+ * 
+ * 
+ *  * [NestedFileOpNodes]: Represents a set of [FileOpNode]s without any immediate
+ * source file dependencies.
+ *  * [NestedFileOpNodesWithSource]: Represents a set of [FileOpNode]s along with an
+ * immediate source file dependency ([FileKey]s).
+ * 
  */
-public abstract sealed class AbstractNestedFileOpNodes implements FileOpNodeOrFuture.FileOpNode
-    permits AbstractNestedFileOpNodes.NestedFileOpNodes,
-        AbstractNestedFileOpNodes.NestedFileOpNodesWithSource {
-  private final FileOpNode[] analysisDependencies;
+abstract class AbstractNestedFileOpNodes private constructor(analysisDependencies: Array<FileOpNode?>) : FileOpNode {
+    private val analysisDependencies: Array<FileOpNode?>
 
-  /**
-   * Opaque storage for use by serialization.
-   *
-   * <p>{@link FileOpNode}, {@link FileKey} and {@link DirectoryListingKey} are mutually dependent
-   * via {@link FileOpNode}. This type is opaque to avoid forcing {@link FileKey} and {@link
-   * DirectoryListingKey} to depend on serialization implementation code.
-   *
-   * <p>The serialization implementation initializes this field with double-checked locking so it is
-   * marked volatile.
-   */
-  private volatile Object serializationScratch;
+    /**
+     * Opaque storage for use by serialization.
+     * 
+     * 
+     * [FileOpNode], [FileKey] and [DirectoryListingKey] are mutually dependent
+     * via [FileOpNode]. This type is opaque to avoid forcing [FileKey] and [ ] to depend on serialization implementation code.
+     * 
+     * 
+     * The serialization implementation initializes this field with double-checked locking so it is
+     * marked volatile.
+     */
+    @kotlin.concurrent.Volatile
+    var serializationScratch: Any? = null
 
-  /**
-   * Effectively, a factory method for {@link NestedFileOpNodes}, but formally a factory method for
-   * {@link FileOpNodeOrEmpty}.
-   *
-   * <p>Returns {@link EMPTY_FILE_OP_NODE} if {@code analysisDependencies} is empty. When {@code
-   * analysisDependencies} contains only one node, returns the node directly instead of wrapping it.
-   * Otherwise, returns a {@link NestedFileOpNodes} instance wrapping {@code analysisDependencies}.
-   */
-  public static FileOpNodeOrEmpty from(Collection<FileOpNode> analysisDependencies) {
-    if (analysisDependencies.isEmpty()) {
-      return EMPTY_FILE_OP_NODE;
-    }
-    if (analysisDependencies.size() == 1) {
-      return analysisDependencies.iterator().next();
-    }
-    return new NestedFileOpNodes(analysisDependencies.toArray(FileOpNode[]::new));
-  }
-
-  /**
-   * Creates {@link NestedFileOpNodesWithSource} with reductions similar to {@link
-   * #from(Collection<FileOpNode>)}.
-   */
-  public static FileOpNodeOrEmpty from(
-      Collection<FileOpNode> analysisDependencies, @Nullable FileKey source) {
-    if (source == null) {
-      return from(analysisDependencies);
-    }
-    // It's unclear if `analysisDependencies` can ever be empty here in practice, but it's
-    // permitted. It should be rare enough that defining a special type for it isn't worth it.
-    return new NestedFileOpNodesWithSource(analysisDependencies.toArray(FileOpNode[]::new), source);
-  }
-
-  private AbstractNestedFileOpNodes(FileOpNode[] analysisDependencies) {
-    this.analysisDependencies = analysisDependencies;
-  }
-
-  public int analysisDependenciesCount() {
-    return analysisDependencies.length;
-  }
-
-  public FileOpNode getAnalysisDependency(int index) {
-    return analysisDependencies[index];
-  }
-
-  @Nullable
-  public Object getSerializationScratch() {
-    return serializationScratch;
-  }
-
-  public void setSerializationScratch(Object value) {
-    this.serializationScratch = value;
-  }
-
-  /** A set of {@link FileOpNode}s with no immediate source dependencies. */
-  public static final class NestedFileOpNodes extends AbstractNestedFileOpNodes {
-    private NestedFileOpNodes(FileOpNode[] analysisDependencies) {
-      super(analysisDependencies);
-      checkArgument(analysisDependencies.length > 0);
-    }
-  }
-
-  /** A set of analysis dependencies and source file dependency. */
-  public static final class NestedFileOpNodesWithSource extends AbstractNestedFileOpNodes {
-    private final FileKey source;
-
-    private NestedFileOpNodesWithSource(FileOpNode[] nodes, FileKey source) {
-      super(nodes);
-      this.source = source;
+    init {
+        this.analysisDependencies = analysisDependencies
     }
 
-    public FileKey source() {
-      return source;
+    fun analysisDependenciesCount(): Int {
+        return analysisDependencies.size
     }
-  }
+
+    fun getAnalysisDependency(index: Int): FileOpNode? {
+        return analysisDependencies[index]
+    }
+
+    /** A set of [FileOpNode]s with no immediate source dependencies.  */
+    class NestedFileOpNodes private constructor(analysisDependencies: Array<FileOpNode?>) :
+        AbstractNestedFileOpNodes(analysisDependencies) {
+        init {
+            com.google.common.base.Preconditions.checkArgument(analysisDependencies.size > 0)
+        }
+    }
+
+    /** A set of analysis dependencies and source file dependency.  */
+    class NestedFileOpNodesWithSource private constructor(
+        nodes: Array<FileOpNode?>,
+        source: com.google.devtools.build.lib.skyframe.FileKey?
+    ) : AbstractNestedFileOpNodes(nodes) {
+        private val source: com.google.devtools.build.lib.skyframe.FileKey?
+
+        init {
+            this.source = source
+        }
+
+        fun source(): com.google.devtools.build.lib.skyframe.FileKey? {
+            return source
+        }
+    }
+
+    companion object {
+        /**
+         * Effectively, a factory method for [NestedFileOpNodes], but formally a factory method for
+         * [FileOpNodeOrEmpty].
+         * 
+         * 
+         * Returns [EMPTY_FILE_OP_NODE] if `analysisDependencies` is empty. When `analysisDependencies` contains only one node, returns the node directly instead of wrapping it.
+         * Otherwise, returns a [NestedFileOpNodes] instance wrapping `analysisDependencies`.
+         */
+        fun from(analysisDependencies: MutableCollection<FileOpNode?>): FileOpNodeOrEmpty? {
+            if (analysisDependencies.isEmpty()) {
+                return EmptyFileOpNode.EMPTY_FILE_OP_NODE
+            }
+            if (analysisDependencies.size == 1) {
+                return analysisDependencies.iterator().next()
+            }
+            return NestedFileOpNodes(analysisDependencies.toArray<FileOpNode?>(java.util.function.IntFunction { _Dummy_.__Array__() }))
+        }
+
+        /**
+         * Creates [NestedFileOpNodesWithSource] with reductions similar to [ ][.from].
+         */
+        fun from(
+            analysisDependencies: MutableCollection<FileOpNode?>,
+            source: com.google.devtools.build.lib.skyframe.FileKey?
+        ): FileOpNodeOrEmpty? {
+            if (source == null) {
+                return from(analysisDependencies)
+            }
+            // It's unclear if `analysisDependencies` can ever be empty here in practice, but it's
+            // permitted. It should be rare enough that defining a special type for it isn't worth it.
+            return NestedFileOpNodesWithSource(
+                analysisDependencies.toArray<FileOpNode?>(java.util.function.IntFunction { _Dummy_.__Array__() }),
+                source
+            )
+        }
+    }
 }

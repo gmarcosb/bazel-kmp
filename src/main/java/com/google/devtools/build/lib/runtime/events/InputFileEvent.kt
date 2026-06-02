@@ -11,13 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime.events;
+package com.google.devtools.build.lib.runtime.events
 
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
 
-/** An event describing input files for invocation commands to process. */
-public record InputFileEvent(String type, long size) implements Postable {
-  public static InputFileEvent create(String type, long size) {
-    return new InputFileEvent(type, size);
-  }
+/** An event describing input files for invocation commands to process.  */
+@kotlin.jvm.JvmRecord
+data class InputFileEvent(val type: String?, val size: Long) : Postable {
+    companion object {
+        fun create(type: String?, size: Long): InputFileEvent {
+            return InputFileEvent(type, size)
+        }
+    }
 }

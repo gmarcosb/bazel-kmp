@@ -11,82 +11,95 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.java
 
-package com.google.devtools.build.lib.starlarkbuildapi.java;
-
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.starlarkbuildapi.FileApi;
-import com.google.devtools.build.lib.starlarkbuildapi.FilesToRunProviderApi;
-import com.google.devtools.build.lib.starlarkbuildapi.core.StructApi;
-import javax.annotation.Nullable;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
+import com.google.devtools.build.docgen.annot.DocCategory
+import com.google.devtools.build.lib.cmdline.Label
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
 
 /**
  * Provides access to information about the Java toolchain rule. Accessible as a 'java_toolchain'
  * field on a Target struct.
- *
- * <p>This provider is implemented in Starlark. This class remains only for doc-gen purposes.
+ * 
+ * 
+ * This provider is implemented in Starlark. This class remains only for doc-gen purposes.
  */
 @StarlarkBuiltin(
     name = "JavaToolchainInfo",
     category = DocCategory.PROVIDER,
-    doc =
-        "Provides access to information about the Java toolchain rule. "
+    doc = ("Provides access to information about the Java toolchain rule. "
             + "Accessible as a 'java_toolchain' field on a Target struct.")
-public interface JavaToolchainStarlarkApiProviderApi extends StructApi {
+)
+interface JavaToolchainStarlarkApiProviderApi : StructApi {
+    @get:StarlarkMethod(
+        name = "source_version",
+        doc = "The java source version.",
+        structField = true
+    )
+    val sourceVersion: String?
 
-  @StarlarkMethod(name = "source_version", doc = "The java source version.", structField = true)
-  String getSourceVersion();
+    @get:StarlarkMethod(
+        name = "target_version",
+        doc = "The java target version.",
+        structField = true
+    )
+    val targetVersion: String?
 
-  @StarlarkMethod(name = "target_version", doc = "The java target version.", structField = true)
-  String getTargetVersion();
+    @get:StarlarkMethod(name = "label", doc = "The toolchain label.", structField = true)
+    val toolchainLabel: Label?
 
-  @StarlarkMethod(name = "label", doc = "The toolchain label.", structField = true)
-  Label getToolchainLabel();
+    @get:StarlarkMethod(
+        name = "single_jar",
+        doc = "The SingleJar executable.",
+        structField = true
+    )
+    val singleJar: FilesToRunProviderApi<out FileApi?>?
 
-  @StarlarkMethod(name = "single_jar", doc = "The SingleJar executable.", structField = true)
-  FilesToRunProviderApi<? extends FileApi> getSingleJar();
+    @get:StarlarkMethod(
+        name = "bootclasspath",
+        doc = "The Java target bootclasspath entries. Corresponds to javac's -bootclasspath flag.",
+        structField = true
+    )
+    val starlarkBootclasspath: Depset?
 
-  @StarlarkMethod(
-      name = "bootclasspath",
-      doc = "The Java target bootclasspath entries. Corresponds to javac's -bootclasspath flag.",
-      structField = true)
-  Depset getStarlarkBootclasspath();
+    @get:StarlarkMethod(
+        name = "jvm_opt",
+        doc = "The default options for the JVM running the java compiler and associated tools.",
+        structField = true
+    )
+    val starlarkJvmOptions: Depset?
 
-  @StarlarkMethod(
-      name = "jvm_opt",
-      doc = "The default options for the JVM running the java compiler and associated tools.",
-      structField = true)
-  Depset getStarlarkJvmOptions();
+    @get:StarlarkMethod(
+        name = "ijar",
+        doc = "A FilesToRunProvider representing the ijar executable.",
+        structField = true
+    )
+    val ijar: FilesToRunProviderApi<*>?
 
-  @StarlarkMethod(
-      name = "ijar",
-      doc = "A FilesToRunProvider representing the ijar executable.",
-      structField = true)
-  FilesToRunProviderApi<?> getIjar();
+    @get:StarlarkMethod(
+        name = "jacocorunner",
+        doc = "The jacocorunner used by the toolchain.",
+        structField = true,
+        allowReturnNones = true
+    )
+    val jacocoRunner: FilesToRunProviderApi<*>?
 
-  @StarlarkMethod(
-      name = "jacocorunner",
-      doc = "The jacocorunner used by the toolchain.",
-      structField = true,
-      allowReturnNones = true)
-  @Nullable
-  FilesToRunProviderApi<?> getJacocoRunner();
+    @get:StarlarkMethod(name = "tools", doc = "The compilation tools.", structField = true)
+    val starlarkTools: Depset?
 
-  @StarlarkMethod(name = "tools", doc = "The compilation tools.", structField = true)
-  Depset getStarlarkTools();
+    @get:StarlarkMethod(
+        name = "java_runtime",
+        doc = "The java runtime information.",
+        structField = true
+    )
+    val javaRuntime: JavaRuntimeInfoApi?
 
-  @StarlarkMethod(name = "java_runtime", doc = "The java runtime information.", structField = true)
-  JavaRuntimeInfoApi getJavaRuntime();
-
-  @Nullable
-  @StarlarkMethod(
-      name = "proguard_allowlister",
-      doc = "Return the binary to validate proguard configuration",
-      structField = true,
-      allowReturnNones = true)
-  FilesToRunProviderApi<? extends FileApi> getProguardAllowlister();
+    @get:StarlarkMethod(
+        name = "proguard_allowlister",
+        doc = "Return the binary to validate proguard configuration",
+        structField = true,
+        allowReturnNones = true
+    )
+    val proguardAllowlister: FilesToRunProviderApi<out FileApi?>?
 }

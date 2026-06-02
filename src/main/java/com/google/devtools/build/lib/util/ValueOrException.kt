@@ -11,161 +11,149 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
-
-import static com.google.common.base.Preconditions.checkNotNull;
+package com.google.devtools.build.lib.util
 
 /**
  * Contains a value, or the exception encountered while obtaining that value.
- *
- * <p>This class is intended to be used when an operation computes multiple values, some of which
+ * 
+ * 
+ * This class is intended to be used when an operation computes multiple values, some of which
  * may have succeeded and others may have failed, and it is necessary to return all of these values
  * or failures without throwing at the first failure encountered.
  */
 // TODO(b/331799946): try to consolidate Bazel's "value or exception" sum types into this one
-public abstract sealed class ValueOrException<V, E extends Exception> {
-
-  // Must be initialized through ofValue or ofException
-  private ValueOrException() {}
-
-  /** Constructs a ValueOrException holding a non-null value. */
-  public static <V, E extends Exception> ValueOrException<V, E> ofValue(V value) {
-    return new OfValue<>(checkNotNull(value));
-  }
-
-  /** Constructs a ValueOrException holding an exception. */
-  public static <V, E extends Exception> ValueOrException<V, E> ofException(E exception) {
-    return new OfException<>(checkNotNull(exception));
-  }
-
-  /** Returns true if the ValueOrException holds a value. */
-  public abstract boolean isPresent();
-
-  /**
-   * Returns the value if the ValueOrException holds a value.
-   *
-   * @throws E if the ValueOrException holds an exception.
-   */
-  public abstract V get() throws E;
-
-  /**
-   * A variant of {@link #get} which throws an unchecked exception.
-   *
-   * @throws IllegalStateException if the ValueOrException holds an exception.
-   */
-  public V getUnchecked() {
-    try {
-      return get();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
-  }
-
-  /**
-   * Returns the exception if the ValueOrException holds an exception.
-   *
-   * @throws IllegalStateException if the ValueOrException does not hold an exception.
-   */
-  public abstract E getException();
-
-  private static final class OfValue<V, E extends Exception> extends ValueOrException<V, E> {
-    private final V value;
-
-    OfValue(V value) {
-      this.value = value;
-    }
-
-    @Override
-    public boolean isPresent() {
-      return true;
-    }
-
-    @Override
-    public V get() {
-      return value;
-    }
-
-    @Override
-    public E getException() {
-      throw new IllegalStateException(
-          "ValueOrException.getException() cannot be called on a ValueOrException holding a value");
-    }
-
-    @Override
-    public String toString() {
-      return String.format("ValueOrException.OfValue[%s]", value);
-    }
+abstract class ValueOrException<V, E : java.lang.Exception?>  // Must be initialized through ofValue or ofException
+private constructor() {
+    /** Returns true if the ValueOrException holds a value.  */
+    @kotlin.jvm.JvmField
+    abstract val isPresent: Boolean
 
     /**
-     * {@inheritDoc}
-     *
-     * <p>Value equality semantics; two {@code OfValue} objects are equal iff their contained values
-     * are equal.
+     * Returns the value if the ValueOrException holds a value.
+     * 
+     * @throws E if the ValueOrException holds an exception.
      */
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (!(o instanceof OfValue<?, ?> rhs)) {
-        return false;
-      }
-      return value.equals(rhs.value);
-    }
+    @Throws(E::class)
+    abstract fun get(): V?
 
-    @Override
-    public int hashCode() {
-      return value.hashCode();
-    }
-  }
-
-  private static final class OfException<V, E extends Exception> extends ValueOrException<V, E> {
-    private final E exception;
-
-    OfException(E exception) {
-      this.exception = checkNotNull(exception);
-    }
-
-    @Override
-    public boolean isPresent() {
-      return false;
-    }
-
-    @Override
-    public V get() throws E {
-      throw exception;
-    }
-
-    @Override
-    public E getException() {
-      return exception;
-    }
-
-    @Override
-    public String toString() {
-      return String.format("ValueOrException.OfException[%s]", exception);
-    }
+    val unchecked: V?
+        /**
+         * A variant of [.get] which throws an unchecked exception.
+         * 
+         * @throws IllegalStateException if the ValueOrException holds an exception.
+         */
+        get() {
+            try {
+                return get()
+            } catch (e: java.lang.Exception) {
+                throw java.lang.IllegalStateException(e)
+            }
+        }
 
     /**
-     * {@inheritDoc}
-     *
-     * <p>Value equality semantics; two {@code OfException} objects are equal iff their contained
-     * exception objects are equal.
+     * Returns the exception if the ValueOrException holds an exception.
+     * 
+     * @throws IllegalStateException if the ValueOrException does not hold an exception.
      */
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (!(o instanceof OfException<?, ?> rhs)) {
-        return false;
-      }
-      return exception.equals(rhs.exception);
+    @kotlin.jvm.JvmField
+    abstract val exception: E?
+
+    private class OfValue<V, E : java.lang.Exception?>(private val value: V?) : ValueOrException<V?, E?>() {
+        override fun isPresent(): Boolean {
+            return true
+        }
+
+        override fun get(): V? {
+            return value
+        }
+
+        override fun getException(): E? {
+            throw java.lang.IllegalStateException(
+                "ValueOrException.getException() cannot be called on a ValueOrException holding a value"
+            )
+        }
+
+        override fun toString(): String {
+            return String.format("ValueOrException.OfValue[%s]", value)
+        }
+
+        /**
+         * {@inheritDoc}
+         * 
+         * 
+         * Value equality semantics; two `OfValue` objects are equal iff their contained values
+         * are equal.
+         */
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o !is OfValue<*, *>) {
+                return false
+            }
+            return value == o.value
+        }
+
+        override fun hashCode(): Int {
+            return value!!.hashCode()
+        }
     }
 
-    @Override
-    public int hashCode() {
-      return exception.hashCode();
+    private class OfException<V, E : java.lang.Exception?>(exception: E?) : ValueOrException<V?, E?>() {
+        private val exception: E?
+
+        init {
+            this.exception = com.google.common.base.Preconditions.checkNotNull<E?>(exception)
+        }
+
+        override fun isPresent(): Boolean {
+            return false
+        }
+
+        @Throws(E::class)
+        override fun get(): V? {
+            throw exception
+        }
+
+        override fun getException(): E? {
+            return exception
+        }
+
+        override fun toString(): String {
+            return String.format("ValueOrException.OfException[%s]", exception)
+        }
+
+        /**
+         * {@inheritDoc}
+         * 
+         * 
+         * Value equality semantics; two `OfException` objects are equal iff their contained
+         * exception objects are equal.
+         */
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o !is OfException<*, *>) {
+                return false
+            }
+            return exception == o.exception
+        }
+
+        override fun hashCode(): Int {
+            return exception.hashCode()
+        }
     }
-  }
+
+    companion object {
+        /** Constructs a ValueOrException holding a non-null value.  */
+        fun <V, E : java.lang.Exception?> ofValue(value: V?): ValueOrException<V?, E?> {
+            return OfValue<V?, E?>(com.google.common.base.Preconditions.checkNotNull<V?>(value))
+        }
+
+        /** Constructs a ValueOrException holding an exception.  */
+        fun <V, E : java.lang.Exception?> ofException(exception: E?): ValueOrException<V?, E?> {
+            return OfException<V?, E?>(com.google.common.base.Preconditions.checkNotNull<E?>(exception))
+        }
+    }
 }

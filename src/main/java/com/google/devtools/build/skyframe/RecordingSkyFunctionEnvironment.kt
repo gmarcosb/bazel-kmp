@@ -11,184 +11,164 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.skyframe.SkyFunction.Environment;
-import java.util.function.Consumer;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.events.ExtendedEventHandler
 
-/** An environment that can observe the deps requested through getValue(s) calls. */
-public final class RecordingSkyFunctionEnvironment implements Environment {
+/** An environment that can observe the deps requested through getValue(s) calls.  */
+class RecordingSkyFunctionEnvironment(
+    delegate: com.google.devtools.build.skyframe.SkyFunction.Environment,
+    skyKeyReceiver: java.util.function.Consumer<SkyKey?>,
+    skyKeysReceiver: java.util.function.Consumer<Iterable<SkyKey?>?>,
+    exceptionReceiver: java.util.function.Consumer<java.lang.Exception?>
+) : com.google.devtools.build.skyframe.SkyFunction.Environment {
+    private val delegate: com.google.devtools.build.skyframe.SkyFunction.Environment
+    private val skyKeyReceiver: java.util.function.Consumer<SkyKey?>
+    private val skyKeysReceiver: java.util.function.Consumer<Iterable<SkyKey?>?>
+    private val exceptionReceiver: java.util.function.Consumer<java.lang.Exception?>
 
-  private final Environment delegate;
-  private final Consumer<SkyKey> skyKeyReceiver;
-  private final Consumer<Iterable<SkyKey>> skyKeysReceiver;
-  private final Consumer<Exception> exceptionReceiver;
-
-  public RecordingSkyFunctionEnvironment(
-      Environment delegate,
-      Consumer<SkyKey> skyKeyReceiver,
-      Consumer<Iterable<SkyKey>> skyKeysReceiver,
-      Consumer<Exception> exceptionReceiver) {
-    this.delegate = delegate;
-    this.skyKeyReceiver = skyKeyReceiver;
-    this.skyKeysReceiver = skyKeysReceiver;
-    this.exceptionReceiver = exceptionReceiver;
-  }
-
-  private void recordDep(SkyKey key) {
-    skyKeyReceiver.accept(key);
-  }
-
-  @SuppressWarnings("unchecked") // Cast Iterable<? extends SkyKey> to Iterable<SkyKey>.
-  private void recordDeps(Iterable<? extends SkyKey> keys) {
-    skyKeysReceiver.accept((Iterable<SkyKey>) keys);
-  }
-
-  private void noteException(Exception e) {
-    exceptionReceiver.accept(e);
-  }
-
-  public Environment getDelegate() {
-    return delegate;
-  }
-
-  @Nullable
-  @Override
-  public SkyValue getValue(SkyKey valueName) throws InterruptedException {
-    recordDep(valueName);
-    return delegate.getValue(valueName);
-  }
-
-  @Nullable
-  @Override
-  public <E extends Exception> SkyValue getValueOrThrow(SkyKey depKey, Class<E> exceptionClass)
-      throws E, InterruptedException {
-    recordDep(depKey);
-    try {
-      return delegate.getValueOrThrow(depKey, exceptionClass);
-    } catch (Exception e) {
-      noteException(e);
-      throw e;
+    init {
+        this.delegate = delegate
+        this.skyKeyReceiver = skyKeyReceiver
+        this.skyKeysReceiver = skyKeysReceiver
+        this.exceptionReceiver = exceptionReceiver
     }
-  }
 
-  @Nullable
-  @Override
-  public <E1 extends Exception, E2 extends Exception> SkyValue getValueOrThrow(
-      SkyKey depKey, Class<E1> exceptionClass1, Class<E2> exceptionClass2)
-      throws E1, E2, InterruptedException {
-    recordDep(depKey);
-    try {
-      return delegate.getValueOrThrow(depKey, exceptionClass1, exceptionClass2);
-    } catch (Exception e) {
-      noteException(e);
-      throw e;
+    private fun recordDep(key: SkyKey?) {
+        skyKeyReceiver.accept(key)
     }
-  }
 
-  @Nullable
-  @Override
-  public <E1 extends Exception, E2 extends Exception, E3 extends Exception>
-      SkyValue getValueOrThrow(
-          SkyKey depKey,
-          Class<E1> exceptionClass1,
-          Class<E2> exceptionClass2,
-          Class<E3> exceptionClass3)
-          throws E1, E2, E3, InterruptedException {
-    recordDep(depKey);
-    try {
-      return delegate.getValueOrThrow(depKey, exceptionClass1, exceptionClass2, exceptionClass3);
-    } catch (Exception e) {
-      noteException(e);
-      throw e;
+    // Cast Iterable<? extends SkyKey> to Iterable<SkyKey>.
+    private fun recordDeps(keys: Iterable<out SkyKey?>?) {
+        skyKeysReceiver.accept(keys as Iterable<SkyKey?>?)
     }
-  }
 
-  @Nullable
-  @Override
-  public <E1 extends Exception, E2 extends Exception, E3 extends Exception, E4 extends Exception>
-      SkyValue getValueOrThrow(
-          SkyKey depKey,
-          Class<E1> exceptionClass1,
-          Class<E2> exceptionClass2,
-          Class<E3> exceptionClass3,
-          Class<E4> exceptionClass4)
-          throws E1, E2, E3, E4, InterruptedException {
-    recordDep(depKey);
-    try {
-      return delegate.getValueOrThrow(
-          depKey, exceptionClass1, exceptionClass2, exceptionClass3, exceptionClass4);
-    } catch (Exception e) {
-      noteException(e);
-      throw e;
+    private fun noteException(e: java.lang.Exception?) {
+        exceptionReceiver.accept(e)
     }
-  }
 
-  @Override
-  public boolean valuesMissing() {
-    return delegate.valuesMissing();
-  }
-
-  @Override
-  public SkyframeLookupResult getValuesAndExceptions(Iterable<? extends SkyKey> depKeys)
-      throws InterruptedException {
-    recordDeps(depKeys);
-    try {
-      return delegate.getValuesAndExceptions(depKeys);
-    } catch (Exception e) {
-      noteException(e);
-      throw e;
+    fun getDelegate(): com.google.devtools.build.skyframe.SkyFunction.Environment {
+        return delegate
     }
-  }
 
-  @Override
-  public ExtendedEventHandler getListener() {
-    return delegate.getListener();
-  }
+    @Throws(java.lang.InterruptedException::class)
+    override fun getValue(valueName: SkyKey?): SkyValue? {
+        recordDep(valueName)
+        return delegate.getValue(valueName)
+    }
 
-  @Override
-  public boolean inErrorBubbling() {
-    return delegate.inErrorBubbling();
-  }
+    @Throws(E::class, java.lang.InterruptedException::class)
+    override fun <E : java.lang.Exception?> getValueOrThrow(
+        depKey: SkyKey?,
+        exceptionClass: java.lang.Class<E?>?
+    ): SkyValue? {
+        recordDep(depKey)
+        try {
+            return delegate.getValueOrThrow<E?>(depKey, exceptionClass)
+        } catch (e: java.lang.Exception) {
+            noteException(e)
+            throw e
+        }
+    }
 
-  @Nullable
-  @Override
-  public GroupedDeps getTemporaryDirectDeps() {
-    return delegate.getTemporaryDirectDeps();
-  }
+    @Throws(E1::class, E2::class, java.lang.InterruptedException::class)
+    override fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?> getValueOrThrow(
+        depKey: SkyKey?, exceptionClass1: java.lang.Class<E1?>?, exceptionClass2: java.lang.Class<E2?>?
+    ): SkyValue? {
+        recordDep(depKey)
+        try {
+            return delegate.getValueOrThrow<E1?, E2?>(depKey, exceptionClass1, exceptionClass2)
+        } catch (e: java.lang.Exception) {
+            noteException(e)
+            throw e
+        }
+    }
 
-  @Override
-  public void injectVersionForNonHermeticFunction(Version version) {
-    delegate.injectVersionForNonHermeticFunction(version);
-  }
+    @Throws(E1::class, E2::class, E3::class, java.lang.InterruptedException::class)
+    override fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?, E3 : java.lang.Exception?>
+            getValueOrThrow(
+        depKey: SkyKey?,
+        exceptionClass1: java.lang.Class<E1?>?,
+        exceptionClass2: java.lang.Class<E2?>?,
+        exceptionClass3: java.lang.Class<E3?>?
+    ): SkyValue? {
+        recordDep(depKey)
+        try {
+            return delegate.getValueOrThrow<E1?, E2?, E3?>(depKey, exceptionClass1, exceptionClass2, exceptionClass3)
+        } catch (e: java.lang.Exception) {
+            noteException(e)
+            throw e
+        }
+    }
 
-  @Override
-  public void registerDependencies(Iterable<SkyKey> keys) {
-    delegate.registerDependencies(keys);
-  }
+    @Throws(E1::class, E2::class, E3::class, E4::class, java.lang.InterruptedException::class)
+    override fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?, E3 : java.lang.Exception?, E4 : java.lang.Exception?>
+            getValueOrThrow(
+        depKey: SkyKey?,
+        exceptionClass1: java.lang.Class<E1?>?,
+        exceptionClass2: java.lang.Class<E2?>?,
+        exceptionClass3: java.lang.Class<E3?>?,
+        exceptionClass4: java.lang.Class<E4?>?
+    ): SkyValue? {
+        recordDep(depKey)
+        try {
+            return delegate.getValueOrThrow<E1?, E2?, E3?, E4?>(
+                depKey, exceptionClass1, exceptionClass2, exceptionClass3, exceptionClass4
+            )
+        } catch (e: java.lang.Exception) {
+            noteException(e)
+            throw e
+        }
+    }
 
-  @Override
-  public void dependOnFuture(ListenableFuture<?> future) {
-    delegate.dependOnFuture(future);
-  }
+    override fun valuesMissing(): Boolean {
+        return delegate.valuesMissing()
+    }
 
-  @Override
-  public SkyframeLookupResult getLookupHandleForPreviouslyRequestedDeps() {
-    return delegate.getLookupHandleForPreviouslyRequestedDeps();
-  }
+    @Throws(java.lang.InterruptedException::class)
+    override fun getValuesAndExceptions(depKeys: Iterable<out SkyKey?>?): SkyframeLookupResult? {
+        recordDeps(depKeys)
+        try {
+            return delegate.getValuesAndExceptions(depKeys)
+        } catch (e: java.lang.Exception) {
+            noteException(e)
+            throw e
+        }
+    }
 
-  @Override
-  public <T extends SkyKeyComputeState> T getState(Supplier<T> stateSupplier) {
-    return delegate.getState(stateSupplier);
-  }
+    override fun getListener(): ExtendedEventHandler? {
+        return delegate.getListener()
+    }
 
-  @Override
-  @Nullable
-  public Version getMaxTransitiveSourceVersionSoFar() {
-    return delegate.getMaxTransitiveSourceVersionSoFar();
-  }
+    override fun inErrorBubbling(): Boolean {
+        return delegate.inErrorBubbling()
+    }
+
+    override fun getTemporaryDirectDeps(): GroupedDeps? {
+        return delegate.getTemporaryDirectDeps()
+    }
+
+    override fun injectVersionForNonHermeticFunction(version: com.google.devtools.build.skyframe.Version?) {
+        delegate.injectVersionForNonHermeticFunction(version)
+    }
+
+    override fun registerDependencies(keys: Iterable<SkyKey?>?) {
+        delegate.registerDependencies(keys)
+    }
+
+    override fun dependOnFuture(future: com.google.common.util.concurrent.ListenableFuture<*>?) {
+        delegate.dependOnFuture(future)
+    }
+
+    override fun getLookupHandleForPreviouslyRequestedDeps(): SkyframeLookupResult? {
+        return delegate.getLookupHandleForPreviouslyRequestedDeps()
+    }
+
+    override fun <T : SkyKeyComputeState?> getState(stateSupplier: java.util.function.Supplier<T?>?): T? {
+        return delegate.getState<T?>(stateSupplier)
+    }
+
+    override fun getMaxTransitiveSourceVersionSoFar(): com.google.devtools.build.skyframe.Version? {
+        return delegate.getMaxTransitiveSourceVersionSoFar()
+    }
 }

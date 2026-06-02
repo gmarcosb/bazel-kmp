@@ -11,387 +11,347 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-
-import com.google.common.collect.ForwardingConcurrentMap;
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.common.collect.Maps;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.Label.LabelInterner;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.concurrent.PooledInterner;
-import com.google.devtools.build.lib.packages.PackagePieceIdentifier;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.profiler.AutoProfiler;
-import com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils;
-import com.google.devtools.build.lib.skyframe.PackageoidValue;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.supplier.InterruptibleSupplier;
-import com.google.devtools.build.skyframe.SkyKey.SkyKeyInterner;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import com.google.errorprone.annotations.ForOverride;
-import java.time.Duration;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.locks.Lock;
-import java.util.function.Consumer;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * An in-memory graph implementation. All operations are thread-safe with ConcurrentMap semantics.
- * Also see {@link NodeEntry}.
- *
- * <p>This class is public only for use in alternative graph implementations.
+ * Also see [NodeEntry].
+ * 
+ * 
+ * This class is public only for use in alternative graph implementations.
  */
-public class InMemoryGraphImpl implements InMemoryGraph {
-
-  private static final int PARALLELISM_THRESHOLD = 1024;
-
-  // Use ForwardingConcurrentMap as a live reference to nodeMap so that it's safe to mutate
-  // nodeMap and not have callers see the stale map. See getValues, getDoneValues,
-  // getAllNodeEntries.
-  private final ConcurrentMap<SkyKey, InMemoryNodeEntry> liveView =
-      new ForwardingConcurrentMap<>() {
-        @Override
-        protected ConcurrentMap<SkyKey, InMemoryNodeEntry> delegate() {
-          return nodeMap;
-        }
-      };
-
-  protected ConcurrentHashMap<SkyKey, InMemoryNodeEntry> nodeMap;
-  private final NodeBatch getBatch;
-  private final NodeBatch createIfAbsentBatch;
-  private final boolean usePooledInterning;
-
-  InMemoryGraphImpl() {
-    this(/* initialCapacity= */ 1 << 10);
-  }
-
-  /**
-   * For some shell integration tests, we don't want to apply {@link SkyKeyInterner} created and
-   * bind {@code SkyKeyInterner#globalPool} to the second {@link InMemoryGraph}.
-   */
-  InMemoryGraphImpl(boolean usePooledInterning) {
-    this(/* initialCapacity= */ 1 << 10, usePooledInterning);
-  }
-
-  protected InMemoryGraphImpl(int initialCapacity) {
-    this(initialCapacity, /* usePooledInterning= */ true);
-  }
-
-  private InMemoryGraphImpl(int initialCapacity, boolean usePooledInterning) {
-    this.nodeMap = new ConcurrentHashMap<>(initialCapacity);
-    this.getBatch = this::getIfPresent;
-    this.createIfAbsentBatch = this::createIfAbsent;
-    this.usePooledInterning = usePooledInterning;
-    if (usePooledInterning) {
-      SkyKeyInterner.setGlobalPool(new SkyKeyPool());
-      LabelInterner.setGlobalPool(new LabelPool());
-    }
-  }
-
-  @Override
-  public void remove(SkyKey skyKey) {
-    weakInternSkyKey(skyKey);
-    InMemoryNodeEntry nodeEntry = nodeMap.remove(skyKey);
-    if ((skyKey instanceof PackageIdentifier || skyKey instanceof PackagePieceIdentifier)
-        && nodeEntry != null) {
-      weakInternPackageTargetsLabels(
-          (PackageoidValue) nodeEntry.toValue()); // Dirty or changed value are needed.
-    }
-  }
-
-  @Override
-  public void removeIfDone(SkyKey key) {
-    nodeMap.computeIfPresent(
-        key,
-        (k, e) -> {
-          if (e.isDone()) {
-            weakInternSkyKey(k);
-            if (k instanceof PackageIdentifier || k instanceof PackagePieceIdentifier) {
-              weakInternPackageTargetsLabels((PackageoidValue) e.toValue());
+open class InMemoryGraphImpl private constructor(initialCapacity: Int, usePooledInterning: Boolean) : InMemoryGraph {
+    // Use ForwardingConcurrentMap as a live reference to nodeMap so that it's safe to mutate
+    // nodeMap and not have callers see the stale map. See getValues, getDoneValues,
+    // getAllNodeEntries.
+    private val liveView: ConcurrentMap<SkyKey?, InMemoryNodeEntry?> =
+        object : com.google.common.collect.ForwardingConcurrentMap<SkyKey?, InMemoryNodeEntry?>() {
+            override fun delegate(): ConcurrentMap<SkyKey?, InMemoryNodeEntry?> {
+                return nodeMap
             }
-            return null;
-          }
-          return e;
-        });
-  }
+        }
 
-  private void weakInternSkyKey(SkyKey skyKey) {
-    if (!usePooledInterning) {
-      return;
-    }
-    SkyKeyInterner<?> interner = skyKey.getSkyKeyInterner();
-    if (interner != null) {
-      interner.weakInternUnchecked(skyKey);
-    }
-  }
+    protected var nodeMap: ConcurrentHashMap<SkyKey?, InMemoryNodeEntry?>
+    private val getBatch: NodeBatch
+    private val createIfAbsentBatch: NodeBatch
+    private val usePooledInterning: Boolean
 
-  private void weakInternPackageTargetsLabels(@Nullable PackageoidValue packageoidValue) {
-    if (!usePooledInterning || packageoidValue == null) {
-      return;
-    }
-    LabelInterner interner = Label.getLabelInterner();
+    internal constructor() : this( /* initialCapacity= */1 shl 10)
 
-    ImmutableSortedMap<String, Target> targets = packageoidValue.getPackageoid().getTargets();
-    targets.values().forEach(t -> interner.weakIntern(t.getLabel()));
-  }
+    /**
+     * For some shell integration tests, we don't want to apply [SkyKeyInterner] created and
+     * bind `SkyKeyInterner#globalPool` to the second [InMemoryGraph].
+     */
+    internal constructor(usePooledInterning: Boolean) : this( /* initialCapacity= */1 shl 10, usePooledInterning)
 
-  @Override
-  public NodeEntry get(@Nullable SkyKey requestor, Reason reason, SkyKey skyKey) {
-    return nodeMap.get(skyKey);
-  }
+    protected constructor(initialCapacity: Int) : this(initialCapacity,  /* usePooledInterning= */true)
 
-  @Override
-  public NodeBatch getBatch(
-      @Nullable SkyKey requestor, Reason reason, Iterable<? extends SkyKey> keys) {
-    if (reason == Reason.REWINDING) {
-      // When rewinding, nodes are typically expected to be in the graph. However, systems with
-      // remote caching might not have loaded all dependencies into the local graph if a value was
-      // fetched from the cache.
-      //
-      // Tree artifacts are a key example. Their value (TreeArtifactValue) contains dependency keys.
-      // If the TreeArtifactValue is a cache hit, its child dependencies might not exist in the
-      // local graph. If a lost input is later discovered to be one of these children, we need to
-      // ensure the node entries exist for the rewinding process to analyze them.
-      //
-      // createIfAbsentBatch ensures that such nodes are present in the graph.
-      return createIfAbsentBatch(requestor, reason, keys);
-    }
-    return getBatch;
-  }
-
-  @Override
-  public InterruptibleSupplier<NodeBatch> getBatchAsync(
-      @Nullable SkyKey requestor, Reason reason, Iterable<? extends SkyKey> keys) {
-    return () -> getBatch;
-  }
-
-  @Override
-  public Map<SkyKey, NodeEntry> getBatchMap(
-      SkyKey requestor, Reason reason, Iterable<? extends SkyKey> keys) {
-    // Use a HashMap, not an ImmutableMap.Builder, because we have not yet deduplicated these keys
-    // and ImmutableMap.Builder does not tolerate duplicates. The map will be thrown away shortly.
-    HashMap<SkyKey, NodeEntry> result = new HashMap<>();
-    for (SkyKey key : keys) {
-      NodeEntry entry = get(null, Reason.OTHER, key);
-      if (entry != null) {
-        result.put(key, entry);
-      }
-    }
-    return result;
-  }
-
-  @ForOverride
-  protected InMemoryNodeEntry newNodeEntry(SkyKey key) {
-    return new IncrementalInMemoryNodeEntry(key);
-  }
-
-  @Override
-  @CanIgnoreReturnValue
-  public NodeBatch createIfAbsentBatch(
-      @Nullable SkyKey requestor, Reason reason, Iterable<? extends SkyKey> keys) {
-    // As per the ProcessableGraph contract, ensures that every node is created, even if it is not
-    // consumed from the batch.
-    for (SkyKey key : keys) {
-      createIfAbsent(key);
-    }
-    // Returns `createIfAbsentBatch` instead of `getBatch` because by contract, retrieving a node
-    // from the batch should not result in null, even if the corresponding key was removed from the
-    // graph.
-    return createIfAbsentBatch;
-  }
-
-  @CanIgnoreReturnValue
-  private InMemoryNodeEntry createIfAbsent(SkyKey skyKey) {
-    SkyKeyInterner<?> interner = skyKey.getSkyKeyInterner();
-    if (!usePooledInterning || interner == null) {
-      return nodeMap.computeIfAbsent(skyKey, this::newNodeEntry);
+    init {
+        this.nodeMap = ConcurrentHashMap<SkyKey?, InMemoryNodeEntry?>(initialCapacity)
+        this.getBatch = NodeBatch { key: SkyKey? -> this.getIfPresent(key) }
+        this.createIfAbsentBatch = NodeBatch { skyKey: SkyKey? -> this.createIfAbsent(skyKey) }
+        this.usePooledInterning = usePooledInterning
+        if (usePooledInterning) {
+            SkyKeyInterner.Companion.setGlobalPool(SkyKeyPool())
+            LabelInterner.setGlobalPool(LabelPool())
+        }
     }
 
-    // The key is typically already present. Record whether this thread newly created a node so that
-    // we can skip calling removeWeak if it was already present.
-    boolean[] newlyCreated = new boolean[1];
-    InMemoryNodeEntry nodeEntry =
-        nodeMap.computeIfAbsent(
-            skyKey,
-            k -> {
-              newlyCreated[0] = true;
-              return newNodeEntry(k);
-            });
-    if (newlyCreated[0]) {
-      interner.removeWeak(skyKey);
+    override fun remove(skyKey: SkyKey) {
+        weakInternSkyKey(skyKey)
+        val nodeEntry: InMemoryNodeEntry? = nodeMap.remove(skyKey)
+        if ((skyKey is PackageIdentifier || skyKey is PackagePieceIdentifier)
+            && nodeEntry != null
+        ) {
+            weakInternPackageTargetsLabels(
+                nodeEntry.toValue() as PackageoidValue?
+            ) // Dirty or changed value are needed.
+        }
     }
-    return nodeEntry;
-  }
 
-  @Override
-  public DepsReport analyzeDepsDoneness(SkyKey parent, List<SkyKey> deps) {
-    return DepsReport.NO_INFORMATION;
-  }
-
-  @Override
-  public int valuesSize() {
-    return nodeMap.size();
-  }
-
-  @Override
-  public Map<SkyKey, SkyValue> getValues() {
-    return Collections.unmodifiableMap(Maps.transformValues(liveView, InMemoryNodeEntry::toValue));
-  }
-
-  @Override
-  public Map<SkyKey, SkyValue> getDoneValues() {
-    return Collections.unmodifiableMap(
-        Maps.filterValues(
-            Maps.transformValues(liveView, entry -> entry.isDone() ? entry.getValue() : null),
-            Objects::nonNull));
-  }
-
-  @Override
-  public Collection<InMemoryNodeEntry> getAllNodeEntries() {
-    return Collections.unmodifiableCollection(nodeMap.values());
-  }
-
-  @Override
-  public void parallelForEach(Consumer<InMemoryNodeEntry> consumer) {
-    nodeMap.forEachValue(PARALLELISM_THRESHOLD, consumer);
-  }
-
-  @Override
-  public void cleanupInterningPools() {
-    if (!usePooledInterning) {
-      return;
+    override fun removeIfDone(key: SkyKey?) {
+        nodeMap.computeIfPresent(
+            key,
+            java.util.function.BiFunction { k: SkyKey?, e: InMemoryNodeEntry? ->
+                if (e.isDone()) {
+                    weakInternSkyKey(k)
+                    if (k is PackageIdentifier || k is PackagePieceIdentifier) {
+                        weakInternPackageTargetsLabels(e.toValue() as PackageoidValue?)
+                    }
+                    return@computeIfPresent null
+                }
+                e
+            })
     }
-    try (AutoProfiler ignored =
-        GoogleAutoProfilerUtils.logged("Cleaning up interning pools", Duration.ofMillis(2L))) {
-      parallelForEach(
-          e -> {
-            weakInternSkyKey(e.getKey());
 
-            // TODO(https://github.com/bazelbuild/bazel/issues/23852): support
-            // PackagePieceValue.ForMacro.
-            if (e.getValueMaybeWithMetadata() != IncrementalInMemoryNodeEntry.CLEARED_SKY_VALUE
-                && e.isDone()
-                && e.getKey().functionName().equals(SkyFunctions.PACKAGE)) {
-              weakInternPackageTargetsLabels((PackageoidValue) e.toValue());
+    private fun weakInternSkyKey(skyKey: SkyKey) {
+        if (!usePooledInterning) {
+            return
+        }
+        val interner: SkyKeyInterner<*>? = skyKey.getSkyKeyInterner()
+        if (interner != null) {
+            interner.weakInternUnchecked(skyKey)
+        }
+    }
+
+    private fun weakInternPackageTargetsLabels(packageoidValue: PackageoidValue?) {
+        if (!usePooledInterning || packageoidValue == null) {
+            return
+        }
+        val interner: LabelInterner = Label.getLabelInterner()
+
+        val targets: com.google.common.collect.ImmutableSortedMap<String?, Target?> =
+            packageoidValue.packageoid.getTargets()
+        targets.values().forEach(java.util.function.Consumer { t: Target? -> interner.weakIntern(t.getLabel()) })
+    }
+
+    override fun get(
+        requestor: SkyKey?,
+        reason: com.google.devtools.build.skyframe.QueryableGraph.Reason?,
+        skyKey: SkyKey?
+    ): NodeEntry? {
+        return nodeMap.get(skyKey)
+    }
+
+    override fun getBatch(
+        requestor: SkyKey?,
+        reason: com.google.devtools.build.skyframe.QueryableGraph.Reason?,
+        keys: Iterable<out SkyKey>
+    ): NodeBatch {
+        if (reason == com.google.devtools.build.skyframe.QueryableGraph.Reason.REWINDING) {
+            // When rewinding, nodes are typically expected to be in the graph. However, systems with
+            // remote caching might not have loaded all dependencies into the local graph if a value was
+            // fetched from the cache.
+            //
+            // Tree artifacts are a key example. Their value (TreeArtifactValue) contains dependency keys.
+            // If the TreeArtifactValue is a cache hit, its child dependencies might not exist in the
+            // local graph. If a lost input is later discovered to be one of these children, we need to
+            // ensure the node entries exist for the rewinding process to analyze them.
+            //
+            // createIfAbsentBatch ensures that such nodes are present in the graph.
+            return createIfAbsentBatch(requestor, reason, keys)
+        }
+        return getBatch
+    }
+
+    override fun getBatchAsync(
+        requestor: SkyKey?,
+        reason: com.google.devtools.build.skyframe.QueryableGraph.Reason?,
+        keys: Iterable<out SkyKey?>?
+    ): InterruptibleSupplier<NodeBatch?> {
+        return InterruptibleSupplier { getBatch }
+    }
+
+    override fun getBatchMap(
+        requestor: SkyKey?,
+        reason: com.google.devtools.build.skyframe.QueryableGraph.Reason?,
+        keys: Iterable<out SkyKey?>
+    ): MutableMap<SkyKey?, NodeEntry?> {
+        // Use a HashMap, not an ImmutableMap.Builder, because we have not yet deduplicated these keys
+        // and ImmutableMap.Builder does not tolerate duplicates. The map will be thrown away shortly.
+        val result: HashMap<SkyKey?, NodeEntry?> = HashMap<SkyKey?, NodeEntry?>()
+        for (key in keys) {
+            val entry: NodeEntry? = get(null, com.google.devtools.build.skyframe.QueryableGraph.Reason.OTHER, key)
+            if (entry != null) {
+                result.put(key, entry)
+            }
+        }
+        return result
+    }
+
+    @com.google.errorprone.annotations.ForOverride
+    protected open fun newNodeEntry(key: SkyKey?): InMemoryNodeEntry? {
+        return IncrementalInMemoryNodeEntry(key)
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    override fun createIfAbsentBatch(
+        requestor: SkyKey?,
+        reason: com.google.devtools.build.skyframe.QueryableGraph.Reason?,
+        keys: Iterable<out SkyKey>
+    ): NodeBatch {
+        // As per the ProcessableGraph contract, ensures that every node is created, even if it is not
+        // consumed from the batch.
+        for (key in keys) {
+            createIfAbsent(key)
+        }
+        // Returns `createIfAbsentBatch` instead of `getBatch` because by contract, retrieving a node
+        // from the batch should not result in null, even if the corresponding key was removed from the
+        // graph.
+        return createIfAbsentBatch
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    private fun createIfAbsent(skyKey: SkyKey): InMemoryNodeEntry? {
+        val interner: SkyKeyInterner<*>? = skyKey.getSkyKeyInterner()
+        if (!usePooledInterning || interner == null) {
+            return nodeMap.computeIfAbsent(
+                skyKey,
+                java.util.function.Function { key: SkyKey? -> this.newNodeEntry(key) })
+        }
+
+        // The key is typically already present. Record whether this thread newly created a node so that
+        // we can skip calling removeWeak if it was already present.
+        val newlyCreated = BooleanArray(1)
+        val nodeEntry: InMemoryNodeEntry? =
+            nodeMap.computeIfAbsent(
+                skyKey,
+                java.util.function.Function { k: SkyKey? ->
+                    newlyCreated[0] = true
+                    newNodeEntry(k)
+                })
+        if (newlyCreated[0]) {
+            interner.removeWeak(skyKey)
+        }
+        return nodeEntry
+    }
+
+    override fun analyzeDepsDoneness(parent: SkyKey?, deps: MutableList<SkyKey?>?): DepsReport {
+        return DepsReport.Companion.NO_INFORMATION
+    }
+
+    override fun valuesSize(): Int {
+        return nodeMap.size()
+    }
+
+    val values: MutableMap<SkyKey, SkyValue>
+        get() = Collections.unmodifiableMap<SkyKey?, SkyValue?>(
+            com.google.common.collect.Maps.transformValues<SkyKey?, InMemoryNodeEntry?, SkyValue?>(
+                liveView,
+                com.google.common.base.Function { obj: InMemoryNodeEntry? -> obj.toValue() })
+        )
+
+    val doneValues: MutableMap<SkyKey, SkyValue>
+        get() = Collections.unmodifiableMap<SkyKey?, SkyValue?>(
+            com.google.common.collect.Maps.filterValues<SkyKey?, SkyValue?>(
+                com.google.common.collect.Maps.transformValues<SkyKey?, InMemoryNodeEntry?, SkyValue?>(
+                    liveView,
+                    com.google.common.base.Function { entry: InMemoryNodeEntry? -> if (entry.isDone()) entry.getValue() else null }),
+                com.google.common.base.Predicate { obj: Any? -> java.util.Objects.nonNull(obj) })
+        )
+
+    val allNodeEntries: MutableCollection<InMemoryNodeEntry>
+        get() = Collections.unmodifiableCollection<InMemoryNodeEntry?>(nodeMap.values())
+
+    override fun parallelForEach(consumer: java.util.function.Consumer<InMemoryNodeEntry?>?) {
+        nodeMap.forEachValue(PARALLELISM_THRESHOLD.toLong(), consumer)
+    }
+
+    override fun cleanupInterningPools() {
+        if (!usePooledInterning) {
+            return
+        }
+        GoogleAutoProfilerUtils.logged("Cleaning up interning pools", java.time.Duration.ofMillis(2L)).use { ignored ->
+            parallelForEach(
+                java.util.function.Consumer { e: InMemoryNodeEntry? ->
+                    weakInternSkyKey(e.getKey())
+                    // TODO(https://github.com/bazelbuild/bazel/issues/23852): support
+                    // PackagePieceValue.ForMacro.
+                    if (e.getValueMaybeWithMetadata() !== IncrementalInMemoryNodeEntry.Companion.CLEARED_SKY_VALUE && e.isDone()
+                        && e.getKey().functionName() == SkyFunctions.PACKAGE
+                    ) {
+                        weakInternPackageTargetsLabels(e.toValue() as PackageoidValue?)
+                    }
+
+                    // The graph is about to be thrown away. Remove as we go to avoid temporarily storing
+                    // everything in both the weak interner and the graph.
+                    nodeMap.remove(e.getKey())
+                })
+        }
+        SkyKeyInterner.Companion.setGlobalPool(null)
+        LabelInterner.setGlobalPool(null)
+    }
+
+    override fun getIfPresent(key: SkyKey?): InMemoryNodeEntry? {
+        return nodeMap.get(key)
+    }
+
+    /** Minimizes the size of the ConcurrentHashMap backing the graph. May be costly to run (O(n)).  */
+    override fun shrinkNodeMap() {
+        nodeMap = ConcurrentHashMap<SkyKey?, InMemoryNodeEntry?>(nodeMap)
+    }
+
+    internal class EdgelessInMemoryGraphImpl(usePooledInterning: Boolean) : InMemoryGraphImpl(usePooledInterning) {
+        override fun newNodeEntry(key: SkyKey?): InMemoryNodeEntry {
+            return NonIncrementalInMemoryNodeEntry(key)
+        }
+    }
+
+    /** [PooledInterner.Pool] for [SkyKey]s.  */
+    internal inner class SkyKeyPool : PooledInterner.Pool<SkyKey?> {
+        public override fun getOrWeakIntern(sample: SkyKey?): SkyKey? {
+            // Use computeIfAbsent not to mutate the map, but to call weakIntern under synchronization.
+            // This ensures that the canonical instance isn't being transferred to the node map
+            // concurrently in createIfAbsent. In the common case that the key is already present in the
+            // node map, this is a lock-free lookup.
+            val weakInterned: Array<SkyKey?> = arrayOfNulls<SkyKey>(1)
+            val nodeEntry: InMemoryNodeEntry? =
+                nodeMap.computeIfAbsent(
+                    sample,
+                    java.util.function.Function { k: SkyKey? ->
+                        weakInterned[0] = k.getSkyKeyInterner().weakInternUnchecked(k)
+                        null // Don't actually store a mapping.
+                    })
+            return if (nodeEntry != null) nodeEntry.getKey() else weakInterned[0]
+        }
+    }
+
+    /** [PooledInterner.Pool] for [Label]s.  */
+    internal inner class LabelPool : PooledInterner.Pool<Label?> {
+        public override fun getOrWeakIntern(sample: Label): Label? {
+            val interner: LabelInterner = com.google.common.base.Preconditions.checkNotNull<T>(Label.getLabelInterner())
+
+            val packageIdentifier: PackageIdentifier? = sample.getPackageIdentifier()
+
+            // Return pooled instance if sample is present in the pool.
+            var inMemoryNodeEntry: InMemoryNodeEntry? = nodeMap.get(packageIdentifier)
+            if (inMemoryNodeEntry != null) {
+                val pooledInstance: Label? = getLabelFromInMemoryNodeEntry(inMemoryNodeEntry, sample)
+                if (pooledInstance != null) {
+                    return pooledInstance
+                }
             }
 
-            // The graph is about to be thrown away. Remove as we go to avoid temporarily storing
-            // everything in both the weak interner and the graph.
-            nodeMap.remove(e.getKey());
-          });
-    }
+            val readLock: java.util.concurrent.locks.Lock = interner.getLockForLabelLookup(sample)
+            readLock.lock()
 
-    SkyKeyInterner.setGlobalPool(null);
-    LabelInterner.setGlobalPool(null);
-  }
+            try {
+                // Check again whether sample is already present in the pool inside critical section.
+                if (inMemoryNodeEntry == null) {
+                    inMemoryNodeEntry = nodeMap.get(packageIdentifier)
+                }
 
-  @Override
-  @Nullable
-  public InMemoryNodeEntry getIfPresent(SkyKey key) {
-    return nodeMap.get(key);
-  }
-
-  /** Minimizes the size of the ConcurrentHashMap backing the graph. May be costly to run (O(n)). */
-  @Override
-  public void shrinkNodeMap() {
-    nodeMap = new ConcurrentHashMap<>(nodeMap);
-  }
-
-  static final class EdgelessInMemoryGraphImpl extends InMemoryGraphImpl {
-
-    public EdgelessInMemoryGraphImpl(boolean usePooledInterning) {
-      super(usePooledInterning);
-    }
-
-    @Override
-    protected InMemoryNodeEntry newNodeEntry(SkyKey key) {
-      return new NonIncrementalInMemoryNodeEntry(key);
-    }
-  }
-
-  /** {@link PooledInterner.Pool} for {@link SkyKey}s. */
-  final class SkyKeyPool implements PooledInterner.Pool<SkyKey> {
-
-    @Override
-    public SkyKey getOrWeakIntern(SkyKey sample) {
-      // Use computeIfAbsent not to mutate the map, but to call weakIntern under synchronization.
-      // This ensures that the canonical instance isn't being transferred to the node map
-      // concurrently in createIfAbsent. In the common case that the key is already present in the
-      // node map, this is a lock-free lookup.
-      SkyKey[] weakInterned = new SkyKey[1];
-      InMemoryNodeEntry nodeEntry =
-          nodeMap.computeIfAbsent(
-              sample,
-              k -> {
-                weakInterned[0] = k.getSkyKeyInterner().weakInternUnchecked(k);
-                return null; // Don't actually store a mapping.
-              });
-      return nodeEntry != null ? nodeEntry.getKey() : weakInterned[0];
-    }
-  }
-
-  /** {@link PooledInterner.Pool} for {@link Label}s. */
-  final class LabelPool implements PooledInterner.Pool<Label> {
-    @Override
-    public Label getOrWeakIntern(Label sample) {
-      LabelInterner interner = checkNotNull(Label.getLabelInterner());
-
-      PackageIdentifier packageIdentifier = sample.getPackageIdentifier();
-
-      // Return pooled instance if sample is present in the pool.
-      InMemoryNodeEntry inMemoryNodeEntry = nodeMap.get(packageIdentifier);
-      if (inMemoryNodeEntry != null) {
-        Label pooledInstance = getLabelFromInMemoryNodeEntry(inMemoryNodeEntry, sample);
-        if (pooledInstance != null) {
-          return pooledInstance;
+                if (inMemoryNodeEntry != null) {
+                    val pooledInstance: Label? = getLabelFromInMemoryNodeEntry(inMemoryNodeEntry, sample)
+                    if (pooledInstance != null) {
+                        return pooledInstance
+                    }
+                }
+                return interner.weakIntern(sample)
+            } finally {
+                readLock.unlock()
+            }
         }
-      }
-
-      Lock readLock = interner.getLockForLabelLookup(sample);
-      readLock.lock();
-
-      try {
-        // Check again whether sample is already present in the pool inside critical section.
-        if (inMemoryNodeEntry == null) {
-          inMemoryNodeEntry = nodeMap.get(packageIdentifier);
-        }
-
-        if (inMemoryNodeEntry != null) {
-          Label pooledInstance = getLabelFromInMemoryNodeEntry(inMemoryNodeEntry, sample);
-          if (pooledInstance != null) {
-            return pooledInstance;
-          }
-        }
-        return interner.weakIntern(sample);
-      } finally {
-        readLock.unlock();
-      }
     }
-  }
 
-  @Nullable
-  private static Label getLabelFromInMemoryNodeEntry(
-      InMemoryNodeEntry inMemoryNodeEntry, Label sample) {
-    checkNotNull(inMemoryNodeEntry);
-    SkyValue value = inMemoryNodeEntry.toValue();
-    if (value == null) {
-      return null;
+    companion object {
+        private const val PARALLELISM_THRESHOLD = 1024
+
+        private fun getLabelFromInMemoryNodeEntry(
+            inMemoryNodeEntry: InMemoryNodeEntry?, sample: Label
+        ): Label? {
+            com.google.common.base.Preconditions.checkNotNull<InMemoryNodeEntry?>(inMemoryNodeEntry)
+            val value: SkyValue? = inMemoryNodeEntry.toValue()
+            if (value == null) {
+                return null
+            }
+            com.google.common.base.Preconditions.checkState(value is PackageoidValue, value)
+            val targets: com.google.common.collect.ImmutableSortedMap<String?, Target?> =
+                (value as PackageoidValue).packageoid.getTargets()
+            val target: Target? = targets.get(sample.name)
+            return if (target != null) target.getLabel() else null
+        }
     }
-    checkState(value instanceof PackageoidValue, value);
-    ImmutableSortedMap<String, Target> targets =
-        ((PackageoidValue) value).getPackageoid().getTargets();
-    Target target = targets.get(sample.name);
-    return target != null ? target.getLabel() : null;
-  }
 }

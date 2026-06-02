@@ -11,18 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.runtime.RemoteRepoContentsCache
+import com.google.devtools.build.lib.runtime.RepositoryRemoteExecutor
 
-/** Factory for {@link RepositoryRemoteExecutor} and {@link RemoteRepoContentsCache}. */
-public interface RepositoryRemoteHelpersFactory {
+/** Factory for [RepositoryRemoteExecutor] and [RemoteRepoContentsCache].  */
+interface RepositoryRemoteHelpersFactory {
+    /** Returns a new [RepositoryRemoteExecutor] or `null`.  */
+    fun createExecutor(): RepositoryRemoteExecutor?
 
-  /** Returns a new {@link RepositoryRemoteExecutor} or {@code null}. */
-  @Nullable
-  RepositoryRemoteExecutor createExecutor();
-
-  /** Returns a new {@link RemoteRepoContentsCache} or {@code null}. */
-  @Nullable
-  RemoteRepoContentsCache createRepoContentsCache();
+    /** Returns a new [RemoteRepoContentsCache] or `null`.  */
+    fun createRepoContentsCache(): RemoteRepoContentsCache?
 }

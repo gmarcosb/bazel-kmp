@@ -11,247 +11,257 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.collect.ImmutableMap.toImmutableMap;
-
-import com.google.common.collect.ConcurrentHashMultiset;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Multiset;
-import com.google.common.collect.Sets;
-import com.google.devtools.build.skyframe.NodeEntry.DirtyType;
-import com.google.devtools.build.skyframe.SkyframeGraphStatsEvent.EvaluationStats;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.EvaluationProgressReceiver
+import com.google.devtools.build.skyframe.EvaluationProgressReceiver.EvaluationState
+import com.google.devtools.build.skyframe.EvaluationProgressReceiver.NodeState
+import com.google.devtools.build.skyframe.GroupedDeps
+import com.google.devtools.build.skyframe.InflightTrackingProgressReceiver
+import com.google.devtools.build.skyframe.NodeEntry.DirtyType
+import com.google.devtools.build.skyframe.SkyFunctionName
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
+import com.google.devtools.build.skyframe.SkyframeGraphStatsEvent.EvaluationStats
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * A delegating {@link InflightTrackingProgressReceiver} that tracks both inflight and dirty keys.
+ * A delegating [InflightTrackingProgressReceiver] that tracks both inflight and dirty keys.
  */
-public class DirtyAndInflightTrackingProgressReceiver implements InflightTrackingProgressReceiver {
+class DirtyAndInflightTrackingProgressReceiver(progressReceiver: EvaluationProgressReceiver?) :
+    InflightTrackingProgressReceiver {
+    protected val progressReceiver: EvaluationProgressReceiver
+    private val dirtyKeys: MutableSet<SkyKey?> = com.google.common.collect.Sets.newConcurrentHashSet<SkyKey?>()
+    private var inflightKeys: MutableSet<SkyKey?> = com.google.common.collect.Sets.newConcurrentHashSet<SkyKey?>()
+    private var unsuccessfullyRewoundKeys: MutableSet<SkyKey?> =
+        com.google.common.collect.Sets.newConcurrentHashSet<SkyKey?>()
 
-  protected final EvaluationProgressReceiver progressReceiver;
-  private final Set<SkyKey> dirtyKeys = Sets.newConcurrentHashSet();
-  private Set<SkyKey> inflightKeys = Sets.newConcurrentHashSet();
-  private Set<SkyKey> unsuccessfullyRewoundKeys = Sets.newConcurrentHashSet();
+    // Nodes that were dirtied because one of their transitive dependencies changed
+    private val dirtied: com.google.common.collect.ConcurrentHashMultiset<SkyFunctionName?>
 
-  // Nodes that were dirtied because one of their transitive dependencies changed
-  private final ConcurrentHashMultiset<SkyFunctionName> dirtied;
-  // Nodes that were dirtied because they themselves changed (for example, a leaf node that
-  // represents a file and that changed between builds)
-  private final ConcurrentHashMultiset<SkyFunctionName> changed;
-  // Nodes that were built and found different from the previous version
-  private final ConcurrentHashMultiset<SkyFunctionName> built;
-  // Nodes that were built and found to be same as the previous version
-  private final ConcurrentHashMultiset<SkyFunctionName> cleaned;
-  // Nodes that were computed during the build
-  private final ConcurrentHashMultiset<SkyFunctionName> evaluated;
+    // Nodes that were dirtied because they themselves changed (for example, a leaf node that
+    // represents a file and that changed between builds)
+    private val changed: com.google.common.collect.ConcurrentHashMultiset<SkyFunctionName?>
 
-  private static ConcurrentHashMultiset<SkyFunctionName> createMultiset() {
-    return ConcurrentHashMultiset.create(
-        new ConcurrentHashMap<>(Runtime.getRuntime().availableProcessors(), 0.75f));
-  }
+    // Nodes that were built and found different from the previous version
+    private val built: com.google.common.collect.ConcurrentHashMultiset<SkyFunctionName?>
 
-  public DirtyAndInflightTrackingProgressReceiver(EvaluationProgressReceiver progressReceiver) {
-    this.progressReceiver = checkNotNull(progressReceiver);
-    this.dirtied = createMultiset();
-    this.changed = createMultiset();
-    this.built = createMultiset();
-    this.cleaned = createMultiset();
-    this.evaluated = createMultiset();
-  }
+    // Nodes that were built and found to be same as the previous version
+    private val cleaned: com.google.common.collect.ConcurrentHashMultiset<SkyFunctionName?>
 
-  @Override
-  public final void injected(SkyKey skyKey) {
-    // This node was never evaluated, but is now clean and need not be re-evaluated.
-    inflightKeys.remove(skyKey);
-    removeFromDirtySet(skyKey);
-  }
+    // Nodes that were computed during the build
+    private val evaluated: com.google.common.collect.ConcurrentHashMultiset<SkyFunctionName?>
 
-  @Override
-  public void dirtied(SkyKey skyKey, DirtyType dirtyType) {
-    progressReceiver.dirtied(skyKey, dirtyType);
-    addToDirtySet(skyKey, dirtyType);
-
-    switch (dirtyType) {
-      case DIRTY -> dirtied.add(skyKey.functionName());
-      case CHANGE -> changed.add(skyKey.functionName());
-      case REWIND -> {}
-    }
-  }
-
-  @Override
-  public final void deleted(SkyKey skyKey) {
-    progressReceiver.deleted(skyKey);
-    // This key was removed from the graph, so no longer needs to be marked as dirty.
-    removeFromDirtySet(skyKey);
-  }
-
-  @Override
-  public final void enqueueing(SkyKey skyKey) {
-    enqueueing(skyKey, false);
-  }
-
-  private void enqueueing(SkyKey skyKey, boolean afterError) {
-    // We unconditionally add the key to the set of in-flight nodes even if evaluation is never
-    // scheduled, because we still want to remove the previously created NodeEntry from the graph.
-    // Otherwise we would leave the graph in a weird state (wasteful garbage in the best case and
-    // inconsistent in the worst case).
-    boolean newlyEnqueued = inflightKeys.add(skyKey);
-    if (newlyEnqueued) {
-      // All nodes enqueued for evaluation will be either verified clean, re-evaluated, or cleaned
-      // up after being in-flight when an error happens in nokeep_going mode or in the event of an
-      // interrupt. In any of these cases, they won't be dirty anymore. Note that we don't remove
-      // from unsuccessfullyRewoundKeys here - that is only done when the key completes
-      // successfully.
-      dirtyKeys.remove(skyKey);
-      if (!afterError) {
-        // Only tell the external listener the node was enqueued if no there was neither an error
-        // or interrupt.
-        progressReceiver.enqueueing(skyKey);
-      }
-    }
-  }
-
-  @Override
-  public void changePruned(SkyKey skyKey) {
-    progressReceiver.changePruned(skyKey);
-  }
-
-  /**
-   * Called when a node was requested to be enqueued but wasn't because either an interrupt or an
-   * error (in nokeep_going mode) had occurred.
-   */
-  @Override
-  public final void enqueueAfterError(SkyKey skyKey) {
-    enqueueing(skyKey, true);
-  }
-
-  @Override
-  public final void stateStarting(SkyKey skyKey, NodeState nodeState) {
-    progressReceiver.stateStarting(skyKey, nodeState);
-  }
-
-  @Override
-  public void stateEnding(SkyKey skyKey, NodeState nodeState) {
-    progressReceiver.stateEnding(skyKey, nodeState);
-    if (nodeState == NodeState.COMPUTE) {
-      evaluated.add(skyKey.functionName());
-    }
-  }
-
-  @Override
-  public void evaluated(
-      SkyKey skyKey,
-      EvaluationState state,
-      @Nullable SkyValue newValue,
-      @Nullable ErrorInfo newError,
-      @Nullable GroupedDeps directDeps) {
-    progressReceiver.evaluated(skyKey, state, newValue, newError, directDeps);
-
-    // This key was either built or marked clean, so we can remove it from both the dirty and
-    // inflight nodes.
-    inflightKeys.remove(skyKey);
-
-    if (state.succeeded()) {
-      removeFromDirtySet(skyKey);
-    } else {
-      // Leave unsuccessful keys in unsuccessfullyRewoundKeys. Only remove them from dirtyKeys.
-      dirtyKeys.remove(skyKey);
+    init {
+        this.progressReceiver =
+            com.google.common.base.Preconditions.checkNotNull<EvaluationProgressReceiver>(progressReceiver)
+        this.dirtied = createMultiset()
+        this.changed = createMultiset()
+        this.built = createMultiset()
+        this.cleaned = createMultiset()
+        this.evaluated = createMultiset()
     }
 
-    if (directDeps == null) {
-      // In this case, no actual evaluation work was done so let's not record it.
-    } else if (state.versionChanged()) {
-      built.add(skyKey.functionName(), 1);
-    } else {
-      cleaned.add(skyKey.functionName(), 1);
+    override fun injected(skyKey: SkyKey?) {
+        // This node was never evaluated, but is now clean and need not be re-evaluated.
+        inflightKeys.remove(skyKey)
+        removeFromDirtySet(skyKey)
     }
-  }
 
-  /** Returns if the key is enqueued for evaluation. */
-  @Override
-  public final boolean isInflight(SkyKey skyKey) {
-    return inflightKeys.contains(skyKey);
-  }
+    override fun dirtied(skyKey: SkyKey, dirtyType: DirtyType) {
+        progressReceiver.dirtied(skyKey, dirtyType)
+        addToDirtySet(skyKey, dirtyType)
 
-  @Override
-  public final void removeFromInflight(SkyKey skyKey) {
-    inflightKeys.remove(skyKey);
-  }
-
-  @Override
-  public final Set<SkyKey> getAndClearInflightKeys() {
-    Set<SkyKey> keys = inflightKeys;
-    inflightKeys = Sets.newConcurrentHashSet();
-    return keys;
-  }
-
-  /**
-   * Returns the set of all keys that were {@linkplain DirtyType#REWIND rewound} but did not
-   * complete successfully, and resets the set to empty.
-   *
-   * <p>The returned set includes keys that were rewound and were either:
-   *
-   * <ul>
-   *   <li>not yet enqueued
-   *   <li>enqueued but not evaluated
-   *   <li>evaluated to an error
-   * </ul>
-   */
-  final Set<SkyKey> getAndClearUnsuccessfullyRewoundKeys() {
-    Set<SkyKey> keys = unsuccessfullyRewoundKeys;
-    unsuccessfullyRewoundKeys = Sets.newConcurrentHashSet();
-    return keys;
-  }
-
-  /**
-   * Returns the set of all dirty keys that have not been enqueued. This is useful for garbage
-   * collection, where we would not want to remove dirty nodes that are needed for evaluation (in
-   * the downward transitive closure of the set of the evaluation's top level nodes).
-   */
-  final ImmutableSet<SkyKey> getUnenqueuedDirtyKeys() {
-    return ImmutableSet.copyOf(dirtyKeys);
-  }
-
-  private void addToDirtySet(SkyKey skyKey, DirtyType dirtyType) {
-    if (dirtyType == DirtyType.REWIND) {
-      unsuccessfullyRewoundKeys.add(skyKey);
-    } else {
-      dirtyKeys.add(skyKey);
+        when (dirtyType) {
+            DirtyType.DIRTY -> dirtied.add(skyKey.functionName())
+            DirtyType.CHANGE -> changed.add(skyKey.functionName())
+            DirtyType.REWIND -> {}
+        }
     }
-  }
 
-  private void removeFromDirtySet(SkyKey skyKey) {
-    // A key will never be present in both sets because EvaluationProgressReceiver#dirtied is only
-    // called after successful NodeEntry#markDirty calls, i.e. a call that transitioned the node
-    // from done to dirty.
-    if (!dirtyKeys.remove(skyKey)) {
-      unsuccessfullyRewoundKeys.remove(skyKey);
+    override fun deleted(skyKey: SkyKey?) {
+        progressReceiver.deleted(skyKey)
+        // This key was removed from the graph, so no longer needs to be marked as dirty.
+        removeFromDirtySet(skyKey)
     }
-  }
 
-  private static ImmutableMap<SkyFunctionName, Integer> fromMultiset(
-      ConcurrentHashMultiset<SkyFunctionName> s) {
-    return s.entrySet().stream()
-        .collect(toImmutableMap(Multiset.Entry::getElement, Multiset.Entry::getCount));
-  }
+    override fun enqueueing(skyKey: SkyKey?) {
+        enqueueing(skyKey, false)
+    }
 
-  final EvaluationStats aggregateAndReset() {
-    EvaluationStats result =
-        new EvaluationStats(
-            fromMultiset(dirtied),
-            fromMultiset(changed),
-            fromMultiset(built),
-            fromMultiset(cleaned),
-            fromMultiset(evaluated));
-    dirtied.clear();
-    changed.clear();
-    built.clear();
-    cleaned.clear();
-    evaluated.clear();
-    return result;
-  }
+    private fun enqueueing(skyKey: SkyKey?, afterError: Boolean) {
+        // We unconditionally add the key to the set of in-flight nodes even if evaluation is never
+        // scheduled, because we still want to remove the previously created NodeEntry from the graph.
+        // Otherwise we would leave the graph in a weird state (wasteful garbage in the best case and
+        // inconsistent in the worst case).
+        val newlyEnqueued = inflightKeys.add(skyKey)
+        if (newlyEnqueued) {
+            // All nodes enqueued for evaluation will be either verified clean, re-evaluated, or cleaned
+            // up after being in-flight when an error happens in nokeep_going mode or in the event of an
+            // interrupt. In any of these cases, they won't be dirty anymore. Note that we don't remove
+            // from unsuccessfullyRewoundKeys here - that is only done when the key completes
+            // successfully.
+            dirtyKeys.remove(skyKey)
+            if (!afterError) {
+                // Only tell the external listener the node was enqueued if no there was neither an error
+                // or interrupt.
+                progressReceiver.enqueueing(skyKey)
+            }
+        }
+    }
+
+    override fun changePruned(skyKey: SkyKey?) {
+        progressReceiver.changePruned(skyKey)
+    }
+
+    /**
+     * Called when a node was requested to be enqueued but wasn't because either an interrupt or an
+     * error (in nokeep_going mode) had occurred.
+     */
+    override fun enqueueAfterError(skyKey: SkyKey?) {
+        enqueueing(skyKey, true)
+    }
+
+    override fun stateStarting(skyKey: SkyKey?, nodeState: NodeState?) {
+        progressReceiver.stateStarting(skyKey, nodeState)
+    }
+
+    override fun stateEnding(skyKey: SkyKey, nodeState: NodeState?) {
+        progressReceiver.stateEnding(skyKey, nodeState)
+        if (nodeState == NodeState.COMPUTE) {
+            evaluated.add(skyKey.functionName())
+        }
+    }
+
+    override fun evaluated(
+        skyKey: SkyKey,
+        state: EvaluationState,
+        newValue: SkyValue?,
+        newError: com.google.devtools.build.skyframe.ErrorInfo?,
+        directDeps: GroupedDeps?
+    ) {
+        progressReceiver.evaluated(skyKey, state, newValue, newError, directDeps)
+
+        // This key was either built or marked clean, so we can remove it from both the dirty and
+        // inflight nodes.
+        inflightKeys.remove(skyKey)
+
+        if (state.succeeded()) {
+            removeFromDirtySet(skyKey)
+        } else {
+            // Leave unsuccessful keys in unsuccessfullyRewoundKeys. Only remove them from dirtyKeys.
+            dirtyKeys.remove(skyKey)
+        }
+
+        if (directDeps == null) {
+            // In this case, no actual evaluation work was done so let's not record it.
+        } else if (state.versionChanged()) {
+            built.add(skyKey.functionName(), 1)
+        } else {
+            cleaned.add(skyKey.functionName(), 1)
+        }
+    }
+
+    /** Returns if the key is enqueued for evaluation.  */
+    override fun isInflight(skyKey: SkyKey?): Boolean {
+        return inflightKeys.contains(skyKey)
+    }
+
+    override fun removeFromInflight(skyKey: SkyKey?) {
+        inflightKeys.remove(skyKey)
+    }
+
+    val andClearInflightKeys: MutableSet<SkyKey>?
+        get() {
+            val keys: MutableSet<SkyKey?>? = inflightKeys
+            inflightKeys = com.google.common.collect.Sets.newConcurrentHashSet<SkyKey?>()
+            return keys
+        }
+
+    val andClearUnsuccessfullyRewoundKeys: MutableSet<SkyKey>?
+        /**
+         * Returns the set of all keys that were [rewound][DirtyType.REWIND] but did not
+         * complete successfully, and resets the set to empty.
+         * 
+         * 
+         * The returned set includes keys that were rewound and were either:
+         * 
+         * 
+         *  * not yet enqueued
+         *  * enqueued but not evaluated
+         *  * evaluated to an error
+         * 
+         */
+        get() {
+            val keys: MutableSet<SkyKey?>? = unsuccessfullyRewoundKeys
+            unsuccessfullyRewoundKeys = com.google.common.collect.Sets.newConcurrentHashSet<SkyKey?>()
+            return keys
+        }
+
+    val unenqueuedDirtyKeys: com.google.common.collect.ImmutableSet<SkyKey?>
+        /**
+         * Returns the set of all dirty keys that have not been enqueued. This is useful for garbage
+         * collection, where we would not want to remove dirty nodes that are needed for evaluation (in
+         * the downward transitive closure of the set of the evaluation's top level nodes).
+         */
+        get() = com.google.common.collect.ImmutableSet.copyOf<SkyKey?>(dirtyKeys)
+
+    private fun addToDirtySet(skyKey: SkyKey?, dirtyType: DirtyType?) {
+        if (dirtyType == DirtyType.REWIND) {
+            unsuccessfullyRewoundKeys.add(skyKey)
+        } else {
+            dirtyKeys.add(skyKey)
+        }
+    }
+
+    private fun removeFromDirtySet(skyKey: SkyKey?) {
+        // A key will never be present in both sets because EvaluationProgressReceiver#dirtied is only
+        // called after successful NodeEntry#markDirty calls, i.e. a call that transitioned the node
+        // from done to dirty.
+        if (!dirtyKeys.remove(skyKey)) {
+            unsuccessfullyRewoundKeys.remove(skyKey)
+        }
+    }
+
+    fun aggregateAndReset(): EvaluationStats {
+        val result: EvaluationStats =
+            EvaluationStats(
+                fromMultiset(dirtied),
+                fromMultiset(changed),
+                fromMultiset(built),
+                fromMultiset(cleaned),
+                fromMultiset(evaluated)
+            )
+        dirtied.clear()
+        changed.clear()
+        built.clear()
+        cleaned.clear()
+        evaluated.clear()
+        return result
+    }
+
+    companion object {
+        private fun createMultiset(): com.google.common.collect.ConcurrentHashMultiset<SkyFunctionName?> {
+            return com.google.common.collect.ConcurrentHashMultiset.create<SkyFunctionName?>(
+                ConcurrentHashMap<SkyFunctionName?, AtomicInteger?>(
+                    java.lang.Runtime.getRuntime().availableProcessors(), 0.75f
+                )
+            )
+        }
+
+        private fun fromMultiset(
+            s: com.google.common.collect.ConcurrentHashMultiset<SkyFunctionName?>
+        ): com.google.common.collect.ImmutableMap<SkyFunctionName?, Int?> {
+            return s.entrySet().stream()
+                .collect(TODO("Cannot convert element")) < com.google.common.collect.Multiset.Entry<SkyFunctionName>
+            TODO(
+                """
+                |Cannot convert element
+                |With text:
+                |SkyFunctionName, Integer>toImmutableMap(Multiset.Entry::getElement, Multiset.Entry::getCount)
+                """.trimMargin()
+            )
+        }
+    }
 }

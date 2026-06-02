@@ -11,12 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.skyframe.serialization.autocodec;
+package com.google.devtools.build.lib.skyframe.serialization.autocodec
 
 /**
  * Marker interface to indicate that an implementation provides a constant object that should be
- * registered for serialization. Should never be implemented manually, only by {@code
- * AutoCodecProcessor}-generated classes.
+ * registered for serialization. Should never be implemented manually, only by `AutoCodecProcessor`-generated classes.
  */
-public interface RegisteredSingletonDoNotUse {}
+interface RegisteredSingletonDoNotUse 

@@ -11,68 +11,64 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.auto.value.AutoValue;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.TopLevelArtifactContext;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.StallableSkykey;
-import java.util.Collection;
-import java.util.Set;
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
 
-/** The value of a TargetCompletion. Just a sentinel. */
-public class TargetCompletionValue implements SkyValue {
-  @SerializationConstant static final TargetCompletionValue INSTANCE = new TargetCompletionValue();
+/** The value of a TargetCompletion. Just a sentinel.  */
+object TargetCompletionValue : SkyValue {
+    @SerializationConstant
+    val INSTANCE: TargetCompletionValue = TargetCompletionValue()
 
-  private TargetCompletionValue() {}
-
-  public static TargetCompletionKey key(
-      ConfiguredTargetKey configuredTargetKey,
-      TopLevelArtifactContext topLevelArtifactContext,
-      boolean willTest) {
-    return TargetCompletionKey.create(configuredTargetKey, topLevelArtifactContext, willTest);
-  }
-
-  public static Iterable<TargetCompletionKey> keys(
-      Collection<ConfiguredTarget> targets,
-      final TopLevelArtifactContext ctx,
-      final Set<ConfiguredTarget> targetsToTest) {
-    return Iterables.transform(
-        targets,
-        ct ->
-            TargetCompletionKey.create(
-                ConfiguredTargetKey.fromConfiguredTarget(ct), ctx, targetsToTest.contains(ct)));
-  }
-
-  /** {@link com.google.devtools.build.skyframe.SkyKey} for {@link TargetCompletionValue}. */
-  @AutoValue
-  public abstract static class TargetCompletionKey
-      implements TopLevelActionLookupKeyWrapper, StallableSkykey {
-    static TargetCompletionKey create(
-        ConfiguredTargetKey actionLookupKey,
-        TopLevelArtifactContext topLevelArtifactContext,
-        boolean willTest) {
-      return new AutoValue_TargetCompletionValue_TargetCompletionKey(
-          topLevelArtifactContext, actionLookupKey, willTest);
+    fun key(
+        configuredTargetKey: ConfiguredTargetKey?,
+        topLevelArtifactContext: TopLevelArtifactContext?,
+        willTest: Boolean
+    ): TargetCompletionKey {
+        return TargetCompletionKey.Companion.create(configuredTargetKey, topLevelArtifactContext, willTest)
     }
 
-    @Override
-    public abstract ConfiguredTargetKey actionLookupKey();
-
-    @Override
-    public final SkyFunctionName functionName() {
-      return SkyFunctions.TARGET_COMPLETION;
+    fun keys(
+        targets: MutableCollection<ConfiguredTarget?>,
+        ctx: TopLevelArtifactContext?,
+        targetsToTest: MutableSet<ConfiguredTarget?>
+    ): Iterable<TargetCompletionKey?> {
+        return com.google.common.collect.Iterables.transform<ConfiguredTarget?, TargetCompletionKey?>(
+            targets,
+            com.google.common.base.Function { ct: ConfiguredTarget? ->
+                TargetCompletionKey.Companion.create(
+                    ConfiguredTargetKey.fromConfiguredTarget(ct), ctx, targetsToTest.contains(ct)
+                )
+            })
     }
 
-    @Override
-    public final boolean valueIsShareable() {
-      return false;
-    }
+    /** [com.google.devtools.build.skyframe.SkyKey] for [TargetCompletionValue].  */
+    @AutoValue
+    abstract class TargetCompletionKey
 
-    abstract boolean willTest();
-  }
+        : TopLevelActionLookupKeyWrapper, StallableSkykey {
+        abstract override fun actionLookupKey(): ConfiguredTargetKey?
+
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.TARGET_COMPLETION
+        }
+
+        override fun valueIsShareable(): Boolean {
+            return false
+        }
+
+        abstract fun willTest(): Boolean
+
+        companion object {
+            fun create(
+                actionLookupKey: ConfiguredTargetKey?,
+                topLevelArtifactContext: TopLevelArtifactContext?,
+                willTest: Boolean
+            ): TargetCompletionKey {
+                return AutoValue_TargetCompletionValue_TargetCompletionKey(
+                    topLevelArtifactContext, actionLookupKey, willTest
+                )
+            }
+        }
+    }
 }

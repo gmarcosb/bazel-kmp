@@ -11,26 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.testutils;
+package com.google.devtools.build.lib.skyframe.serialization.testutils
 
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ServerDirectories;
-import com.google.devtools.build.lib.vfs.Path;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
-/** Helper providing an {@link FsUtils#TEST_FILESYSTEM} backed {@link BlazeDirectories} instance. */
-public class FakeDirectories {
-  public static final Path OUTPUT_USER_BASE =
-      FsUtils.TEST_FILESYSTEM.getPath("/output_root/_bazel_testuser");
+/** Helper providing an [FsUtils.TEST_FILESYSTEM] backed [BlazeDirectories] instance.  */
+object FakeDirectories {
+    val OUTPUT_USER_BASE: com.google.devtools.build.lib.vfs.Path =
+        FsUtils.TEST_FILESYSTEM.getPath("/output_root/_bazel_testuser")
 
-  public static final Path OUTPUT_BASE =
-      OUTPUT_USER_BASE.getRelative("ba5eba11ba5eba11ba5eba11ba5eba11");
+    val OUTPUT_BASE: com.google.devtools.build.lib.vfs.Path =
+        OUTPUT_USER_BASE.getRelative("ba5eba11ba5eba11ba5eba11ba5eba11")
 
-  public static final ServerDirectories SERVER_DIRECTORIES =
-      new ServerDirectories(/*installBase=*/ null, OUTPUT_BASE, OUTPUT_USER_BASE);
+    val SERVER_DIRECTORIES: ServerDirectories = ServerDirectories( /*installBase=*/null, OUTPUT_BASE, OUTPUT_USER_BASE)
 
-  public static final BlazeDirectories BLAZE_DIRECTORIES =
-      new BlazeDirectories(
-          SERVER_DIRECTORIES, OUTPUT_BASE.getRelative("execroot/io_bazel"), "bazel");
-
-  private FakeDirectories() {}
+    @kotlin.jvm.JvmField
+    val BLAZE_DIRECTORIES: BlazeDirectories = BlazeDirectories(
+        SERVER_DIRECTORIES, OUTPUT_BASE.getRelative("execroot/io_bazel"), "bazel"
+    )
 }

@@ -11,80 +11,83 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.unix
 
-package com.google.devtools.build.lib.unix;
+import com.google.devtools.build.lib.bugreport.BugReport
+import com.google.devtools.build.lib.bugreport.BugReport.sendNonFatalBugReport
+import com.google.devtools.build.lib.jni.JniLoader.loadJni
+import com.google.devtools.build.lib.unix.NativePosixFilesService
+import com.google.devtools.build.lib.unix.NativePosixFilesService.Stat
+import com.google.devtools.build.lib.unix.NativePosixFilesService.StatErrorHandling
+import java.io.IOException
 
-import com.google.devtools.build.lib.bugreport.BugReport;
-import com.google.devtools.build.lib.jni.JniLoader;
-import java.io.IOException;
-import javax.annotation.Nullable;
+/** Implementation of [NativePosixFilesService].  */
+class NativePosixFilesServiceImpl : NativePosixFilesService {
+    @Throws(IOException::class)
+    external override fun readlink(path: String?): String?
 
-/** Implementation of {@link NativePosixFilesService}. */
-public final class NativePosixFilesServiceImpl implements NativePosixFilesService {
+    @Throws(IOException::class)
+    external override fun chmod(path: String?, mode: Int)
 
-  public NativePosixFilesServiceImpl() {}
+    @Throws(IOException::class)
+    external override fun symlink(oldpath: String?, newpath: String?)
 
-  static {
-    JniLoader.loadJni();
-  }
+    @Throws(IOException::class)
+    external override fun link(oldpath: String?, newpath: String?)
 
-  @Override
-  @Nullable
-  public native String readlink(String path) throws IOException;
+    @Throws(IOException::class)
+    override fun stat(path: String?, errorHandling: StatErrorHandling): Stat? {
+        return stat(path, errorHandling.getCode())
+    }
 
-  @Override
-  public native void chmod(String path, int mode) throws IOException;
+    @Throws(IOException::class)
+    private external fun stat(path: String?, errorHandling: Char): Stat?
 
-  @Override
-  public native void symlink(String oldpath, String newpath) throws IOException;
+    @Throws(IOException::class)
+    override fun lstat(path: String?, errorHandling: StatErrorHandling): Stat? {
+        return lstat(path, errorHandling.getCode())
+    }
 
-  @Override
-  public native void link(String oldpath, String newpath) throws IOException;
+    @Throws(IOException::class)
+    private external fun lstat(path: String?, errorHandling: Char): Stat?
 
-  @Override
-  public Stat stat(String path, StatErrorHandling errorHandling) throws IOException {
-    return stat(path, errorHandling.getCode());
-  }
+    @Throws(IOException::class)
+    external override fun utimensat(path: String?, now: Boolean, epochMilli: Long)
 
-  private native Stat stat(String path, char errorHandling) throws IOException;
+    @Throws(IOException::class)
+    external override fun mkdir(path: String?, mode: Int): Boolean
 
-  @Override
-  public Stat lstat(String path, StatErrorHandling errorHandling) throws IOException {
-    return lstat(path, errorHandling.getCode());
-  }
+    @Throws(IOException::class)
+    external override fun readdir(path: String?): Array<com.google.devtools.build.lib.unix.NativePosixFilesService.Dirent?>?
 
-  private native Stat lstat(String path, char errorHandling) throws IOException;
+    @Throws(IOException::class)
+    external override fun rename(oldpath: String?, newpath: String?)
 
-  @Override
-  public native void utimensat(String path, boolean now, long epochMilli) throws IOException;
+    @Throws(IOException::class)
+    external override fun remove(path: String?): Boolean
 
-  @Override
-  public native boolean mkdir(String path, int mode) throws IOException;
+    @Throws(IOException::class)
+    external override fun mkfifo(path: String?, mode: Int)
 
-  @Override
-  public native Dirent[] readdir(String path) throws IOException;
+    @Throws(IOException::class)
+    external override fun getxattr(path: String?, name: String?): ByteArray?
 
-  @Override
-  public native void rename(String oldpath, String newpath) throws IOException;
+    @Throws(IOException::class)
+    external override fun lgetxattr(path: String?, name: String?): ByteArray?
 
-  @Override
-  public native boolean remove(String path) throws IOException;
+    @Throws(IOException::class)
+    external override fun deleteTreesBelow(dir: String?)
 
-  @Override
-  public native void mkfifo(String path, int mode) throws IOException;
+    companion object {
+        init {
+            com.google.devtools.build.lib.jni.JniLoader.loadJni()
+        }
 
-  @Override
-  public native byte[] getxattr(String path, String name) throws IOException;
-
-  @Override
-  public native byte[] lgetxattr(String path, String name) throws IOException;
-
-  @Override
-  public native void deleteTreesBelow(String dir) throws IOException;
-
-  /** Logs a path string that does not have a Latin-1 coder. Called from JNI. */
-  private static void logBadPath(String path) {
-    BugReport.sendNonFatalBugReport(
-        new IllegalStateException("Path string does not have a Latin-1 coder: %s".formatted(path)));
-  }
+        /** Logs a path string that does not have a Latin-1 coder. Called from JNI.  */
+        private fun logBadPath(path: String?) {
+            BugReport.sendNonFatalBugReport(
+                java.lang.IllegalStateException("Path string does not have a Latin-1 coder: %s".formatted(path))
+            )
+        }
+    }
 }

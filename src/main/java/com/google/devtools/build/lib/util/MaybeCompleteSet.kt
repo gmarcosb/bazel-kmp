@@ -12,75 +12,65 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-
-package com.google.devtools.build.lib.util;
-
-import com.google.common.base.Objects;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Sets;
-import java.util.Set;
-import javax.annotation.Nullable;
+package com.google.devtools.build.lib.util
 
 /**
- * A set that either contains some elements or is the <i>complete</i> set (semantically contains
+ * A set that either contains some elements or is the *complete* set (semantically contains
  * every possible value of the element type).
  */
-public final class MaybeCompleteSet<T> {
-  private static final MaybeCompleteSet<Object> COMPLETE = new MaybeCompleteSet<>(null);
+class MaybeCompleteSet<T> private constructor(nullableSet: com.google.common.collect.ImmutableSet<T?>?) {
+    private val internalSet: com.google.common.collect.ImmutableSet<T?>?
 
-  @Nullable private final ImmutableSet<T> internalSet;
-
-  private MaybeCompleteSet(@Nullable ImmutableSet<T> nullableSet) {
-    this.internalSet = nullableSet;
-  }
-
-  public boolean contains(T value) {
-    return internalSet == null || internalSet.contains(value);
-  }
-
-  public boolean isComplete() {
-    return internalSet == null;
-  }
-
-  public boolean isEmpty() {
-    return internalSet != null && internalSet.isEmpty();
-  }
-
-  public ImmutableSet<T> getElementsIfNotComplete() {
-    Preconditions.checkArgument(internalSet != null);
-    return internalSet;
-  }
-
-  public static <T> MaybeCompleteSet<T> copyOf(Set<T> nonNullableSet) {
-    return new MaybeCompleteSet<>(ImmutableSet.copyOf(nonNullableSet));
-  }
-
-  @SuppressWarnings("unchecked")
-  public static <T> MaybeCompleteSet<T> completeSet() {
-    return (MaybeCompleteSet<T>) COMPLETE;
-  }
-
-  public static <T> MaybeCompleteSet<T> unionElements(MaybeCompleteSet<T> set1, Set<T> set2) {
-    if (set1.isComplete()) {
-      return completeSet();
+    init {
+        this.internalSet = nullableSet
     }
-    return copyOf(Sets.union(set1.getElementsIfNotComplete(), set2));
-  }
 
-  @Override
-  public boolean equals(Object o) {
-    if (this == o) {
-      return true;
+    fun contains(value: T?): Boolean {
+        return internalSet == null || internalSet.contains(value)
     }
-    if (!(o instanceof MaybeCompleteSet<?> that)) {
-      return false;
-    }
-    return Objects.equal(internalSet, that.internalSet);
-  }
 
-  @Override
-  public int hashCode() {
-    return Objects.hashCode("MaybeCompleteSet", internalSet);
-  }
+    val isComplete: Boolean
+        get() = internalSet == null
+
+    val isEmpty: Boolean
+        get() = internalSet != null && internalSet.isEmpty()
+
+    val elementsIfNotComplete: com.google.common.collect.ImmutableSet<T?>
+        get() {
+            com.google.common.base.Preconditions.checkArgument(internalSet != null)
+            return internalSet
+        }
+
+    override fun equals(o: Any?): Boolean {
+        if (this === o) {
+            return true
+        }
+        if (o !is MaybeCompleteSet<*>) {
+            return false
+        }
+        return com.google.common.base.Objects.equal(internalSet, o.internalSet)
+    }
+
+    override fun hashCode(): Int {
+        return com.google.common.base.Objects.hashCode("MaybeCompleteSet", internalSet)
+    }
+
+    companion object {
+        private val COMPLETE = MaybeCompleteSet<Any?>(null)
+
+        fun <T> copyOf(nonNullableSet: MutableSet<T?>): MaybeCompleteSet<T?> {
+            return MaybeCompleteSet<T?>(com.google.common.collect.ImmutableSet.copyOf<T?>(nonNullableSet))
+        }
+
+        fun <T> completeSet(): MaybeCompleteSet<T?>? {
+            return COMPLETE as MaybeCompleteSet<T?>?
+        }
+
+        fun <T> unionElements(set1: MaybeCompleteSet<T?>, set2: MutableSet<T?>): MaybeCompleteSet<T?>? {
+            if (set1.isComplete) {
+                return completeSet<T?>()
+            }
+            return copyOf<T?>(com.google.common.collect.Sets.union<T?>(set1.elementsIfNotComplete, set2))
+        }
+    }
 }

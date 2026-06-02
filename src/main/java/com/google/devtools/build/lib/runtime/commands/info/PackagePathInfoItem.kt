@@ -11,33 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime.commands.info
 
-package com.google.devtools.build.lib.runtime.commands.info;
+import com.google.common.base.Joiner
+import com.google.common.base.Preconditions
+import com.google.common.base.Supplier
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue
+import com.google.devtools.common.options.OptionsParsingResult
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.base.Joiner;
-import com.google.common.base.Supplier;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.pkgcache.PackageOptions;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.InfoItem;
-import com.google.devtools.common.options.OptionsParsingResult;
-
-/** Info item for package_path. */
-public final class PackagePathInfoItem extends InfoItem {
-  private final OptionsParsingResult commandOptions;
-
-  public PackagePathInfoItem(OptionsParsingResult commandOptions) {
-    super("package_path", "The search path for resolving package labels.", false);
-    this.commandOptions = commandOptions;
-  }
-
-  @Override
-  public byte[] get(
-      Supplier<BuildConfigurationValue> configurationSupplier, CommandEnvironment env) {
-    checkNotNull(commandOptions);
-    PackageOptions packageOptions = commandOptions.getOptions(PackageOptions.class);
-    return print(Joiner.on(":").join(packageOptions.getPackagePath()));
-  }
+/** Info item for package_path.  */
+class PackagePathInfoItem(private val commandOptions: OptionsParsingResult?) :
+    InfoItem("package_path", "The search path for resolving package labels.", false) {
+    public override fun get(
+        configurationSupplier: Supplier<BuildConfigurationValue?>?, env: CommandEnvironment?
+    ): ByteArray {
+        Preconditions.checkNotNull<OptionsParsingResult?>(commandOptions)
+        val packageOptions: PackageOptions? = commandOptions!!.getOptions<O?>(PackageOptions::class.java)
+        return print(Joiner.on(":").join(packageOptions.getPackagePath()))
+    }
 }

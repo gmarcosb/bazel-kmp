@@ -11,76 +11,68 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.common.options.testing
 
-package com.google.devtools.common.options.testing;
-
-import com.google.common.collect.ForwardingMap;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.common.options.Converter;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.Map;
+import com.google.common.collect.ForwardingMap
+import com.google.common.collect.ImmutableMap
+import com.google.devtools.common.options.Converter
+import com.google.errorprone.annotations.CanIgnoreReturnValue
+import java.util.function.Consumer
 
 /**
- * An immutable mapping from {@link Converter} classes to {@link ConverterTester}s which test them.
- *
- * <p>Note that the ConverterTesters within are NOT immutable.
+ * An immutable mapping from [Converter] classes to [ConverterTester]s which test them.
+ * 
+ * 
+ * Note that the ConverterTesters within are NOT immutable.
  */
-public final class ConverterTesterMap
-    extends ForwardingMap<Class<? extends Converter<?>>, ConverterTester> {
-
-  private final ImmutableMap<Class<? extends Converter<?>>, ConverterTester> delegate;
-
-  private ConverterTesterMap(
-      ImmutableMap<Class<? extends Converter<?>>, ConverterTester> delegate) {
-    this.delegate = delegate;
-  }
-
-  @Override
-  protected Map<Class<? extends Converter<?>>, ConverterTester> delegate() {
-    return delegate;
-  }
-
-  /** A builder to construct new {@link ConverterTesterMap}s. */
-  public static final class Builder {
-    private final ImmutableMap.Builder<Class<? extends Converter<?>>, ConverterTester> delegate;
-
-    public Builder() {
-      this.delegate = ImmutableMap.builder();
+class ConverterTesterMap
+private constructor(private val delegate: ImmutableMap<Class<out Converter<*>?>?, ConverterTester?>) :
+    ForwardingMap<Class<out Converter<*>?>?, ConverterTester?>() {
+    override fun delegate(): MutableMap<Class<out Converter<*>?>?, ConverterTester?> {
+        return delegate
     }
 
-    /**
-     * Adds a new ConverterTester, mapping it to the class of converter it tests. Only one tester
-     * for each class is permitted; duplicates will cause {@link #build} to fail.
-     */
-    @CanIgnoreReturnValue
-    public Builder add(ConverterTester item) {
-      delegate.put(item.getConverterClass(), item);
-      return this;
-    }
+    /** A builder to construct new [ConverterTesterMap]s.  */
+    class Builder {
+        private val delegate: ImmutableMap.Builder<Class<out Converter<*>?>?, ConverterTester?>
 
-    /**
-     * Adds the entries from the given {@link ConverterTesterMap}. Only one tester for each class is
-     * permitted; duplicates will cause {@link #build} to fail.
-     */
-    @CanIgnoreReturnValue
-    public Builder addAll(ConverterTesterMap map) {
-      // this is safe because we know the other map was constructed the same way this one was
-      delegate.putAll(map);
-      return this;
-    }
+        init {
+            this.delegate = ImmutableMap.builder<Class<out Converter<*>?>?, ConverterTester?>()
+        }
 
-    /**
-     * Adds all of the ConverterTesters from the given iterable. Only one tester for each class is
-     * permitted; duplicates will cause {@link #build} to fail.
-     */
-    @CanIgnoreReturnValue
-    public Builder addAll(Iterable<ConverterTester> items) {
-      items.forEach(this::add);
-      return this;
-    }
+        /**
+         * Adds a new ConverterTester, mapping it to the class of converter it tests. Only one tester
+         * for each class is permitted; duplicates will cause [.build] to fail.
+         */
+        @CanIgnoreReturnValue
+        fun add(item: ConverterTester): Builder {
+            delegate.put(item.getConverterClass(), item)
+            return this
+        }
 
-    public ConverterTesterMap build() {
-      return new ConverterTesterMap(delegate.build());
+        /**
+         * Adds the entries from the given [ConverterTesterMap]. Only one tester for each class is
+         * permitted; duplicates will cause [.build] to fail.
+         */
+        @CanIgnoreReturnValue
+        fun addAll(map: ConverterTesterMap): Builder {
+            // this is safe because we know the other map was constructed the same way this one was
+            delegate.putAll(map)
+            return this
+        }
+
+        /**
+         * Adds all of the ConverterTesters from the given iterable. Only one tester for each class is
+         * permitted; duplicates will cause [.build] to fail.
+         */
+        @CanIgnoreReturnValue
+        fun addAll(items: Iterable<ConverterTester?>): Builder {
+            items.forEach(Consumer { item: ConverterTester? -> this.add(item!!) })
+            return this
+        }
+
+        fun build(): ConverterTesterMap {
+            return ConverterTesterMap(delegate.build())
+        }
     }
-  }
 }

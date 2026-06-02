@@ -3142,7 +3142,7 @@ public class RewindingTestsHelper {
         (ActionExecutionValue)
             testCase.getSkyframeExecutor().getEvaluator().getExistingValue(rewoundKeys.get(0));
     var lostInput =
-        actionExecutionValue.getAllFileValues().entrySet().stream()
+        actionExecutionValue.allFileValues.entrySet().stream()
             .filter(entry -> entry.getKey().getRootRelativePathString().equals("foo/lost.out"))
             .map(Map.Entry::getValue)
             .collect(onlyElement());

@@ -142,7 +142,7 @@ public abstract class AbstractCollectPackagesUnderDirectoryTest {
     {
       CollectPackagesUnderDirectoryValue collectPackagesUnderDirectoryValue =
           getCollectPackagesUnderDirectoryValue("");
-      assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage()).isTrue();
+      assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage).isTrue();
       assertThat(
               collectPackagesUnderDirectoryValue
                   .getSubdirectoryTransitivelyContainsPackagesOrErrors())
@@ -152,7 +152,7 @@ public abstract class AbstractCollectPackagesUnderDirectoryTest {
     {
       CollectPackagesUnderDirectoryValue collectPackagesUnderDirectoryValue =
           getCollectPackagesUnderDirectoryValue("a1");
-      assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage()).isFalse();
+      assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage).isFalse();
       assertThat(
               collectPackagesUnderDirectoryValue
                   .getSubdirectoryTransitivelyContainsPackagesOrErrors())
@@ -162,7 +162,7 @@ public abstract class AbstractCollectPackagesUnderDirectoryTest {
     {
       CollectPackagesUnderDirectoryValue collectPackagesUnderDirectoryValue =
           getCollectPackagesUnderDirectoryValue("a2/b1");
-      assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage()).isFalse();
+      assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage).isFalse();
       assertThat(
               collectPackagesUnderDirectoryValue
                   .getSubdirectoryTransitivelyContainsPackagesOrErrors())
@@ -183,7 +183,7 @@ public abstract class AbstractCollectPackagesUnderDirectoryTest {
 
     CollectPackagesUnderDirectoryValue collectPackagesUnderDirectoryValue =
         getCollectPackagesUnderDirectoryValue("");
-    assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage()).isFalse();
+    assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage).isFalse();
     assertThat(
             collectPackagesUnderDirectoryValue
                 .getSubdirectoryTransitivelyContainsPackagesOrErrors())
@@ -211,7 +211,7 @@ public abstract class AbstractCollectPackagesUnderDirectoryTest {
 
     CollectPackagesUnderDirectoryValue collectPackagesUnderDirectoryValue =
         getCollectPackagesUnderDirectoryValue("");
-    assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage()).isFalse();
+    assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage).isFalse();
     assertThat(
             collectPackagesUnderDirectoryValue
                 .getSubdirectoryTransitivelyContainsPackagesOrErrors())
@@ -255,7 +255,7 @@ public abstract class AbstractCollectPackagesUnderDirectoryTest {
                 PathFragment.create("a1"),
                 PathFragment.create("a2/b1"),
                 PathFragment.create("a2/b2/c2")));
-    assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage()).isFalse();
+    assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage).isFalse();
     // There is not supposed to be a map entry for excluded subdirectories.
     assertThat(
             collectPackagesUnderDirectoryValue

@@ -11,31 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import java.time.Duration;
+/** Encodes a Duration.  */
+class DurationCodec : LeafObjectCodec<java.time.Duration?>() {
+    @Throws(IOException::class)
+    override fun serialize(context: LeafSerializationContext?, obj: java.time.Duration, codedOut: CodedOutputStream) {
+        codedOut.writeInt64NoTag(obj.getSeconds())
+        codedOut.writeInt32NoTag(obj.getNano())
+    }
 
-/** Encodes a Duration. */
-public class DurationCodec extends LeafObjectCodec<Duration> {
-  @Override
-  public void serialize(LeafSerializationContext context, Duration obj, CodedOutputStream codedOut)
-      throws IOException {
-    codedOut.writeInt64NoTag(obj.getSeconds());
-    codedOut.writeInt32NoTag(obj.getNano());
-  }
+    @Throws(IOException::class)
+    override fun deserialize(context: LeafDeserializationContext?, codedIn: CodedInputStream): java.time.Duration? {
+        return java.time.Duration.ofSeconds(codedIn.readInt64(), codedIn.readInt32().toLong())
+    }
 
-  @Override
-  public Duration deserialize(LeafDeserializationContext context, CodedInputStream codedIn)
-      throws IOException {
-    return Duration.ofSeconds(codedIn.readInt64(), codedIn.readInt32());
-  }
-
-  @Override
-  public Class<Duration> getEncodedClass() {
-    return Duration.class;
-  }
+    override fun getEncodedClass(): java.lang.Class<java.time.Duration?> {
+        return java.time.Duration::class.java
+    }
 }

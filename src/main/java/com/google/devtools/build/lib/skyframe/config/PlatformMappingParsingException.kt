@@ -11,22 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.config;
-
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.common.options.OptionsParsingException;
+package com.google.devtools.build.lib.skyframe.config
 
 /**
- * Inner wrapper exception to work around the fact that {@link SkyFunctionException} cannot carry a
+ * Inner wrapper exception to work around the fact that [SkyFunctionException] cannot carry a
  * message of its own.
  */
-final class PlatformMappingParsingException extends Exception {
+internal class PlatformMappingParsingException : java.lang.Exception {
+    constructor(message: String?, cause: Throwable?) : super(message, cause)
 
-  PlatformMappingParsingException(String message, Throwable cause) {
-    super(message, cause);
-  }
-
-  public PlatformMappingParsingException(OptionsParsingException cause) {
-    super(cause);
-  }
+    constructor(cause: com.google.devtools.common.options.OptionsParsingException?) : super(cause)
 }

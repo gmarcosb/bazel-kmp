@@ -11,188 +11,178 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.bugreport.BugReport;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.packages.AdvertisedProviderSet;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.NoSuchTargetException;
-import com.google.devtools.build.lib.packages.NoSuchThingException;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.packages.TargetUtils;
-import com.google.devtools.build.lib.skyframe.TransitiveTargetFunction.TransitiveTargetValueBuilder;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.SkyframeLookupResult;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * This class builds transitive Target values such that evaluating a Target value is similar to
  * running it through the LabelVisitor.
  */
-final class TransitiveTargetFunction
-    extends TransitiveBaseTraversalFunction<TransitiveTargetValueBuilder> {
+internal class TransitiveTargetFunction
 
-  @Override
-  Label argumentFromKey(SkyKey key) {
-    return ((TransitiveTargetKey) key).getLabel();
-  }
+    : TransitiveBaseTraversalFunction<TransitiveTargetValueBuilder?>() {
+    override fun argumentFromKey(key: SkyKey): Label {
+        return (key as TransitiveTargetKey).getLabel()
+    }
 
-  @Override
-  SkyKey getKey(Label label) {
-    return TransitiveTargetKey.of(label);
-  }
+    override fun getKey(label: Label?): SkyKey? {
+        return TransitiveTargetKey.Companion.of(label)
+    }
 
-  @Override
-  TransitiveTargetValueBuilder processTarget(
-      TargetLoadingUtil.TargetAndErrorIfAny targetAndErrorIfAny) {
-    Target target = targetAndErrorIfAny.getTarget();
-    boolean packageLoadedSuccessfully = targetAndErrorIfAny.isPackageLoadedSuccessfully();
-    return new TransitiveTargetValueBuilder(target, packageLoadedSuccessfully);
-  }
+    override fun processTarget(
+        targetAndErrorIfAny: TargetAndErrorIfAny
+    ): TransitiveTargetValueBuilder {
+        val target: Target = targetAndErrorIfAny.getTarget()
+        val packageLoadedSuccessfully: Boolean = targetAndErrorIfAny.isPackageLoadedSuccessfully()
+        return TransitiveTargetValueBuilder(target, packageLoadedSuccessfully)
+    }
 
-  @Override
-  void processDeps(
-      TransitiveTargetValueBuilder builder,
-      EventHandler eventHandler,
-      TargetLoadingUtil.TargetAndErrorIfAny targetAndErrorIfAny,
-      SkyframeLookupResult depEntries,
-      Iterable<? extends SkyKey> depKeys) {
-    boolean successfulTransitiveLoading = builder.isSuccessfulTransitiveLoading();
-    Target target = targetAndErrorIfAny.getTarget();
+    public override fun processDeps(
+        builder: TransitiveTargetValueBuilder,
+        eventHandler: com.google.devtools.build.lib.events.EventHandler,
+        targetAndErrorIfAny: TargetAndErrorIfAny,
+        depEntries: SkyframeLookupResult,
+        depKeys: Iterable<out SkyKey>
+    ) {
+        var successfulTransitiveLoading = builder.isSuccessfulTransitiveLoading
+        val target: Target = targetAndErrorIfAny.getTarget()
 
-    for (SkyKey skyKey : depKeys) {
-      Label depLabel = ((TransitiveTargetKey) skyKey).getLabel();
-      TransitiveTargetValue transitiveTargetValue;
-      try {
-        transitiveTargetValue =
-            (TransitiveTargetValue)
-                depEntries.getOrThrow(
-                    skyKey, NoSuchPackageException.class, NoSuchTargetException.class);
-      } catch (NoSuchPackageException | NoSuchTargetException e) {
-        successfulTransitiveLoading = false;
-        maybeReportErrorAboutMissingEdge(target, depLabel, e, eventHandler);
-        continue;
-      }
-      if (transitiveTargetValue == null) {
-        BugReport.sendNonFatalBugReport(
-            new IllegalStateException(
-                "TransitiveTargetValue " + skyKey + " was missing, this should never happen"));
-        continue;
-      }
-      builder.getTransitiveTargets().addTransitive(transitiveTargetValue.getTransitiveTargets());
-      if (transitiveTargetValue.encounteredLoadingError()) {
-        successfulTransitiveLoading = false;
-        if (transitiveTargetValue.getErrorLoadingTarget() != null) {
-          maybeReportErrorAboutMissingEdge(target, depLabel,
-              transitiveTargetValue.getErrorLoadingTarget(), eventHandler);
+        for (skyKey in depKeys) {
+            val depLabel: Label = (skyKey as TransitiveTargetKey).getLabel()
+            val transitiveTargetValue: TransitiveTargetValue?
+            try {
+                transitiveTargetValue =
+                    depEntries.getOrThrow<E1?, E2?>(
+                        skyKey, NoSuchPackageException::class.java, NoSuchTargetException::class.java
+                    ) as TransitiveTargetValue?
+            } catch (e: NoSuchPackageException) {
+                successfulTransitiveLoading = false
+                maybeReportErrorAboutMissingEdge(target, depLabel, e, eventHandler)
+                continue
+            } catch (e: NoSuchTargetException) {
+                successfulTransitiveLoading = false
+                maybeReportErrorAboutMissingEdge(target, depLabel, e, eventHandler)
+                continue
+            }
+            if (transitiveTargetValue == null) {
+                BugReport.sendNonFatalBugReport(
+                    java.lang.IllegalStateException(
+                        "TransitiveTargetValue " + skyKey + " was missing, this should never happen"
+                    )
+                )
+                continue
+            }
+            builder.getTransitiveTargets().addTransitive(transitiveTargetValue.getTransitiveTargets())
+            if (transitiveTargetValue.encounteredLoadingError()) {
+                successfulTransitiveLoading = false
+                if (transitiveTargetValue.getErrorLoadingTarget() != null) {
+                    maybeReportErrorAboutMissingEdge(
+                        target, depLabel,
+                        transitiveTargetValue.getErrorLoadingTarget(), eventHandler
+                    )
+                }
+            }
         }
-      }
+
+        builder.isSuccessfulTransitiveLoading = successfulTransitiveLoading
     }
 
-    builder.setSuccessfulTransitiveLoading(successfulTransitiveLoading);
-  }
-
-  @Override
-  public SkyValue computeSkyValue(
-      TargetLoadingUtil.TargetAndErrorIfAny targetAndErrorIfAny,
-      TransitiveTargetValueBuilder builder) {
-    NoSuchTargetException errorLoadingTarget = targetAndErrorIfAny.getErrorLoadingTarget();
-    return builder.build(errorLoadingTarget);
-  }
-
-  @Nullable
-  @Override
-  protected AdvertisedProviderSet getAdvertisedProviderSet(
-      Label toLabel, SkyValue toVal, Environment env) throws InterruptedException {
-    SkyKey packageKey = toLabel.getPackageIdentifier();
-    Target toTarget;
-    try {
-      PackageValue pkgValue =
-          (PackageValue) env.getValueOrThrow(packageKey, NoSuchPackageException.class);
-      if (pkgValue == null) {
-        return null;
-      }
-      Package pkg = pkgValue.getPackage();
-      if (pkg.containsErrors()) {
-        // Do nothing interesting. This error was handled when we computed the corresponding
-        // TransitiveTargetValue.
-        return null;
-      }
-      toTarget = pkgValue.getPackage().getTarget(toLabel.name);
-    } catch (NoSuchThingException e) {
-      // Do nothing interesting. This error was handled when we computed the corresponding
-      // TransitiveTargetValue.
-      return null;
-    }
-    if (!(toTarget instanceof Rule)) {
-      // Aspect can be declared only for Rules.
-      return null;
-    }
-    return ((Rule) toTarget).getRuleClassObject().getAdvertisedProviders();
-  }
-
-  private static void maybeReportErrorAboutMissingEdge(
-      Target target, Label depLabel, NoSuchThingException e, EventHandler eventHandler) {
-    if (e instanceof NoSuchTargetException nste) {
-      if (depLabel.equals(nste.getLabel())) {
-        eventHandler.handle(
-            Event.error(
-                TargetUtils.getLocationMaybe(target),
-                TargetUtils.formatMissingEdge(target, depLabel, e)));
-      }
-    } else if (e instanceof NoSuchPackageException nspe) {
-      if (nspe.getPackageId().equals(depLabel.getPackageIdentifier())) {
-        eventHandler.handle(
-            Event.error(
-                TargetUtils.getLocationMaybe(target),
-                TargetUtils.formatMissingEdge(target, depLabel, e)));
-      }
-    }
-  }
-
-  /**
-   * Holds values accumulated across the given target and its transitive dependencies for the
-   * purpose of constructing a {@link TransitiveTargetValue}.
-   *
-   * <p>Note that this class is mutable! The {@code successfulTransitiveLoading} property is
-   * initialized with the {@code packageLoadedSuccessfully} constructor parameter, and may be
-   * modified if a transitive dependency is found to be in error.
-   */
-  static class TransitiveTargetValueBuilder {
-    private boolean successfulTransitiveLoading;
-    private final NestedSetBuilder<Label> transitiveTargets;
-
-    public TransitiveTargetValueBuilder(Target target, boolean packageLoadedSuccessfully) {
-      this.transitiveTargets = NestedSetBuilder.stableOrder();
-      this.successfulTransitiveLoading = packageLoadedSuccessfully;
-      transitiveTargets.add(target.getLabel());
+    public override fun computeSkyValue(
+        targetAndErrorIfAny: TargetAndErrorIfAny,
+        builder: TransitiveTargetValueBuilder
+    ): SkyValue {
+        val errorLoadingTarget: NoSuchTargetException? = targetAndErrorIfAny.getErrorLoadingTarget()
+        return builder.build(errorLoadingTarget)
     }
 
-    public NestedSetBuilder<Label> getTransitiveTargets() {
-      return transitiveTargets;
+    @Throws(java.lang.InterruptedException::class)
+    override fun getAdvertisedProviderSet(
+        toLabel: Label, toVal: SkyValue?, env: SkyFunction.Environment
+    ): AdvertisedProviderSet? {
+        val packageKey: SkyKey? = toLabel.getPackageIdentifier()
+        val toTarget: Target
+        try {
+            val pkgValue: PackageValue? =
+                env.getValueOrThrow<E?>(packageKey, NoSuchPackageException::class.java) as PackageValue?
+            if (pkgValue == null) {
+                return null
+            }
+            val pkg: Package = pkgValue.getPackage()
+            if (pkg.containsErrors()) {
+                // Do nothing interesting. This error was handled when we computed the corresponding
+                // TransitiveTargetValue.
+                return null
+            }
+            toTarget = pkgValue.getPackage().getTarget(toLabel.name)
+        } catch (e: NoSuchThingException) {
+            // Do nothing interesting. This error was handled when we computed the corresponding
+            // TransitiveTargetValue.
+            return null
+        }
+        if (toTarget !is Rule) {
+            // Aspect can be declared only for Rules.
+            return null
+        }
+        return (toTarget as Rule).getRuleClassObject().getAdvertisedProviders()
     }
 
-    public boolean isSuccessfulTransitiveLoading() {
-      return successfulTransitiveLoading;
+    /**
+     * Holds values accumulated across the given target and its transitive dependencies for the
+     * purpose of constructing a [TransitiveTargetValue].
+     * 
+     * 
+     * Note that this class is mutable! The `successfulTransitiveLoading` property is
+     * initialized with the `packageLoadedSuccessfully` constructor parameter, and may be
+     * modified if a transitive dependency is found to be in error.
+     */
+    internal class TransitiveTargetValueBuilder(target: Target, var isSuccessfulTransitiveLoading: Boolean) {
+        private val transitiveTargets: NestedSetBuilder<Label?>
+
+        init {
+            this.transitiveTargets = NestedSetBuilder.stableOrder()
+            transitiveTargets.add(target.getLabel())
+        }
+
+        fun getTransitiveTargets(): NestedSetBuilder<Label?> {
+            return transitiveTargets
+        }
+
+        fun build(errorLoadingTarget: NoSuchTargetException?): SkyValue {
+            val loadedTargets: NestedSet<Label?>? = transitiveTargets.build()
+            return if (this.isSuccessfulTransitiveLoading)
+                TransitiveTargetValue.Companion.successfulTransitiveLoading(loadedTargets)
+            else
+                TransitiveTargetValue.Companion.unsuccessfulTransitiveLoading(loadedTargets, errorLoadingTarget)
+        }
     }
 
-    public void setSuccessfulTransitiveLoading(boolean successfulTransitiveLoading) {
-      this.successfulTransitiveLoading = successfulTransitiveLoading;
+    companion object {
+        private fun maybeReportErrorAboutMissingEdge(
+            target: Target?,
+            depLabel: Label,
+            e: NoSuchThingException?,
+            eventHandler: com.google.devtools.build.lib.events.EventHandler
+        ) {
+            if (e is NoSuchTargetException) {
+                if (depLabel.equals(e.getLabel())) {
+                    eventHandler.handle(
+                        com.google.devtools.build.lib.events.Event.error(
+                            TargetUtils.getLocationMaybe(target),
+                            TargetUtils.formatMissingEdge(target, depLabel, e)
+                        )
+                    )
+                }
+            } else if (e is NoSuchPackageException) {
+                if (e.getPackageId().equals(depLabel.getPackageIdentifier())) {
+                    eventHandler.handle(
+                        com.google.devtools.build.lib.events.Event.error(
+                            TargetUtils.getLocationMaybe(target),
+                            TargetUtils.formatMissingEdge(target, depLabel, e)
+                        )
+                    )
+                }
+            }
+        }
     }
-
-    public SkyValue build(@Nullable NoSuchTargetException errorLoadingTarget) {
-      NestedSet<Label> loadedTargets = transitiveTargets.build();
-      return successfulTransitiveLoading
-          ? TransitiveTargetValue.successfulTransitiveLoading(loadedTargets)
-          : TransitiveTargetValue.unsuccessfulTransitiveLoading(loadedTargets, errorLoadingTarget);
-    }
-  }
 }

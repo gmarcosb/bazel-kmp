@@ -11,28 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import java.util.Set;
+import com.google.devtools.build.skyframe.EvaluationProgressReceiver
+import com.google.devtools.build.skyframe.SkyKey
 
-/** An {@link EvaluationProgressReceiver} that also tracks the state of inflight keys. */
-interface InflightTrackingProgressReceiver extends EvaluationProgressReceiver {
+/** An [EvaluationProgressReceiver] that also tracks the state of inflight keys.  */
+internal interface InflightTrackingProgressReceiver : EvaluationProgressReceiver {
+    /** Called when a node is injected into the graph, and not evaluated.  */
+    fun injected(skyKey: SkyKey?)
 
-  /** Called when a node is injected into the graph, and not evaluated. */
-  void injected(SkyKey skyKey);
+    /**
+     * Called when a node was requested to be enqueued but wasn't because either an interrupt or an
+     * error (in `--nokeep_going` mode) had occurred.
+     */
+    fun enqueueAfterError(skyKey: SkyKey?)
 
-  /**
-   * Called when a node was requested to be enqueued but wasn't because either an interrupt or an
-   * error (in {@code --nokeep_going} mode) had occurred.
-   */
-  void enqueueAfterError(SkyKey skyKey);
+    /** Returns whether the given key is enqueued for evaluation.  */
+    fun isInflight(skyKey: SkyKey?): Boolean
 
-  /** Returns whether the given key is enqueued for evaluation. */
-  boolean isInflight(SkyKey skyKey);
+    /** Removes the given key from the set of inflight keys.  */
+    fun removeFromInflight(skyKey: SkyKey?)
 
-  /** Removes the given key from the set of inflight keys. */
-  void removeFromInflight(SkyKey skyKey);
-
-  /** Returns the set of all keys that are enqueued for evaluation, and resets the set to empty. */
-  Set<SkyKey> getAndClearInflightKeys();
+    /** Returns the set of all keys that are enqueued for evaluation, and resets the set to empty.  */
+    val andClearInflightKeys: MutableSet<SkyKey>?
 }

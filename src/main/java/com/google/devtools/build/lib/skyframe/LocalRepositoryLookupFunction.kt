@@ -11,26 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.SkyFunction
+import com.google.devtools.build.skyframe.SkyFunctionException
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
 
-/** SkyFunction for {@link LocalRepositoryLookupValue}s. */
-public class LocalRepositoryLookupFunction implements SkyFunction {
-
-  public LocalRepositoryLookupFunction() {}
-
-  // Implementation note: Although LocalRepositoryLookupValue.NOT_FOUND exists, it should never be
-  // returned from this method.
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws SkyFunctionException, InterruptedException {
-    // TODO: #22208, #21515 - Figure out what to do here.
-    return LocalRepositoryLookupValue.mainRepository();
-  }
+/** SkyFunction for [LocalRepositoryLookupValue]s.  */
+class LocalRepositoryLookupFunction : SkyFunction {
+    // Implementation note: Although LocalRepositoryLookupValue.NOT_FOUND exists, it should never be
+    // returned from this method.
+    @Throws(SkyFunctionException::class, java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey?, env: SkyFunction.Environment?): SkyValue? {
+        // TODO: #22208, #21515 - Figure out what to do here.
+        return LocalRepositoryLookupValue.mainRepository()
+    }
 }

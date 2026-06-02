@@ -76,7 +76,7 @@ public final class FileOpNodeMemoizingLookupTest extends BuildIntegrationTestCas
     var actionLookups = new ArrayList<ActionLookupKey>();
     var actions = new ArrayList<ActionLookupData>();
 
-    for (SkyKey key : graph.getDoneValues().keySet()) {
+    for (SkyKey key : graph.doneValues.keySet()) {
       if (key instanceof ActionLookupKey lookupKey) {
         actionLookups.add(lookupKey);
       }
@@ -229,7 +229,7 @@ public final class FileOpNodeMemoizingLookupTest extends BuildIntegrationTestCas
       nodes.add(fileOp);
       return;
     }
-    for (SkyKey dep : graph.getIfPresent(key).getDirectDeps()) {
+    for (SkyKey dep : graph.getIfPresent(key).directDeps) {
       collectTransitiveFileOpNodes(graph, dep, visited, nodes);
     }
   }

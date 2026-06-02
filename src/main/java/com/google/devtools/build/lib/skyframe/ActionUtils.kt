@@ -11,28 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.ActionLookupData;
-import com.google.devtools.build.lib.actions.ActionLookupValue;
-import com.google.devtools.build.skyframe.SkyFunction.Environment;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.Action
 
-/** Utility methods for dealing with actions. */
-public final class ActionUtils {
-
-  @Nullable
-  public static Action getActionForLookupData(
-      Environment env, ActionLookupData actionLookupData, boolean crashIfActionOwnerMissing)
-      throws InterruptedException {
-    ActionLookupValue actionLookupValue =
-        ArtifactFunction.getActionLookupValue(
-            actionLookupData.getActionLookupKey(), env, crashIfActionOwnerMissing);
-    return actionLookupValue != null
-        ? actionLookupValue.getAction(actionLookupData.getActionIndex())
-        : null;
-  }
-
-  private ActionUtils() {}
+/** Utility methods for dealing with actions.  */
+object ActionUtils {
+    @Throws(java.lang.InterruptedException::class)
+    fun getActionForLookupData(
+        env: SkyFunction.Environment, actionLookupData: ActionLookupData, crashIfActionOwnerMissing: Boolean
+    ): Action? {
+        val actionLookupValue: ActionLookupValue? =
+            ArtifactFunction.Companion.getActionLookupValue(
+                actionLookupData.getActionLookupKey(), env, crashIfActionOwnerMissing
+            )
+        return if (actionLookupValue != null)
+            actionLookupValue.getAction(actionLookupData.getActionIndex())
+        else
+            null
+    }
 }

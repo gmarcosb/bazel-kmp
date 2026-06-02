@@ -11,14 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import java.security.Provider;
+import com.google.devtools.build.lib.vfs.GitSha1MessageDigest
 
-/** A {@link Provider} for GITSHA1. */
-public final class GitSha1Provider extends Provider {
-  public GitSha1Provider() {
-    super("GITSHA1Provider", "1.0", "A GITSHA1 digest provider");
-    put("MessageDigest.GITSHA1", GitSha1MessageDigest.class.getName());
-  }
+/** A [Provider] for GITSHA1.  */
+class GitSha1Provider : java.security.Provider("GITSHA1Provider", "1.0", "A GITSHA1 digest provider") {
+    init {
+        put("MessageDigest.GITSHA1", GitSha1MessageDigest::class.java.getName())
+    }
 }

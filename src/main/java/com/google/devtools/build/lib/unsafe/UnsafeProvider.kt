@@ -11,57 +11,58 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.unsafe
 
-package com.google.devtools.build.lib.unsafe;
-
-
-import java.lang.reflect.Field;
-import sun.misc.Unsafe;
 
 /**
  * An accessor for Unsafe.
- *
- * <p>Used for serialization.
+ * 
+ * 
+ * Used for serialization.
  */
-@SuppressWarnings("SunApi") // TODO: b/331765692 - clean this up
-public class UnsafeProvider {
+// TODO: b/331765692 - clean this up
+object UnsafeProvider {
+    private val UNSAFE: sun.misc.Unsafe = unsafe
 
-  private static final Unsafe UNSAFE = getUnsafe();
-
-  public static Unsafe unsafe() {
-    return UNSAFE;
-  }
-
-  // TODO: b/386384684 - remove Unsafe usage
-  public static long getFieldOffset(Class<?> type, String fieldName) throws NoSuchFieldException {
-    return UNSAFE.objectFieldOffset(type.getDeclaredField(fieldName));
-  }
-
-  /**
-   * Gets a reference to {@link sun.misc.Unsafe} throwing an {@link AssertionError} on failure.
-   *
-   * <p>Failure is highly unlikely, but possible if the underlying VM stores unsafe in an unexpected
-   * location.
-   */
-  private static Unsafe getUnsafe() {
-    // sun.misc.Unsafe is intentionally difficult to get a hold of - it gives us the power to
-    // do things like access raw memory and segfault the JVM.
-    Class<Unsafe> unsafeClass = Unsafe.class;
-    // Unsafe usually exists in the field 'theUnsafe', however check all fields
-    // in case it's somewhere else in this VM's version of Unsafe.
-    for (Field f : unsafeClass.getDeclaredFields()) {
-      f.setAccessible(true);
-      Object fieldValue;
-      try {
-        fieldValue = f.get(null);
-      } catch (IllegalAccessException e) {
-        throw new IllegalStateException(
-            "Failed to get value of %s even though it has been made accessible".formatted(f), e);
-      }
-      if (unsafeClass.isInstance(fieldValue)) {
-        return unsafeClass.cast(fieldValue);
-      }
+    @kotlin.jvm.JvmStatic
+    fun unsafe(): sun.misc.Unsafe {
+        return UNSAFE
     }
-    throw new AssertionError("Failed to find sun.misc.Unsafe instance");
-  }
+
+    // TODO: b/386384684 - remove Unsafe usage
+    @Throws(java.lang.NoSuchFieldException::class)
+    fun getFieldOffset(type: java.lang.Class<*>, fieldName: String): Long {
+        return UNSAFE.objectFieldOffset(type.getDeclaredField(fieldName))
+    }
+
+    private val unsafe: sun.misc.Unsafe
+        /**
+         * Gets a reference to [sun.misc.Unsafe] throwing an [AssertionError] on failure.
+         * 
+         * 
+         * Failure is highly unlikely, but possible if the underlying VM stores unsafe in an unexpected
+         * location.
+         */
+        get() {
+            // sun.misc.Unsafe is intentionally difficult to get a hold of - it gives us the power to
+            // do things like access raw memory and segfault the JVM.
+            val unsafeClass: java.lang.Class<sun.misc.Unsafe> = sun.misc.Unsafe::class.java
+            // Unsafe usually exists in the field 'theUnsafe', however check all fields
+            // in case it's somewhere else in this VM's version of Unsafe.
+            for (f in unsafeClass.getDeclaredFields()) {
+                f.setAccessible(true)
+                val fieldValue: Any?
+                try {
+                    fieldValue = f.get(null)
+                } catch (e: java.lang.IllegalAccessException) {
+                    throw java.lang.IllegalStateException(
+                        "Failed to get value of %s even though it has been made accessible".formatted(f), e
+                    )
+                }
+                if (unsafeClass.isInstance(fieldValue)) {
+                    return unsafeClass.cast(fieldValue)
+                }
+            }
+            throw java.lang.AssertionError("Failed to find sun.misc.Unsafe instance")
+        }
 }

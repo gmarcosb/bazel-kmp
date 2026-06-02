@@ -11,123 +11,127 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
+import com.google.devtools.build.lib.packages.Aspect
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.packages.Aspect;
-import com.google.devtools.build.lib.packages.AspectClass;
-import com.google.devtools.build.lib.packages.AspectsList;
-import com.google.devtools.build.lib.packages.NativeAspectClass;
-import com.google.devtools.build.lib.packages.StarlarkAspect;
-import com.google.devtools.build.lib.packages.StarlarkAspectClass;
-import com.google.devtools.build.lib.packages.StarlarkDefinedAspect;
-import com.google.devtools.build.lib.server.FailureDetails.Analysis.Code;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
+/** [SkyFunction] to load top level aspects and assign their parameters.  */
+internal class LoadAspectsFunction : SkyFunction {
+    @Throws(LoadAspectsFunctionException::class, java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment): SkyValue? {
+        val topLevelAspectsDetailsKey: LoadAspectsKey = skyKey.argument() as LoadAspectsKey
 
-/** {@link SkyFunction} to load top level aspects and assign their parameters. */
-final class LoadAspectsFunction implements SkyFunction {
+        val topLevelAspects: com.google.common.collect.ImmutableList<Aspect?>? =
+            getTopLevelAspects(
+                env,
+                topLevelAspectsDetailsKey.getTopLevelAspectsClasses(),
+                topLevelAspectsDetailsKey.getTopLevelAspectsParameters()
+            )
 
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws LoadAspectsFunctionException, InterruptedException {
-
-    LoadAspectsKey topLevelAspectsDetailsKey = (LoadAspectsKey) skyKey.argument();
-
-    ImmutableList<Aspect> topLevelAspects =
-        getTopLevelAspects(
-            env,
-            topLevelAspectsDetailsKey.getTopLevelAspectsClasses(),
-            topLevelAspectsDetailsKey.getTopLevelAspectsParameters());
-
-    if (topLevelAspects == null) {
-      return null; // some aspects are not loaded
-    }
-
-    return new LoadAspectsValue(topLevelAspects);
-  }
-
-  @Nullable
-  private static StarlarkDefinedAspect loadStarlarkAspect(
-      Environment env, StarlarkAspectClass aspectClass)
-      throws InterruptedException, LoadAspectsFunctionException {
-    StarlarkDefinedAspect starlarkAspect;
-    try {
-      BzlLoadValue bzlLoadValue =
-          (BzlLoadValue)
-              env.getValueOrThrow(
-                  AspectFunction.bzlLoadKeyForStarlarkAspect(aspectClass),
-                  BzlLoadFailedException.class);
-      if (bzlLoadValue == null) {
-        return null;
-      }
-      starlarkAspect = AspectFunction.loadAspectFromBzl(aspectClass, bzlLoadValue);
-    } catch (BzlLoadFailedException | AspectCreationException e) {
-      env.getListener().handle(Event.error(e.getMessage()));
-      throw new LoadAspectsFunctionException(
-          new TopLevelAspectsDetailsBuildFailedException(
-              e.getMessage(), Code.ASPECT_CREATION_FAILED));
-    }
-    return starlarkAspect;
-  }
-
-  @Nullable
-  private static ImmutableList<Aspect> getTopLevelAspects(
-      Environment env,
-      ImmutableList<AspectClass> topLevelAspectsClasses,
-      ImmutableMap<String, String> topLevelAspectsParameters)
-      throws InterruptedException, LoadAspectsFunctionException {
-    AspectsList.Builder builder = new AspectsList.Builder();
-
-    for (AspectClass aspectClass : topLevelAspectsClasses) {
-      if (aspectClass instanceof StarlarkAspectClass starlarkAspectClass) {
-        StarlarkAspect starlarkAspect = loadStarlarkAspect(env, starlarkAspectClass);
-        if (starlarkAspect == null) {
-          return null;
+        if (topLevelAspects == null) {
+            return null // some aspects are not loaded
         }
-        try {
-          builder.addAspect(starlarkAspect);
-        } catch (EvalException e) {
-          env.getListener().handle(Event.error(e.getInnermostLocation(), e.getMessageWithStack()));
-          throw new LoadAspectsFunctionException(
-              new TopLevelAspectsDetailsBuildFailedException(
-                  e.getMessage(), Code.ASPECT_CREATION_FAILED));
-        }
-      } else {
-        try {
-          builder.addAspect((NativeAspectClass) aspectClass);
-        } catch (AssertionError e) {
-          env.getListener().handle(Event.error(e.getMessage()));
-          throw new LoadAspectsFunctionException(
-              new TopLevelAspectsDetailsBuildFailedException(
-                  e.getMessage(), Code.ASPECT_CREATION_FAILED));
-        }
-      }
+
+        return LoadAspectsValue(topLevelAspects)
     }
 
-    AspectsList aspectsList = builder.build();
-    try {
-        aspectsList.validateTopLevelAspectsParameters(topLevelAspectsParameters);
-        return aspectsList.buildAspects(topLevelAspectsParameters);
-    } catch (EvalException e) {
-      env.getListener().handle(Event.error(e.getInnermostLocation(), e.getMessageWithStack()));
-      throw new LoadAspectsFunctionException(
-          new TopLevelAspectsDetailsBuildFailedException(
-              e.getMessage(), Code.ASPECT_CREATION_FAILED));
-    }
-  }
+    private class LoadAspectsFunctionException(cause: TopLevelAspectsDetailsBuildFailedException?) :
+        SkyFunctionException(cause, Transience.PERSISTENT)
 
-  private static final class LoadAspectsFunctionException extends SkyFunctionException {
-    LoadAspectsFunctionException(TopLevelAspectsDetailsBuildFailedException cause) {
-      super(cause, Transience.PERSISTENT);
+    companion object {
+        @Throws(java.lang.InterruptedException::class, LoadAspectsFunctionException::class)
+        private fun loadStarlarkAspect(
+            env: SkyFunction.Environment, aspectClass: StarlarkAspectClass
+        ): StarlarkDefinedAspect? {
+            val starlarkAspect: StarlarkDefinedAspect?
+            try {
+                val bzlLoadValue: BzlLoadValue? =
+                    env.getValueOrThrow<E?>(
+                        AspectFunction.Companion.bzlLoadKeyForStarlarkAspect(aspectClass),
+                        BzlLoadFailedException::class.java
+                    ) as BzlLoadValue?
+                if (bzlLoadValue == null) {
+                    return null
+                }
+                starlarkAspect = AspectFunction.Companion.loadAspectFromBzl(aspectClass, bzlLoadValue)
+            } catch (e: BzlLoadFailedException) {
+                env.getListener().handle(com.google.devtools.build.lib.events.Event.error(e.getMessage()))
+                throw LoadAspectsFunctionException(
+                    TopLevelAspectsDetailsBuildFailedException(
+                        e.getMessage(), Code.ASPECT_CREATION_FAILED
+                    )
+                )
+            } catch (e: AspectCreationException) {
+                env.getListener().handle(com.google.devtools.build.lib.events.Event.error(e.getMessage()))
+                throw LoadAspectsFunctionException(
+                    TopLevelAspectsDetailsBuildFailedException(
+                        e.getMessage(), Code.ASPECT_CREATION_FAILED
+                    )
+                )
+            }
+            return starlarkAspect
+        }
+
+        @Throws(java.lang.InterruptedException::class, LoadAspectsFunctionException::class)
+        private fun getTopLevelAspects(
+            env: SkyFunction.Environment,
+            topLevelAspectsClasses: com.google.common.collect.ImmutableList<AspectClass?>,
+            topLevelAspectsParameters: com.google.common.collect.ImmutableMap<String?, String?>?
+        ): com.google.common.collect.ImmutableList<Aspect?>? {
+            val builder: AspectsList.Builder = Builder()
+
+            for (aspectClass in topLevelAspectsClasses) {
+                if (aspectClass is StarlarkAspectClass) {
+                    val starlarkAspect: StarlarkAspect? = loadStarlarkAspect(env, aspectClass)
+                    if (starlarkAspect == null) {
+                        return null
+                    }
+                    try {
+                        builder.addAspect(starlarkAspect)
+                    } catch (e: net.starlark.java.eval.EvalException) {
+                        env.getListener().handle(
+                            com.google.devtools.build.lib.events.Event.error(
+                                e.getInnermostLocation(),
+                                e.getMessageWithStack()
+                            )
+                        )
+                        throw LoadAspectsFunctionException(
+                            TopLevelAspectsDetailsBuildFailedException(
+                                e.getMessage(), Code.ASPECT_CREATION_FAILED
+                            )
+                        )
+                    }
+                } else {
+                    try {
+                        builder.addAspect(aspectClass as NativeAspectClass?)
+                    } catch (e: java.lang.AssertionError) {
+                        env.getListener().handle(com.google.devtools.build.lib.events.Event.error(e.getMessage()))
+                        throw LoadAspectsFunctionException(
+                            TopLevelAspectsDetailsBuildFailedException(
+                                e.getMessage(), Code.ASPECT_CREATION_FAILED
+                            )
+                        )
+                    }
+                }
+            }
+
+            val aspectsList: AspectsList = builder.build()
+            try {
+                aspectsList.validateTopLevelAspectsParameters(topLevelAspectsParameters)
+                return aspectsList.buildAspects(topLevelAspectsParameters)
+            } catch (e: net.starlark.java.eval.EvalException) {
+                env.getListener().handle(
+                    com.google.devtools.build.lib.events.Event.error(
+                        e.getInnermostLocation(),
+                        e.getMessageWithStack()
+                    )
+                )
+                throw LoadAspectsFunctionException(
+                    TopLevelAspectsDetailsBuildFailedException(
+                        e.getMessage(), Code.ASPECT_CREATION_FAILED
+                    )
+                )
+            }
+        }
     }
-  }
 }

@@ -11,94 +11,90 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.zstd;
+package com.google.devtools.build.lib.remote.zstd
 
-import static java.lang.Math.max;
+import com.github.luben.zstd.ZstdOutputStreamNoFinalizer
+import com.google.common.base.Preconditions
+import java.io.InputStream
 
-import com.github.luben.zstd.ZstdOutputStreamNoFinalizer;
-import com.google.common.base.Preconditions;
-import java.io.FilterInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.PipedInputStream;
-import java.io.PipedOutputStream;
+/** A [FilterInputStream] that use zstd to compress the content.  */
+class ZstdCompressingInputStream internal constructor(`in`: InputStream?, size: Int) : FilterInputStream(`in`) {
+    private val pis: PipedInputStream
+    private var zos: ZstdOutputStreamNoFinalizer?
+    private val size: Int
 
-/** A {@link FilterInputStream} that use zstd to compress the content. */
-public class ZstdCompressingInputStream extends FilterInputStream {
-  // We want the buffer to be able to contain at least:
-  //   - Magic number: 4 bytes
-  //   - FrameHeader 14 bytes
-  //   - Block Header: 3 bytes
-  //   - First block byte
-  // This guarantees that we can always compress at least
-  // 1 byte and write it to the pipe without blocking.
-  public static final int MIN_BUFFER_SIZE = 4 + 14 + 3 + 1;
+    constructor(`in`: InputStream?) : this(`in`, 512)
 
-  private final PipedInputStream pis;
-  private ZstdOutputStreamNoFinalizer zos;
-  private final int size;
-
-  public ZstdCompressingInputStream(InputStream in) throws IOException {
-    this(in, 512);
-  }
-
-  ZstdCompressingInputStream(InputStream in, int size) throws IOException {
-    super(in);
-    Preconditions.checkArgument(
-        size >= MIN_BUFFER_SIZE,
-        String.format("The buffer size must be at least %d bytes", MIN_BUFFER_SIZE));
-    this.size = size;
-    this.pis = new PipedInputStream(size);
-    this.zos = new ZstdOutputStreamNoFinalizer(new PipedOutputStream(pis));
-  }
-
-  private void reFill() throws IOException {
-    byte[] buf = new byte[size];
-    int len = super.read(buf, 0, max(0, size - pis.available() - MIN_BUFFER_SIZE + 1));
-    if (len == -1) {
-      zos.close();
-      zos = null;
-    } else {
-      zos.write(buf, 0, len);
-      zos.flush();
+    init {
+        Preconditions.checkArgument(
+            size >= MIN_BUFFER_SIZE,
+            String.format("The buffer size must be at least %d bytes", MIN_BUFFER_SIZE)
+        )
+        this.size = size
+        this.pis = PipedInputStream(size)
+        this.zos = ZstdOutputStreamNoFinalizer(PipedOutputStream(pis))
     }
-  }
 
-  @Override
-  public int read() throws IOException {
-    if (pis.available() == 0) {
-      if (zos == null) {
-        return -1;
-      }
-      reFill();
+    @Throws(IOException::class)
+    private fun reFill() {
+        val buf = ByteArray(size)
+        val len: Int = super.read(buf, 0, max(0, size - pis.available() - MIN_BUFFER_SIZE + 1))
+        if (len == -1) {
+            zos.close()
+            zos = null
+        } else {
+            zos.write(buf, 0, len)
+            zos.flush()
+        }
     }
-    return pis.read();
-  }
 
-  @Override
-  public int read(byte[] b) throws IOException {
-    return read(b, 0, b.length);
-  }
-
-  @Override
-  public int read(byte[] b, int off, int len) throws IOException {
-    int count = 0;
-    int n = len > 0 ? -1 : 0;
-    while (count < len && (pis.available() > 0 || zos != null)) {
-      if (pis.available() == 0) {
-        reFill();
-      }
-      n = pis.read(b, count + off, len - count);
-      count += max(0, n);
+    @Throws(IOException::class)
+    override fun read(): Int {
+        if (pis.available() == 0) {
+            if (zos == null) {
+                return -1
+            }
+            reFill()
+        }
+        return pis.read()
     }
-    return count > 0 ? count : n;
-  }
 
-  @Override
-  public void close() throws IOException {
-    if (zos != null) {
-      zos.close();
+    @Throws(IOException::class)
+    override fun read(b: ByteArray): Int {
+        return read(b, 0, b.size)
     }
-    in.close();
-  }
+
+    @Throws(IOException::class)
+    override fun read(b: ByteArray?, off: Int, len: Int): Int {
+        var count = 0
+        var n = if (len > 0) -1 else 0
+        while (count < len && (pis.available() > 0 || zos != null)) {
+            if (pis.available() == 0) {
+                reFill()
+            }
+            n = pis.read(b, count + off, len - count)
+            count += max(0, n)
+        }
+        return if (count > 0) count else n
+    }
+
+    @Throws(IOException::class)
+    override fun close() {
+        if (zos != null) {
+            zos.close()
+        }
+        `in`.close()
+    }
+
+    companion object {
+        // We want the buffer to be able to contain at least:
+        //   - Magic number: 4 bytes
+        //   - FrameHeader 14 bytes
+        //   - Block Header: 3 bytes
+        //   - First block byte
+        // This guarantees that we can always compress at least
+        // 1 byte and write it to the pipe without blocking.
+        @kotlin.jvm.JvmField
+        val MIN_BUFFER_SIZE: Int = 4 + 14 + 3 + 1
+    }
 }

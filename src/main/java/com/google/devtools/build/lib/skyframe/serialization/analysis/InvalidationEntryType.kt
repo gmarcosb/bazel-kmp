@@ -11,24 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import com.google.devtools.build.lib.skyframe.serialization.ProfilerLocationProvider;
+import com.google.devtools.build.lib.skyframe.serialization.ProfilerLocationProvider
 
-/** Different types of invalidation data entries for profiling. */
-public enum InvalidationEntryType implements ProfilerLocationProvider {
-  FILE("[InvalidationEntry: FILE]"),
-  LISTING("[InvalidationEntry: LISTING]"),
-  NODE("[InvalidationEntry: NODE]");
+/** Different types of invalidation data entries for profiling.  */
+enum class InvalidationEntryType(text: String) : ProfilerLocationProvider {
+    FILE("[InvalidationEntry: FILE]"),
+    LISTING("[InvalidationEntry: LISTING]"),
+    NODE("[InvalidationEntry: NODE]");
 
-  private final String text;
+    val locationText: String?
 
-  InvalidationEntryType(String text) {
-    this.text = text;
-  }
-
-  @Override
-  public String getLocationText() {
-    return text;
-  }
+    init {
+        this.locationText = text
+    }
 }

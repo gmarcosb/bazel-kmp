@@ -1247,14 +1247,14 @@ my_rule(name = 'dep_1')
   }
 
   private String formatAspectKey(AspectKey aspectKey) {
-    if (aspectKey.getBaseKeys().isEmpty()) {
+    if (aspectKey.baseKeys.isEmpty()) {
       return Splitter.on("%").splitToList(aspectKey.getAspectClass().toString()).get(1)
           + " on "
           + aspectKey.getLabel();
     }
 
     String baseAspects =
-        aspectKey.getBaseKeys().stream()
+        aspectKey.baseKeys.stream()
             .map(k -> Splitter.on("%").splitToList(k.getAspectClass().toString()).get(1))
             .collect(joining(","));
     return Splitter.on("%").splitToList(aspectKey.getAspectClass().toString()).get(1)

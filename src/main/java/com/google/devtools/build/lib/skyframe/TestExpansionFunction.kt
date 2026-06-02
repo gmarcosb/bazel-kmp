@@ -11,196 +11,185 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.cmdline.ResolvedTargets;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.packages.AggregatingAttributeMapper;
-import com.google.devtools.build.lib.packages.BuildFileContainsErrorsException;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.NoSuchTargetException;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.packages.TargetUtils;
-import com.google.devtools.build.lib.packages.TestTargetUtils;
-import com.google.devtools.build.lib.skyframe.TestExpansionValue.TestExpansionKey;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.SkyframeLookupResult;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * TestExpansionFunction takes a single test_suite target and expands all of the tests it contains,
  * possibly recursively.
  */
 // TODO(ulfjack): What about test_suite rules that include each other.
-final class TestExpansionFunction implements SkyFunction {
-  @Override
-  @Nullable
-  public SkyValue compute(SkyKey key, Environment env) throws InterruptedException {
-    TestExpansionKey expansion = (TestExpansionKey) key.argument();
-    SkyKey packageKey = expansion.getLabel().getPackageIdentifier();
-    PackageValue pkg = (PackageValue) env.getValue(packageKey);
-    if (env.valuesMissing()) {
-      return null;
-    }
-    Rule rule = pkg.getPackage().getRule(expansion.getLabel().name);
-    ResolvedTargets<Label> result = computeExpandedTests(env, rule, expansion.isStrict());
-    if (env.valuesMissing()) {
-      return null;
-    }
-    return new TestExpansionValue(result);
-  }
-
-  private static Set<Label> toLabels(Set<Target> targets) {
-    return targets.stream().map(Target::getLabel).collect(Collectors.toSet());
-  }
-
-  /**
-   * Populates 'result' with all the tests associated with the specified 'rule'. Throws an exception
-   * if any target is missing.
-   *
-   * <p>CAUTION! Keep this logic consistent with {@code TestSuite}!
-   */
-  private static ResolvedTargets<Label> computeExpandedTests(
-      Environment env, Rule rule, boolean strict) throws InterruptedException {
-    Set<Target> result = new HashSet<>();
-    boolean hasError = false;
-
-    List<Target> prerequisites = new ArrayList<>();
-    // Note that prerequisites can contain input file targets; the test_suite rule does not
-    // restrict the set of targets that can appear in tests or suites.
-    hasError |= getPrerequisites(env, rule, "tests", prerequisites);
-
-    // 1. Add all tests
-    for (Target test : prerequisites) {
-      if (TargetUtils.isTestRule(test)) {
-        result.add(test);
-      } else if (strict && !TargetUtils.isTestSuiteRule(test)) {
-        // If strict mode is enabled, then give an error for any non-test, non-test-suite targets.
-        // TODO(ulfjack): We need to throw to end the process if we happen to be in --nokeep_going,
-        // but we can't know whether or not we are at this point.
-        env.getListener()
-            .handle(
-                Event.error(
-                    rule.getLocation(),
-                    "in test_suite rule '"
-                        + rule.getLabel()
-                        + "': expecting a test or a test_suite rule but '"
-                        + test.getLabel()
-                        + "' is not one."));
-        hasError = true;
-      }
-    }
-
-    // 2. Add implicit dependencies on tests in same package, if any.
-    List<Target> implicitTests = new ArrayList<>();
-    hasError |= getPrerequisites(env, rule, "$implicit_tests", implicitTests);
-    for (Target target : implicitTests) {
-      // The Package construction of $implicit_tests ensures that this check never fails, but we
-      // add it here anyway for compatibility with future code.
-      if (TargetUtils.isTestRule(target)) {
-        result.add(target);
-      }
-    }
-
-    // 3. Filter based on tags, size, env.
-    TestTargetUtils.filterTests(rule, result);
-
-    // 4. Expand all rules recursively, collecting labels.
-    ResolvedTargets.Builder<Label> labelsBuilder = ResolvedTargets.builder();
-    // Don't set filtered targets; they would be removed from the containing test suite.
-    labelsBuilder.merge(new ResolvedTargets<>(toLabels(result), ImmutableSet.of(), hasError));
-
-    for (Target suite : prerequisites) {
-      if (TargetUtils.isTestSuiteRule(suite)) {
-        TestExpansionValue value =
-            (TestExpansionValue) env.getValue(TestExpansionValue.key(suite, strict));
-        if (value == null) {
-          continue;
+internal class TestExpansionFunction : SkyFunction {
+    @Throws(java.lang.InterruptedException::class)
+    override fun compute(key: SkyKey, env: SkyFunction.Environment): SkyValue? {
+        val expansion: TestExpansionKey = key.argument() as TestExpansionKey
+        val packageKey: SkyKey? = expansion.getLabel().getPackageIdentifier()
+        val pkg: PackageValue? = env.getValue(packageKey) as PackageValue?
+        if (env.valuesMissing()) {
+            return null
         }
-        labelsBuilder.merge(value.getLabels());
-      }
-    }
-
-    return labelsBuilder.build();
-  }
-
-  /**
-   * Adds the set of targets found in the attribute named {@code attrName}, which must be of label
-   * or label list type, of the {@code test_suite} rule named {@code testSuite}. Returns true if the
-   * method found a problem during the lookup process; the actual error message is reported to the
-   * environment.
-   */
-  private static boolean getPrerequisites(
-      Environment env, Rule rule, String attrName, List<Target> targets)
-      throws InterruptedException {
-    AggregatingAttributeMapper mapper = AggregatingAttributeMapper.of(rule);
-    List<Label> labels = new ArrayList<>();
-    Set<PackageIdentifier> pkgIdentifiers = new HashSet<>();
-    mapper.visitLabels(
-        attrName,
-        label -> {
-          labels.add(label);
-          pkgIdentifiers.add(label.getPackageIdentifier());
-        });
-    SkyframeLookupResult packages = env.getValuesAndExceptions(pkgIdentifiers);
-    if (env.valuesMissing()) {
-      return false;
-    }
-    boolean hasError = false;
-    Map<PackageIdentifier, Package> packageMap = new HashMap<>();
-    for (PackageIdentifier key : pkgIdentifiers) {
-      try {
-        var packageValue = (PackageValue) packages.getOrThrow(key, NoSuchPackageException.class);
-        if (packageValue == null) {
-          return false;
+        val rule: Rule = pkg.getPackage().getRule(expansion.getLabel().name)
+        val result: ResolvedTargets<Label?> = computeExpandedTests(env, rule, expansion.isStrict())
+        if (env.valuesMissing()) {
+            return null
         }
-        packageMap.put(key, packageValue.getPackage());
-      } catch (NoSuchPackageException e) {
-        env.getListener().handle(Event.error(e.getMessage()));
-        hasError = true;
-      }
+        return TestExpansionValue(result)
     }
 
-    for (Label label : labels) {
-      Package pkg = packageMap.get(label.getPackageIdentifier());
-      if (pkg == null) {
-        continue;
-      }
-      if (pkg.containsErrors()) {
-        hasError = true;
-        // Abort the build if --nokeep_going.
-        try {
-          env.getValueOrThrow(
-              PackageErrorFunction.key(label.getPackageIdentifier()),
-              BuildFileContainsErrorsException.class);
-          return false;
-        } catch (BuildFileContainsErrorsException e) {
-          // PackageErrorFunction always throws this exception, and this fact is used by Skyframe to
-          // abort the build. If we get here, it's either because of error bubbling or because we're
-          // in --keep_going mode. In either case, we *should* ignore the exception.
+    companion object {
+        private fun toLabels(targets: MutableSet<Target?>): MutableSet<Label?> {
+            return targets.stream().map<Any?>(Target::getLabel).collect(Collectors.toSet())
         }
-      }
-      try {
-        targets.add(pkg.getTarget(label.name));
-      } catch (NoSuchTargetException e) {
-        env.getListener().handle(Event.error(e.getMessage()));
-        hasError = true;
-      }
+
+        /**
+         * Populates 'result' with all the tests associated with the specified 'rule'. Throws an exception
+         * if any target is missing.
+         * 
+         * 
+         * CAUTION! Keep this logic consistent with `TestSuite`!
+         */
+        @Throws(java.lang.InterruptedException::class)
+        private fun computeExpandedTests(
+            env: SkyFunction.Environment, rule: Rule, strict: Boolean
+        ): ResolvedTargets<Label?> {
+            val result: MutableSet<Target?> = HashSet<Target?>()
+            var hasError = false
+
+            val prerequisites: MutableList<Target> = java.util.ArrayList<Target>()
+            // Note that prerequisites can contain input file targets; the test_suite rule does not
+            // restrict the set of targets that can appear in tests or suites.
+            hasError = hasError or getPrerequisites(env, rule, "tests", prerequisites)
+
+            // 1. Add all tests
+            for (test in prerequisites) {
+                if (TargetUtils.isTestRule(test)) {
+                    result.add(test)
+                } else if (strict && !TargetUtils.isTestSuiteRule(test)) {
+                    // If strict mode is enabled, then give an error for any non-test, non-test-suite targets.
+                    // TODO(ulfjack): We need to throw to end the process if we happen to be in --nokeep_going,
+                    // but we can't know whether or not we are at this point.
+                    env.getListener()
+                        .handle(
+                            Event.error(
+                                rule.getLocation(),
+                                ("in test_suite rule '"
+                                        + rule.getLabel()
+                                        + "': expecting a test or a test_suite rule but '"
+                                        + test.getLabel()
+                                        + "' is not one.")
+                            )
+                        )
+                    hasError = true
+                }
+            }
+
+            // 2. Add implicit dependencies on tests in same package, if any.
+            val implicitTests: MutableList<Target> = java.util.ArrayList<Target>()
+            hasError = hasError or getPrerequisites(env, rule, "\$implicit_tests", implicitTests)
+            for (target in implicitTests) {
+                // The Package construction of $implicit_tests ensures that this check never fails, but we
+                // add it here anyway for compatibility with future code.
+                if (TargetUtils.isTestRule(target)) {
+                    result.add(target)
+                }
+            }
+
+            // 3. Filter based on tags, size, env.
+            TestTargetUtils.filterTests(rule, result)
+
+            // 4. Expand all rules recursively, collecting labels.
+            val labelsBuilder: ResolvedTargets.Builder<Label?> = ResolvedTargets.builder()
+            // Don't set filtered targets; they would be removed from the containing test suite.
+            labelsBuilder.merge(
+                ResolvedTargets(
+                    toLabels(result),
+                    com.google.common.collect.ImmutableSet.of<E?>(),
+                    hasError
+                )
+            )
+
+            for (suite in prerequisites) {
+                if (TargetUtils.isTestSuiteRule(suite)) {
+                    val value: TestExpansionValue? =
+                        env.getValue(TestExpansionValue.Companion.key(suite, strict)) as TestExpansionValue?
+                    if (value == null) {
+                        continue
+                    }
+                    labelsBuilder.merge(value.getLabels())
+                }
+            }
+
+            return labelsBuilder.build()
+        }
+
+        /**
+         * Adds the set of targets found in the attribute named `attrName`, which must be of label
+         * or label list type, of the `test_suite` rule named `testSuite`. Returns true if the
+         * method found a problem during the lookup process; the actual error message is reported to the
+         * environment.
+         */
+        @Throws(java.lang.InterruptedException::class)
+        private fun getPrerequisites(
+            env: SkyFunction.Environment, rule: Rule?, attrName: String?, targets: MutableList<Target>
+        ): Boolean {
+            val mapper: AggregatingAttributeMapper = AggregatingAttributeMapper.of(rule)
+            val labels: MutableList<Label> = java.util.ArrayList<Label>()
+            val pkgIdentifiers: MutableSet<PackageIdentifier?> = HashSet<PackageIdentifier?>()
+            mapper.visitLabels(
+                attrName,
+                { label ->
+                    labels.add(label)
+                    pkgIdentifiers.add(label.getPackageIdentifier())
+                })
+            val packages: SkyframeLookupResult = env.getValuesAndExceptions(pkgIdentifiers)
+            if (env.valuesMissing()) {
+                return false
+            }
+            var hasError = false
+            val packageMap: MutableMap<PackageIdentifier?, Package?> = HashMap<PackageIdentifier?, Package?>()
+            for (key in pkgIdentifiers) {
+                try {
+                    val packageValue: PackageValue? =
+                        packages.getOrThrow<E?>(key, NoSuchPackageException::class.java) as PackageValue?
+                    if (packageValue == null) {
+                        return false
+                    }
+                    packageMap.put(key, packageValue.getPackage())
+                } catch (e: NoSuchPackageException) {
+                    env.getListener().handle(Event.error(e.getMessage()))
+                    hasError = true
+                }
+            }
+
+            for (label in labels) {
+                val pkg: Package? = packageMap.get(label.getPackageIdentifier())
+                if (pkg == null) {
+                    continue
+                }
+                if (pkg.containsErrors()) {
+                    hasError = true
+                    // Abort the build if --nokeep_going.
+                    try {
+                        env.getValueOrThrow<E?>(
+                            PackageErrorFunction.key(label.getPackageIdentifier()),
+                            BuildFileContainsErrorsException::class.java
+                        )
+                        return false
+                    } catch (e: BuildFileContainsErrorsException) {
+                        // PackageErrorFunction always throws this exception, and this fact is used by Skyframe to
+                        // abort the build. If we get here, it's either because of error bubbling or because we're
+                        // in --keep_going mode. In either case, we *should* ignore the exception.
+                    }
+                }
+                try {
+                    targets.add(pkg.getTarget(label.name))
+                } catch (e: NoSuchTargetException) {
+                    env.getListener().handle(Event.error(e.getMessage()))
+                    hasError = true
+                }
+            }
+            return hasError
+        }
     }
-    return hasError;
-  }
 }

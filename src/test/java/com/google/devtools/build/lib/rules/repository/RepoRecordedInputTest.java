@@ -67,8 +67,8 @@ public class RepoRecordedInputTest extends BuildViewTestCase {
 
     // Digest should also be returned if the FileStateValue doesn't have it.
     FileStatus status = Mockito.mock(FileStatus.class);
-    when(status.getLastChangeTime()).thenReturn(100L);
-    when(status.getNodeId()).thenReturn(200L);
+    when(status.lastChangeTime).thenReturn(100L);
+    when(status.nodeId).thenReturn(200L);
     fv = new RegularFileStateValueWithContentsProxy(3, FileContentsProxy.create(status));
     String expectedDigest = BaseEncoding.base16().lowerCase().encode(path.asPath().getDigest());
     assertThat(RepoRecordedInput.File.fileValueToMarkerValue(path, fv)).isEqualTo(expectedDigest);

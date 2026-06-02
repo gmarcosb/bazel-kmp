@@ -11,66 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import com.google.common.base.Preconditions;
-import java.util.Objects;
+/** Directory entry representation returned by [Path.readdir].  */
+class Dirent(name: String?, type: Type?) : Comparable<Dirent?> {
+    /** Type of the directory entry  */
+    enum class Type {
+        // A regular file.
+        FILE,
 
-/** Directory entry representation returned by {@link Path#readdir}. */
-public final class Dirent implements Comparable<Dirent> {
-  /** Type of the directory entry */
-  public enum Type {
-    // A regular file.
-    FILE,
-    // A directory.
-    DIRECTORY,
-    // A symlink.
-    SYMLINK,
-    // None of the above.
-    // For example, a special file, or a path that could not be resolved while following symlinks.
-    UNKNOWN;
-  }
+        // A directory.
+        DIRECTORY,
 
-  private final String name;
-  private final Type type;
+        // A symlink.
+        SYMLINK,
 
-  /** Creates a new dirent with the given name and type, both of which must be non-null. */
-  public Dirent(String name, Type type) {
-    this.name = Preconditions.checkNotNull(name);
-    this.type = Preconditions.checkNotNull(type);
-  }
-
-  public String getName() {
-    return name;
-  }
-
-  public Type getType() {
-    return type;
-  }
-
-  @Override
-  public int hashCode() {
-    return Objects.hash(name, type);
-  }
-
-  @Override
-  public boolean equals(Object other) {
-    if (!(other instanceof Dirent otherDirent)) {
-      return false;
+        // None of the above.
+        // For example, a special file, or a path that could not be resolved while following symlinks.
+        UNKNOWN
     }
-    if (this == other) {
-      return true;
+
+    @kotlin.jvm.JvmField
+    val name: String
+    @kotlin.jvm.JvmField
+    val type: Type
+
+    /** Creates a new dirent with the given name and type, both of which must be non-null.  */
+    init {
+        this.name = com.google.common.base.Preconditions.checkNotNull<String>(name)
+        this.type = com.google.common.base.Preconditions.checkNotNull<Type>(type)
     }
-    return name.equals(otherDirent.name) && type.equals(otherDirent.type);
-  }
 
-  @Override
-  public String toString() {
-    return name + "[" + type.toString().toLowerCase() + "]";
-  }
+    override fun hashCode(): Int {
+        return java.util.Objects.hash(name, type)
+    }
 
-  @Override
-  public int compareTo(Dirent other) {
-    return this.getName().compareTo(other.getName());
-  }
+    override fun equals(other: Any?): Boolean {
+        if (other !is Dirent) {
+            return false
+        }
+        if (this === other) {
+            return true
+        }
+        return name == other.name && type == other.type
+    }
+
+    override fun toString(): String {
+        return name + "[" + type.toString().toLowerCase() + "]"
+    }
+
+    override fun compareTo(other: Dirent): Int {
+        return this.name.compareTo(other.name)
+    }
 }

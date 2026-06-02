@@ -11,28 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi
 
-package com.google.devtools.build.lib.starlarkbuildapi;
+import com.google.devtools.build.lib.collect.nestedset.Depset
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.ParamType;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.NoneType;
-import net.starlark.java.eval.Sequence;
-import net.starlark.java.eval.StarlarkCallable;
-import net.starlark.java.eval.StarlarkThread;
-import net.starlark.java.eval.StarlarkValue;
-
-/** Command line args module. */
-@StarlarkBuiltin(
+/** Command line args module.  */
+@net.starlark.java.annot.StarlarkBuiltin(
     name = "Args",
-    category = DocCategory.BUILTIN,
-    doc =
-        "An object that encapsulates, in a memory-efficient way, the data needed to build part or "
+    category = com.google.devtools.build.docgen.annot.DocCategory.BUILTIN,
+    doc = ("An object that encapsulates, in a memory-efficient way, the data needed to build part or "
             + "all of a command line."
             + "" //
             + "<p>It often happens that an action requires a large command line containing values"
@@ -119,107 +106,96 @@ import net.starlark.java.eval.StarlarkValue;
             + "  ...\n"
             + ")\n"
             + "</pre>")
-public interface CommandLineArgsApi extends StarlarkValue {
-  @StarlarkMethod(
-      name = "add",
-      doc = "Appends an argument to this command line.",
-      parameters = {
-        @Param(
+)
+interface CommandLineArgsApi : net.starlark.java.eval.StarlarkValue {
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "add", doc = "Appends an argument to this command line.", parameters = [net.starlark.java.annot.Param(
             name = "arg_name_or_value",
-            doc =
-                "If two positional parameters are passed this is interpreted as the arg name. "
+            doc = ("If two positional parameters are passed this is interpreted as the arg name. "
                     + "The arg name is added before the value without any processing. "
                     + "If only one positional parameter is passed, it is interpreted as "
-                    + "<code>value</code> (see below)."),
-        @Param(
+                    + "<code>value</code> (see below).")
+        ), net.starlark.java.annot.Param(
             name = "value",
             defaultValue = "unbound",
-            doc =
-                "The object to append. It will be converted to a string using the standard "
+            doc = ("The object to append. It will be converted to a string using the standard "
                     + "conversion mentioned above. Since there is no <code>map_each</code> "
                     + "parameter for this function, <code>value</code> should be either a "
                     + "string or a <code>File</code>. A list, tuple, depset, or directory "
                     + "<code>File</code> must be passed to <a href='#add_all'><code>add_all()"
                     + "</code> or <a href='#add_joined'><code>add_joined()</code></a> instead of "
-                    + "this method."),
-        @Param(
+                    + "this method.")
+        ), net.starlark.java.annot.Param(
             name = "format",
-            allowedTypes = {
-              @ParamType(type = String.class),
-              @ParamType(type = NoneType.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = String::class), net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.NoneType::class
+            )],
             named = true,
             positional = false,
             defaultValue = "None",
-            doc =
-                "A format string pattern, to be applied to the stringified version of <code>value"
-                    + "</code>.")
-      },
-      useStarlarkThread = true)
-  CommandLineArgsApi addArgument(
-      Object argNameOrValue, Object value, Object format, StarlarkThread thread)
-      throws EvalException;
+            doc = "A format string pattern, to be applied to the stringified version of <code>value"
+                    + "</code>."
+        )], useStarlarkThread = true
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun addArgument(
+        argNameOrValue: Any?, value: Any?, format: Any?, thread: net.starlark.java.eval.StarlarkThread?
+    ): CommandLineArgsApi?
 
-  @StarlarkMethod(
-      name = "add_all",
-      doc =
-          "Appends multiple arguments to this command line. The items are processed lazily during "
-              + "the execution phase."
-              + ""
-              + "<p>Most of the processing occurs over a list of arguments to be appended, as per "
-              + "the following steps:"
-              + "<ol>"
-              + "<li>Each directory <code>File</code> item is replaced by all <code>File</code>s "
-              + "recursively contained in that directory."
-              + "</li>"
-              + "<li>If <code>map_each</code> is given, it is applied to each item, and the "
-              + "    resulting lists of strings are concatenated to form the initial argument "
-              + "    list. Otherwise, the initial argument list is the result of applying the "
-              + "    standard conversion to each item."
-              + "<li>Each argument in the list is formatted with <code>format_each</code>, if "
-              + "    present."
-              + "<li>If <code>uniquify</code> is true, duplicate arguments are removed. The first "
-              + "    occurrence is the one that remains."
-              + "<li>If a <code>before_each</code> string is given, it is inserted as a new "
-              + "    argument before each existing argument in the list. This effectively doubles "
-              + "    the number of arguments to be appended by this point."
-              + "<li>Except in the case that the list is empty and <code>omit_if_empty</code> is "
-              + "    true (the default), the arg name and <code>terminate_with</code> are "
-              + "    inserted as the first and last arguments, respectively, if they are given."
-              + "</ol>"
-              + "Note that empty strings are valid arguments that are subject to all these "
-              + "processing steps.",
-      parameters = {
-        @Param(
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "add_all",
+        doc = ("Appends multiple arguments to this command line. The items are processed lazily during "
+                + "the execution phase."
+                + ""
+                + "<p>Most of the processing occurs over a list of arguments to be appended, as per "
+                + "the following steps:"
+                + "<ol>"
+                + "<li>Each directory <code>File</code> item is replaced by all <code>File</code>s "
+                + "recursively contained in that directory."
+                + "</li>"
+                + "<li>If <code>map_each</code> is given, it is applied to each item, and the "
+                + "    resulting lists of strings are concatenated to form the initial argument "
+                + "    list. Otherwise, the initial argument list is the result of applying the "
+                + "    standard conversion to each item."
+                + "<li>Each argument in the list is formatted with <code>format_each</code>, if "
+                + "    present."
+                + "<li>If <code>uniquify</code> is true, duplicate arguments are removed. The first "
+                + "    occurrence is the one that remains."
+                + "<li>If a <code>before_each</code> string is given, it is inserted as a new "
+                + "    argument before each existing argument in the list. This effectively doubles "
+                + "    the number of arguments to be appended by this point."
+                + "<li>Except in the case that the list is empty and <code>omit_if_empty</code> is "
+                + "    true (the default), the arg name and <code>terminate_with</code> are "
+                + "    inserted as the first and last arguments, respectively, if they are given."
+                + "</ol>"
+                + "Note that empty strings are valid arguments that are subject to all these "
+                + "processing steps."),
+        parameters = [net.starlark.java.annot.Param(
             name = "arg_name_or_values",
-            doc =
-                "If two positional parameters are passed this is interpreted as the arg name. "
+            doc = ("If two positional parameters are passed this is interpreted as the arg name. "
                     + "The arg name is added before the <code>values</code> as a separate argument "
                     + "without any processing. This arg name will not be added if "
                     + "<code>omit_if_empty</code> is true (the default) and no other items are "
                     + "appended (as happens if <code>values</code> is empty or all of its items "
                     + "are filtered). "
                     + "If only one positional parameter is passed, it is interpreted as "
-                    + "<code>values</code> (see below)."),
-        @Param(
+                    + "<code>values</code> (see below).")
+        ), net.starlark.java.annot.Param(
             name = "values",
-            allowedTypes = {
-              @ParamType(type = Sequence.class),
-              @ParamType(type = Depset.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = net.starlark.java.eval.Sequence::class), net.starlark.java.annot.ParamType(
+                type = Depset::class
+            )],
             defaultValue = "unbound",
-            doc = "The list, tuple, or depset whose items will be appended."),
-        @Param(
+            doc = "The list, tuple, or depset whose items will be appended."
+        ), net.starlark.java.annot.Param(
             name = "map_each",
-            allowedTypes = {
-              @ParamType(type = StarlarkCallable.class),
-              @ParamType(type = NoneType.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = net.starlark.java.eval.StarlarkCallable::class), net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.NoneType::class
+            )],
             named = true,
             positional = false,
             defaultValue = "None",
-            doc =
-                "A function that converts each item to zero or more strings, which may be further"
+            doc = ("A function that converts each item to zero or more strings, which may be further"
                     + " processed before appending. If this param is not provided, the standard"
                     + " conversion is used.<p>The function is passed either one or two positional"
                     + " arguments: the item to convert, followed by an optional <a"
@@ -247,267 +223,243 @@ public interface CommandLineArgsApi extends StarlarkValue {
                     + " default.<p><i>Warning:</i> <a"
                     + " href='../globals/all.html#print'><code>print()</code></a> statements that"
                     + " are executed during the call to <code>map_each</code> will not produce any"
-                    + " visible output."),
-        @Param(
+                    + " visible output.")
+        ), net.starlark.java.annot.Param(
             name = "format_each",
-            allowedTypes = {
-              @ParamType(type = String.class),
-              @ParamType(type = NoneType.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = String::class), net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.NoneType::class
+            )],
             named = true,
             positional = false,
             defaultValue = "None",
-            doc =
-                "An optional format string pattern, applied to each string returned by the "
+            doc = ("An optional format string pattern, applied to each string returned by the "
                     + "<code>map_each</code> function. "
-                    + "The format string must have exactly one '%s' placeholder."),
-        @Param(
+                    + "The format string must have exactly one '%s' placeholder.")
+        ), net.starlark.java.annot.Param(
             name = "before_each",
-            allowedTypes = {
-              @ParamType(type = String.class),
-              @ParamType(type = NoneType.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = String::class), net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.NoneType::class
+            )],
             named = true,
             positional = false,
             defaultValue = "None",
-            doc =
-                "An optional argument to append before each argument derived from "
-                    + "<code>values</code> is appended."),
-        @Param(
+            doc = "An optional argument to append before each argument derived from "
+                    + "<code>values</code> is appended."
+        ), net.starlark.java.annot.Param(
             name = "omit_if_empty",
             named = true,
             positional = false,
             defaultValue = "True",
-            doc =
-                "If true, if there are no arguments derived from <code>values</code> to be "
+            doc = ("If true, if there are no arguments derived from <code>values</code> to be "
                     + "appended, then all further processing is suppressed and the command line "
                     + "will be unchanged. If false, the arg name and <code>terminate_with</code>, "
                     + "if provided, will still be appended regardless of whether or not there are "
-                    + "other arguments."),
-        @Param(
+                    + "other arguments.")
+        ), net.starlark.java.annot.Param(
             name = "uniquify",
             named = true,
             positional = false,
             defaultValue = "False",
-            doc =
-                "If true, duplicate arguments that are derived from <code>values</code> will be "
+            doc = ("If true, duplicate arguments that are derived from <code>values</code> will be "
                     + "omitted. Only the first occurrence of each argument will remain. Usually "
                     + "this feature is not needed because depsets already omit duplicates, "
                     + "but it can be useful if <code>map_each</code> emits the same string for "
-                    + "multiple items."),
-        @Param(
+                    + "multiple items.")
+        ), net.starlark.java.annot.Param(
             name = "expand_directories",
             named = true,
             positional = false,
             defaultValue = "True",
-            doc =
-                "If true, any directories in <code>values</code> will be expanded to a flat list "
-                    + "of files. This happens before <code>map_each</code> is applied."),
-        @Param(
+            doc = "If true, any directories in <code>values</code> will be expanded to a flat list "
+                    + "of files. This happens before <code>map_each</code> is applied."
+        ), net.starlark.java.annot.Param(
             name = "terminate_with",
-            allowedTypes = {
-              @ParamType(type = String.class),
-              @ParamType(type = NoneType.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = String::class), net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.NoneType::class
+            )],
             named = true,
             positional = false,
             defaultValue = "None",
-            doc =
-                "An optional argument to append after all other arguments. This argument will not "
+            doc = ("An optional argument to append after all other arguments. This argument will not "
                     + "be added if <code>omit_if_empty</code> is true (the default) and no other "
                     + "items are appended (as happens if <code>values</code> is empty or all of "
-                    + "its items are filtered)."),
-        @Param(
+                    + "its items are filtered).")
+        ), net.starlark.java.annot.Param(
             name = "allow_closure",
             named = true,
             positional = false,
             defaultValue = "False",
-            doc =
-                "If true, allows the use of closures in function parameters like "
+            doc = ("If true, allows the use of closures in function parameters like "
                     + "<code>map_each</code>. Usually this isn't necessary and it risks retaining "
-                    + "large analysis-phase data structures into the execution phase."),
-      },
-      useStarlarkThread = true)
-  CommandLineArgsApi addAll(
-      Object argNameOrValue,
-      Object values,
-      Object mapEach,
-      Object formatEach,
-      Object beforeEach,
-      Boolean omitIfEmpty,
-      Boolean uniquify,
-      Boolean expandDirectories,
-      Object terminateWith,
-      Boolean allowClosure,
-      StarlarkThread thread)
-      throws EvalException;
+                    + "large analysis-phase data structures into the execution phase.")
+        )],
+        useStarlarkThread = true
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun addAll(
+        argNameOrValue: Any?,
+        values: Any?,
+        mapEach: Any?,
+        formatEach: Any?,
+        beforeEach: Any?,
+        omitIfEmpty: Boolean?,
+        uniquify: Boolean?,
+        expandDirectories: Boolean?,
+        terminateWith: Any?,
+        allowClosure: Boolean?,
+        thread: net.starlark.java.eval.StarlarkThread?
+    ): CommandLineArgsApi?
 
-  @StarlarkMethod(
-      name = "add_joined",
-      doc =
-          "Appends an argument to this command line by concatenating together multiple values "
-              + "using a separator. The items are processed lazily during the execution phase."
-              + ""
-              + "<p>Processing is similar to <a href='#add_all'><code>add_all()</code></a>, but "
-              + "the list of arguments derived from <code>values</code> is combined into a single "
-              + "argument as if by <code>join_with.join(...)</code>, and then formatted using the "
-              + "given <code>format_joined</code> string template. Unlike <code>add_all()</code>, "
-              + "there is no <code>before_each</code> or <code>terminate_with</code> parameter "
-              + "since these are not generally useful when the items are combined into a single "
-              + "argument."
-              + ""
-              + "<p>If after filtering there are no strings to join into an argument, and if "
-              + "<code>omit_if_empty</code> is true (the default), no processing is done. "
-              + "Otherwise if there are no strings to join but <code>omit_if_empty</code> is "
-              + "false, the joined string will be an empty string.",
-      parameters = {
-        @Param(
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "add_joined",
+        doc = ("Appends an argument to this command line by concatenating together multiple values "
+                + "using a separator. The items are processed lazily during the execution phase."
+                + ""
+                + "<p>Processing is similar to <a href='#add_all'><code>add_all()</code></a>, but "
+                + "the list of arguments derived from <code>values</code> is combined into a single "
+                + "argument as if by <code>join_with.join(...)</code>, and then formatted using the "
+                + "given <code>format_joined</code> string template. Unlike <code>add_all()</code>, "
+                + "there is no <code>before_each</code> or <code>terminate_with</code> parameter "
+                + "since these are not generally useful when the items are combined into a single "
+                + "argument."
+                + ""
+                + "<p>If after filtering there are no strings to join into an argument, and if "
+                + "<code>omit_if_empty</code> is true (the default), no processing is done. "
+                + "Otherwise if there are no strings to join but <code>omit_if_empty</code> is "
+                + "false, the joined string will be an empty string."),
+        parameters = [net.starlark.java.annot.Param(
             name = "arg_name_or_values",
-            doc =
-                "If two positional parameters are passed this is interpreted as the arg name. "
+            doc = ("If two positional parameters are passed this is interpreted as the arg name. "
                     + "The arg name is added before <code>values</code> without any processing. "
                     + "This arg will not be added if <code>omit_if_empty</code> is true "
                     + "(the default) and there are no strings derived from <code>values</code> "
                     + "to join together (which can happen if <code>values</code> is empty "
                     + "or all of its items are filtered). "
                     + "If only one positional parameter is passed, it is interpreted as "
-                    + "<code>values</code> (see below)."),
-        @Param(
+                    + "<code>values</code> (see below).")
+        ), net.starlark.java.annot.Param(
             name = "values",
-            allowedTypes = {
-              @ParamType(type = Sequence.class),
-              @ParamType(type = Depset.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = net.starlark.java.eval.Sequence::class), net.starlark.java.annot.ParamType(
+                type = Depset::class
+            )],
             defaultValue = "unbound",
-            doc = "The list, tuple, or depset whose items will be joined."),
-        @Param(
+            doc = "The list, tuple, or depset whose items will be joined."
+        ), net.starlark.java.annot.Param(
             name = "join_with",
             named = true,
             positional = false,
-            doc =
-                "A delimiter string used to join together the strings obtained from applying "
+            doc = ("A delimiter string used to join together the strings obtained from applying "
                     + "<code>map_each</code> and <code>format_each</code>, in the same manner as "
-                    + "<a href='../core/string.html#join'><code>string.join()</code></a>."),
-        @Param(
+                    + "<a href='../core/string.html#join'><code>string.join()</code></a>.")
+        ), net.starlark.java.annot.Param(
             name = "map_each",
-            allowedTypes = {
-              @ParamType(type = StarlarkCallable.class),
-              @ParamType(type = NoneType.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = net.starlark.java.eval.StarlarkCallable::class), net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.NoneType::class
+            )],
             named = true,
             positional = false,
             defaultValue = "None",
-            doc = "Same as for <a href='#add_all.map_each'><code>add_all</code></a>."),
-        @Param(
+            doc = "Same as for <a href='#add_all.map_each'><code>add_all</code></a>."
+        ), net.starlark.java.annot.Param(
             name = "format_each",
-            allowedTypes = {
-              @ParamType(type = String.class),
-              @ParamType(type = NoneType.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = String::class), net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.NoneType::class
+            )],
             named = true,
             positional = false,
             defaultValue = "None",
-            doc = "Same as for <a href='#add_all.format_each'><code>add_all</code></a>."),
-        @Param(
+            doc = "Same as for <a href='#add_all.format_each'><code>add_all</code></a>."
+        ), net.starlark.java.annot.Param(
             name = "format_joined",
-            allowedTypes = {
-              @ParamType(type = String.class),
-              @ParamType(type = NoneType.class),
-            },
+            allowedTypes = [net.starlark.java.annot.ParamType(type = String::class), net.starlark.java.annot.ParamType(
+                type = net.starlark.java.eval.NoneType::class
+            )],
             named = true,
             positional = false,
             defaultValue = "None",
-            doc =
-                "An optional format string pattern applied to the joined string. "
-                    + "The format string must have exactly one '%s' placeholder."),
-        @Param(
+            doc = "An optional format string pattern applied to the joined string. "
+                    + "The format string must have exactly one '%s' placeholder."
+        ), net.starlark.java.annot.Param(
             name = "omit_if_empty",
             named = true,
             positional = false,
             defaultValue = "True",
-            doc =
-                "If true, if there are no strings to join together (either because <code>values"
+            doc = ("If true, if there are no strings to join together (either because <code>values"
                     + "</code> is empty or all its items are filtered), then all further "
                     + "processing is suppressed and the command line will be unchanged. "
                     + "If false, then even if there are no strings to join together, two "
                     + "arguments will be appended: the arg name followed by an empty "
-                    + "string (which is the logical join of zero strings)."),
-        @Param(
+                    + "string (which is the logical join of zero strings).")
+        ), net.starlark.java.annot.Param(
             name = "uniquify",
             named = true,
             positional = false,
             defaultValue = "False",
-            doc = "Same as for <a href='#add_all.uniquify'><code>add_all</code></a>."),
-        @Param(
+            doc = "Same as for <a href='#add_all.uniquify'><code>add_all</code></a>."
+        ), net.starlark.java.annot.Param(
             name = "expand_directories",
             named = true,
             positional = false,
             defaultValue = "True",
-            doc = "Same as for <a href='#add_all.expand_directories'><code>add_all</code></a>."),
-        @Param(
+            doc = "Same as for <a href='#add_all.expand_directories'><code>add_all</code></a>."
+        ), net.starlark.java.annot.Param(
             name = "allow_closure",
             named = true,
             positional = false,
             defaultValue = "False",
-            doc = "Same as for <a href='#add_all.allow_closure'><code>add_all</code></a>."),
-      },
-      useStarlarkThread = true)
-  CommandLineArgsApi addJoined(
-      Object argNameOrValue,
-      Object values,
-      String joinWith,
-      Object mapEach,
-      Object formatEach,
-      Object formatJoined,
-      Boolean omitIfEmpty,
-      Boolean uniquify,
-      Boolean expandDirectories,
-      Boolean allowClosure,
-      StarlarkThread thread)
-      throws EvalException;
+            doc = "Same as for <a href='#add_all.allow_closure'><code>add_all</code></a>."
+        )],
+        useStarlarkThread = true
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun addJoined(
+        argNameOrValue: Any?,
+        values: Any?,
+        joinWith: String?,
+        mapEach: Any?,
+        formatEach: Any?,
+        formatJoined: Any?,
+        omitIfEmpty: Boolean?,
+        uniquify: Boolean?,
+        expandDirectories: Boolean?,
+        allowClosure: Boolean?,
+        thread: net.starlark.java.eval.StarlarkThread?
+    ): CommandLineArgsApi?
 
-  @StarlarkMethod(
-      name = "use_param_file",
-      doc =
-          "Spills the args to a params file, replacing them with a pointer to the param file. "
-              + "Use when your args may be too large for the system's command length limits."
-              + "<p>Bazel may choose to elide writing the params file to the output tree during "
-              + "execution for efficiency. "
-              + "If you are debugging actions and want to inspect the param file, "
-              + "pass <code>--materialize_param_files</code> to your build.",
-      parameters = {
-        @Param(
-            name = "param_file_arg",
-            named = true,
-            doc =
-                "A format string with a single \"%s\". "
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "use_param_file",
+        doc = ("Spills the args to a params file, replacing them with a pointer to the param file. "
+                + "Use when your args may be too large for the system's command length limits."
+                + "<p>Bazel may choose to elide writing the params file to the output tree during "
+                + "execution for efficiency. "
+                + "If you are debugging actions and want to inspect the param file, "
+                + "pass <code>--materialize_param_files</code> to your build."),
+        parameters = [net.starlark.java.annot.Param(
+            name = "param_file_arg", named = true, doc = ("A format string with a single \"%s\". "
                     + "If the args are spilled to a params file then they are replaced "
                     + "with an argument consisting of this string formatted with "
                     + "the path of the params file."
                     + "<p>For example, if the args are spilled to a params file \"params.txt\", "
                     + "then specifying \"--file=%s\" would cause the action command line to "
-                    + "contain \"--file=params.txt\"."),
-        @Param(
+                    + "contain \"--file=params.txt\".")
+        ), net.starlark.java.annot.Param(
             name = "use_always",
             named = true,
             positional = false,
             defaultValue = "False",
-            doc =
-                "Whether to always spill the args to a params file. If false, "
+            doc = ("Whether to always spill the args to a params file. If false, "
                     + "bazel will decide whether the arguments need to be spilled "
                     + "based on your system and arg length.")
-      })
-  CommandLineArgsApi useParamsFile(String paramFileArg, Boolean useAlways) throws EvalException;
+        )]
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun useParamsFile(paramFileArg: String?, useAlways: Boolean?): CommandLineArgsApi?
 
-  @StarlarkMethod(
-      name = "set_param_file_format",
-      doc = "Sets the format of the param file, if one is used",
-      parameters = {
-        @Param(
-            name = "format",
-            named = true,
-            doc =
-                "Must be one of:<ul>"
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "set_param_file_format",
+        doc = "Sets the format of the param file, if one is used",
+        parameters = [net.starlark.java.annot.Param(
+            name = "format", named = true, doc = ("Must be one of:<ul>"
                     + "<li>\"multiline\": Each item (argument name or value) is"
                     + " written verbatim to the param file with a newline character following"
                     + " it.</li>"
@@ -517,6 +469,8 @@ public interface CommandLineArgsApi extends StarlarkValue {
                     + " if any, are written on the same line with a '=' separator. This is the"
                     + " format expected by the Abseil flags library.</li>"
                     + "</ul><p>The format defaults to \"shell\" if not called.")
-      })
-  CommandLineArgsApi setParamFileFormat(String format) throws EvalException;
+        )]
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun setParamFileFormat(format: String?): CommandLineArgsApi?
 }

@@ -11,48 +11,38 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.repository;
+package com.google.devtools.build.lib.repository
 
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.events.ExtendedEventHandler.FetchProgress;
+import com.google.devtools.build.lib.cmdline.RepositoryName
 
-/** Reports the prgoress of a repository fetch. */
-public class RepositoryFetchProgress implements FetchProgress {
-  private final RepositoryName repoName;
-  private final boolean finished;
-  private final String message;
+/** Reports the prgoress of a repository fetch.  */
+class RepositoryFetchProgress private constructor(repoName: RepositoryName?, finished: Boolean, message: String?) :
+    FetchProgress {
+    private val repoName: RepositoryName?
+    val isFinished: Boolean
+    val progress: String?
 
-  /** Returns the unique identifying string for a repository fetching event. */
-  public static String repositoryFetchContextString(RepositoryName repoName) {
-    return "repository " + repoName;
-  }
+    init {
+        this.repoName = repoName
+        this.isFinished = finished
+        this.progress = message
+    }
 
-  public static RepositoryFetchProgress ongoing(RepositoryName repoName, String message) {
-    return new RepositoryFetchProgress(repoName, /*finished=*/ false, message);
-  }
+    val resourceIdentifier: String
+        get() = repositoryFetchContextString(repoName)
 
-  public static RepositoryFetchProgress finished(RepositoryName repoName) {
-    return new RepositoryFetchProgress(repoName, /*finished=*/ true, "finished.");
-  }
+    companion object {
+        /** Returns the unique identifying string for a repository fetching event.  */
+        fun repositoryFetchContextString(repoName: RepositoryName?): String {
+            return "repository " + repoName
+        }
 
-  private RepositoryFetchProgress(RepositoryName repoName, boolean finished, String message) {
-    this.repoName = repoName;
-    this.finished = finished;
-    this.message = message;
-  }
+        fun ongoing(repoName: RepositoryName?, message: String?): RepositoryFetchProgress {
+            return RepositoryFetchProgress(repoName,  /*finished=*/false, message)
+        }
 
-  @Override
-  public String getResourceIdentifier() {
-    return repositoryFetchContextString(repoName);
-  }
-
-  @Override
-  public String getProgress() {
-    return message;
-  }
-
-  @Override
-  public boolean isFinished() {
-    return finished;
-  }
+        fun finished(repoName: RepositoryName?): RepositoryFetchProgress {
+            return RepositoryFetchProgress(repoName,  /*finished=*/true, "finished.")
+        }
+    }
 }

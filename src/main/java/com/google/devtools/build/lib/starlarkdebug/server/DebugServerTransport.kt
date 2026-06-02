@@ -11,124 +11,120 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkdebug.server
 
-package com.google.devtools.build.lib.starlarkdebug.server;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.starlarkdebugging.StarlarkDebuggingProtos.DebugEvent;
-import com.google.devtools.build.lib.starlarkdebugging.StarlarkDebuggingProtos.DebugRequest;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.util.function.Consumer;
-import javax.annotation.Nullable;
+import com.google.common.annotations.VisibleForTesting
+import com.google.devtools.build.lib.events.Event
+import java.io.InputStream
+import java.io.OutputStream
+import java.net.Socket
+import java.util.function.Consumer
 
 /**
  * Manages the connection to and communication to/from the debugger client. Reading and writing are
- * internally synchronized by {@link DebugServerTransport}.
+ * internally synchronized by [DebugServerTransport].
  */
-final class DebugServerTransport {
+internal class DebugServerTransport private constructor(
+    eventHandler: EventHandler,
+    serverSocket: ServerSocket,
+    clientSocket: Socket,
+    requestStream: InputStream,
+    eventStream: OutputStream,
+    verboseLogging: Boolean
+) {
+    private val eventHandler: EventHandler
+    private val serverSocket: ServerSocket
+    private val clientSocket: Socket
+    private val requestStream: InputStream
+    private val eventStream: OutputStream
+    private val verboseLogging: Boolean
 
-  @SuppressWarnings("NonFinalStaticField")
-  @VisibleForTesting
-  static Consumer<Integer> onListenPortCallbackForTests = null;
-
-  /** Sets up the server transport and blocks while waiting for an incoming connection. */
-  static DebugServerTransport createAndWaitForClient(
-      EventHandler eventHandler, ServerSocket serverSocket, boolean verboseLogging)
-      throws IOException {
-    // TODO(bazel-team): reject all connections after the first
-    eventHandler.handle(Event.progress("Waiting for debugger..."));
-    if (onListenPortCallbackForTests != null) {
-      onListenPortCallbackForTests.accept(serverSocket.getLocalPort());
+    init {
+        this.eventHandler = eventHandler
+        this.serverSocket = serverSocket
+        this.clientSocket = clientSocket
+        this.requestStream = requestStream
+        this.eventStream = eventStream
+        this.verboseLogging = verboseLogging
     }
-    Socket clientSocket = serverSocket.accept();
-    eventHandler.handle(Event.info("Debugger connection successfully established."));
-    return new DebugServerTransport(
-        eventHandler,
-        serverSocket,
-        clientSocket,
-        clientSocket.getInputStream(),
-        clientSocket.getOutputStream(),
-        verboseLogging);
-  }
 
-  private final EventHandler eventHandler;
-  private final ServerSocket serverSocket;
-  private final Socket clientSocket;
-  private final InputStream requestStream;
-  private final OutputStream eventStream;
-  private final boolean verboseLogging;
-
-  private DebugServerTransport(
-      EventHandler eventHandler,
-      ServerSocket serverSocket,
-      Socket clientSocket,
-      InputStream requestStream,
-      OutputStream eventStream,
-      boolean verboseLogging) {
-    this.eventHandler = eventHandler;
-    this.serverSocket = serverSocket;
-    this.clientSocket = clientSocket;
-    this.requestStream = requestStream;
-    this.eventStream = eventStream;
-    this.verboseLogging = verboseLogging;
-  }
-
-  /**
-   * Blocks waiting for a properly-formed client request. Returns null if the client connection is
-   * closed.
-   */
-  @Nullable
-  DebugRequest readClientRequest() {
-    synchronized (requestStream) {
-      try {
-        DebugRequest request = DebugRequest.parseDelimitedFrom(requestStream);
-        if (verboseLogging) {
-          eventHandler.handle(Event.debug("Received debug client request:\n" + request));
+    /**
+     * Blocks waiting for a properly-formed client request. Returns null if the client connection is
+     * closed.
+     */
+    fun readClientRequest(): DebugRequest? {
+        synchronized(requestStream) {
+            try {
+                val request: DebugRequest? = DebugRequest.parseDelimitedFrom(requestStream)
+                if (verboseLogging) {
+                    eventHandler.handle(Event.debug("Received debug client request:\n" + request))
+                }
+                return request
+            } catch (e: IOException) {
+                handleParsingError(e)
+                return null
+            }
         }
-        return request;
-      } catch (IOException e) {
-        handleParsingError(e);
-        return null;
-      }
     }
-  }
 
-  private void handleParsingError(IOException e) {
-    if (isClosed()) {
-      // an IOException is expected when the client disconnects -- no need to log an error
-      return;
+    private fun handleParsingError(e: IOException) {
+        if (this.isClosed) {
+            // an IOException is expected when the client disconnects -- no need to log an error
+            return
+        }
+        val message = "Error parsing debug request: " + e.message
+        postEvent(DebugEventHelper.error(message))
+        eventHandler.handle(Event.error(message))
     }
-    String message = "Error parsing debug request: " + e.getMessage();
-    postEvent(DebugEventHelper.error(message));
-    eventHandler.handle(Event.error(message));
-  }
 
-  /** Posts a debug event. */
-  void postEvent(DebugEvent event) {
-    if (verboseLogging) {
-      eventHandler.handle(Event.debug("Sending debug event:\n" + event));
+    /** Posts a debug event.  */
+    fun postEvent(event: DebugEvent) {
+        if (verboseLogging) {
+            eventHandler.handle(Event.debug("Sending debug event:\n" + event))
+        }
+        synchronized(eventStream) {
+            try {
+                event.writeDelimitedTo(eventStream)
+            } catch (e: IOException) {
+                eventHandler.handle(Event.error("Failed to send debug event to client: " + e.message))
+            }
+        }
     }
-    synchronized (eventStream) {
-      try {
-        event.writeDelimitedTo(eventStream);
-      } catch (IOException e) {
-        eventHandler.handle(Event.error("Failed to send debug event to client: " + e.getMessage()));
-      }
+
+    @Throws(IOException::class)
+    fun close() {
+        clientSocket.close()
+        serverSocket.close()
     }
-  }
 
-  void close() throws IOException {
-    clientSocket.close();
-    serverSocket.close();
-  }
+    val isClosed: Boolean
+        get() = serverSocket.isClosed() || clientSocket.isClosed()
 
-  boolean isClosed() {
-    return serverSocket.isClosed() || clientSocket.isClosed();
-  }
+    companion object {
+        @kotlin.jvm.JvmField
+        @VisibleForTesting
+        var onListenPortCallbackForTests: Consumer<Int?>? = null
+
+        /** Sets up the server transport and blocks while waiting for an incoming connection.  */
+        @Throws(IOException::class)
+        fun createAndWaitForClient(
+            eventHandler: EventHandler, serverSocket: ServerSocket, verboseLogging: Boolean
+        ): DebugServerTransport {
+            // TODO(bazel-team): reject all connections after the first
+            eventHandler.handle(Event.progress("Waiting for debugger..."))
+            if (onListenPortCallbackForTests != null) {
+                onListenPortCallbackForTests!!.accept(serverSocket.getLocalPort())
+            }
+            val clientSocket: Socket = serverSocket.accept()
+            eventHandler.handle(Event.info("Debugger connection successfully established."))
+            return DebugServerTransport(
+                eventHandler,
+                serverSocket,
+                clientSocket,
+                clientSocket.getInputStream(),
+                clientSocket.getOutputStream(),
+                verboseLogging
+            )
+        }
+    }
 }

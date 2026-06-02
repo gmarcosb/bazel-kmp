@@ -11,42 +11,52 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkdocextract
 
-package com.google.devtools.build.lib.starlarkdocextract;
+import com.google.devtools.build.lib.cmdline.BazelModuleContext
 
-import static com.google.common.base.Strings.nullToEmpty;
+/** An exception indicating that Starlark API documentation could not be extracted.  */
+class ExtractionException : java.lang.Exception {
+    constructor(message: String?) : super(message)
 
-import com.google.devtools.build.lib.cmdline.BazelModuleContext;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.Module;
+    constructor(module: net.starlark.java.eval.Module?, message: String?) : super(
+        prefixWithModuleFilename(
+            module,
+            message,
+            null
+        )
+    )
 
-/** An exception indicating that Starlark API documentation could not be extracted. */
-public final class ExtractionException extends Exception {
-  public ExtractionException(String message) {
-    super(message);
-  }
+    constructor(module: net.starlark.java.eval.Module?, cause: Throwable?) : super(
+        prefixWithModuleFilename(
+            module,
+            null,
+            cause
+        ), cause
+    )
 
-  public ExtractionException(Module module, String message) {
-    super(prefixWithModuleFilename(module, message, null));
-  }
+    constructor(module: net.starlark.java.eval.Module?, message: String?, cause: Throwable?) : super(
+        prefixWithModuleFilename(module, message, cause),
+        cause
+    )
 
-  public ExtractionException(Module module, Throwable cause) {
-    super(prefixWithModuleFilename(module, null, cause), cause);
-  }
-
-  public ExtractionException(Module module, String message, Throwable cause) {
-    super(prefixWithModuleFilename(module, message, cause), cause);
-  }
-
-  private static String prefixWithModuleFilename(
-      Module module, @Nullable String message, @Nullable Throwable cause) {
-    BazelModuleContext bazelModuleContext = BazelModuleContext.of(module);
-    if (bazelModuleContext == null) {
-      return message;
+    companion object {
+        private fun prefixWithModuleFilename(
+            module: net.starlark.java.eval.Module?, message: String?, cause: Throwable?
+        ): String? {
+            var message = message
+            val bazelModuleContext: BazelModuleContext? = BazelModuleContext.of(module)
+            if (bazelModuleContext == null) {
+                return message
+            }
+            if (message == null) {
+                message = cause!!.message
+            }
+            return java.lang.String.format(
+                "in %s: %s",
+                bazelModuleContext.filename(),
+                com.google.common.base.Strings.nullToEmpty(message)
+            )
+        }
     }
-    if (message == null) {
-      message = cause.getMessage();
-    }
-    return String.format("in %s: %s", bazelModuleContext.filename(), nullToEmpty(message));
-  }
 }

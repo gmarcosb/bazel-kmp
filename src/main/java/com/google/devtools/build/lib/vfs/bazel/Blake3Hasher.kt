@@ -11,136 +11,129 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs.bazel;
+package com.google.devtools.build.lib.vfs.bazel
 
-import static com.google.common.base.Preconditions.checkState;
+import com.google.common.base.Preconditions
+import com.google.common.hash.Funnel
+import com.google.common.hash.HashCode
+import com.google.common.hash.Hasher
+import com.google.errorprone.annotations.CanIgnoreReturnValue
+import java.lang.Double
+import java.lang.Float
+import java.nio.ByteBuffer
+import java.nio.charset.Charset
+import kotlin.Boolean
+import kotlin.Byte
+import kotlin.ByteArray
+import kotlin.Char
+import kotlin.CharSequence
+import kotlin.Int
+import kotlin.Long
+import kotlin.Short
 
-import com.google.common.hash.Funnel;
-import com.google.common.hash.HashCode;
-import com.google.common.hash.Hasher;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.nio.ByteBuffer;
-import java.nio.charset.Charset;
+/** A [Hasher] for BLAKE3.  */
+class Blake3Hasher(private val messageDigest: Blake3MessageDigest) : Hasher {
+    private var isDone = false
 
-/** A {@link Hasher} for BLAKE3. */
-public final class Blake3Hasher implements Hasher {
-  private final Blake3MessageDigest messageDigest;
-  private boolean isDone = false;
-
-  public Blake3Hasher(Blake3MessageDigest blake3MessageDigest) {
-    messageDigest = blake3MessageDigest;
-  }
-
-  /* The following methods implement the {Hasher} interface. */
-
-  @Override
-  @CanIgnoreReturnValue
-  public Hasher putBytes(ByteBuffer b) {
-    messageDigest.engineUpdate(b);
-    return this;
-  }
-
-  @Override
-  @CanIgnoreReturnValue
-  public Hasher putBytes(byte[] bytes, int off, int len) {
-    messageDigest.engineUpdate(bytes, off, len);
-    return this;
-  }
-
-  @Override
-  @CanIgnoreReturnValue
-  public Hasher putBytes(byte[] bytes) {
-    messageDigest.engineUpdate(bytes, 0, bytes.length);
-    return this;
-  }
-
-  @Override
-  @CanIgnoreReturnValue
-  public Hasher putByte(byte b) {
-    messageDigest.engineUpdate(b);
-    return this;
-  }
-
-  @Override
-  public HashCode hash() {
-    checkState(!isDone);
-    isDone = true;
-
-    return HashCode.fromBytes(messageDigest.engineDigest());
-  }
-
-  @Override
-  @CanIgnoreReturnValue
-  public final Hasher putBoolean(boolean b) {
-    return putByte(b ? (byte) 1 : (byte) 0);
-  }
-
-  @Override
-  @CanIgnoreReturnValue
-  public final Hasher putDouble(double d) {
-    return putLong(Double.doubleToRawLongBits(d));
-  }
-
-  @Override
-  @CanIgnoreReturnValue
-  public final Hasher putFloat(float f) {
-    return putInt(Float.floatToRawIntBits(f));
-  }
-
-  @Override
-  @CanIgnoreReturnValue
-  public Hasher putUnencodedChars(CharSequence charSequence) {
-    for (int i = 0, len = charSequence.length(); i < len; i++) {
-      putChar(charSequence.charAt(i));
+    /* The following methods implement the {Hasher} interface. */
+    @CanIgnoreReturnValue
+    override fun putBytes(b: ByteBuffer): Hasher {
+        messageDigest.engineUpdate(b)
+        return this
     }
-    return this;
-  }
 
-  @Override
-  @CanIgnoreReturnValue
-  public Hasher putString(CharSequence charSequence, Charset charset) {
-    return putBytes(charSequence.toString().getBytes(charset));
-  }
-
-  @Override
-  @CanIgnoreReturnValue
-  public Hasher putShort(short s) {
-    putByte((byte) s);
-    putByte((byte) (s >>> 8));
-    return this;
-  }
-
-  @Override
-  @CanIgnoreReturnValue
-  public Hasher putInt(int i) {
-    putByte((byte) i);
-    putByte((byte) (i >>> 8));
-    putByte((byte) (i >>> 16));
-    putByte((byte) (i >>> 24));
-    return this;
-  }
-
-  @Override
-  @CanIgnoreReturnValue
-  public Hasher putLong(long l) {
-    for (int i = 0; i < 64; i += 8) {
-      putByte((byte) (l >>> i));
+    @CanIgnoreReturnValue
+    override fun putBytes(bytes: ByteArray, off: Int, len: Int): Hasher {
+        messageDigest.engineUpdate(bytes, off, len)
+        return this
     }
-    return this;
-  }
 
-  @Override
-  @CanIgnoreReturnValue
-  public Hasher putChar(char c) {
-    putByte((byte) c);
-    putByte((byte) (c >>> 8));
-    return this;
-  }
+    @CanIgnoreReturnValue
+    override fun putBytes(bytes: ByteArray): Hasher {
+        messageDigest.engineUpdate(bytes, 0, bytes.size)
+        return this
+    }
 
-  @Override
-  @CanIgnoreReturnValue
-  public <T> Hasher putObject(T instance, Funnel<? super T> funnel) {
-    funnel.funnel(instance, this);
-    return this;
-  }
+    @CanIgnoreReturnValue
+    override fun putByte(b: Byte): Hasher {
+        messageDigest.engineUpdate(b)
+        return this
+    }
+
+    override fun hash(): HashCode {
+        Preconditions.checkState(!isDone)
+        isDone = true
+
+        return HashCode.fromBytes(messageDigest.engineDigest())
+    }
+
+    @CanIgnoreReturnValue
+    override fun putBoolean(b: Boolean): Hasher {
+        return putByte(if (b) 1.toByte() else 0.toByte())
+    }
+
+    @CanIgnoreReturnValue
+    override fun putDouble(d: Double): Hasher {
+        return putLong(Double.doubleToRawLongBits(d))
+    }
+
+    @CanIgnoreReturnValue
+    override fun putFloat(f: Float): Hasher {
+        return putInt(Float.floatToRawIntBits(f))
+    }
+
+    @CanIgnoreReturnValue
+    override fun putUnencodedChars(charSequence: CharSequence): Hasher {
+        var i = 0
+        val len = charSequence.length
+        while (i < len) {
+            putChar(charSequence.get(i))
+            i++
+        }
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    override fun putString(charSequence: CharSequence, charset: Charset): Hasher {
+        return putBytes(charSequence.toString().toByteArray(charset))
+    }
+
+    @CanIgnoreReturnValue
+    override fun putShort(s: Short): Hasher {
+        putByte(s.toByte())
+        putByte((s.toInt() ushr 8).toByte())
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    override fun putInt(i: Int): Hasher {
+        putByte(i.toByte())
+        putByte((i ushr 8).toByte())
+        putByte((i ushr 16).toByte())
+        putByte((i ushr 24).toByte())
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    override fun putLong(l: Long): Hasher {
+        var i = 0
+        while (i < 64) {
+            putByte((l ushr i).toByte())
+            i += 8
+        }
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    override fun putChar(c: Char): Hasher {
+        putByte(c.code.toByte())
+        putByte((c.code ushr 8).toByte())
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    override fun <T> putObject(instance: T?, funnel: Funnel<in T?>): Hasher {
+        funnel.funnel(instance, this)
+        return this
+    }
 }

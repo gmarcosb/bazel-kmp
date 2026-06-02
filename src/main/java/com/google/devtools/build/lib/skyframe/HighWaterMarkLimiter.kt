@@ -11,26 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
-
-import static com.google.common.base.Preconditions.checkNotNull;
-import static java.util.concurrent.TimeUnit.SECONDS;
-
-import com.google.common.eventbus.Subscribe;
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.runtime.MemoryPressure.MemoryPressureStats;
-import com.google.devtools.build.lib.runtime.MemoryPressureEvent;
-import com.google.devtools.build.lib.runtime.MemoryPressureOptions;
-import com.google.devtools.build.lib.vfs.SyscallCache;
+import com.google.devtools.build.lib.runtime.MemoryPressure.MemoryPressureStats
 
 /**
  * Drops unnecessary temporary state in response to memory pressure.
- *
- * <p>In doing we effectively limit the contribution of this temporary state to Blaze's high water
+ * 
+ * 
+ * In doing we effectively limit the contribution of this temporary state to Blaze's high water
  * mark memory usage.
- *
- * <p>This is a massive mitigation for a theoretical memory performance issue with all Blaze caches,
+ * 
+ * 
+ * This is a massive mitigation for a theoretical memory performance issue with all Blaze caches,
  * but especially for Skyframe's SkyKeyComputeState: If many nodes are dormant, waiting for their
  * deps to be computed, and they all have SkyKeyComputeState instances to be used, and those
  * instances have a large total retained heap, then they are contributing to Blaze's high water mark
@@ -40,70 +33,79 @@ import com.google.devtools.build.lib.vfs.SyscallCache;
  * performance of Blaze's SkyFunctions and (ii) using SkyKeyComputeState but then GC thrashing and
  * suffering when Blaze is memory constrained. Instead, we get the best of both worlds.
  */
-public final class HighWaterMarkLimiter {
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
+class HighWaterMarkLimiter(
+    skyframeExecutor: SkyframeExecutor?,
+    syscallCache: SyscallCache?,
+    options: MemoryPressureOptions?
+) {
+    private val skyframeExecutor: SkyframeExecutor
+    private val syscallCache: SyscallCache
+    private val options: MemoryPressureOptions
+    private var minorGcDropsRemaining: Int
+    private var fullGcDropsRemaining: Int
 
-  private final SkyframeExecutor skyframeExecutor;
-  private final SyscallCache syscallCache;
-  private final MemoryPressureOptions options;
-  private int minorGcDropsRemaining;
-  private int fullGcDropsRemaining;
-
-  public HighWaterMarkLimiter(
-      SkyframeExecutor skyframeExecutor, SyscallCache syscallCache, MemoryPressureOptions options) {
-    this.skyframeExecutor = checkNotNull(skyframeExecutor);
-    this.syscallCache = checkNotNull(syscallCache);
-    this.options = checkNotNull(options);
-    this.minorGcDropsRemaining = options.getSkyframeHighWaterMarkMinorGcDropsPerInvocation();
-    this.fullGcDropsRemaining = options.getSkyframeHighWaterMarkFullGcDropsPerInvocation();
-  }
-
-  @Subscribe
-  void handle(MemoryPressureEvent event) {
-    int actual = (int) ((event.tenuredSpaceUsedBytes() * 100L) / event.tenuredSpaceMaxBytes());
-    int threshold = options.getSkyframeHighWaterMarkMemoryThreshold();
-    if (actual < threshold) {
-      return;
+    init {
+        this.skyframeExecutor = com.google.common.base.Preconditions.checkNotNull<SkyframeExecutor>(skyframeExecutor)
+        this.syscallCache = com.google.common.base.Preconditions.checkNotNull<SyscallCache>(syscallCache)
+        this.options = com.google.common.base.Preconditions.checkNotNull<MemoryPressureOptions>(options)
+        this.minorGcDropsRemaining = options.getSkyframeHighWaterMarkMinorGcDropsPerInvocation()
+        this.fullGcDropsRemaining = options.getSkyframeHighWaterMarkFullGcDropsPerInvocation()
     }
 
-    // This block early-returns if limits are met. Otherwise, it logs the drop, with separate log
-    // statements for full and minor GC events, to avoid #atMostEvery coalescing log statements
-    // across GC event types.
-    String remainingStat = "";
-    if (event.wasFullGc()) {
-      if (fullGcDropsRemaining == 0) {
-        return;
-      }
-      fullGcDropsRemaining--;
-      remainingStat = String.format(" fullGcDropsRemaining=%d", fullGcDropsRemaining);
+    @com.google.common.eventbus.Subscribe
+    fun handle(event: MemoryPressureEvent) {
+        val actual = ((event.tenuredSpaceUsedBytes() * 100L) / event.tenuredSpaceMaxBytes()) as Int
+        val threshold: Int = options.getSkyframeHighWaterMarkMemoryThreshold()
+        if (actual < threshold) {
+            return
+        }
 
-      logger.atInfo().atMostEvery(10, SECONDS).log(
-          "Dropping unnecessary temporary state in response to full GC and memory pressure."
-              + " actual=%s threshold=%s%s",
-          actual, threshold, remainingStat);
-    } else {
-      if (minorGcDropsRemaining == 0) {
-        return;
-      }
-      minorGcDropsRemaining--;
-      remainingStat = String.format(" minorGcDropsRemaining=%d", minorGcDropsRemaining);
+        // This block early-returns if limits are met. Otherwise, it logs the drop, with separate log
+        // statements for full and minor GC events, to avoid #atMostEvery coalescing log statements
+        // across GC event types.
+        var remainingStat: String? = ""
+        if (event.wasFullGc()) {
+            if (fullGcDropsRemaining == 0) {
+                return
+            }
+            fullGcDropsRemaining--
+            remainingStat = java.lang.String.format(" fullGcDropsRemaining=%d", fullGcDropsRemaining)
 
-      logger.atInfo().atMostEvery(10, SECONDS).log(
-          "Dropping unnecessary temporary state in response to minor GC and memory pressure."
-              + " actual=%s threshold=%s%s",
-          actual, threshold, remainingStat);
+            logger.atInfo().atMostEvery(10, TimeUnit.SECONDS).log(
+                "Dropping unnecessary temporary state in response to full GC and memory pressure."
+                        + " actual=%s threshold=%s%s",
+                actual, threshold, remainingStat
+            )
+        } else {
+            if (minorGcDropsRemaining == 0) {
+                return
+            }
+            minorGcDropsRemaining--
+            remainingStat = java.lang.String.format(" minorGcDropsRemaining=%d", minorGcDropsRemaining)
+
+            logger.atInfo().atMostEvery(10, TimeUnit.SECONDS).log(
+                "Dropping unnecessary temporary state in response to minor GC and memory pressure."
+                        + " actual=%s threshold=%s%s",
+                actual, threshold, remainingStat
+            )
+        }
+
+        skyframeExecutor.dropUnnecessaryTemporarySkyframeState()
+        syscallCache.clear()
     }
 
-    skyframeExecutor.dropUnnecessaryTemporarySkyframeState();
-    syscallCache.clear();
-  }
+    /** Populate fields about cache drops.  */
+    fun populateStats(memoryPressureStatsBuilder: MemoryPressureStats.Builder) {
+        memoryPressureStatsBuilder
+            .setMinorGcDrops(
+                options.getSkyframeHighWaterMarkMinorGcDropsPerInvocation() - minorGcDropsRemaining
+            )
+            .setFullGcDrops(
+                options.getSkyframeHighWaterMarkFullGcDropsPerInvocation() - fullGcDropsRemaining
+            )
+    }
 
-  /** Populate fields about cache drops. */
-  public void populateStats(MemoryPressureStats.Builder memoryPressureStatsBuilder) {
-    memoryPressureStatsBuilder
-        .setMinorGcDrops(
-            options.getSkyframeHighWaterMarkMinorGcDropsPerInvocation() - minorGcDropsRemaining)
-        .setFullGcDrops(
-            options.getSkyframeHighWaterMarkFullGcDropsPerInvocation() - fullGcDropsRemaining);
-  }
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+    }
 }

@@ -118,9 +118,9 @@ public final class LinkCommandLineTest extends LinkBuildVariablesTestCase {
     return buildMockFeatures()
         .getFeatureConfiguration(
             ImmutableSet.of(
-                Link.LinkTargetType.EXECUTABLE.getActionName(),
-                Link.LinkTargetType.NODEPS_DYNAMIC_LIBRARY.getActionName(),
-                Link.LinkTargetType.STATIC_LIBRARY.getActionName(),
+                    Link.LinkTargetType.EXECUTABLE.actionName,
+                    Link.LinkTargetType.NODEPS_DYNAMIC_LIBRARY.actionName,
+                    Link.LinkTargetType.STATIC_LIBRARY.actionName,
                 CppActionNames.CPP_COMPILE,
                 CppActionNames.LINKSTAMP_COMPILE,
                 CppRuleClasses.INCLUDES,
@@ -147,7 +147,7 @@ public final class LinkCommandLineTest extends LinkBuildVariablesTestCase {
   public void testLinkCommandIsExecCommandWhenNoLinkstamps() throws Exception {
     LinkCommandLine linkConfig =
         minimalConfiguration()
-            .setActionName(LinkTargetType.EXECUTABLE.getActionName())
+            .setActionName(LinkTargetType.EXECUTABLE.actionName)
             .build();
     List<String> rawLinkArgv = linkConfig.arguments();
     assertThat(linkConfig.arguments()).isEqualTo(rawLinkArgv);
@@ -177,7 +177,7 @@ public final class LinkCommandLineTest extends LinkBuildVariablesTestCase {
     LinkCommandLine linkConfig =
         minimalConfiguration(variables)
             .forceToolPath("foo/bar/gcc")
-            .setActionName(LinkTargetType.NODEPS_DYNAMIC_LIBRARY.getActionName())
+            .setActionName(LinkTargetType.NODEPS_DYNAMIC_LIBRARY.actionName)
             .build();
     String commandLine = Joiner.on(" ").join(linkConfig.arguments());
     assertThat(commandLine).matches(".*foo -Wl,-whole-archive bar -Wl,-no-whole-archive.*");
@@ -193,7 +193,7 @@ public final class LinkCommandLineTest extends LinkBuildVariablesTestCase {
 
     LinkCommandLine linkConfig =
         minimalConfiguration(variables)
-            .setActionName(LinkTargetType.NODEPS_DYNAMIC_LIBRARY.getActionName())
+            .setActionName(LinkTargetType.NODEPS_DYNAMIC_LIBRARY.actionName)
             .build();
     assertThat(linkConfig.arguments()).containsAtLeast("-Lfoo", "-Lbar").inOrder();
   }
@@ -208,7 +208,7 @@ public final class LinkCommandLineTest extends LinkBuildVariablesTestCase {
 
     LinkCommandLine linkConfig =
         minimalConfiguration(variables)
-            .setActionName(LinkTargetType.STATIC_LIBRARY.getActionName())
+            .setActionName(LinkTargetType.STATIC_LIBRARY.actionName)
             .setSplitCommandLine(true)
             .build();
     assertThat(linkConfig.getCommandLines().unpack().get(1).paramFileInfo.always()).isTrue();
@@ -224,7 +224,7 @@ public final class LinkCommandLineTest extends LinkBuildVariablesTestCase {
 
     LinkCommandLine linkConfig =
         minimalConfiguration(variables)
-            .setActionName(LinkTargetType.NODEPS_DYNAMIC_LIBRARY.getActionName())
+            .setActionName(LinkTargetType.NODEPS_DYNAMIC_LIBRARY.actionName)
             .setSplitCommandLine(true)
             .build();
     assertThat(linkConfig.getCommandLines().unpack().get(1).paramFileInfo.always()).isTrue();
@@ -238,7 +238,7 @@ public final class LinkCommandLineTest extends LinkBuildVariablesTestCase {
       throws Exception {
     LinkCommandLine linkConfig =
         minimalConfiguration(variables)
-            .setActionName(targetType.getActionName())
+            .setActionName(targetType.actionName)
             .build();
     return linkConfig.arguments();
   }
@@ -282,7 +282,7 @@ public final class LinkCommandLineTest extends LinkBuildVariablesTestCase {
                     .addVariable(
                         LinkBuildVariables.LINKER_PARAM_FILE.getVariableName(),
                         "LINKER_PARAM_FILE_PLACEHOLDER"))
-            .setActionName(LinkTargetType.STATIC_LIBRARY.getActionName())
+            .setActionName(LinkTargetType.STATIC_LIBRARY.actionName)
             .forceToolPath("foo/bar/ar")
             .setSplitCommandLine(true)
             .setParameterFileType(ParameterFileType.UNQUOTED)
@@ -307,7 +307,7 @@ public final class LinkCommandLineTest extends LinkBuildVariablesTestCase {
                         LinkBuildVariables.LINKER_PARAM_FILE.getVariableName(), "some/file.params")
                     .addStringSequenceVariable(
                         LinkBuildVariables.USER_LINK_FLAGS.getVariableName(), ImmutableList.of("")))
-            .setActionName(LinkTargetType.DYNAMIC_LIBRARY.getActionName())
+            .setActionName(LinkTargetType.DYNAMIC_LIBRARY.actionName)
             .forceToolPath("foo/bar/linker")
             .setSplitCommandLine(true)
             .build();
@@ -327,7 +327,7 @@ public final class LinkCommandLineTest extends LinkBuildVariablesTestCase {
                     .addVariable(
                         LinkBuildVariables.OUTPUT_EXECPATH.getVariableName(), "a/FakeOutput"))
             .forceToolPath("foo/bar/ar")
-            .setActionName(LinkTargetType.STATIC_LIBRARY.getActionName())
+            .setActionName(LinkTargetType.STATIC_LIBRARY.actionName)
             .build();
     List<String> result = linkConfig.arguments();
     assertThat(result).containsExactly("rcsD", "a/FakeOutput").inOrder();
@@ -347,7 +347,7 @@ public final class LinkCommandLineTest extends LinkBuildVariablesTestCase {
 
     LinkCommandLine linkConfig =
         minimalConfiguration(variables)
-            .setActionName(LinkTargetType.ALWAYS_LINK_STATIC_LIBRARY.getActionName())
+            .setActionName(LinkTargetType.ALWAYS_LINK_STATIC_LIBRARY.actionName)
             .forceToolPath("foo/bar/ar")
             .setSplitCommandLine(true)
             .build();
@@ -406,7 +406,7 @@ public final class LinkCommandLineTest extends LinkBuildVariablesTestCase {
                         ImmutableList.of(
                             forObjectFileGroup(ImmutableList.of(testTreeArtifact), false))))
             .forceToolPath("foo/bar/gcc")
-            .setActionName(LinkTargetType.STATIC_LIBRARY.getActionName())
+            .setActionName(LinkTargetType.STATIC_LIBRARY.actionName)
             .setSplitCommandLine(true)
             .build();
 

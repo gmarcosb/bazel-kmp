@@ -11,130 +11,127 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options;
+package com.google.devtools.common.options
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-import java.io.IOException;
-import java.io.PushbackReader;
-import java.io.Reader;
-import java.nio.file.FileSystem;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import javax.annotation.Nullable;
+import java.io.IOException
+import java.io.PushbackReader
 
 /**
- * A {@link ParamsFilePreProcessor} that processes a parameter file using the {@code
- * com.google.devtools.build.lib.actions.ParameterFile.ParameterFileType.SHELL_QUOTED} format. This
+ * A [ParamsFilePreProcessor] that processes a parameter file using the `com.google.devtools.build.lib.actions.ParameterFile.ParameterFileType.SHELL_QUOTED` format. This
  * format assumes each parameter is separated by whitespace and is quoted using singe quotes
- * ({@code '}) if it contains any special characters or is an empty string.
+ * (`'`) if it contains any special characters or is an empty string.
  */
-public class ShellQuotedParamsFilePreProcessor extends ParamsFilePreProcessor {
-
-  public ShellQuotedParamsFilePreProcessor(FileSystem fs) {
-    super(fs);
-  }
-
-  @Override
-  protected List<String> parse(Path paramsFile) throws IOException {
-    List<String> args = new ArrayList<>();
-    try (ShellQuotedReader reader =
-        new ShellQuotedReader(Files.newBufferedReader(paramsFile, UTF_8))) {
-      String arg;
-      while ((arg = reader.readArg()) != null) {
-        args.add(arg);
-      }
-    }
-    return args;
-  }
-
-  private static class ShellQuotedReader implements AutoCloseable {
-
-    private final PushbackReader reader;
-    private int position = -1;
-
-    public ShellQuotedReader(Reader reader) {
-      this.reader = new PushbackReader(reader, 10);
-    }
-
-    private char read() throws IOException {
-      int value = reader.read();
-      position++;
-      return (char) value;
-    }
-
-    private void unread(char value) throws IOException {
-      reader.unread(value);
-      position--;
-    }
-
-    private boolean hasNext() throws IOException {
-      char value = read();
-      boolean hasNext = value != (char) -1;
-      unread(value);
-      return hasNext;
-    }
-
-    @Override
-    public void close() throws IOException {
-      reader.close();
-    }
-
-    @Nullable
-    public String readArg() throws IOException {
-      if (!hasNext()) {
-        return null;
-      }
-
-      StringBuilder arg = new StringBuilder();
-
-      int quoteStart = -1;
-      boolean quoted = false;
-      char current;
-
-      while ((current = read()) != (char) -1) {
-        if (quoted) {
-          if (current == '\'') {
-            StringBuilder escapedQuoteRemainder =
-                new StringBuilder().append(read()).append(read()).append(read());
-            if (escapedQuoteRemainder.toString().equals("\\''")) {
-              arg.append("'");
-            } else {
-              for (char c : escapedQuoteRemainder.reverse().toString().toCharArray()) {
-                unread(c);
-              }
-              quoted = false;
-              quoteStart = -1;
+class ShellQuotedParamsFilePreProcessor(fs: java.nio.file.FileSystem?) :
+    com.google.devtools.common.options.ParamsFilePreProcessor(fs) {
+    @Throws(IOException::class)
+    override fun parse(paramsFile: java.nio.file.Path): MutableList<String?> {
+        val args: MutableList<String?> = java.util.ArrayList<String?>()
+        com.google.devtools.common.options.ShellQuotedParamsFilePreProcessor.ShellQuotedReader(
+            java.nio.file.Files.newBufferedReader(
+                paramsFile,
+                java.nio.charset.StandardCharsets.UTF_8
+            )
+        ).use { reader ->
+            var arg: String?
+            while ((reader.readArg().also { arg = it }) != null) {
+                args.add(arg)
             }
-          } else {
-            arg.append(current);
-          }
-        } else {
-          if (current == '\'') {
-            quoted = true;
-            quoteStart = position;
-          } else if (current == '\r') {
-            char next = read();
-            if (next == '\n') {
-              return arg.toString();
-            } else {
-              unread(next);
-              return arg.toString();
-            }
-          } else if (Character.isWhitespace(current)) {
-            return arg.toString();
-          } else {
-            arg.append(current);
-          }
         }
-      }
-      if (quoted) {
-        throw new IOException(
-            String.format(UNFINISHED_QUOTE_MESSAGE_FORMAT, "'", quoteStart));
-      }
-      return arg.toString();
+        return args
     }
-  }
+
+    private class ShellQuotedReader(reader: java.io.Reader) : java.lang.AutoCloseable {
+        private val reader: PushbackReader
+        private var position = -1
+
+        init {
+            this.reader = PushbackReader(reader, 10)
+        }
+
+        @Throws(IOException::class)
+        fun read(): Char {
+            val value: Int = reader.read()
+            position++
+            return value.toChar()
+        }
+
+        @Throws(IOException::class)
+        fun unread(value: Char) {
+            reader.unread(value.code)
+            position--
+        }
+
+        @Throws(IOException::class)
+        fun hasNext(): Boolean {
+            val value = read()
+            val hasNext = value != -1.toChar()
+            unread(value)
+            return hasNext
+        }
+
+        @Throws(IOException::class)
+        override fun close() {
+            reader.close()
+        }
+
+        @Throws(IOException::class)
+        fun readArg(): String? {
+            if (!hasNext()) {
+                return null
+            }
+
+            val arg: java.lang.StringBuilder = java.lang.StringBuilder()
+
+            var quoteStart = -1
+            var quoted = false
+            var current: Char
+
+            while ((read().also { current = it }) != -1.toChar()) {
+                if (quoted) {
+                    if (current == '\'') {
+                        val escapedQuoteRemainder: java.lang.StringBuilder =
+                            java.lang.StringBuilder().append(read()).append(read()).append(read())
+                        if (escapedQuoteRemainder.toString() == "\\''") {
+                            arg.append("'")
+                        } else {
+                            for (c in escapedQuoteRemainder.reverse().toString().toCharArray()) {
+                                unread(c)
+                            }
+                            quoted = false
+                            quoteStart = -1
+                        }
+                    } else {
+                        arg.append(current)
+                    }
+                } else {
+                    if (current == '\'') {
+                        quoted = true
+                        quoteStart = position
+                    } else if (current == '\r') {
+                        val next = read()
+                        if (next == '\n') {
+                            return arg.toString()
+                        } else {
+                            unread(next)
+                            return arg.toString()
+                        }
+                    } else if (java.lang.Character.isWhitespace(current)) {
+                        return arg.toString()
+                    } else {
+                        arg.append(current)
+                    }
+                }
+            }
+            if (quoted) {
+                throw IOException(
+                    java.lang.String.format(
+                        com.google.devtools.common.options.ParamsFilePreProcessor.Companion.UNFINISHED_QUOTE_MESSAGE_FORMAT,
+                        "'",
+                        quoteStart
+                    )
+                )
+            }
+            return arg.toString()
+        }
+    }
 }

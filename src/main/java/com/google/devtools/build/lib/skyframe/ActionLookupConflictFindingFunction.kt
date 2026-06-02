@@ -11,99 +11,81 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.devtools.build.lib.skyframe.ArtifactConflictFinder.ACTION_CONFLICTS;
+import com.google.devtools.build.lib.skyframe.ArtifactConflictFinder.ACTION_CONFLICTS
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.ActionConflictException;
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.actions.ActionLookupValue;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.bugreport.BugReport;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.compacthashset.CompactHashSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCacheReaderDepsProvider;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.SkyframeLookupResult;
-import java.util.Set;
-import java.util.function.Supplier;
-import java.util.stream.Stream;
-import javax.annotation.Nullable;
+/** Check all transitive actions of an [ActionLookupValue] for action conflicts.  */
+class ActionLookupConflictFindingFunction(cachingDependenciesSupplier: java.util.function.Supplier<RemoteAnalysisCacheReaderDepsProvider?>) :
+    SkyFunction {
+    private val cachingDependenciesSupplier: java.util.function.Supplier<RemoteAnalysisCacheReaderDepsProvider?>
 
-/** Check all transitive actions of an {@link ActionLookupValue} for action conflicts. */
-public class ActionLookupConflictFindingFunction implements SkyFunction {
-  private final Supplier<RemoteAnalysisCacheReaderDepsProvider> cachingDependenciesSupplier;
-
-  public ActionLookupConflictFindingFunction(
-      Supplier<RemoteAnalysisCacheReaderDepsProvider> cachingDependenciesSupplier) {
-    this.cachingDependenciesSupplier = cachingDependenciesSupplier;
-  }
-
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws SkyFunctionException, InterruptedException {
-    ImmutableMap<ActionAnalysisMetadata, ActionConflictException> actionConflicts =
-        ACTION_CONFLICTS.get(env);
-    ActionLookupKey lookupKey = ((ActionLookupConflictFindingValue.Key) skyKey).argument();
-    ActionLookupValue alValue = (ActionLookupValue) env.getValue(lookupKey);
-    if (env.valuesMissing()) {
-      if (!lookupKey.equals(CoverageReportValue.COVERAGE_REPORT_KEY)
-          // When remote retrieval is enabled, the analysis graph might be pruned, so missing action
-          // lookup values are expected.
-          && !cachingDependenciesSupplier.get().mode().isRetrievalEnabled()) {
-        BugReport.sendNonFatalBugReport(
-            new IllegalStateException(
-                "Unexpected missing action lookup value during action conflict finding: "
-                    + skyKey));
-      }
-      return null;
+    init {
+        this.cachingDependenciesSupplier = cachingDependenciesSupplier
     }
 
-    Set<ActionLookupConflictFindingValue.Key> depKeys = CompactHashSet.create();
-    for (ActionAnalysisMetadata action : alValue.getActions()) {
-      if (actionConflicts.containsKey(action)) {
-        throw new ActionConflictFunctionException(actionConflicts.get(action));
-      }
-      convertArtifacts(action.getInputs()).forEach(depKeys::add);
-    }
-    // Avoid silly cycles.
-    depKeys.remove(skyKey);
+    @Throws(SkyFunctionException::class, java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment): SkyValue? {
+        val actionConflicts: com.google.common.collect.ImmutableMap<ActionAnalysisMetadata?, ActionConflictException?> =
+            ACTION_CONFLICTS.get(env)
+        val lookupKey: ActionLookupKey = (skyKey as ActionLookupConflictFindingValue.Key).argument()
+        val alValue: ActionLookupValue? = env.getValue(lookupKey) as ActionLookupValue?
+        if (env.valuesMissing()) {
+            if (!lookupKey.equals(CoverageReportValue.COVERAGE_REPORT_KEY) // When remote retrieval is enabled, the analysis graph might be pruned, so missing action
+                // lookup values are expected.
+                && !cachingDependenciesSupplier.get().mode().isRetrievalEnabled()
+            ) {
+                BugReport.sendNonFatalBugReport(
+                    java.lang.IllegalStateException(
+                        "Unexpected missing action lookup value during action conflict finding: "
+                                + skyKey
+                    )
+                )
+            }
+            return null
+        }
 
-    SkyframeLookupResult result = env.getValuesAndExceptions(depKeys);
-    if (env.valuesMissing()) {
-      return null;
-    }
-    for (SkyKey key : depKeys) {
-      if (result.get(key) == null) {
-        return null;
-      }
-    }
-    return ActionLookupConflictFindingValue.INSTANCE;
-  }
+        val depKeys: MutableSet<ActionLookupConflictFindingValue.Key?> =
+            com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.create<ActionLookupConflictFindingValue.Key?>()
+        for (action in alValue.getActions()) {
+            if (actionConflicts.containsKey(action)) {
+                throw ActionConflictFunctionException(actionConflicts.get(action))
+            }
+            convertArtifacts(action.getInputs()).forEach(java.util.function.Consumer { e: ActionLookupConflictFindingValue.Key? ->
+                depKeys.add(
+                    e
+                )
+            })
+        }
+        // Avoid silly cycles.
+        depKeys.remove(skyKey)
 
-  static Stream<ActionLookupConflictFindingValue.Key> convertArtifacts(
-      NestedSet<Artifact> artifacts) {
-    return artifacts.toList().stream()
-        .filter(a -> !a.isSourceArtifact())
-        .map(ActionLookupConflictFindingValue::key);
-  }
-
-  @Nullable
-  @Override
-  public String extractTag(SkyKey skyKey) {
-    return Label.print(((ConfiguredTargetKey) skyKey.argument()).getLabel());
-  }
-
-  static class ActionConflictFunctionException extends SkyFunctionException {
-    ActionConflictFunctionException(ActionConflictException e) {
-      super(e, Transience.PERSISTENT);
+        val result: SkyframeLookupResult = env.getValuesAndExceptions(depKeys)
+        if (env.valuesMissing()) {
+            return null
+        }
+        for (key in depKeys) {
+            if (result.get(key) == null) {
+                return null
+            }
+        }
+        return ActionLookupConflictFindingValue.INSTANCE
     }
-  }
+
+    override fun extractTag(skyKey: SkyKey): String? {
+        return Label.print((skyKey.argument() as ConfiguredTargetKey).getLabel())
+    }
+
+    internal class ActionConflictFunctionException(e: ActionConflictException?) :
+        SkyFunctionException(e, Transience.PERSISTENT)
+
+    companion object {
+        fun convertArtifacts(
+            artifacts: NestedSet<Artifact?>
+        ): java.util.stream.Stream<ActionLookupConflictFindingValue.Key?> {
+            return artifacts.toList().stream()
+                .filter({ a -> !a.isSourceArtifact() })
+                .map(ActionLookupConflictFindingValue::key)
+        }
+    }
 }

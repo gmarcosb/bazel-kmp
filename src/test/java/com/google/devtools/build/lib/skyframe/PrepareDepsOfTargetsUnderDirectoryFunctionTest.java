@@ -226,7 +226,7 @@ public class PrepareDepsOfTargetsUnderDirectoryFunctionTest extends BuildViewTes
                         ImmutableSet.of(excludedPathFragment)));
 
     // Then the value reports that "a" is a package,
-    assertThat(value.isDirectoryPackage()).isTrue();
+    assertThat(value.isDirectoryPackage).isTrue();
 
     // And only the subdirectory corresponding to "a/c" is present in the result,
     RootedPath onlySubdir =
@@ -272,7 +272,7 @@ public class PrepareDepsOfTargetsUnderDirectoryFunctionTest extends BuildViewTes
                         rootDirectory, PathFragment.create("a"), excludedPaths));
 
     // Then the value reports that "a" is a package,
-    assertThat(value.isDirectoryPackage()).isTrue();
+    assertThat(value.isDirectoryPackage).isTrue();
 
     // And the subdirectory corresponding to "a/b" is NOT present in the result (it is empty and
     // false).
@@ -288,7 +288,7 @@ public class PrepareDepsOfTargetsUnderDirectoryFunctionTest extends BuildViewTes
         (CollectPackagesUnderDirectoryValue) Preconditions.checkNotNull(graph.getValue(abKey));
 
     // And that value says that "a/b" is not a package,
-    assertThat(abValue.isDirectoryPackage()).isFalse();
+    assertThat(abValue.isDirectoryPackage).isFalse();
 
     // And no subdirectories are present in that value (since they are all empty and false).
     assertThat(abValue.getSubdirectoryTransitivelyContainsPackagesOrErrors()).isEmpty();

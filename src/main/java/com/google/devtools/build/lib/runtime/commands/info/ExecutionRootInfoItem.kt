@@ -11,29 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime.commands.info
 
-package com.google.devtools.build.lib.runtime.commands.info;
+import com.google.common.base.Preconditions
+import com.google.common.base.Supplier
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.base.Supplier;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.InfoItem;
-
-/** Info item for the execution_root directory. */
-public final class ExecutionRootInfoItem extends InfoItem {
-  public ExecutionRootInfoItem() {
-    super(
-        "execution_root",
-        "A directory that makes all input and output files visible to the build.",
-        false);
-  }
-
-  @Override
-  public byte[] get(
-      Supplier<BuildConfigurationValue> configurationSupplier, CommandEnvironment env) {
-    checkNotNull(env);
-    return print(env.getDirectories().getExecRoot(env.getWorkspaceName()));
-  }
+/** Info item for the execution_root directory.  */
+class ExecutionRootInfoItem : InfoItem(
+    "execution_root",
+    "A directory that makes all input and output files visible to the build.",
+    false
+) {
+    public override fun get(
+        configurationSupplier: Supplier<BuildConfigurationValue?>?, env: CommandEnvironment?
+    ): ByteArray {
+        Preconditions.checkNotNull<Any?>(env)
+        return print(env.getDirectories().getExecRoot(env.getWorkspaceName()))
+    }
 }

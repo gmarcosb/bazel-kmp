@@ -154,14 +154,14 @@ public final class LoadingPhaseRunnerTest {
     tester.assertContainsError("Skipping '//base:missing': no such package 'base'");
     tester.assertContainsWarning("Target pattern parsing failed.");
     PatternExpandingError err = tester.findPostOnce(PatternExpandingError.class);
-    assertThat(err.getPattern()).containsExactly("//base:missing");
+    assertThat(err.pattern).containsExactly("//base:missing");
   }
 
   @Test
   public void testNonExistentPackageWithoutKeepGoing() {
     assertThrows(TargetParsingException.class, () -> tester.load("//does/not/exist"));
     PatternExpandingError err = tester.findPostOnce(PatternExpandingError.class);
-    assertThat(err.getPattern()).containsExactly("//does/not/exist");
+    assertThat(err.pattern).containsExactly("//does/not/exist");
   }
 
   @Test
@@ -175,7 +175,7 @@ public final class LoadingPhaseRunnerTest {
     tester.assertContainsError("Skipping '//base:missing': no such target '//base:missing'");
     tester.assertContainsWarning("Target pattern parsing failed.");
     PatternExpandingError err = tester.findPostOnce(PatternExpandingError.class);
-    assertThat(err.getPattern()).containsExactly("//base:missing");
+    assertThat(err.pattern).containsExactly("//base:missing");
   }
 
   @Test
@@ -183,7 +183,7 @@ public final class LoadingPhaseRunnerTest {
     tester.addFile("base/BUILD", "filegroup(name = 'hello', srcs = ['foo.txt'])");
     tester.loadKeepGoing("//base:hello", "//base:missing");
     PatternExpandingError err = tester.findPostOnce(PatternExpandingError.class);
-    assertThat(err.getPattern()).containsExactly("//base:missing");
+    assertThat(err.pattern).containsExactly("//base:missing");
     TargetParsingCompleteEvent event = tester.findPostOnce(TargetParsingCompleteEvent.class);
     assertThat(event.getOriginalTargetPattern()).containsExactly("//base:hello", "//base:missing");
     assertThat(event.getFailedTargetPatterns()).containsExactly("//base:missing");
@@ -246,7 +246,7 @@ public final class LoadingPhaseRunnerTest {
     tester.assertContainsError("Skipping '//base/...': no targets found beneath 'base'");
     tester.assertContainsWarning("Target pattern parsing failed.");
     PatternExpandingError err = tester.findPostOnce(PatternExpandingError.class);
-    assertThat(err.getPattern()).containsExactly("//base/...");
+    assertThat(err.pattern).containsExactly("//base/...");
   }
 
   @Test
@@ -1010,7 +1010,7 @@ public final class LoadingPhaseRunnerTest {
     assertThrows(TargetParsingException.class, () -> tester.load("//bad"));
     tester.assertContainsEventWithFrequency("some error", 1);
     PatternExpandingError err = tester.findPostOnce(PatternExpandingError.class);
-    assertThat(err.getPattern()).containsExactly("//bad");
+    assertThat(err.pattern).containsExactly("//bad");
   }
 
   @Test
@@ -1111,7 +1111,7 @@ public final class LoadingPhaseRunnerTest {
     assertThat(e).hasMessageThat().contains("cycles detected");
     tester.assertContainsEventWithFrequency("cycle detected in extension", 1);
     PatternExpandingError err = tester.findPostOnce(PatternExpandingError.class);
-    assertThat(err.getPattern()).containsExactly("//test:cycle1");
+    assertThat(err.pattern).containsExactly("//test:cycle1");
   }
 
   @Test
@@ -1124,7 +1124,7 @@ public final class LoadingPhaseRunnerTest {
     assertThat(e).hasMessageThat().contains("cycles detected");
     tester.assertContainsEventWithFrequency("cycle detected in extension", 1);
     PatternExpandingError err = tester.findPostOnce(PatternExpandingError.class);
-    assertThat(err.getPattern()).containsExactly("//test:cycle1");
+    assertThat(err.pattern).containsExactly("//test:cycle1");
   }
 
   @Test
@@ -1162,7 +1162,7 @@ public final class LoadingPhaseRunnerTest {
     assertThat(tester.assertContainsError("cycle in dependency graph").toString())
         .containsMatch("in test_suite rule //:.: cycle in dependency graph");
     PatternExpandingError err = tester.findPostOnce(PatternExpandingError.class);
-    assertThat(err.getPattern()).containsExactly("//:a", "//:b");
+    assertThat(err.pattern).containsExactly("//:a", "//:b");
   }
 
   @Test

@@ -11,22 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.test
 
-package com.google.devtools.build.lib.starlarkbuildapi.test;
-
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.starlarkbuildapi.core.ProviderApi;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkValue;
+import com.google.devtools.build.lib.collect.nestedset.Depset
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
+import net.starlark.java.eval.StarlarkValue
 
 /**
  * Encapsulates information about an analysis-phase error which would have occurred during a build.
  */
 @StarlarkBuiltin(
     name = "AnalysisFailureInfo",
-    doc =
-        "<b>Experimental. This API is experimental and subject to change at any time</b><p>"
+    doc = ("<b>Experimental. This API is experimental and subject to change at any time</b><p>"
             + " Encapsulates information about an analysis-phase error which would have occurred"
             + " during a build. In most builds, an analysis-phase error would result in a build"
             + " failure and the error description would be output to the console. However, if"
@@ -41,21 +38,18 @@ import net.starlark.java.eval.StarlarkValue;
             + " propagated <code>AnalysisFailureInfo</code>, then propagate a provider with"
             + " <code>causes</code> equal to the union of the <code>causes</code> of the "
             + "dependencies.</li></ul> If an aspect and the rule target that it is applied to both "
-            + "provide AnalysisFailureInfo, the instances are merged.",
-    documented = false)
-public interface AnalysisFailureInfoApi<AnalysisFailureApiT extends AnalysisFailureApi>
-    extends StarlarkValue {
+            + "provide AnalysisFailureInfo, the instances are merged."),
+    documented = false
+)
+interface AnalysisFailureInfoApi<AnalysisFailureApiT : AnalysisFailureApi?>
+    : StarlarkValue {
+    @get:StarlarkMethod(
+        name = "causes", doc = ("A depset of <code>AnalysisFailure</code> objects describing the failures that "
+                + "occurred in this target or its dependencies."), documented = false, structField = true
+    )
+    val causes: Depset?
 
-  @StarlarkMethod(
-      name = "causes",
-      doc =
-          "A depset of <code>AnalysisFailure</code> objects describing the failures that "
-              + "occurred in this target or its dependencies.",
-      documented = false,
-      structField = true)
-  Depset /*<AnalysisFailureApiT>*/ getCauses();
-
-  /** Provider class for {@link AnalysisFailureInfoApi} objects. */
-  @StarlarkBuiltin(name = "Provider", documented = false, doc = "")
-  interface AnalysisFailureInfoProviderApi extends ProviderApi {}
+    /** Provider class for [AnalysisFailureInfoApi] objects.  */
+    @StarlarkBuiltin(name = "Provider", documented = false, doc = "")
+    interface AnalysisFailureInfoProviderApi : ProviderApi
 }

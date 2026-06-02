@@ -75,8 +75,8 @@ public interface JavaGenJarsProvider
 
   default boolean isEmpty() throws EvalException, RuleErrorException {
     return !usesAnnotationProcessing()
-        && getGenClassJar() == null
-        && getGenSourceJar() == null
+        && genClassJar == null
+        && genSourceJar == null
         && getTransitiveGenClassJars().isEmpty()
         && getTransitiveGenSourceJars().isEmpty();
   }

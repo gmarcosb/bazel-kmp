@@ -11,51 +11,47 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import com.google.devtools.build.lib.skybridge.SkybridgeInterface;
-import com.google.devtools.build.lib.util.SerializedAbruptExitException;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsProvider;
-import java.util.Collections;
+import java.util.Collections
 
 /**
  * Provides a piece of functionality in the Service Component (SC).
- *
- * <p>Each service must be structured as an interface type (which extends this interface) and an
+ * 
+ * 
+ * Each service must be structured as an interface type (which extends this interface) and an
  * implementation type (which implements the interface type). The interface type provides a stable
  * API through which the Logical Component (LC) can access the service, whose implementation is
  * provided by the SC.
- *
- * <p>The set of services is passed into {@link BlazeRuntime#main} and fixed for the lifetime of the
- * server. A service can be obtained by calling {@link BlazeRuntime#getBlazeService} with the
+ * 
+ * 
+ * The set of services is passed into [BlazeRuntime.main] and fixed for the lifetime of the
+ * server. A service can be obtained by calling [BlazeRuntime.getBlazeService] with the
  * interface type as the argument.
  */
-@SkybridgeInterface
-public interface BlazeService extends OptionsSupplier {
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface
+interface BlazeService : com.google.devtools.build.lib.runtime.OptionsSupplier {
+    val startupOptions: Iterable<java.lang.Class<out com.google.devtools.common.options.OptionsBase>>
+        get() = Collections.emptyList<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?>()
 
-  @Override
-  default Iterable<Class<? extends OptionsBase>> getStartupOptions() {
-    return Collections.emptyList();
-  }
+    val commonCommandOptions: Iterable<java.lang.Class<out com.google.devtools.common.options.OptionsBase>>
+        get() = Collections.emptyList<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?>()
 
-  @Override
-  default Iterable<Class<? extends OptionsBase>> getCommonCommandOptions() {
-    return Collections.emptyList();
-  }
+    override fun getCommandOptions(commandName: String?): Iterable<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?> {
+        return Collections.emptyList<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?>()
+    }
 
-  @Override
-  default Iterable<Class<? extends OptionsBase>> getCommandOptions(String commandName) {
-    return Collections.emptyList();
-  }
-
-  /**
-   * Called at the beginning of Bazel startup, right before {@link BlazeModule#globalInit}.
-   *
-   * @param startupOptions the server's startup options
-   * @param blazeServices the available services, including this service itself
-   * @throws SerializedAbruptExitException to shut down the server immediately
-   */
-  default void globalInit(OptionsProvider startupOptions, Iterable<BlazeService> blazeServices)
-      throws SerializedAbruptExitException {}
+    /**
+     * Called at the beginning of Bazel startup, right before [BlazeModule.globalInit].
+     * 
+     * @param startupOptions the server's startup options
+     * @param blazeServices the available services, including this service itself
+     * @throws SerializedAbruptExitException to shut down the server immediately
+     */
+    @Throws(com.google.devtools.build.lib.util.SerializedAbruptExitException::class)
+    fun globalInit(
+        startupOptions: com.google.devtools.common.options.OptionsProvider?,
+        blazeServices: Iterable<BlazeService?>?
+    ) {
+    }
 }

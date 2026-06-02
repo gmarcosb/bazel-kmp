@@ -335,7 +335,7 @@ public class RepositoryDelegatorTest extends FoundationTestCase {
     assertThat(result.hasError()).isFalse();
     RepositoryDirectoryValue repositoryDirectoryValue = (RepositoryDirectoryValue) result.get(key);
     assertThat(repositoryDirectoryValue).isInstanceOf(Failure.class);
-    assertThat(((Failure) repositoryDirectoryValue).errorMsg())
+    assertThat(((Failure) repositoryDirectoryValue).errorMsg)
         .contains("Repository '@@foo' is not defined");
   }
 
@@ -358,7 +358,7 @@ public class RepositoryDelegatorTest extends FoundationTestCase {
     assertThat(result.hasError()).isFalse();
     RepositoryDirectoryValue repositoryDirectoryValue = (RepositoryDirectoryValue) result.get(key);
     assertThat(repositoryDirectoryValue).isInstanceOf(Failure.class);
-    assertThat(((Failure) repositoryDirectoryValue).errorMsg())
+    assertThat(((Failure) repositoryDirectoryValue).errorMsg)
         .contains("No repository visible as '@foo' from repository '@@fake_owner_repo'");
   }
 
@@ -382,7 +382,7 @@ public class RepositoryDelegatorTest extends FoundationTestCase {
     assertThat(result.hasError()).isFalse();
     RepositoryDirectoryValue repositoryDirectoryValue = (RepositoryDirectoryValue) result.get(key);
     assertThat(repositoryDirectoryValue).isInstanceOf(Failure.class);
-    assertThat(((Failure) repositoryDirectoryValue).errorMsg())
+    assertThat(((Failure) repositoryDirectoryValue).errorMsg)
         .contains("No repository visible as '@foo' from main repository");
   }
 }

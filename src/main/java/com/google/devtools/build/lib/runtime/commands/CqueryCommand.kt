@@ -11,204 +11,174 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime.commands;
+package com.google.devtools.build.lib.runtime.commands
 
-import static com.google.devtools.build.lib.runtime.Command.BuildPhase.ANALYZES;
+import com.google.devtools.build.lib.runtime.Command.BuildPhase.ANALYZES
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.config.CoreOptions.IncludeConfigFragmentsEnum;
-import com.google.devtools.build.lib.buildtool.BuildRequest;
-import com.google.devtools.build.lib.buildtool.BuildTool;
-import com.google.devtools.build.lib.buildtool.CqueryProcessor;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.cmdline.TargetPattern;
-import com.google.devtools.build.lib.cmdline.TargetPattern.Parser;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.query2.cquery.ConfiguredTargetQueryEnvironment;
-import com.google.devtools.build.lib.query2.cquery.CqueryOptions;
-import com.google.devtools.build.lib.query2.engine.AllPathsFunction;
-import com.google.devtools.build.lib.query2.engine.FunctionExpression;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryFunction;
-import com.google.devtools.build.lib.query2.engine.QueryException;
-import com.google.devtools.build.lib.query2.engine.QueryExpression;
-import com.google.devtools.build.lib.query2.engine.QueryParser;
-import com.google.devtools.build.lib.query2.engine.QuerySyntaxException;
-import com.google.devtools.build.lib.query2.engine.SomePathFunction;
-import com.google.devtools.build.lib.runtime.BlazeCommand;
-import com.google.devtools.build.lib.runtime.BlazeCommandResult;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.Command;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.KeepGoingOption;
-import com.google.devtools.build.lib.runtime.LoadingPhaseThreadsOption;
-import com.google.devtools.build.lib.server.FailureDetails.ConfigurableQuery;
-import com.google.devtools.build.lib.server.FailureDetails.ConfigurableQuery.Code;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.skyframe.RepositoryMappingValue.RepositoryMappingResolutionException;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.InterruptedFailureDetails;
-import com.google.devtools.common.options.OptionPriority.PriorityCategory;
-import com.google.devtools.common.options.OptionsParser;
-import com.google.devtools.common.options.OptionsParsingException;
-import com.google.devtools.common.options.OptionsParsingResult;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-
-/** Handles the 'cquery' command on the Blaze command line. */
+/** Handles the 'cquery' command on the Blaze command line.  */
 @Command(
     name = "cquery",
     buildPhase = ANALYZES,
-    // We inherit from TestCommand so that we pick up changes like `test --test_arg=foo` in .bazelrc
-    // files.
-    // Without doing this, there is no easy way to use the output of cquery to determine whether a
-    // test has changed between two invocations, because the testrunner action is not easily
-    // introspectable.
-    inheritsOptionsFrom = {TestCommand.class},
-    options = {CqueryOptions.class},
+    inheritsOptionsFrom = [com.google.devtools.build.lib.runtime.commands.TestCommand::class],
+    options = [CqueryOptions::class],
     usesConfigurationOptions = true,
     shortDescription = "Loads, analyzes, and queries the specified targets w/ configurations.",
     allowResidue = true,
     binaryStdOut = true,
     completion = "label",
-    help = "resource:cquery.txt")
-public final class CqueryCommand implements BlazeCommand {
-
-  @Override
-  public void editOptions(OptionsParser optionsParser) {
-    CqueryOptions cqueryOptions = optionsParser.getOptions(CqueryOptions.class);
-    try {
-      if (!cqueryOptions.getTransitions().equals(CqueryOptions.Transitions.NONE)) {
-        optionsParser.parse(
-            PriorityCategory.COMPUTED_DEFAULT,
-            "Option required by setting the --transitions flag",
-            ImmutableList.of("--output=transitions"));
-      }
-      optionsParser.parse(
-          PriorityCategory.COMPUTED_DEFAULT,
-          "Options required by cquery",
-          ImmutableList.of("--nobuild"));
-      optionsParser.parse(
-          PriorityCategory.COMPUTED_DEFAULT,
-          "cquery should include 'tags = [\"manual\"]' targets by default",
-          ImmutableList.of("--build_manual_tests"));
-      optionsParser.parse(
-          PriorityCategory.SOFTWARE_REQUIREMENT,
-          // https://github.com/bazelbuild/bazel/issues/11078
-          "cquery should not exclude test_suite rules",
-          ImmutableList.of("--noexpand_test_suites"));
-      if (cqueryOptions.getShowRequiredConfigFragments() != IncludeConfigFragmentsEnum.OFF) {
-        optionsParser.parse(
-            PriorityCategory.COMPUTED_DEFAULT,
-            "Options required by cquery's --show_config_fragments flag",
-            ImmutableList.of(
-                "--include_config_fragments_provider="
-                    + cqueryOptions.getShowRequiredConfigFragments()));
-      }
-      optionsParser.parse(
-          PriorityCategory.SOFTWARE_REQUIREMENT,
-          "cquery should not exclude tests",
-          ImmutableList.of("--nobuild_tests_only"));
-    } catch (OptionsParsingException e) {
-      throw new IllegalStateException("Cquery's known options failed to parse", e);
-    }
-  }
-
-  @Override
-  public BlazeCommandResult exec(CommandEnvironment env, OptionsParsingResult options) {
-    TargetPattern.Parser mainRepoTargetParser;
-    try {
-      RepositoryMapping repoMapping =
-          env.getSkyframeExecutor()
-              .getMainRepoMapping(
-                  env.getOptions().getOptions(KeepGoingOption.class).getKeepGoing(),
-                  env.getOptions().getOptions(LoadingPhaseThreadsOption.class).getThreads(),
-                  env.getReporter());
-      mainRepoTargetParser =
-          new Parser(env.getRelativeWorkingDirectory(), RepositoryName.MAIN, repoMapping);
-    } catch (RepositoryMappingResolutionException e) {
-      env.getReporter().handle(Event.error(e.getMessage()));
-      return BlazeCommandResult.detailedExitCode(e.getDetailedExitCode());
-    } catch (InterruptedException e) {
-      String errorMessage = "Fetch interrupted: " + e.getMessage();
-      env.getReporter().handle(Event.error(errorMessage));
-      return BlazeCommandResult.detailedExitCode(
-          InterruptedFailureDetails.detailedExitCode(errorMessage));
+    help = "resource:cquery.txt"
+)
+class CqueryCommand : BlazeCommand {
+    public override fun editOptions(optionsParser: com.google.devtools.common.options.OptionsParser) {
+        val cqueryOptions: CqueryOptions? = optionsParser.getOptions<O?>(CqueryOptions::class.java)
+        try {
+            if (!cqueryOptions.getTransitions().equals(CqueryOptions.Transitions.NONE)) {
+                optionsParser.parse(
+                    com.google.devtools.common.options.OptionPriority.PriorityCategory.COMPUTED_DEFAULT,
+                    "Option required by setting the --transitions flag",
+                    com.google.common.collect.ImmutableList.of<String?>("--output=transitions")
+                )
+            }
+            optionsParser.parse(
+                com.google.devtools.common.options.OptionPriority.PriorityCategory.COMPUTED_DEFAULT,
+                "Options required by cquery",
+                com.google.common.collect.ImmutableList.of<String?>("--nobuild")
+            )
+            optionsParser.parse(
+                com.google.devtools.common.options.OptionPriority.PriorityCategory.COMPUTED_DEFAULT,
+                "cquery should include 'tags = [\"manual\"]' targets by default",
+                com.google.common.collect.ImmutableList.of<String?>("--build_manual_tests")
+            )
+            optionsParser.parse(
+                com.google.devtools.common.options.OptionPriority.PriorityCategory.SOFTWARE_REQUIREMENT,  // https://github.com/bazelbuild/bazel/issues/11078
+                "cquery should not exclude test_suite rules",
+                com.google.common.collect.ImmutableList.of<String?>("--noexpand_test_suites")
+            )
+            if (cqueryOptions.getShowRequiredConfigFragments() !== IncludeConfigFragmentsEnum.OFF) {
+                optionsParser.parse(
+                    com.google.devtools.common.options.OptionPriority.PriorityCategory.COMPUTED_DEFAULT,
+                    "Options required by cquery's --show_config_fragments flag",
+                    com.google.common.collect.ImmutableList.of<String?>(
+                        "--include_config_fragments_provider="
+                                + cqueryOptions.getShowRequiredConfigFragments()
+                    )
+                )
+            }
+            optionsParser.parse(
+                com.google.devtools.common.options.OptionPriority.PriorityCategory.SOFTWARE_REQUIREMENT,
+                "cquery should not exclude tests",
+                com.google.common.collect.ImmutableList.of<String?>("--nobuild_tests_only")
+            )
+        } catch (e: com.google.devtools.common.options.OptionsParsingException) {
+            throw java.lang.IllegalStateException("Cquery's known options failed to parse", e)
+        }
     }
 
-    String query = null;
-    try {
-      query =
-          QueryOptionHelper.readQuery(
-              options.getOptions(CqueryOptions.class), options, env, /* allowEmptyQuery= */ false);
-    } catch (QueryException e) {
-      return BlazeCommandResult.failureDetail(e.getFailureDetail());
+    public override fun exec(
+        env: CommandEnvironment,
+        options: com.google.devtools.common.options.OptionsParsingResult
+    ): BlazeCommandResult {
+        val mainRepoTargetParser: TargetPattern.Parser?
+        try {
+            val repoMapping: RepositoryMapping? =
+                env.getSkyframeExecutor()
+                    .getMainRepoMapping(
+                        env.getOptions().getOptions(KeepGoingOption::class.java).getKeepGoing(),
+                        env.getOptions().getOptions(LoadingPhaseThreadsOption::class.java).getThreads(),
+                        env.getReporter()
+                    )
+            mainRepoTargetParser =
+                Parser(env.getRelativeWorkingDirectory(), RepositoryName.MAIN, repoMapping)
+        } catch (e: RepositoryMappingResolutionException) {
+            env.getReporter().handle(com.google.devtools.build.lib.events.Event.error(e.message))
+            return BlazeCommandResult.detailedExitCode(e.getDetailedExitCode())
+        } catch (e: java.lang.InterruptedException) {
+            val errorMessage = "Fetch interrupted: " + e.message
+            env.getReporter().handle(com.google.devtools.build.lib.events.Event.error(errorMessage))
+            return BlazeCommandResult.detailedExitCode(
+                InterruptedFailureDetails.detailedExitCode(errorMessage)
+            )
+        }
+
+        var query: String? = null
+        try {
+            query =
+                QueryOptionHelper.readQuery(
+                    options.getOptions<O?>(CqueryOptions::class.java), options, env,  /* allowEmptyQuery= */false
+                )
+        } catch (e: com.google.devtools.build.lib.query2.engine.QueryException) {
+            return BlazeCommandResult.failureDetail(e.getFailureDetail())
+        }
+
+        val functions: HashMap<String?, QueryFunction?> = HashMap<String?, QueryFunction?>()
+        for (queryFunction in ConfiguredTargetQueryEnvironment.FUNCTIONS) {
+            functions.put(queryFunction.name, queryFunction)
+        }
+        for (queryFunction in env.getRuntime().getQueryFunctions()) {
+            functions.put(queryFunction.name, queryFunction)
+        }
+        val expr: QueryExpression
+        try {
+            expr = com.google.devtools.build.lib.query2.engine.QueryParser.parse(query, functions)
+        } catch (e: com.google.devtools.build.lib.query2.engine.QuerySyntaxException) {
+            val message: String? =
+                java.lang.String.format(
+                    "Error while parsing '%s': %s", QueryExpression.truncate(query), e.message
+                )
+            env.getReporter().handle(com.google.devtools.build.lib.events.Event.error(message))
+            return createFailureResult(message, Code.EXPRESSION_PARSE_FAILURE)
+        }
+
+        var topLevelTargets: MutableList<String?> = options.getOptions<O?>(CqueryOptions::class.java).getUniverseScope()
+        val targetPatternSet: LinkedHashSet<String?> = LinkedHashSet<String?>()
+        var targetsForProjectResolution: com.google.common.collect.ImmutableList<String?>? = null
+        if (topLevelTargets.isEmpty()) {
+            expr.collectTargetPatterns(targetPatternSet)
+            topLevelTargets = java.util.ArrayList<String?>(targetPatternSet)
+            if (expr is FunctionExpression
+                && (expr.getFunction() is SomePathFunction
+                        || expr.getFunction() is AllPathsFunction)
+            ) {
+                targetsForProjectResolution =
+                    com.google.common.collect.ImmutableList.of<String?>(targetPatternSet.getFirst())
+            }
+        }
+        val runtime: BlazeRuntime = env.getRuntime()
+
+        val request: BuildRequest? =
+            BuildRequest.builder()
+                .setCommandName(javaClass.getAnnotation<A?>(Command::class.java).name())
+                .setId(env.getCommandId())
+                .setOptions(options)
+                .setStartupOptions(runtime.getStartupOptionsProvider())
+                .setOutErr(env.getReporter().getOutErr())
+                .setTargets(topLevelTargets)
+                .setStartTimeMillis(env.commandStartTime)
+                .setCheckforActionConflicts(false)
+                .setReportIncompatibleTargets(false)
+                .build()
+        QueryCommandUtils.resetDeserializedKeysFromRemoteAnalysisCache(env)
+        val detailedExitCode: DetailedExitCode? =
+            BuildTool(env, CqueryProcessor(expr, mainRepoTargetParser))
+                .processRequest(
+                    request,  /* validator= */
+                    null,  /* postBuildCallback= */
+                    null,
+                    options,
+                    targetsForProjectResolution
+                )
+                .getDetailedExitCode()
+        return BlazeCommandResult.detailedExitCode(detailedExitCode)
     }
 
-    HashMap<String, QueryFunction> functions = new HashMap<>();
-    for (QueryFunction queryFunction : ConfiguredTargetQueryEnvironment.FUNCTIONS) {
-      functions.put(queryFunction.getName(), queryFunction);
+    companion object {
+        private fun createFailureResult(message: String?, detailedCode: Code?): BlazeCommandResult {
+            return BlazeCommandResult.failureDetail(
+                FailureDetail.newBuilder()
+                    .setMessage(message)
+                    .setConfigurableQuery(ConfigurableQuery.newBuilder().setCode(detailedCode))
+                    .build()
+            )
+        }
     }
-    for (QueryFunction queryFunction : env.getRuntime().getQueryFunctions()) {
-      functions.put(queryFunction.getName(), queryFunction);
-    }
-    QueryExpression expr;
-    try {
-      expr = QueryParser.parse(query, functions);
-    } catch (QuerySyntaxException e) {
-      String message =
-          String.format(
-              "Error while parsing '%s': %s", QueryExpression.truncate(query), e.getMessage());
-      env.getReporter().handle(Event.error(message));
-      return createFailureResult(message, Code.EXPRESSION_PARSE_FAILURE);
-    }
-
-    List<String> topLevelTargets = options.getOptions(CqueryOptions.class).getUniverseScope();
-    LinkedHashSet<String> targetPatternSet = new LinkedHashSet<>();
-    ImmutableList<String> targetsForProjectResolution = null;
-    if (topLevelTargets.isEmpty()) {
-      expr.collectTargetPatterns(targetPatternSet);
-      topLevelTargets = new ArrayList<>(targetPatternSet);
-      if (expr instanceof FunctionExpression functionExpr
-          && (functionExpr.getFunction() instanceof SomePathFunction
-              || functionExpr.getFunction() instanceof AllPathsFunction)) {
-        targetsForProjectResolution = ImmutableList.of(targetPatternSet.getFirst());
-      }
-    }
-    BlazeRuntime runtime = env.getRuntime();
-
-    BuildRequest request =
-        BuildRequest.builder()
-            .setCommandName(getClass().getAnnotation(Command.class).name())
-            .setId(env.getCommandId())
-            .setOptions(options)
-            .setStartupOptions(runtime.getStartupOptionsProvider())
-            .setOutErr(env.getReporter().getOutErr())
-            .setTargets(topLevelTargets)
-            .setStartTimeMillis(env.getCommandStartTime())
-            .setCheckforActionConflicts(false)
-            .setReportIncompatibleTargets(false)
-            .build();
-    QueryCommandUtils.resetDeserializedKeysFromRemoteAnalysisCache(env);
-    DetailedExitCode detailedExitCode =
-        new BuildTool(env, new CqueryProcessor(expr, mainRepoTargetParser))
-            .processRequest(
-                request,
-                /* validator= */ null,
-                /* postBuildCallback= */ null,
-                options,
-                targetsForProjectResolution)
-            .getDetailedExitCode();
-    return BlazeCommandResult.detailedExitCode(detailedExitCode);
-  }
-
-  private static BlazeCommandResult createFailureResult(String message, Code detailedCode) {
-    return BlazeCommandResult.failureDetail(
-        FailureDetail.newBuilder()
-            .setMessage(message)
-            .setConfigurableQuery(ConfigurableQuery.newBuilder().setCode(detailedCode))
-            .build());
-  }
 }

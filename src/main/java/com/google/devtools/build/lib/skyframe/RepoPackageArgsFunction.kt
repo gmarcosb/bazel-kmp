@@ -11,131 +11,108 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.packages.LabelConverter;
-import com.google.devtools.build.lib.packages.PackageArgs;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.skyframe.AbstractSkyKey;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Map;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
+/** A [SkyFunction] that returns the [PackageArgs] for a given repository.  */
+class RepoPackageArgsFunction private constructor() : SkyFunction {
+    /** [SkyValue] wrapping a PackageArgs.  */
+    class RepoPackageArgsValue(packageArgs: PackageArgs) : SkyValue {
+        private val packageArgs: PackageArgs
 
-/** A {@link SkyFunction} that returns the {@link PackageArgs} for a given repository. */
-public class RepoPackageArgsFunction implements SkyFunction {
-  public static final RepoPackageArgsFunction INSTANCE = new RepoPackageArgsFunction();
+        init {
+            this.packageArgs = packageArgs
+        }
 
-  /** {@link SkyValue} wrapping a PackageArgs. */
-  public static final class RepoPackageArgsValue implements SkyValue {
-    public static final RepoPackageArgsValue EMPTY = new RepoPackageArgsValue(PackageArgs.EMPTY);
+        fun getPackageArgs(): PackageArgs {
+            return packageArgs
+        }
 
-    private final PackageArgs packageArgs;
+        override fun hashCode(): Int {
+            return packageArgs.hashCode()
+        }
 
-    public RepoPackageArgsValue(PackageArgs packageArgs) {
-      this.packageArgs = packageArgs;
+        override fun equals(other: Any?): Boolean {
+            if (other is RepoPackageArgsValue) {
+                return other.packageArgs.equals(packageArgs)
+            } else {
+                return false
+            }
+        }
+
+        companion object {
+            @kotlin.jvm.JvmField
+            val EMPTY: RepoPackageArgsValue = RepoPackageArgsValue(PackageArgs.EMPTY)
+        }
     }
 
-    public PackageArgs getPackageArgs() {
-      return packageArgs;
+    /** Thrown when there is something wrong with the arguments of the `repo()` function.  */
+    private class BadPackageArgsException(message: String?, cause: java.lang.Exception?) :
+        java.lang.Exception(message, cause)
+
+    /** A [SkyFunctionException] for [RepoPackageArgsFunction].  */
+    private class RepoPackageArgsFunctionException(e: BadPackageArgsException?) :
+        SkyFunctionException(e, Transience.PERSISTENT)
+
+    /** Key type for [RepoPackageArgsValue].  */
+    class Key private constructor(repoName: RepositoryName?) : AbstractSkyKey<RepositoryName?>(repoName) {
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.REPO_PACKAGE_ARGS
+        }
     }
 
-    @Override
-    public int hashCode() {
-      return packageArgs.hashCode();
+    @Throws(SkyFunctionException::class, java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment): SkyValue? {
+        val repositoryName: RepositoryName = skyKey.argument() as RepositoryName
+
+        val repoFileValue: RepoFileValue? = env.getValue(RepoFileValue.Companion.key(repositoryName)) as RepoFileValue?
+        val repositoryMappingValue: RepositoryMappingValue? =
+            env.getValue(RepositoryMappingValue.Companion.key(repositoryName)) as RepositoryMappingValue?
+        val mainRepoMapping: RepositoryMappingValue? =
+            env.getValue(RepositoryMappingValue.Companion.key(RepositoryName.MAIN)) as RepositoryMappingValue?
+
+        if (env.valuesMissing()) {
+            return null
+        }
+
+        val repoDisplayName: String =
+            RepoFileFunction.Companion.getDisplayNameForRepo(repositoryName, mainRepoMapping.repositoryMapping)
+
+        val pkgArgsBuilder: PackageArgs.Builder = PackageArgs.builder()
+        val labelConverter: LabelConverter =
+            LabelConverter(
+                PackageIdentifier.create(repositoryName, PathFragment.EMPTY_FRAGMENT),
+                repositoryMappingValue.repositoryMapping
+            )
+        try {
+            for (kwarg in repoFileValue.packageArgsMap.entrySet()) {
+                PackageArgs.processParam(
+                    kwarg.getKey(),
+                    kwarg.getValue(),
+                    "repo() argument '" + kwarg.getKey() + "'",
+                    labelConverter,
+                    pkgArgsBuilder
+                )
+            }
+        } catch (e: net.starlark.java.eval.EvalException) {
+            env.getListener().handle(Event.error(e.getMessageWithStack()))
+            throw RepoPackageArgsFunctionException(
+                BadPackageArgsException(
+                    "error evaluating REPO.bazel file for " + repoDisplayName, e
+                )
+            )
+        }
+
+        return RepoPackageArgsValue(pkgArgsBuilder.build())
     }
 
-    @Override
-    public boolean equals(Object other) {
-      if (other instanceof RepoPackageArgsValue that) {
-        return that.packageArgs.equals(packageArgs);
-      } else {
-        return false;
-      }
+    companion object {
+        @kotlin.jvm.JvmField
+        val INSTANCE: RepoPackageArgsFunction = RepoPackageArgsFunction()
+
+        fun key(repoName: RepositoryName?): Key {
+            return com.google.devtools.build.lib.skyframe.RepoPackageArgsFunction.Key(repoName)
+        }
     }
-  }
-
-  public static Key key(RepositoryName repoName) {
-    return new Key(repoName);
-  }
-
-  /** Thrown when there is something wrong with the arguments of the {@code repo()} function. */
-  private static class BadPackageArgsException extends Exception {
-    public BadPackageArgsException(String message, Exception cause) {
-      super(message, cause);
-    }
-  }
-
-  /** A {@link SkyFunctionException} for {@link RepoPackageArgsFunction}. */
-  private static class RepoPackageArgsFunctionException extends SkyFunctionException {
-    private RepoPackageArgsFunctionException(BadPackageArgsException e) {
-      super(e, Transience.PERSISTENT);
-    }
-  }
-
-  /** Key type for {@link RepoPackageArgsValue}. */
-  public static class Key extends AbstractSkyKey<RepositoryName> {
-
-    private Key(RepositoryName repoName) {
-      super(repoName);
-    }
-
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.REPO_PACKAGE_ARGS;
-    }
-  }
-
-  private RepoPackageArgsFunction() {}
-
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws SkyFunctionException, InterruptedException {
-    RepositoryName repositoryName = (RepositoryName) skyKey.argument();
-
-    RepoFileValue repoFileValue = (RepoFileValue) env.getValue(RepoFileValue.key(repositoryName));
-    RepositoryMappingValue repositoryMappingValue =
-        (RepositoryMappingValue) env.getValue(RepositoryMappingValue.key(repositoryName));
-    RepositoryMappingValue mainRepoMapping =
-        (RepositoryMappingValue) env.getValue(RepositoryMappingValue.key(RepositoryName.MAIN));
-
-    if (env.valuesMissing()) {
-      return null;
-    }
-
-    String repoDisplayName =
-        RepoFileFunction.getDisplayNameForRepo(repositoryName, mainRepoMapping.repositoryMapping());
-
-    PackageArgs.Builder pkgArgsBuilder = PackageArgs.builder();
-    LabelConverter labelConverter =
-        new LabelConverter(
-            PackageIdentifier.create(repositoryName, PathFragment.EMPTY_FRAGMENT),
-            repositoryMappingValue.repositoryMapping());
-    try {
-      for (Map.Entry<String, Object> kwarg : repoFileValue.packageArgsMap().entrySet()) {
-        PackageArgs.processParam(
-            kwarg.getKey(),
-            kwarg.getValue(),
-            "repo() argument '" + kwarg.getKey() + "'",
-            labelConverter,
-            pkgArgsBuilder);
-      }
-    } catch (EvalException e) {
-      env.getListener().handle(Event.error(e.getMessageWithStack()));
-      throw new RepoPackageArgsFunctionException(
-          new BadPackageArgsException(
-              "error evaluating REPO.bazel file for " + repoDisplayName, e));
-    }
-
-    return new RepoPackageArgsValue(pkgArgsBuilder.build());
-  }
 }

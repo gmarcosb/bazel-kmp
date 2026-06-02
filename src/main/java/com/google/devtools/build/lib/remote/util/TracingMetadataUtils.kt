@@ -11,164 +11,149 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.util;
+package com.google.devtools.build.lib.remote.util
 
-import build.bazel.remote.execution.v2.RequestMetadata;
-import build.bazel.remote.execution.v2.ToolDetails;
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.actions.ActionExecutionMetadata;
-import com.google.devtools.build.lib.analysis.BlazeVersionInfo;
-import com.google.devtools.build.lib.remote.options.RemoteOptions;
-import io.grpc.ClientInterceptor;
-import io.grpc.Context;
-import io.grpc.Contexts;
-import io.grpc.Metadata;
-import io.grpc.ServerCall;
-import io.grpc.ServerCall.Listener;
-import io.grpc.ServerCallHandler;
-import io.grpc.ServerInterceptor;
-import io.grpc.protobuf.ProtoUtils;
-import io.grpc.stub.MetadataUtils;
-import java.util.List;
-import java.util.Map.Entry;
-import javax.annotation.Nullable;
+import build.bazel.remote.execution.v2.RequestMetadata
 
-/** Utility functions to handle Metadata for remote Grpc calls. */
-public class TracingMetadataUtils {
+/** Utility functions to handle Metadata for remote Grpc calls.  */
+object TracingMetadataUtils {
+    private val CONTEXT_KEY: io.grpc.Context.Key<RequestMetadata> =
+        io.grpc.Context.key<RequestMetadata>("remote-grpc-metadata")
 
-  private TracingMetadataUtils() {}
+    @kotlin.jvm.JvmField
+    @com.google.common.annotations.VisibleForTesting
+    val METADATA_KEY: io.grpc.Metadata.Key<RequestMetadata?> =
+        ProtoUtils.keyForProto(RequestMetadata.getDefaultInstance())
 
-  private static final Context.Key<RequestMetadata> CONTEXT_KEY =
-      Context.key("remote-grpc-metadata");
-
-  @VisibleForTesting
-  public static final Metadata.Key<RequestMetadata> METADATA_KEY =
-      ProtoUtils.keyForProto(RequestMetadata.getDefaultInstance());
-
-  public static RequestMetadata buildMetadata(
-      String buildRequestId,
-      String commandId,
-      String actionId,
-      @Nullable ActionExecutionMetadata actionMetadata) {
-    return buildMetadata(
-        buildRequestId,
-        commandId,
-        actionId,
-        actionMetadata != null ? actionMetadata.getMnemonic() : null,
-        actionMetadata != null && actionMetadata.getOwner().getLabel() != null
-            ? actionMetadata.getOwner().getLabel().getCanonicalForm()
-            : null,
-        actionMetadata != null ? actionMetadata.getOwner().getConfigurationChecksum() : null);
-  }
-
-  public static RequestMetadata buildMetadata(
-      String buildRequestId,
-      String commandId,
-      String actionId,
-      @Nullable String mnemonic,
-      @Nullable String label,
-      @Nullable String configurationId) {
-    Preconditions.checkNotNull(buildRequestId);
-    Preconditions.checkNotNull(commandId);
-    Preconditions.checkNotNull(actionId);
-    RequestMetadata.Builder builder =
-        RequestMetadata.newBuilder()
-            .setCorrelatedInvocationsId(buildRequestId)
-            .setToolInvocationId(commandId)
-            .setActionId(actionId)
-            .setToolDetails(
-                ToolDetails.newBuilder()
-                    .setToolName("bazel")
-                    .setToolVersion(BlazeVersionInfo.instance().getVersion()));
-    if (mnemonic != null) {
-      builder.setActionMnemonic(mnemonic);
+    fun buildMetadata(
+        buildRequestId: String?,
+        commandId: String?,
+        actionId: String?,
+        actionMetadata: ActionExecutionMetadata?
+    ): RequestMetadata {
+        return buildMetadata(
+            buildRequestId,
+            commandId,
+            actionId,
+            if (actionMetadata != null) actionMetadata.getMnemonic() else null,
+            if (actionMetadata != null && actionMetadata.getOwner().getLabel() != null)
+                actionMetadata.getOwner().getLabel().getCanonicalForm()
+            else
+                null,
+            if (actionMetadata != null) actionMetadata.getOwner().getConfigurationChecksum() else null
+        )
     }
-    if (label != null) {
-      builder.setTargetId(label);
+
+    fun buildMetadata(
+        buildRequestId: String?,
+        commandId: String?,
+        actionId: String?,
+        mnemonic: String?,
+        label: String?,
+        configurationId: String?
+    ): RequestMetadata {
+        com.google.common.base.Preconditions.checkNotNull<String?>(buildRequestId)
+        com.google.common.base.Preconditions.checkNotNull<String?>(commandId)
+        com.google.common.base.Preconditions.checkNotNull<String?>(actionId)
+        val builder: RequestMetadata.Builder =
+            RequestMetadata.newBuilder()
+                .setCorrelatedInvocationsId(buildRequestId)
+                .setToolInvocationId(commandId)
+                .setActionId(actionId)
+                .setToolDetails(
+                    ToolDetails.newBuilder()
+                        .setToolName("bazel")
+                        .setToolVersion(BlazeVersionInfo.instance().getVersion())
+                )
+        if (mnemonic != null) {
+            builder.setActionMnemonic(mnemonic)
+        }
+        if (label != null) {
+            builder.setTargetId(label)
+        }
+        if (configurationId != null) {
+            builder.setConfigurationId(configurationId)
+        }
+        return builder.build()
     }
-    if (configurationId != null) {
-      builder.setConfigurationId(configurationId);
+
+    /**
+     * Fetches a [RequestMetadata] defined on the current context.
+     * 
+     * @throws IllegalStateException when the metadata is not defined in the current context.
+     */
+    @kotlin.jvm.JvmStatic
+    fun fromCurrentContext(): RequestMetadata {
+        val metadata: RequestMetadata = CONTEXT_KEY.get()
+        checkNotNull(metadata) { "RequestMetadata not set in current context." }
+        return metadata
     }
-    return builder.build();
-  }
 
-  /**
-   * Fetches a {@link RequestMetadata} defined on the current context.
-   *
-   * @throws IllegalStateException when the metadata is not defined in the current context.
-   */
-  public static RequestMetadata fromCurrentContext() {
-    RequestMetadata metadata = CONTEXT_KEY.get();
-    if (metadata == null) {
-      throw new IllegalStateException("RequestMetadata not set in current context.");
+    /** Creates a [Metadata] containing the [RequestMetadata].  */
+    fun headersFromRequestMetadata(requestMetadata: RequestMetadata): io.grpc.Metadata {
+        val headers: io.grpc.Metadata = io.grpc.Metadata()
+        headers.put<RequestMetadata?>(METADATA_KEY, requestMetadata)
+        return headers
     }
-    return metadata;
-  }
 
-  /** Creates a {@link Metadata} containing the {@link RequestMetadata}. */
-  public static Metadata headersFromRequestMetadata(RequestMetadata requestMetadata) {
-    Metadata headers = new Metadata();
-    headers.put(METADATA_KEY, requestMetadata);
-    return headers;
-  }
-
-  /**
-   * Extracts a {@link RequestMetadata} from a {@link Metadata} and returns it if it exists. If it
-   * does not exist, returns {@code null}.
-   */
-  @Nullable
-  public static RequestMetadata requestMetadataFromHeaders(Metadata headers) {
-    return headers.get(METADATA_KEY);
-  }
-
-  public static ClientInterceptor attachMetadataInterceptor(RequestMetadata requestMetadata) {
-    return MetadataUtils.newAttachHeadersInterceptor(headersFromRequestMetadata(requestMetadata));
-  }
-
-  private static Metadata newMetadataForHeaders(List<Entry<String, String>> headers) {
-    Metadata metadata = new Metadata();
-    headers.forEach(
-        header ->
-            metadata.put(
-                Metadata.Key.of(header.getKey(), Metadata.ASCII_STRING_MARSHALLER),
-                header.getValue()));
-    return metadata;
-  }
-
-  public static ClientInterceptor newCacheHeadersInterceptor(RemoteOptions options) {
-    Metadata metadata = newMetadataForHeaders(options.getRemoteHeaders());
-    metadata.merge(newMetadataForHeaders(options.getRemoteCacheHeaders()));
-    return MetadataUtils.newAttachHeadersInterceptor(metadata);
-  }
-
-  public static ClientInterceptor newDownloaderHeadersInterceptor(RemoteOptions options) {
-    Metadata metadata = newMetadataForHeaders(options.getRemoteHeaders());
-    metadata.merge(newMetadataForHeaders(options.getRemoteDownloaderHeaders()));
-    return MetadataUtils.newAttachHeadersInterceptor(metadata);
-  }
-
-  public static ClientInterceptor newExecHeadersInterceptor(RemoteOptions options) {
-    Metadata metadata = newMetadataForHeaders(options.getRemoteHeaders());
-    metadata.merge(newMetadataForHeaders(options.getRemoteExecHeaders()));
-    return MetadataUtils.newAttachHeadersInterceptor(metadata);
-  }
-
-  /** GRPC interceptor to add logging metadata to the GRPC context. */
-  public static class ServerHeadersInterceptor implements ServerInterceptor {
-    @Override
-    public <ReqT, RespT> Listener<ReqT> interceptCall(
-        ServerCall<ReqT, RespT> call, Metadata headers, ServerCallHandler<ReqT, RespT> next) {
-      RequestMetadata meta = requestMetadataFromHeaders(headers);
-      if (meta == null) {
-        throw io.grpc.Status.INVALID_ARGUMENT
-            .withDescription(
-                "RequestMetadata not received from the client for "
-                    + call.getMethodDescriptor().getFullMethodName())
-            .asRuntimeException();
-      }
-      Context ctx = Context.current().withValue(CONTEXT_KEY, meta);
-      return Contexts.interceptCall(ctx, call, headers, next);
+    /**
+     * Extracts a [RequestMetadata] from a [Metadata] and returns it if it exists. If it
+     * does not exist, returns `null`.
+     */
+    fun requestMetadataFromHeaders(headers: io.grpc.Metadata): RequestMetadata? {
+        return headers.get<RequestMetadata?>(METADATA_KEY)
     }
-  }
+
+    fun attachMetadataInterceptor(requestMetadata: RequestMetadata): ClientInterceptor {
+        return MetadataUtils.newAttachHeadersInterceptor(headersFromRequestMetadata(requestMetadata))
+    }
+
+    private fun newMetadataForHeaders(headers: MutableList<MutableMap.MutableEntry<String?, String?>?>): io.grpc.Metadata {
+        val metadata: io.grpc.Metadata = io.grpc.Metadata()
+        headers.forEach(
+            java.util.function.Consumer { header: MutableMap.MutableEntry<String?, String?>? ->
+                metadata.put<String?>(
+                    io.grpc.Metadata.Key.of<String?>(header!!.key, io.grpc.Metadata.ASCII_STRING_MARSHALLER),
+                    header.value
+                )
+            })
+        return metadata
+    }
+
+    fun newCacheHeadersInterceptor(options: RemoteOptions): ClientInterceptor {
+        val metadata: io.grpc.Metadata = newMetadataForHeaders(options.remoteHeaders)
+        metadata.merge(newMetadataForHeaders(options.remoteCacheHeaders))
+        return MetadataUtils.newAttachHeadersInterceptor(metadata)
+    }
+
+    fun newDownloaderHeadersInterceptor(options: RemoteOptions): ClientInterceptor {
+        val metadata: io.grpc.Metadata = newMetadataForHeaders(options.remoteHeaders)
+        metadata.merge(newMetadataForHeaders(options.remoteDownloaderHeaders))
+        return MetadataUtils.newAttachHeadersInterceptor(metadata)
+    }
+
+    fun newExecHeadersInterceptor(options: RemoteOptions): ClientInterceptor {
+        val metadata: io.grpc.Metadata = newMetadataForHeaders(options.remoteHeaders)
+        metadata.merge(newMetadataForHeaders(options.remoteExecHeaders))
+        return MetadataUtils.newAttachHeadersInterceptor(metadata)
+    }
+
+    /** GRPC interceptor to add logging metadata to the GRPC context.  */
+    class ServerHeadersInterceptor : ServerInterceptor {
+        override fun <ReqT, RespT> interceptCall(
+            call: ServerCall<ReqT?, RespT?>, headers: io.grpc.Metadata, next: ServerCallHandler<ReqT?, RespT?>
+        ): io.grpc.ServerCall.Listener<ReqT?> {
+            val meta: RequestMetadata? = requestMetadataFromHeaders(headers)
+            if (meta == null) {
+                throw io.grpc.Status.INVALID_ARGUMENT
+                    .withDescription(
+                        "RequestMetadata not received from the client for "
+                                + call.getMethodDescriptor().getFullMethodName()
+                    )
+                    .asRuntimeException()
+            }
+            val ctx: io.grpc.Context = io.grpc.Context.current().withValue<RequestMetadata?>(CONTEXT_KEY, meta)
+            return Contexts.interceptCall<ReqT?, RespT?>(ctx, call, headers, next)
+        }
+    }
 }

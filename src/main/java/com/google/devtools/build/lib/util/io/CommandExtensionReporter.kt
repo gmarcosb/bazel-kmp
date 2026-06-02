@@ -11,26 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
-
-import com.google.protobuf.Any;
-import java.io.IOException;
+package com.google.devtools.build.lib.util.io
 
 /**
- * Consumer of {@link Any} protos that sends messages to the build tool's gRPC client.
- *
- * <p>Instances of this interface must be <em>thread-safe</em>.
+ * Consumer of [Any] protos that sends messages to the build tool's gRPC client.
+ * 
+ * 
+ * Instances of this interface must be *thread-safe*.
  */
-@FunctionalInterface
-public interface CommandExtensionReporter {
+fun interface CommandExtensionReporter {
+    /**
+     * Writes the command extension to the client in a gRPC RunResponse.
+     * 
+     * @throws IOException if an I/O error occurs
+     */
+    @Throws(IOException::class)
+    fun report(commandExtension: Any?)
 
-  /** Extension reporter that drops all extensions. */
-  CommandExtensionReporter NO_OP_COMMAND_EXTENSION_REPORTER = (any) -> {};
-
-  /**
-   * Writes the command extension to the client in a gRPC RunResponse.
-   *
-   * @throws IOException if an I/O error occurs
-   */
-  void report(Any commandExtension) throws IOException;
+    companion object {
+        /** Extension reporter that drops all extensions.  */
+        @kotlin.jvm.JvmField
+        val NO_OP_COMMAND_EXTENSION_REPORTER: CommandExtensionReporter = CommandExtensionReporter { any: Any? -> }
+    }
 }

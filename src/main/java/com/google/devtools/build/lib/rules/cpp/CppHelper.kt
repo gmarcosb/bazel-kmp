@@ -11,84 +11,72 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.cpp
 
-package com.google.devtools.build.lib.rules.cpp;
-
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.AnalysisUtils;
-import com.google.devtools.build.lib.analysis.RuleContext;
-import com.google.devtools.build.lib.analysis.actions.ActionConstructionContext;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.config.CompilationMode;
-import com.google.devtools.build.lib.analysis.platform.ToolchainInfo;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.Info;
-import com.google.devtools.build.lib.packages.RuleClass.ConfiguredTargetFactory.RuleErrorException;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.FeatureConfiguration;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import net.starlark.java.eval.EvalException;
+import com.google.devtools.build.lib.actions.Artifact
 
 /**
  * Helper class for functionality shared by cpp related rules.
- *
- * <p>This class can be used only after the loading phase.
+ * 
+ * 
+ * This class can be used only after the loading phase.
  */
-public class CppHelper {
+object CppHelper {
+    val OBJS: PathFragment? = PathFragment.create("_objs")
 
-  static final PathFragment OBJS = PathFragment.create("_objs");
-
-  private CppHelper() {
-    // prevents construction
-  }
-
-  /** Returns C++ toolchain, using toolchain resolution */
-  public static CcToolchainProvider getToolchain(RuleContext ruleContext)
-      throws RuleErrorException {
-    ToolchainInfo toolchainInfo =
-        ruleContext.getToolchainInfo(Label.parseCanonicalUnchecked("//tools/cpp:toolchain_type"));
-    if (toolchainInfo == null) {
-      toolchainInfo =
-          ruleContext.getToolchainInfo(
-              Label.parseCanonicalUnchecked("@bazel_tools//tools/cpp:toolchain_type"));
+    /** Returns C++ toolchain, using toolchain resolution  */
+    @Throws(RuleErrorException::class)
+    fun getToolchain(ruleContext: RuleContext): CcToolchainProvider? {
+        var toolchainInfo: ToolchainInfo? =
+            ruleContext.getToolchainInfo(Label.parseCanonicalUnchecked("//tools/cpp:toolchain_type"))
+        if (toolchainInfo == null) {
+            toolchainInfo =
+                ruleContext.getToolchainInfo(
+                    Label.parseCanonicalUnchecked("@bazel_tools//tools/cpp:toolchain_type")
+                )
+        }
+        if (toolchainInfo == null) {
+            throw ruleContext.throwWithRuleError(
+                "Unable to find a CC toolchain using toolchain resolution. Did you properly set"
+                        + " --platforms?"
+            )
+        }
+        try {
+            return CcToolchainProvider.Companion.wrap(toolchainInfo.getValue("cc") as Info?)
+        } catch (e: net.starlark.java.eval.EvalException) {
+            // There is not actually any reason for toolchainInfo.getValue to throw an exception.
+            throw ruleContext.throwWithRuleError(
+                "Unexpected eval exception from toolchainInfo.getValue('cc')"
+            )
+        }
     }
-    if (toolchainInfo == null) {
-      throw ruleContext.throwWithRuleError(
-          "Unable to find a CC toolchain using toolchain resolution. Did you properly set"
-              + " --platforms?");
+
+    /** Returns the directory where object files are created.  */
+    private fun getObjDirectory(ruleLabel: Label?, siblingRepositoryLayout: Boolean): PathFragment {
+        return AnalysisUtils.getUniqueDirectory(ruleLabel, OBJS, siblingRepositoryLayout)
     }
-    try {
-      return CcToolchainProvider.wrap((Info) toolchainInfo.getValue("cc"));
-    } catch (EvalException e) {
-      // There is not actually any reason for toolchainInfo.getValue to throw an exception.
-      throw ruleContext.throwWithRuleError(
-          "Unexpected eval exception from toolchainInfo.getValue('cc')");
+
+    // LINT.IfChange
+    /** Returns whether binaries must be compiled with position independent code.  */
+    fun usePicForBinaries(
+        cppConfiguration: CppConfiguration, featureConfiguration: FeatureConfiguration
+    ): Boolean {
+        return cppConfiguration.forcePic()
+                || (CcToolchainProvider.Companion.usePicForDynamicLibraries(cppConfiguration, featureConfiguration)
+                && (cppConfiguration.getCompilationMode() !== CompilationMode.OPT
+                || featureConfiguration.isEnabled(CppRuleClasses.PREFER_PIC_FOR_OPT_BINARIES)))
     }
-  }
 
-  /** Returns the directory where object files are created. */
-  private static PathFragment getObjDirectory(Label ruleLabel, boolean siblingRepositoryLayout) {
-    return AnalysisUtils.getUniqueDirectory(ruleLabel, OBJS, siblingRepositoryLayout);
-  }
-
-  // LINT.IfChange
-  /** Returns whether binaries must be compiled with position independent code. */
-  public static boolean usePicForBinaries(
-      CppConfiguration cppConfiguration, FeatureConfiguration featureConfiguration) {
-    return cppConfiguration.forcePic()
-        || (CcToolchainProvider.usePicForDynamicLibraries(cppConfiguration, featureConfiguration)
-            && (cppConfiguration.getCompilationMode() != CompilationMode.OPT
-                || featureConfiguration.isEnabled(CppRuleClasses.PREFER_PIC_FOR_OPT_BINARIES)));
-  }
-
-  // LINT.ThenChange(//src/main/starlark/builtins_bzl/common/cc/cc_helper_internal.bzl)
-
-  static Artifact getCompileOutputArtifact(
-      ActionConstructionContext actionConstructionContext,
-      Label label,
-      String outputName,
-      BuildConfigurationValue config) {
-    PathFragment objectDir = getObjDirectory(label, config.isSiblingRepositoryLayout());
-    return actionConstructionContext.getDerivedArtifact(
-        objectDir.getRelative(outputName), config.getBinDirectory(label.getRepository()));
-  }
+    // LINT.ThenChange(//src/main/starlark/builtins_bzl/common/cc/cc_helper_internal.bzl)
+    fun getCompileOutputArtifact(
+        actionConstructionContext: ActionConstructionContext,
+        label: Label,
+        outputName: String?,
+        config: BuildConfigurationValue
+    ): Artifact {
+        val objectDir: PathFragment = getObjDirectory(label, config.isSiblingRepositoryLayout())
+        return actionConstructionContext.getDerivedArtifact(
+            objectDir.getRelative(outputName), config.getBinDirectory(label.getRepository())
+        )
+    }
 }

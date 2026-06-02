@@ -11,19 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+/** Constants shared between [CodecScanner] and `SerializationConstantProcessor`.  */
+object CodecScanningConstants {
+    /**
+     * Name of static field in RegisteredSingleton classes. Any class whose name ends in [ ][.REGISTERED_SINGLETON_SUFFIX] and that has a field with this name will have this field
+     * registered as a constant by [CodecScanner]. Generated using uuidgen and simple
+     * translation of numbers to letters.
+     */
+    const val REGISTERED_SINGLETON_INSTANCE_VAR_NAME: String =
+        "REGISTERED_SINGLETON_INSTANCE_VAR_NAME_GLFKMEBDQFHOJQKEHHQPGMNQBOBFEJADCMDP"
 
-/** Constants shared between {@link CodecScanner} and {@code SerializationConstantProcessor}. */
-public class CodecScanningConstants {
-  /**
-   * Name of static field in RegisteredSingleton classes. Any class whose name ends in {@link
-   * #REGISTERED_SINGLETON_SUFFIX} and that has a field with this name will have this field
-   * registered as a constant by {@link CodecScanner}. Generated using uuidgen and simple
-   * translation of numbers to letters.
-   */
-  public static final String REGISTERED_SINGLETON_INSTANCE_VAR_NAME =
-      "REGISTERED_SINGLETON_INSTANCE_VAR_NAME_GLFKMEBDQFHOJQKEHHQPGMNQBOBFEJADCMDP";
-  /** Suffix for RegisteredSingleton classes. */
-  public static final String REGISTERED_SINGLETON_SUFFIX = "RegisteredSingleton";
+    /** Suffix for RegisteredSingleton classes.  */
+    const val REGISTERED_SINGLETON_SUFFIX: String = "RegisteredSingleton"
 }

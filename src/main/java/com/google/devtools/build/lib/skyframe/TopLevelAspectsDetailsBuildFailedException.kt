@@ -11,31 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
+import com.google.devtools.build.lib.server.FailureDetails.Analysis
 
-import com.google.devtools.build.lib.server.FailureDetails.Analysis;
-import com.google.devtools.build.lib.server.FailureDetails.Analysis.Code;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.util.DetailedExitCode;
+/** Exception that encapsulates the ones that's thrown when evaluating the top level aspects.  */
+class TopLevelAspectsDetailsBuildFailedException
+internal constructor(errorMessage: String?, code: Code?) : AbstractSaneAnalysisException(errorMessage) {
+    private val detailedExitCode: DetailedExitCode
 
-/** Exception that encapsulates the ones that's thrown when evaluating the top level aspects. */
-public final class TopLevelAspectsDetailsBuildFailedException
-    extends AbstractSaneAnalysisException {
-  private final DetailedExitCode detailedExitCode;
+    init {
+        this.detailedExitCode =
+            DetailedExitCode.of(
+                FailureDetail.newBuilder()
+                    .setMessage(errorMessage)
+                    .setAnalysis(Analysis.newBuilder().setCode(code))
+                    .build()
+            )
+    }
 
-  TopLevelAspectsDetailsBuildFailedException(String errorMessage, Code code) {
-    super(errorMessage);
-    this.detailedExitCode =
-        DetailedExitCode.of(
-            FailureDetail.newBuilder()
-                .setMessage(errorMessage)
-                .setAnalysis(Analysis.newBuilder().setCode(code))
-                .build());
-  }
-
-  @Override
-  public DetailedExitCode getDetailedExitCode() {
-    return detailedExitCode;
-  }
+    public override fun getDetailedExitCode(): DetailedExitCode {
+        return detailedExitCode
+    }
 }

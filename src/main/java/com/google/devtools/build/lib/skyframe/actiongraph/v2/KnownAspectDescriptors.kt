@@ -11,40 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.actiongraph.v2;
+package com.google.devtools.build.lib.skyframe.actiongraph.v2
 
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2;
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.KeyValuePair;
-import com.google.devtools.build.lib.packages.AspectDescriptor;
-import java.io.IOException;
-import java.util.Map;
+import com.google.devtools.build.lib.analysis.AnalysisProtosV2
 
-/** Cache for AspectDescriptors in the action graph. */
-public class KnownAspectDescriptors
-    extends BaseCache<AspectDescriptor, AnalysisProtosV2.AspectDescriptor> {
-
-  KnownAspectDescriptors(AqueryOutputHandler aqueryOutputHandler) {
-    super(aqueryOutputHandler);
-  }
-
-  @Override
-  AnalysisProtosV2.AspectDescriptor createProto(AspectDescriptor aspectDescriptor, int id)
-      throws IOException {
-    AnalysisProtosV2.AspectDescriptor.Builder aspectDescriptorBuilder =
-        AnalysisProtosV2.AspectDescriptor.newBuilder()
-            .setId(id)
-            .setName(aspectDescriptor.getAspectClass().getName());
-    for (Map.Entry<String, String> parameter :
-        aspectDescriptor.getParameters().getAttributes().entries()) {
-      KeyValuePair.Builder keyValuePairBuilder = KeyValuePair.newBuilder();
-      keyValuePairBuilder.setKey(parameter.getKey()).setValue(parameter.getValue());
-      aspectDescriptorBuilder.addParameters(keyValuePairBuilder.build());
+/** Cache for AspectDescriptors in the action graph.  */
+class KnownAspectDescriptors
+internal constructor(aqueryOutputHandler: AqueryOutputHandler?) :
+    BaseCache<AspectDescriptor?, AnalysisProtosV2.AspectDescriptor?>(aqueryOutputHandler) {
+    @Throws(IOException::class)
+    override fun createProto(aspectDescriptor: AspectDescriptor, id: Int): AnalysisProtosV2.AspectDescriptor {
+        val aspectDescriptorBuilder: AnalysisProtosV2.AspectDescriptor.Builder =
+            AnalysisProtosV2.AspectDescriptor.newBuilder()
+                .setId(id)
+                .setName(aspectDescriptor.getAspectClass().getName())
+        for (parameter in aspectDescriptor.getParameters().getAttributes().entries()) {
+            val keyValuePairBuilder: KeyValuePair.Builder = KeyValuePair.newBuilder()
+            keyValuePairBuilder.setKey(parameter.key).setValue(parameter.value)
+            aspectDescriptorBuilder.addParameters(keyValuePairBuilder.build())
+        }
+        return aspectDescriptorBuilder.build()
     }
-    return aspectDescriptorBuilder.build();
-  }
 
-  @Override
-  void toOutput(AnalysisProtosV2.AspectDescriptor aspectDescriptorProto) throws IOException {
-    aqueryOutputHandler.outputAspectDescriptor(aspectDescriptorProto);
-  }
+    @Throws(IOException::class)
+    override fun toOutput(aspectDescriptorProto: AnalysisProtosV2.AspectDescriptor?) {
+        aqueryOutputHandler.outputAspectDescriptor(aspectDescriptorProto)
+    }
 }

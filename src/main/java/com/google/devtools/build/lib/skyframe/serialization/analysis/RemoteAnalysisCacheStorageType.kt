@@ -11,19 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import com.google.devtools.build.lib.skybridge.SkybridgeInterface;
+/** The storage type for the remote analysis cache.  */
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface
+enum class RemoteAnalysisCacheStorageType {
+    /** Write to RAM.  */
+    RAM,
 
-/** The storage type for the remote analysis cache. */
-@SkybridgeInterface
-public enum RemoteAnalysisCacheStorageType {
-  /** Write to RAM. */
-  RAM,
+    /** Write to HDD.  */
+    HDD,
 
-  /** Write to HDD. */
-  HDD,
-
-  /** Write to both RAM and HDD. */
-  BOTH
+    /** Write to both RAM and HDD.  */
+    BOTH
 }

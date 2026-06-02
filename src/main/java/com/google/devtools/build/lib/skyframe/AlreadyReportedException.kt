@@ -11,14 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
 /**
  * A marker class for exceptions that are already reported. Once caught, these exceptions shouldn't
  * be reported again.
  */
-public class AlreadyReportedException extends Exception {
-  public AlreadyReportedException(String message, Throwable cause) {
-    super(message, cause);
-  }
-}
+class AlreadyReportedException(message: String?, cause: Throwable?) : java.lang.Exception(message, cause)

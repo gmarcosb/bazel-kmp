@@ -11,31 +11,35 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
-import com.google.common.hash.HashCode;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
+/** Encodes a HashCode.  */
+class HashCodeCodec : LeafObjectCodec<com.google.common.hash.HashCode?>() {
+    @Throws(IOException::class)
+    override fun serialize(
+        context: LeafSerializationContext?,
+        obj: com.google.common.hash.HashCode,
+        codedOut: CodedOutputStream
+    ) {
+        codedOut.writeByteArrayNoTag(obj.asBytes())
+    }
 
-/** Encodes a HashCode. */
-public class HashCodeCodec extends LeafObjectCodec<HashCode> {
+    @Throws(IOException::class)
+    override fun deserialize(
+        context: LeafDeserializationContext?,
+        codedIn: CodedInputStream
+    ): com.google.common.hash.HashCode {
+        return com.google.common.hash.HashCode.fromBytes(codedIn.readByteArray())
+    }
 
-  @Override
-  public void serialize(LeafSerializationContext context, HashCode obj, CodedOutputStream codedOut)
-      throws IOException {
-    codedOut.writeByteArrayNoTag(obj.asBytes());
-  }
-
-  @Override
-  public HashCode deserialize(LeafDeserializationContext context, CodedInputStream codedIn)
-      throws IOException {
-    return HashCode.fromBytes(codedIn.readByteArray());
-  }
-
-  @Override
-  public Class<HashCode> getEncodedClass() {
-    return HashCode.class;
-  }
+    override fun getEncodedClass(): java.lang.Class<com.google.common.hash.HashCode?> {
+        return com.google.common.hash.HashCode::class.java
+    }
 }

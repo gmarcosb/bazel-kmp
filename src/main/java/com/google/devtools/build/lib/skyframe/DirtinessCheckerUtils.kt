@@ -11,224 +11,203 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.devtools.build.lib.skyframe.SkyFunctions.DIRECTORY_LISTING_STATE;
-import static com.google.devtools.build.lib.vfs.FileStateKey.FILE_STATE;
+import com.google.devtools.build.lib.skyframe.SkyFunctions.DIRECTORY_LISTING_STATE
 
-import com.google.common.base.Objects;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.FileStateValue;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.skyframe.ExternalFilesHelper.FileType;
-import com.google.devtools.build.lib.util.io.TimestampGranularityMonitor;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.Version;
-import java.io.IOException;
-import java.util.Collections;
-import java.util.EnumSet;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import javax.annotation.Nullable;
-
-/** Utilities for checking dirtiness of keys (mainly filesystem keys) in the graph. */
-public class DirtinessCheckerUtils {
-  private DirtinessCheckerUtils() {}
-
-  /** Checks dirtiness of file keys in the graph. */
-  public static class FileDirtinessChecker extends SkyValueDirtinessChecker {
-    @Override
-    public boolean applies(SkyKey skyKey) {
-      return skyKey.functionName().equals(FILE_STATE);
+/** Utilities for checking dirtiness of keys (mainly filesystem keys) in the graph.  */
+object DirtinessCheckerUtils {
+    @kotlin.jvm.JvmStatic
+    fun createBasicFilesystemDirtinessChecker(): UnionDirtinessChecker {
+        return UnionDirtinessChecker(
+            com.google.common.collect.ImmutableList.of<E?>(FileDirtinessChecker(), DirectoryDirtinessChecker())
+        )
     }
 
-    @Override
-    @Nullable
-    public SkyValue createNewValue(
-        SkyKey key, SyscallCache syscallCache, @Nullable TimestampGranularityMonitor tsgm)
-        throws IOException {
-      return FileStateValue.create((RootedPath) key.argument(), syscallCache, tsgm);
-    }
-  }
-
-  /** Checks dirtiness of directory keys in the graph. */
-  public static class DirectoryDirtinessChecker extends SkyValueDirtinessChecker {
-    @Override
-    public boolean applies(SkyKey skyKey) {
-      return skyKey.functionName().equals(DIRECTORY_LISTING_STATE);
-    }
-
-    @Override
-    public SkyValue createNewValue(
-        SkyKey key, SyscallCache syscallCache, @Nullable TimestampGranularityMonitor tsgm)
-        throws IOException {
-      RootedPath rootedPath = (RootedPath) key.argument();
-      return DirectoryListingStateValue.create(syscallCache.readdir(rootedPath.asPath()));
-    }
-  }
-
-  static final class MissingDiffDirtinessChecker extends SkyValueDirtinessChecker {
-    private final Set<Root> missingDiffPackageRoots;
-    private final UnionDirtinessChecker checker = createBasicFilesystemDirtinessChecker();
-
-    MissingDiffDirtinessChecker(Set<Root> missingDiffPackageRoots) {
-      this.missingDiffPackageRoots = missingDiffPackageRoots;
-    }
-
-    @Override
-    public boolean applies(SkyKey key) {
-      return checker.applies(key)
-          && missingDiffPackageRoots.contains(((RootedPath) key.argument()).getRoot());
-    }
-
-    @Override
-    public SkyValue createNewValue(
-        SkyKey key, SyscallCache syscallCache, @Nullable TimestampGranularityMonitor tsgm)
-        throws IOException {
-      return checker.createNewValue(key, syscallCache, tsgm);
-    }
-  }
-
-  /**
-   * Serves for tracking whether there are external and output files {@see ExternalFilesKnowledge}.
-   * Filtering of files, for which the new values should not be injected into evaluator, is done in
-   * SequencedSkyframeExecutor.handleChangedFiles().
-   */
-  static final class ExternalDirtinessChecker extends SkyValueDirtinessChecker {
-    private final ExternalFilesHelper externalFilesHelper;
-    private final EnumSet<FileType> fileTypesToCheck;
-
-    private final UnionDirtinessChecker checker = createBasicFilesystemDirtinessChecker();
-    private final ConcurrentHashMap<RepositoryName, RootedPath> dirtyExternalRepos =
-        new ConcurrentHashMap<>();
-
-    ExternalDirtinessChecker(
-        ExternalFilesHelper externalFilesHelper, EnumSet<FileType> fileTypesToCheck) {
-      this.externalFilesHelper = externalFilesHelper;
-      this.fileTypesToCheck = fileTypesToCheck;
-    }
-
-    @Override
-    public boolean applies(SkyKey key) {
-      if (!checker.applies(key)) {
-        return false;
-      }
-      FileType fileType = externalFilesHelper.getAndNoteFileType((RootedPath) key.argument());
-      return fileTypesToCheck.contains(fileType);
-    }
-
-    @Override
-    public SkyValue createNewValue(
-        SkyKey key, SyscallCache syscallCache, @Nullable TimestampGranularityMonitor tsgm) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public SkyValueDirtinessChecker.DirtyResult check(
-        SkyKey skyKey,
-        SkyValue oldValue,
-        @Nullable Version oldMtsv,
-        SyscallCache syscallCache,
-        @Nullable TimestampGranularityMonitor tsgm)
-        throws IOException {
-      var rootedPath = (RootedPath) skyKey.argument();
-      var fileType = externalFilesHelper.getAndNoteFileType(rootedPath);
-      boolean cacheable = isCacheableType(fileType);
-      SkyValue newValue =
-          checker.createNewValue(skyKey, cacheable ? syscallCache : SyscallCache.NO_CACHE, tsgm);
-      if (Objects.equal(newValue, oldValue)) {
-        return SkyValueDirtinessChecker.DirtyResult.notDirty();
-      }
-      if (cacheable) {
-        return SkyValueDirtinessChecker.DirtyResult.dirtyWithNewValue(newValue);
-      }
-      if (fileType == FileType.EXTERNAL_REPO) {
-        var repositoryName = externalFilesHelper.getExternalRepoName(rootedPath);
-        if (repositoryName != null) {
-          dirtyExternalRepos.putIfAbsent(repositoryName, rootedPath);
+    /** Checks dirtiness of file keys in the graph.  */
+    class FileDirtinessChecker : SkyValueDirtinessChecker() {
+        public override fun applies(skyKey: SkyKey): Boolean {
+            return skyKey.functionName() == FileStateKey.FILE_STATE
         }
-      }
-      // Files under output_base/external have a dependency on the WORKSPACE file, so we don't add
-      // a new SkyValue to the graph yet because it might change once the WORKSPACE file has been
-      // parsed. Similarly, output files might change during execution.
-      return SkyValueDirtinessChecker.DirtyResult.dirty();
-    }
 
-    Map<RepositoryName, RootedPath> getDirtyExternalRepos() {
-      return Collections.unmodifiableMap(dirtyExternalRepos);
-    }
-
-    private static boolean isCacheableType(FileType fileType) {
-      return switch (fileType) {
-        case INTERNAL, EXTERNAL_OTHER, BUNDLED -> true;
-        case EXTERNAL_REPO, OUTPUT -> false;
-        case REPO_CONTENTS_CACHE_DIRS ->
-            throw new IllegalStateException(
-                "Repo contents cache dirs are not expected to be checked for dirtiness");
-      };
-    }
-  }
-
-  static UnionDirtinessChecker createBasicFilesystemDirtinessChecker() {
-    return new UnionDirtinessChecker(
-        ImmutableList.of(new FileDirtinessChecker(), new DirectoryDirtinessChecker()));
-  }
-
-  /** {@link SkyValueDirtinessChecker} that encompasses a union of other dirtiness checkers. */
-  public static final class UnionDirtinessChecker extends SkyValueDirtinessChecker {
-    private final Iterable<SkyValueDirtinessChecker> dirtinessCheckers;
-
-    public UnionDirtinessChecker(Iterable<SkyValueDirtinessChecker> dirtinessCheckers) {
-      this.dirtinessCheckers = dirtinessCheckers;
-    }
-
-    @Nullable
-    private SkyValueDirtinessChecker getChecker(SkyKey key) {
-      for (SkyValueDirtinessChecker dirtinessChecker : dirtinessCheckers) {
-        if (dirtinessChecker.applies(key)) {
-          return dirtinessChecker;
+        @Throws(IOException::class)
+        public override fun createNewValue(
+            key: SkyKey, syscallCache: SyscallCache?, tsgm: TimestampGranularityMonitor?
+        ): SkyValue? {
+            return FileStateValue.create(key.argument() as RootedPath?, syscallCache, tsgm)
         }
-      }
-      return null;
     }
 
-    @Override
-    public boolean applies(SkyKey key) {
-      return getChecker(key) != null;
+    /** Checks dirtiness of directory keys in the graph.  */
+    class DirectoryDirtinessChecker : SkyValueDirtinessChecker() {
+        public override fun applies(skyKey: SkyKey): Boolean {
+            return skyKey.functionName() == DIRECTORY_LISTING_STATE
+        }
+
+        @Throws(IOException::class)
+        public override fun createNewValue(
+            key: SkyKey, syscallCache: SyscallCache, tsgm: TimestampGranularityMonitor?
+        ): SkyValue {
+            val rootedPath: RootedPath = key.argument() as RootedPath
+            return DirectoryListingStateValue.create(syscallCache.readdir(rootedPath.asPath()))
+        }
     }
 
-    @Override
-    public SkyValue createNewValue(
-        SkyKey key, SyscallCache syscallCache, @Nullable TimestampGranularityMonitor tsgm)
-        throws IOException {
-      return Preconditions.checkNotNull(getChecker(key), key)
-          .createNewValue(key, syscallCache, tsgm);
+    internal class MissingDiffDirtinessChecker(missingDiffPackageRoots: MutableSet<Root?>) :
+        SkyValueDirtinessChecker() {
+        private val missingDiffPackageRoots: MutableSet<Root?>
+        private val checker = createBasicFilesystemDirtinessChecker()
+
+        init {
+            this.missingDiffPackageRoots = missingDiffPackageRoots
+        }
+
+        public override fun applies(key: SkyKey): Boolean {
+            return checker.applies(key)
+                    && missingDiffPackageRoots.contains((key.argument() as RootedPath).getRoot())
+        }
+
+        @Throws(IOException::class)
+        public override fun createNewValue(
+            key: SkyKey?, syscallCache: SyscallCache?, tsgm: TimestampGranularityMonitor?
+        ): SkyValue {
+            return checker.createNewValue(key, syscallCache, tsgm)
+        }
     }
 
-    @Override
-    public DirtyResult check(
-        SkyKey key,
-        @Nullable SkyValue oldValue,
-        @Nullable Version oldMtsv,
-        SyscallCache syscallCache,
-        @Nullable TimestampGranularityMonitor tsgm)
-        throws IOException {
-      return Preconditions.checkNotNull(getChecker(key), key)
-          .check(key, oldValue, oldMtsv, syscallCache, tsgm);
+    /**
+     * Serves for tracking whether there are external and output files {@see ExternalFilesKnowledge}.
+     * Filtering of files, for which the new values should not be injected into evaluator, is done in
+     * SequencedSkyframeExecutor.handleChangedFiles().
+     */
+    internal class ExternalDirtinessChecker(
+        externalFilesHelper: ExternalFilesHelper,
+        fileTypesToCheck: EnumSet<com.google.devtools.build.lib.skyframe.ExternalFilesHelper.FileType?>
+    ) : SkyValueDirtinessChecker() {
+        private val externalFilesHelper: ExternalFilesHelper
+        private val fileTypesToCheck: EnumSet<com.google.devtools.build.lib.skyframe.ExternalFilesHelper.FileType?>
+
+        private val checker = createBasicFilesystemDirtinessChecker()
+        private val dirtyExternalRepos: ConcurrentHashMap<RepositoryName?, RootedPath?> =
+            ConcurrentHashMap<RepositoryName?, RootedPath?>()
+
+        init {
+            this.externalFilesHelper = externalFilesHelper
+            this.fileTypesToCheck = fileTypesToCheck
+        }
+
+        public override fun applies(key: SkyKey): Boolean {
+            if (!checker.applies(key)) {
+                return false
+            }
+            val fileType: com.google.devtools.build.lib.skyframe.ExternalFilesHelper.FileType =
+                externalFilesHelper.getAndNoteFileType(key.argument() as RootedPath?)
+            return fileTypesToCheck.contains(fileType)
+        }
+
+        public override fun createNewValue(
+            key: SkyKey?, syscallCache: SyscallCache?, tsgm: TimestampGranularityMonitor?
+        ): SkyValue? {
+            throw java.lang.UnsupportedOperationException()
+        }
+
+        @Throws(IOException::class)
+        public override fun check(
+            skyKey: SkyKey,
+            oldValue: SkyValue?,
+            oldMtsv: com.google.devtools.build.skyframe.Version?,
+            syscallCache: SyscallCache?,
+            tsgm: TimestampGranularityMonitor?
+        ): SkyValueDirtinessChecker.DirtyResult {
+            val rootedPath: RootedPath = skyKey.argument() as RootedPath
+            val fileType: com.google.devtools.build.lib.skyframe.ExternalFilesHelper.FileType =
+                externalFilesHelper.getAndNoteFileType(rootedPath)
+            val cacheable = isCacheableType(fileType)
+            val newValue: SkyValue =
+                checker.createNewValue(skyKey, if (cacheable) syscallCache else SyscallCache.NO_CACHE, tsgm)
+            if (com.google.common.base.Objects.equal(newValue, oldValue)) {
+                return SkyValueDirtinessChecker.DirtyResult.notDirty()
+            }
+            if (cacheable) {
+                return SkyValueDirtinessChecker.DirtyResult.dirtyWithNewValue(newValue)
+            }
+            if (fileType == com.google.devtools.build.lib.skyframe.ExternalFilesHelper.FileType.EXTERNAL_REPO) {
+                val repositoryName: RepositoryName? = externalFilesHelper.getExternalRepoName(rootedPath)
+                if (repositoryName != null) {
+                    dirtyExternalRepos.putIfAbsent(repositoryName, rootedPath)
+                }
+            }
+            // Files under output_base/external have a dependency on the WORKSPACE file, so we don't add
+            // a new SkyValue to the graph yet because it might change once the WORKSPACE file has been
+            // parsed. Similarly, output files might change during execution.
+            return SkyValueDirtinessChecker.DirtyResult.dirty()
+        }
+
+        fun getDirtyExternalRepos(): MutableMap<RepositoryName?, RootedPath?> {
+            return Collections.unmodifiableMap<RepositoryName?, RootedPath?>(dirtyExternalRepos)
+        }
+
+        companion object {
+            private fun isCacheableType(fileType: com.google.devtools.build.lib.skyframe.ExternalFilesHelper.FileType): Boolean {
+                return when (fileType) {
+                    com.google.devtools.build.lib.skyframe.ExternalFilesHelper.FileType.INTERNAL, com.google.devtools.build.lib.skyframe.ExternalFilesHelper.FileType.EXTERNAL_OTHER, com.google.devtools.build.lib.skyframe.ExternalFilesHelper.FileType.BUNDLED -> true
+                    com.google.devtools.build.lib.skyframe.ExternalFilesHelper.FileType.EXTERNAL_REPO, com.google.devtools.build.lib.skyframe.ExternalFilesHelper.FileType.OUTPUT -> false
+                    com.google.devtools.build.lib.skyframe.ExternalFilesHelper.FileType.REPO_CONTENTS_CACHE_DIRS -> throw java.lang.IllegalStateException(
+                        "Repo contents cache dirs are not expected to be checked for dirtiness"
+                    )
+                }
+            }
+        }
     }
 
-    @Override
-    @Nullable
-    public Version getMaxTransitiveSourceVersionForNewValue(SkyKey key, SkyValue value)
-        throws IOException {
-      return Preconditions.checkNotNull(getChecker(key), key)
-          .getMaxTransitiveSourceVersionForNewValue(key, value);
+    /** [SkyValueDirtinessChecker] that encompasses a union of other dirtiness checkers.  */
+    class UnionDirtinessChecker(dirtinessCheckers: Iterable<SkyValueDirtinessChecker>) : SkyValueDirtinessChecker() {
+        private val dirtinessCheckers: Iterable<SkyValueDirtinessChecker>
+
+        init {
+            this.dirtinessCheckers = dirtinessCheckers
+        }
+
+        private fun getChecker(key: SkyKey?): SkyValueDirtinessChecker? {
+            for (dirtinessChecker in dirtinessCheckers) {
+                if (dirtinessChecker.applies(key)) {
+                    return dirtinessChecker
+                }
+            }
+            return null
+        }
+
+        public override fun applies(key: SkyKey?): Boolean {
+            return getChecker(key) != null
+        }
+
+        @Throws(IOException::class)
+        public override fun createNewValue(
+            key: SkyKey?, syscallCache: SyscallCache?, tsgm: TimestampGranularityMonitor?
+        ): SkyValue {
+            return com.google.common.base.Preconditions.checkNotNull<Any?>(getChecker(key), key)
+                .createNewValue(key, syscallCache, tsgm)
+        }
+
+        @Throws(IOException::class)
+        public override fun check(
+            key: SkyKey?,
+            oldValue: SkyValue?,
+            oldMtsv: com.google.devtools.build.skyframe.Version?,
+            syscallCache: SyscallCache?,
+            tsgm: TimestampGranularityMonitor?
+        ): DirtyResult {
+            return com.google.common.base.Preconditions.checkNotNull<Any?>(getChecker(key), key)
+                .check(key, oldValue, oldMtsv, syscallCache, tsgm)
+        }
+
+        @Throws(IOException::class)
+        public override fun getMaxTransitiveSourceVersionForNewValue(
+            key: SkyKey?,
+            value: SkyValue?
+        ): com.google.devtools.build.skyframe.Version? {
+            return com.google.common.base.Preconditions.checkNotNull<Any?>(getChecker(key), key)
+                .getMaxTransitiveSourceVersionForNewValue(key, value)
+        }
     }
-  }
 }

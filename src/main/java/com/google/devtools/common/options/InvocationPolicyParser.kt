@@ -11,45 +11,52 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options;
+package com.google.devtools.common.options
 
-import com.google.common.base.CharMatcher;
-import com.google.common.base.Strings;
-import com.google.common.io.BaseEncoding;
-import com.google.devtools.build.lib.runtime.proto.InvocationPolicyOuterClass.InvocationPolicy;
-import com.google.protobuf.InvalidProtocolBufferException;
-import com.google.protobuf.TextFormat;
+import com.google.devtools.build.lib.runtime.proto.InvocationPolicyOuterClass.InvocationPolicy
 
 /**
  * Parses the given InvocationPolicy string, which may be a base64-encoded binary-serialized
  * InvocationPolicy message, or a text formatted InvocationPolicy message. Note that the text
  * format is not backwards compatible as the binary format is.
  */
-public class InvocationPolicyParser {
-  /**
-   * Parses InvocationPolicy in either of the accepted formats. Returns an empty policy if no policy
-   * is provided.
-   *
-   * @throws com.google.devtools.common.options.OptionsParsingException if the value of
-   *     --invocation_policy is invalid.
-   */
-  public static InvocationPolicy parsePolicy(String policy) throws OptionsParsingException {
-    if (Strings.isNullOrEmpty(policy)) {
-      return InvocationPolicy.getDefaultInstance();
-    }
+object InvocationPolicyParser {
+    /**
+     * Parses InvocationPolicy in either of the accepted formats. Returns an empty policy if no policy
+     * is provided.
+     * 
+     * @throws com.google.devtools.common.options.OptionsParsingException if the value of
+     * --invocation_policy is invalid.
+     */
+    @kotlin.jvm.JvmStatic
+    @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+    fun parsePolicy(policy: String?): InvocationPolicy {
+        if (com.google.common.base.Strings.isNullOrEmpty(policy)) {
+            return InvocationPolicy.getDefaultInstance()
+        }
 
-    try {
-      try {
-        // First try decoding the policy as a base64 encoded binary proto.
-        return InvocationPolicy.parseFrom(
-            BaseEncoding.base64().decode(CharMatcher.whitespace().removeFrom(policy)));
-      } catch (IllegalArgumentException e) {
-        // If the flag value can't be decoded from base64, try decoding the policy as a text
-        // formatted proto.
-        return TextFormat.parse(policy, InvocationPolicy.class);
-      }
-    } catch (InvalidProtocolBufferException | TextFormat.ParseException e) {
-      throw new OptionsParsingException("Malformed value of --invocation_policy: " + policy, e);
+        try {
+            try {
+                // First try decoding the policy as a base64 encoded binary proto.
+                return InvocationPolicy.parseFrom(
+                    com.google.common.io.BaseEncoding.base64()
+                        .decode(com.google.common.base.CharMatcher.whitespace().removeFrom(policy))
+                )
+            } catch (e: java.lang.IllegalArgumentException) {
+                // If the flag value can't be decoded from base64, try decoding the policy as a text
+                // formatted proto.
+                return TextFormat.parse(policy, InvocationPolicy::class.java)
+            }
+        } catch (e: InvalidProtocolBufferException) {
+            throw com.google.devtools.common.options.OptionsParsingException(
+                "Malformed value of --invocation_policy: " + policy,
+                e
+            )
+        } catch (e: TextFormat.ParseException) {
+            throw com.google.devtools.common.options.OptionsParsingException(
+                "Malformed value of --invocation_policy: " + policy,
+                e
+            )
+        }
     }
-  }
 }

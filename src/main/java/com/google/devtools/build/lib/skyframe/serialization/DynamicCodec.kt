@@ -11,454 +11,402 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.devtools.build.lib.skyframe.serialization.CodecHelpers.readChar;
-import static com.google.devtools.build.lib.skyframe.serialization.CodecHelpers.readShort;
-import static com.google.devtools.build.lib.skyframe.serialization.CodecHelpers.writeChar;
-import static com.google.devtools.build.lib.skyframe.serialization.CodecHelpers.writeShort;
-import static com.google.devtools.build.lib.unsafe.UnsafeProvider.unsafe;
+import com.google.common.flogger.GoogleLogger
+import com.google.devtools.build.lib.skyframe.serialization.ArrayProcessor
+import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.AsyncObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.CodecHelpers
+import com.google.devtools.build.lib.skyframe.serialization.DynamicCodec
+import com.google.devtools.build.lib.skyframe.serialization.SerializationContext
+import com.google.devtools.build.lib.unsafe.UnsafeProvider
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
+import java.util.Collections
+import java.util.LinkedHashMap
 
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext.FieldSetter;
+/** A codec that serializes arbitrary types.  */
+// TODO: b/331765692 - clean this up
+class DynamicCodec private constructor(type: java.lang.Class<*>, handlers: Array<FieldHandler>) :
+    AsyncObjectCodec<Any?>() {
+    private val type: java.lang.Class<*>
+    private val handlers: Array<FieldHandler>
 
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+    constructor(type: java.lang.Class<*>) : this(type, getFieldHandlers(type))
 
-/** A codec that serializes arbitrary types. */
-@SuppressWarnings("SunApi") // TODO: b/331765692 - clean this up
-public final class DynamicCodec extends AsyncObjectCodec<Object> {
-
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
-
-  private final Class<?> type;
-  private final FieldHandler[] handlers;
-
-  public DynamicCodec(Class<?> type) {
-    this(type, getFieldHandlers(type));
-  }
-
-  @SuppressWarnings("AvoidObjectArrays") // less overhead
-  private DynamicCodec(Class<?> type, FieldHandler[] handlers) {
-    this.type = type;
-    this.handlers = handlers;
-  }
-
-  /** Creates a codec instance with custom handlers for specified fields. */
-  public static DynamicCodec createWithOverrides(
-      Class<?> type, Map<Field, FieldHandler> overrides) {
-    LinkedHashMap<Field, FieldHandler> handlers = getFieldHandlerMap(type);
-    for (Map.Entry<Field, FieldHandler> override : overrides.entrySet()) {
-      FieldHandler previous = handlers.put(override.getKey(), override.getValue());
-      if (previous == null) {
-        throw new IllegalArgumentException(
-            String.format(
-                "An override was specified for %s but no such field was present in the default"
-                    + " dynamic codec for %s.",
-                override.getKey(), type));
-      }
-    }
-    return new DynamicCodec(type, handlers.values().toArray(FieldHandler[]::new));
-  }
-
-  @Override
-  public Class<?> getEncodedClass() {
-    return type;
-  }
-
-  @Override
-  @SuppressWarnings("LogAndThrow") // Want the full stack trace.
-  public void serialize(SerializationContext context, Object obj, CodedOutputStream codedOut)
-      throws SerializationException, IOException {
-    for (FieldHandler handler : handlers) {
-      try {
-        handler.serialize(context, codedOut, obj);
-      } catch (SerializationException e) {
-        logger.atSevere().withCause(e).log(
-            "Unserializable object and superclass: %s %s", obj, obj.getClass().getSuperclass());
-        e.addTrail(type);
-        throw e;
-      }
-    }
-  }
-
-  @Override
-  @SuppressWarnings("LogAndThrow") // Want the full stack trace.
-  public Object deserializeAsync(AsyncDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    Object instance;
-    try {
-      instance = unsafe().allocateInstance(type);
-    } catch (ReflectiveOperationException e) {
-      throw new SerializationException("Could not instantiate object of type: " + type, e);
-    }
-    context.registerInitialValue(instance);
-
-    for (FieldHandler handler : handlers) {
-      try {
-        handler.deserialize(context, codedIn, instance);
-      } catch (SerializationException e) {
-        logger.atSevere().withCause(e).log(
-            "Failed to deserialize object with superclass: %s %s",
-            instance, instance.getClass().getSuperclass());
-        e.addTrail(type);
-        throw e;
-      }
-    }
-    return instance;
-  }
-
-  /** Handles serialization of a field. */
-  public interface FieldHandler {
-    void serialize(SerializationContext context, CodedOutputStream codedOut, Object obj)
-        throws SerializationException, IOException;
-
-    void deserialize(AsyncDeserializationContext context, CodedInputStream codedIn, Object obj)
-        throws SerializationException, IOException;
-  }
-
-  /**
-   * Computes the default {@link FieldHandler}s that would be used for the given type.
-   *
-   * <p>The entries are ordered by {@link FieldComparator} for determinism. The returned value is a
-   * fresh copy that the caller may freely modify.
-   */
-  @SuppressWarnings("NonApiType") // type communicates fixed ordering
-  public static <T> LinkedHashMap<Field, FieldHandler> getFieldHandlerMap(Class<T> type) {
-    LinkedHashMap<Field, FieldHandler> handlers = new LinkedHashMap<>();
-    for (Field field : getSerializableFields(type)) {
-      handlers.put(field, getHandlerForField(field));
-    }
-    return handlers;
-  }
-
-  private static final class BooleanHandler implements FieldHandler {
-    private final long offset;
-
-    private BooleanHandler(long offset) {
-      this.offset = offset;
+    init {
+        this.type = type
+        this.handlers = handlers
     }
 
-    // TODO: b/386384684 - remove Unsafe usage
-    @Override
-    public void serialize(SerializationContext context, CodedOutputStream codedOut, Object obj)
-        throws IOException {
-      codedOut.writeBoolNoTag(unsafe().getBoolean(obj, offset));
+    override fun getEncodedClass(): java.lang.Class<*> {
+        return type
     }
 
-    // TODO: b/386384684 - remove Unsafe usage
-    @Override
-    public void deserialize(
-        AsyncDeserializationContext context, CodedInputStream codedIn, Object obj)
-        throws IOException {
-      unsafe().putBoolean(obj, offset, codedIn.readBool());
-    }
-  }
-
-  private static final class ByteHandler implements FieldHandler {
-    private final long offset;
-
-    private ByteHandler(long offset) {
-      this.offset = offset;
-    }
-
-    // TODO: b/386384684 - remove Unsafe usage
-    @Override
-    public void serialize(SerializationContext context, CodedOutputStream codedOut, Object obj)
-        throws IOException {
-      codedOut.writeRawByte(unsafe().getByte(obj, offset));
-    }
-
-    // TODO: b/386384684 - remove Unsafe usage
-    @Override
-    public void deserialize(
-        AsyncDeserializationContext context, CodedInputStream codedIn, Object obj)
-        throws IOException {
-      unsafe().putByte(obj, offset, codedIn.readRawByte());
-    }
-  }
-
-  private static final class ShortHandler implements FieldHandler {
-    private final long offset;
-
-    private ShortHandler(long offset) {
-      this.offset = offset;
-    }
-
-    // TODO: b/386384684 - remove Unsafe usage
-    @Override
-    public void serialize(SerializationContext context, CodedOutputStream codedOut, Object obj)
-        throws IOException {
-      writeShort(codedOut, unsafe().getShort(obj, offset));
-    }
-
-    // TODO: b/386384684 - remove Unsafe usage
-    @Override
-    public void deserialize(
-        AsyncDeserializationContext context, CodedInputStream codedIn, Object obj)
-        throws IOException {
-      unsafe().putShort(obj, offset, readShort(codedIn));
-    }
-  }
-
-  private static final class CharHandler implements FieldHandler {
-    private final long offset;
-
-    private CharHandler(long offset) {
-      this.offset = offset;
-    }
-
-    // TODO: b/386384684 - remove Unsafe usage
-    @Override
-    public void serialize(SerializationContext context, CodedOutputStream codedOut, Object obj)
-        throws IOException {
-      writeChar(codedOut, unsafe().getChar(obj, offset));
-    }
-
-    // TODO: b/386384684 - remove Unsafe usage
-    @Override
-    public void deserialize(
-        AsyncDeserializationContext context, CodedInputStream codedIn, Object obj)
-        throws IOException {
-      unsafe().putChar(obj, offset, readChar(codedIn));
-    }
-  }
-
-  private static final class IntHandler implements FieldHandler {
-    private final long offset;
-
-    private IntHandler(long offset) {
-      this.offset = offset;
-    }
-
-    // TODO: b/386384684 - remove Unsafe usage
-    @Override
-    public void serialize(SerializationContext context, CodedOutputStream codedOut, Object obj)
-        throws IOException {
-      codedOut.writeInt32NoTag(unsafe().getInt(obj, offset));
-    }
-
-    // TODO: b/386384684 - remove Unsafe usage
-    @Override
-    public void deserialize(
-        AsyncDeserializationContext context, CodedInputStream codedIn, Object obj)
-        throws IOException {
-      unsafe().putInt(obj, offset, codedIn.readInt32());
-    }
-  }
-
-  private static final class LongHandler implements FieldHandler {
-    private final long offset;
-
-    private LongHandler(long offset) {
-      this.offset = offset;
-    }
-
-    // TODO: b/386384684 - remove Unsafe usage
-    @Override
-    public void serialize(SerializationContext context, CodedOutputStream codedOut, Object obj)
-        throws IOException {
-      codedOut.writeInt64NoTag(unsafe().getLong(obj, offset));
-    }
-
-    // TODO: b/386384684 - remove Unsafe usage
-    @Override
-    public void deserialize(
-        AsyncDeserializationContext context, CodedInputStream codedIn, Object obj)
-        throws IOException {
-      unsafe().putLong(obj, offset, codedIn.readInt64());
-    }
-  }
-
-  private static final class FloatHandler implements FieldHandler {
-    private final long offset;
-
-    private FloatHandler(long offset) {
-      this.offset = offset;
-    }
-
-    // TODO: b/386384684 - remove Unsafe usage
-    @Override
-    public void serialize(SerializationContext context, CodedOutputStream codedOut, Object obj)
-        throws IOException {
-      codedOut.writeFloatNoTag(unsafe().getFloat(obj, offset));
-    }
-
-    // TODO: b/386384684 - remove Unsafe usage
-    @Override
-    public void deserialize(
-        AsyncDeserializationContext context, CodedInputStream codedIn, Object obj)
-        throws IOException {
-      unsafe().putFloat(obj, offset, codedIn.readFloat());
-    }
-  }
-
-  private static final class DoubleHandler implements FieldHandler {
-    private final long offset;
-
-    private DoubleHandler(long offset) {
-      this.offset = offset;
-    }
-
-    // TODO: b/386384684 - remove Unsafe usage
-    @Override
-    public void serialize(SerializationContext context, CodedOutputStream codedOut, Object obj)
-        throws IOException {
-      codedOut.writeDoubleNoTag(unsafe().getDouble(obj, offset));
-    }
-
-    // TODO: b/386384684 - remove Unsafe usage
-    @Override
-    public void deserialize(
-        AsyncDeserializationContext context, CodedInputStream codedIn, Object obj)
-        throws IOException {
-      unsafe().putDouble(obj, offset, codedIn.readDouble());
-    }
-  }
-
-  private static final class ObjectHandler implements FieldHandler, FieldSetter<Object> {
-    private final Class<?> type;
-    private final long offset;
-
-    private ObjectHandler(Class<?> type, long offset) {
-      this.type = type;
-      this.offset = offset;
-    }
-
-    // TODO: b/386384684 - remove Unsafe usage
-    @Override
-    public void serialize(SerializationContext context, CodedOutputStream codedOut, Object obj)
-        throws IOException, SerializationException {
-      context.serialize(unsafe().getObject(obj, offset), codedOut);
-    }
-
-    @Override
-    public void deserialize(
-        AsyncDeserializationContext context, CodedInputStream codedIn, Object obj)
-        throws IOException, SerializationException {
-      context.deserialize(codedIn, obj, (FieldSetter<Object>) this);
-    }
-
-    // TODO: b/386384684 - remove Unsafe usage
-    @Override
-    public void set(Object target, Object fieldValue) throws SerializationException {
-      if (!type.isInstance(fieldValue)) {
-        throw new SerializationException(
-            "Field "
-                + fieldValue
-                + " was not instance of "
-                + type
-                + " (was "
-                + fieldValue.getClass()
-                + ")");
-      }
-      unsafe().putObject(target, offset, fieldValue);
-    }
-  }
-
-  private static final class ArrayHandler implements FieldHandler {
-    private final ArrayProcessor arrayProcessor;
-    private final Class<?> type;
-    private final long offset;
-
-    private ArrayHandler(Class<?> type, long offset) {
-      this.arrayProcessor = ArrayProcessor.forType(type);
-      this.type = type;
-      this.offset = offset;
-    }
-
-    // TODO: b/386384684 - remove Unsafe usage
-    @Override
-    public void serialize(SerializationContext context, CodedOutputStream codedOut, Object obj)
-        throws IOException, SerializationException {
-      arrayProcessor.serialize(context, codedOut, type, unsafe().getObject(obj, offset));
-    }
-
-    // TODO: b/386384684 - remove Unsafe usage
-    @Override
-    public void deserialize(
-        AsyncDeserializationContext context, CodedInputStream codedIn, Object obj)
-        throws IOException, SerializationException {
-      unsafe().putObject(obj, offset, arrayProcessor.deserialize(context, codedIn, type));
-    }
-  }
-
-  private static <T> FieldHandler[] getFieldHandlers(Class<T> type) {
-    List<Field> fields = getSerializableFields(type);
-
-    FieldHandler[] handlers = new FieldHandler[fields.size()];
-    int i = 0;
-    for (Field field : fields) {
-      handlers[i++] = getHandlerForField(field);
-    }
-    return handlers;
-  }
-
-  private static <T> List<Field> getSerializableFields(Class<T> type) {
-    ArrayList<Field> fields = new ArrayList<>();
-    for (Class<? super T> next = type; next != null; next = next.getSuperclass()) {
-      for (Field field : next.getDeclaredFields()) {
-        if ((field.getModifiers() & (Modifier.STATIC | Modifier.TRANSIENT)) != 0) {
-          continue; // Skips static or transient fields.
+    @Throws(
+        com.google.devtools.build.lib.skyframe.serialization.SerializationException::class,
+        IOException::class
+    )  // Want the full stack trace.
+    override fun serialize(context: SerializationContext?, obj: Any, codedOut: CodedOutputStream?) {
+        for (handler in handlers) {
+            try {
+                handler.serialize(context, codedOut, obj)
+            } catch (e: com.google.devtools.build.lib.skyframe.serialization.SerializationException) {
+                logger.atSevere().withCause(e).log(
+                    "Unserializable object and superclass: %s %s", obj, obj.getClass().getSuperclass()
+                )
+                e.addTrail(type)
+                throw e
+            }
         }
-        fields.add(field);
-      }
     }
-    // NB: it's tempting to try to simplify this by ordering by offset, but it looks like offsets
-    // are not guaranteed to be stable, which is needed for deterministic serialization.
-    Collections.sort(fields, new FieldComparator());
-    return fields;
-  }
 
-  // TODO: b/386384684 - remove Unsafe usage
-  private static FieldHandler getHandlerForField(Field field) {
-    long offset = unsafe().objectFieldOffset(field);
-    Class<?> fieldType = field.getType();
-    if (fieldType.isPrimitive()) {
-      if (fieldType.equals(boolean.class)) {
-        return new BooleanHandler(offset);
-      } else if (fieldType.equals(byte.class)) {
-        return new ByteHandler(offset);
-      } else if (fieldType.equals(short.class)) {
-        return new ShortHandler(offset);
-      } else if (fieldType.equals(char.class)) {
-        return new CharHandler(offset);
-      } else if (fieldType.equals(int.class)) {
-        return new IntHandler(offset);
-      } else if (fieldType.equals(long.class)) {
-        return new LongHandler(offset);
-      } else if (fieldType.equals(float.class)) {
-        return new FloatHandler(offset);
-      } else if (fieldType.equals(double.class)) {
-        return new DoubleHandler(offset);
-      } else {
-        throw new UnsupportedOperationException(
-            "Unexpected primitive field type " + fieldType + " for " + field.getDeclaringClass());
-      }
-    } else if (fieldType.isArray()) {
-      return new ArrayHandler(fieldType, offset);
-    }
-    return new ObjectHandler(fieldType, offset);
-  }
+    @Throws(
+        com.google.devtools.build.lib.skyframe.serialization.SerializationException::class,
+        IOException::class
+    )  // Want the full stack trace.
+    override fun deserializeAsync(context: AsyncDeserializationContext, codedIn: CodedInputStream?): Any {
+        val instance: Any
+        try {
+            instance = UnsafeProvider.unsafe().allocateInstance(type)
+        } catch (e: java.lang.ReflectiveOperationException) {
+            throw com.google.devtools.build.lib.skyframe.serialization.SerializationException(
+                "Could not instantiate object of type: " + type,
+                e
+            )
+        }
+        context.registerInitialValue(instance)
 
-  private static final class FieldComparator implements Comparator<Field> {
-    @Override
-    public int compare(Field f1, Field f2) {
-      int classCompare =
-          f1.getDeclaringClass().getName().compareTo(f2.getDeclaringClass().getName());
-      if (classCompare != 0) {
-        return classCompare;
-      }
-      return f1.getName().compareTo(f2.getName());
+        for (handler in handlers) {
+            try {
+                handler.deserialize(context, codedIn, instance)
+            } catch (e: com.google.devtools.build.lib.skyframe.serialization.SerializationException) {
+                logger.atSevere().withCause(e).log(
+                    "Failed to deserialize object with superclass: %s %s",
+                    instance, instance.getClass().getSuperclass()
+                )
+                e.addTrail(type)
+                throw e
+            }
+        }
+        return instance
     }
-  }
+
+    /** Handles serialization of a field.  */
+    interface FieldHandler {
+        @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+        fun serialize(context: SerializationContext?, codedOut: CodedOutputStream?, obj: Any?)
+
+        @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+        fun deserialize(context: AsyncDeserializationContext?, codedIn: CodedInputStream?, obj: Any?)
+    }
+
+    private class BooleanHandler(private val offset: Long) : FieldHandler {
+        // TODO: b/386384684 - remove Unsafe usage
+        @Throws(IOException::class)
+        override fun serialize(context: SerializationContext?, codedOut: CodedOutputStream, obj: Any?) {
+            codedOut.writeBoolNoTag(UnsafeProvider.unsafe().getBoolean(obj, offset))
+        }
+
+        // TODO: b/386384684 - remove Unsafe usage
+        @Throws(IOException::class)
+        override fun deserialize(
+            context: AsyncDeserializationContext?, codedIn: CodedInputStream, obj: Any?
+        ) {
+            UnsafeProvider.unsafe().putBoolean(obj, offset, codedIn.readBool())
+        }
+    }
+
+    private class ByteHandler(private val offset: Long) : FieldHandler {
+        // TODO: b/386384684 - remove Unsafe usage
+        @Throws(IOException::class)
+        override fun serialize(context: SerializationContext?, codedOut: CodedOutputStream, obj: Any?) {
+            codedOut.writeRawByte(UnsafeProvider.unsafe().getByte(obj, offset))
+        }
+
+        // TODO: b/386384684 - remove Unsafe usage
+        @Throws(IOException::class)
+        override fun deserialize(
+            context: AsyncDeserializationContext?, codedIn: CodedInputStream, obj: Any?
+        ) {
+            UnsafeProvider.unsafe().putByte(obj, offset, codedIn.readRawByte())
+        }
+    }
+
+    private class ShortHandler(private val offset: Long) : FieldHandler {
+        // TODO: b/386384684 - remove Unsafe usage
+        @Throws(IOException::class)
+        override fun serialize(context: SerializationContext?, codedOut: CodedOutputStream, obj: Any?) {
+            CodecHelpers.writeShort(codedOut, UnsafeProvider.unsafe().getShort(obj, offset))
+        }
+
+        // TODO: b/386384684 - remove Unsafe usage
+        @Throws(IOException::class)
+        override fun deserialize(
+            context: AsyncDeserializationContext?, codedIn: CodedInputStream, obj: Any?
+        ) {
+            UnsafeProvider.unsafe().putShort(obj, offset, CodecHelpers.readShort(codedIn))
+        }
+    }
+
+    private class CharHandler(private val offset: Long) : FieldHandler {
+        // TODO: b/386384684 - remove Unsafe usage
+        @Throws(IOException::class)
+        override fun serialize(context: SerializationContext?, codedOut: CodedOutputStream, obj: Any?) {
+            CodecHelpers.writeChar(codedOut, UnsafeProvider.unsafe().getChar(obj, offset))
+        }
+
+        // TODO: b/386384684 - remove Unsafe usage
+        @Throws(IOException::class)
+        override fun deserialize(
+            context: AsyncDeserializationContext?, codedIn: CodedInputStream, obj: Any?
+        ) {
+            UnsafeProvider.unsafe().putChar(obj, offset, CodecHelpers.readChar(codedIn))
+        }
+    }
+
+    private class IntHandler(private val offset: Long) : FieldHandler {
+        // TODO: b/386384684 - remove Unsafe usage
+        @Throws(IOException::class)
+        override fun serialize(context: SerializationContext?, codedOut: CodedOutputStream, obj: Any?) {
+            codedOut.writeInt32NoTag(UnsafeProvider.unsafe().getInt(obj, offset))
+        }
+
+        // TODO: b/386384684 - remove Unsafe usage
+        @Throws(IOException::class)
+        override fun deserialize(
+            context: AsyncDeserializationContext?, codedIn: CodedInputStream, obj: Any?
+        ) {
+            UnsafeProvider.unsafe().putInt(obj, offset, codedIn.readInt32())
+        }
+    }
+
+    private class LongHandler(private val offset: Long) : FieldHandler {
+        // TODO: b/386384684 - remove Unsafe usage
+        @Throws(IOException::class)
+        override fun serialize(context: SerializationContext?, codedOut: CodedOutputStream, obj: Any?) {
+            codedOut.writeInt64NoTag(UnsafeProvider.unsafe().getLong(obj, offset))
+        }
+
+        // TODO: b/386384684 - remove Unsafe usage
+        @Throws(IOException::class)
+        override fun deserialize(
+            context: AsyncDeserializationContext?, codedIn: CodedInputStream, obj: Any?
+        ) {
+            UnsafeProvider.unsafe().putLong(obj, offset, codedIn.readInt64())
+        }
+    }
+
+    private class FloatHandler(private val offset: Long) : FieldHandler {
+        // TODO: b/386384684 - remove Unsafe usage
+        @Throws(IOException::class)
+        override fun serialize(context: SerializationContext?, codedOut: CodedOutputStream, obj: Any?) {
+            codedOut.writeFloatNoTag(UnsafeProvider.unsafe().getFloat(obj, offset))
+        }
+
+        // TODO: b/386384684 - remove Unsafe usage
+        @Throws(IOException::class)
+        override fun deserialize(
+            context: AsyncDeserializationContext?, codedIn: CodedInputStream, obj: Any?
+        ) {
+            UnsafeProvider.unsafe().putFloat(obj, offset, codedIn.readFloat())
+        }
+    }
+
+    private class DoubleHandler(private val offset: Long) : FieldHandler {
+        // TODO: b/386384684 - remove Unsafe usage
+        @Throws(IOException::class)
+        override fun serialize(context: SerializationContext?, codedOut: CodedOutputStream, obj: Any?) {
+            codedOut.writeDoubleNoTag(UnsafeProvider.unsafe().getDouble(obj, offset))
+        }
+
+        // TODO: b/386384684 - remove Unsafe usage
+        @Throws(IOException::class)
+        override fun deserialize(
+            context: AsyncDeserializationContext?, codedIn: CodedInputStream, obj: Any?
+        ) {
+            UnsafeProvider.unsafe().putDouble(obj, offset, codedIn.readDouble())
+        }
+    }
+
+    private class ObjectHandler(type: java.lang.Class<*>, offset: Long) : FieldHandler,
+        com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext.FieldSetter<Any?> {
+        private val type: java.lang.Class<*>
+        private val offset: Long
+
+        init {
+            this.type = type
+            this.offset = offset
+        }
+
+        // TODO: b/386384684 - remove Unsafe usage
+        @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+        override fun serialize(context: SerializationContext, codedOut: CodedOutputStream?, obj: Any?) {
+            context.serialize(UnsafeProvider.unsafe().getObject(obj, offset), codedOut)
+        }
+
+        @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+        override fun deserialize(
+            context: AsyncDeserializationContext, codedIn: CodedInputStream?, obj: Any?
+        ) {
+            context.deserialize<Any?>(
+                codedIn,
+                obj,
+                this as com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext.FieldSetter<Any?>
+            )
+        }
+
+        // TODO: b/386384684 - remove Unsafe usage
+        @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+        override fun set(target: Any?, fieldValue: Any) {
+            if (!type.isInstance(fieldValue)) {
+                throw com.google.devtools.build.lib.skyframe.serialization.SerializationException(
+                    ("Field "
+                            + fieldValue
+                            + " was not instance of "
+                            + type
+                            + " (was "
+                            + fieldValue.getClass()
+                            + ")")
+                )
+            }
+            UnsafeProvider.unsafe().putObject(target, offset, fieldValue)
+        }
+    }
+
+    private class ArrayHandler(type: java.lang.Class<*>?, offset: Long) : FieldHandler {
+        private val arrayProcessor: ArrayProcessor
+        private val type: java.lang.Class<*>?
+        private val offset: Long
+
+        init {
+            this.arrayProcessor = ArrayProcessor.Companion.forType(type)
+            this.type = type
+            this.offset = offset
+        }
+
+        // TODO: b/386384684 - remove Unsafe usage
+        @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+        override fun serialize(context: SerializationContext?, codedOut: CodedOutputStream?, obj: Any?) {
+            arrayProcessor.serialize(context, codedOut, type, UnsafeProvider.unsafe().getObject(obj, offset))
+        }
+
+        // TODO: b/386384684 - remove Unsafe usage
+        @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+        override fun deserialize(
+            context: AsyncDeserializationContext?, codedIn: CodedInputStream?, obj: Any?
+        ) {
+            UnsafeProvider.unsafe().putObject(obj, offset, arrayProcessor.deserialize(context, codedIn, type))
+        }
+    }
+
+    private class FieldComparator : java.util.Comparator<java.lang.reflect.Field?> {
+        override fun compare(f1: java.lang.reflect.Field, f2: java.lang.reflect.Field): Int {
+            val classCompare: Int =
+                f1.getDeclaringClass().getName().compareTo(f2.getDeclaringClass().getName())
+            if (classCompare != 0) {
+                return classCompare
+            }
+            return f1.getName().compareTo(f2.getName())
+        }
+    }
+
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+
+        /** Creates a codec instance with custom handlers for specified fields.  */
+        fun createWithOverrides(
+            type: java.lang.Class<*>, overrides: MutableMap<java.lang.reflect.Field?, FieldHandler?>
+        ): DynamicCodec {
+            val handlers: LinkedHashMap<java.lang.reflect.Field?, FieldHandler> = getFieldHandlerMap(type)
+            for (override in overrides.entrySet()) {
+                val previous: FieldHandler = handlers.put(override.getKey(), override.getValue())
+                requireNotNull(previous) {
+                    java.lang.String.format(
+                        "An override was specified for %s but no such field was present in the default"
+                                + " dynamic codec for %s.",
+                        override.getKey(), type
+                    )
+                }
+            }
+            return DynamicCodec(
+                type,
+                handlers.values().toArray<FieldHandler?>(java.util.function.IntFunction { _Dummy_.__Array__() })
+            )
+        }
+
+        /**
+         * Computes the default [FieldHandler]s that would be used for the given type.
+         * 
+         * 
+         * The entries are ordered by [FieldComparator] for determinism. The returned value is a
+         * fresh copy that the caller may freely modify.
+         */
+        // type communicates fixed ordering
+        fun <T> getFieldHandlerMap(type: java.lang.Class<T?>?): LinkedHashMap<java.lang.reflect.Field?, FieldHandler> {
+            val handlers: LinkedHashMap<java.lang.reflect.Field?, FieldHandler> =
+                LinkedHashMap<java.lang.reflect.Field?, FieldHandler>()
+            for (field in getSerializableFields<T?>(type)) {
+                handlers.put(field, getHandlerForField(field))
+            }
+            return handlers
+        }
+
+        private fun <T> getFieldHandlers(type: java.lang.Class<T?>?): Array<FieldHandler> {
+            val fields: MutableList<java.lang.reflect.Field> = getSerializableFields<T?>(type)
+
+            val handlers: Array<FieldHandler> = arrayOfNulls<FieldHandler>(fields.size())
+            var i = 0
+            for (field in fields) {
+                handlers[i++] = getHandlerForField(field)
+            }
+            return handlers
+        }
+
+        private fun <T> getSerializableFields(type: java.lang.Class<T?>?): MutableList<java.lang.reflect.Field> {
+            val fields: java.util.ArrayList<java.lang.reflect.Field> = java.util.ArrayList<java.lang.reflect.Field>()
+            /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
+            // NB: it's tempting to try to simplify this by ordering by offset, but it looks like offsets
+            // are not guaranteed to be stable, which is needed for deterministic serialization.
+            Collections.sort<java.lang.reflect.Field?>(
+                fields,
+                com.google.devtools.build.lib.skyframe.serialization.DynamicCodec.FieldComparator()
+            )
+            return fields
+        }
+
+        // TODO: b/386384684 - remove Unsafe usage
+        private fun getHandlerForField(field: java.lang.reflect.Field): FieldHandler {
+            val offset: Long = UnsafeProvider.unsafe().objectFieldOffset(field)
+            val fieldType: java.lang.Class<*> = field.getType()
+            if (fieldType.isPrimitive()) {
+                if (fieldType == Boolean::class.javaPrimitiveType) {
+                    return BooleanHandler(offset)
+                } else if (fieldType == Byte::class.javaPrimitiveType) {
+                    return ByteHandler(offset)
+                } else if (fieldType == Short::class.javaPrimitiveType) {
+                    return ShortHandler(offset)
+                } else if (fieldType == Char::class.javaPrimitiveType) {
+                    return CharHandler(offset)
+                } else if (fieldType == Int::class.javaPrimitiveType) {
+                    return IntHandler(offset)
+                } else if (fieldType == Long::class.javaPrimitiveType) {
+                    return LongHandler(offset)
+                } else if (fieldType == Float::class.javaPrimitiveType) {
+                    return FloatHandler(offset)
+                } else if (fieldType == Double::class.javaPrimitiveType) {
+                    return DoubleHandler(offset)
+                } else {
+                    throw java.lang.UnsupportedOperationException(
+                        "Unexpected primitive field type " + fieldType + " for " + field.getDeclaringClass()
+                    )
+                }
+            } else if (fieldType.isArray()) {
+                return ArrayHandler(fieldType, offset)
+            }
+            return ObjectHandler(fieldType, offset)
+        }
+    }
 }

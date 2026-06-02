@@ -11,337 +11,300 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.AsyncObjectCodec;
-import com.google.devtools.build.lib.skyframe.serialization.DynamicCodec;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext
 
 /**
- * A root path used in {@link RootedPath} and in artifact roots.
- *
- * <p>A typical root could be the exec path, a package root, or an output root specific to some
+ * A root path used in [RootedPath] and in artifact roots.
+ * 
+ * 
+ * A typical root could be the exec path, a package root, or an output root specific to some
  * configuration. We also support absolute roots for non-hermetic paths outside the user workspace.
  */
-public abstract class Root implements Comparable<Root> {
+abstract class Root : Comparable<Root?> {
+    /** Returns a path by concatenating the root and the root-relative path.  */
+    abstract fun getRelative(rootRelativePath: PathFragment?): com.google.devtools.build.lib.vfs.Path?
 
-  /** Constructs a root from a path. */
-  public static Root fromPath(Path path) {
-    return new PathRoot(path);
-  }
+    /** Returns a path by concatenating the root and the root-relative path.  */
+    abstract fun getRelative(rootRelativePath: String?): com.google.devtools.build.lib.vfs.Path?
 
-  /** Returns an absolute root. Can only be used with absolute path fragments. */
-  public static Root absoluteRoot(FileSystem fileSystem) {
-    return fileSystem.getAbsoluteRoot();
-  }
+    /** Returns the relative path between the root and the given path.  */
+    abstract fun relativize(path: com.google.devtools.build.lib.vfs.Path?): PathFragment?
 
-  public static Root toFileSystem(Root root, FileSystem fileSystem) {
-    return root.isAbsolute()
-      ? new AbsoluteRoot(fileSystem)
-      : new PathRoot(fileSystem.getPath(root.asPath().asFragment()));
-  }
+    /** Returns the relative path between the root and the given absolute path fragment.  */
+    abstract fun relativize(absolutePathFragment: PathFragment?): PathFragment?
 
-  /** Returns a path by concatenating the root and the root-relative path. */
-  public abstract Path getRelative(PathFragment rootRelativePath);
+    /** Returns whether the given path is under this root.  */
+    abstract fun contains(path: com.google.devtools.build.lib.vfs.Path?): Boolean
 
-  /** Returns a path by concatenating the root and the root-relative path. */
-  public abstract Path getRelative(String rootRelativePath);
-
-  /** Returns the relative path between the root and the given path. */
-  public abstract PathFragment relativize(Path path);
-
-  /** Returns the relative path between the root and the given absolute path fragment. */
-  public abstract PathFragment relativize(PathFragment absolutePathFragment);
-
-  /** Returns whether the given path is under this root. */
-  public abstract boolean contains(Path path);
-
-  /** Returns whether the given absolute path fragment is under this root. */
-  public abstract boolean contains(PathFragment absolutePathFragment);
-
-  /**
-   * Returns the underlying path. Please avoid using this method.
-   *
-   * <p>Not all roots are backed by paths, so this may return null.
-   */
-  @Nullable
-  public abstract Path asPath();
-
-  /** Returns the underlying FileSystem this Root is on. */
-  public abstract FileSystem getFileSystem();
-
-  public abstract boolean isAbsolute();
-
-  /** Implementation of Root that is backed by a {@link Path}. */
-  public static final class PathRoot extends Root {
-    private final Path path;
-
-    private PathRoot(Path path) {
-      this.path = path;
-    }
-
-    @Override
-    public Path getRelative(PathFragment rootRelativePath) {
-      return path.getRelative(rootRelativePath);
-    }
-
-    @Override
-    public Path getRelative(String rootRelativePath) {
-      return path.getRelative(rootRelativePath);
-    }
-
-    @Override
-    public PathFragment relativize(Path path) {
-      return path.relativeTo(this.path);
-    }
-
-    @Override
-    public PathFragment relativize(PathFragment absolutePathFragment) {
-      Preconditions.checkArgument(absolutePathFragment.isAbsolute());
-      return absolutePathFragment.relativeTo(path.asFragment());
-    }
-
-    @Override
-    public boolean contains(Path path) {
-      return path.startsWith(this.path);
-    }
-
-    @Override
-    public boolean contains(PathFragment absolutePathFragment) {
-      return absolutePathFragment.isAbsolute()
-          && absolutePathFragment.startsWith(path.asFragment());
-    }
-
-    @Override
-    public Path asPath() {
-      return path;
-    }
-
-    @Override
-    public FileSystem getFileSystem() {
-      return path.getFileSystem();
-    }
-
-    @Override
-    public boolean isAbsolute() {
-      return false;
-    }
-
-    @Override
-    public String toString() {
-      return path.toString();
-    }
-
-    @Override
-    public int compareTo(Root o) {
-      if (o instanceof AbsoluteRoot) {
-        return 1;
-      } else if (o instanceof PathRoot pathRoot) {
-        return path.compareTo(pathRoot.path);
-      } else {
-        throw new AssertionError("Unknown Root subclass: " + o.getClass().getName());
-      }
-    }
-
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (o == null || getClass() != o.getClass()) {
-        return false;
-      }
-      PathRoot pathRoot = (PathRoot) o;
-      return path.equals(pathRoot.path);
-    }
-
-    @Override
-    public int hashCode() {
-      return path.hashCode();
-    }
-  }
-
-  /** An absolute root of a file system. Can only resolve absolute path fragments. */
-  public static final class AbsoluteRoot extends Root {
-    private final FileSystem fileSystem;
-
-    AbsoluteRoot(FileSystem fileSystem) {
-      this.fileSystem = Preconditions.checkNotNull(fileSystem);
-    }
-
-    @Override
-    public Path getRelative(PathFragment rootRelativePath) {
-      Preconditions.checkArgument(rootRelativePath.isAbsolute());
-      return fileSystem.getPath(rootRelativePath);
-    }
-
-    @Override
-    public Path getRelative(String rootRelativePath) {
-      return getRelative(PathFragment.create(rootRelativePath));
-    }
-
-    @Override
-    public PathFragment relativize(Path path) {
-      return path.asFragment();
-    }
-
-    @Override
-    public PathFragment relativize(PathFragment absolutePathFragment) {
-      Preconditions.checkArgument(absolutePathFragment.isAbsolute());
-      return absolutePathFragment;
-    }
-
-    @Override
-    public boolean contains(Path path) {
-      return true;
-    }
-
-    @Override
-    public boolean contains(PathFragment absolutePathFragment) {
-      return absolutePathFragment.isAbsolute();
-    }
-
-    @Override
-    public boolean isAbsolute() {
-      return true;
-    }
-
-    @Nullable
-    @Override
-    public Path asPath() {
-      return null;
-    }
-
-    @Override
-    public FileSystem getFileSystem() {
-      return fileSystem;
-    }
-
-    @Override
-    public String toString() {
-      return "<absolute root>";
-    }
-
-    @Override
-    public int compareTo(Root o) {
-      if (o instanceof AbsoluteRoot) {
-        return Integer.compare(hashCode(), o.hashCode());
-      } else if (o instanceof PathRoot) {
-        return -1;
-      } else {
-        throw new AssertionError("Unknown Root subclass: " + o.getClass().getName());
-      }
-    }
-
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (!(o instanceof AbsoluteRoot that)) {
-        return false;
-      }
-      return fileSystem.equals(that.fileSystem);
-    }
-
-    @Override
-    public int hashCode() {
-      return 31 + fileSystem.hashCode();
-    }
-  }
-
-  /** Serialization dependencies for {@link RootCodec}. */
-  public static class RootCodecDependencies {
-    private final ImmutableList<Root> likelyPopularRoots;
-
-    /** Convenience constructor for an instance with no likely roots. */
-    public RootCodecDependencies() {
-      this(ImmutableList.of());
-    }
-
-    /** Convenience constructor for an instance with one likely root. */
-    public RootCodecDependencies(Root likelyPopularRoot) {
-      this(ImmutableList.of(likelyPopularRoot));
-    }
+    /** Returns whether the given absolute path fragment is under this root.  */
+    abstract fun contains(absolutePathFragment: PathFragment?): Boolean
 
     /**
-     * Creates an instance with the given likely roots.
-     *
-     * <p>When the RootCodec serializes any Root that compares equal to one of the likely roots, it
-     * will be emitted as a single byte. Upon deserializing, that exact Root will be returned
-     * (thereby canonicalizing to that Root instance).
-     *
-     * <p>Up to 255 likely roots may be specified. In practice, there should only be very few of
-     * them; each serialization event may incur an equality comparison with all the likely roots.
-     * Since the likely roots are checked in order, they should be ordered with the most likely ones
-     * coming first.
+     * Returns the underlying path. Please avoid using this method.
+     * 
+     * 
+     * Not all roots are backed by paths, so this may return null.
      */
-    public RootCodecDependencies(Iterable<Root> likelyPopularRoots) {
-      this.likelyPopularRoots = ImmutableList.copyOf(likelyPopularRoots);
-      // max length 255; value at index i encoded as number i + 1; value 0 means "not one of these".
-      Preconditions.checkArgument(this.likelyPopularRoots.size() < 256);
-    }
-  }
+    abstract fun asPath(): com.google.devtools.build.lib.vfs.Path?
 
-  @SuppressWarnings("unused") // Used at run-time via classpath scanning + reflection.
-  private static class RootCodec extends AsyncObjectCodec<Root> {
-    private static final DynamicCodec PATH_ROOT_CODEC = new DynamicCodec(PathRoot.class);
-    private static final DynamicCodec ABSOLUTE_ROOT_CODEC = new DynamicCodec(AbsoluteRoot.class);
+    /** Returns the underlying FileSystem this Root is on.  */
+    abstract val fileSystem: com.google.devtools.build.lib.vfs.FileSystem?
 
-    @Override
-    public Class<? extends Root> getEncodedClass() {
-      return Root.class;
-    }
+    @kotlin.jvm.JvmField
+    abstract val isAbsolute: Boolean
 
-    @Override
-    public void serialize(SerializationContext context, Root root, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      // Common case of a common root.
-      RootCodecDependencies codecDeps = context.getDependency(RootCodecDependencies.class);
-      for (int i = 0; i < codecDeps.likelyPopularRoots.size(); i++) {
-        Root likely = codecDeps.likelyPopularRoots.get(i);
-        if (root.equals(likely)) {
-          codedOut.write((byte) (i + 1));
-          return;
+    /** Implementation of Root that is backed by a [Path].  */
+    class PathRoot private constructor(path: com.google.devtools.build.lib.vfs.Path) : Root() {
+        private val path: com.google.devtools.build.lib.vfs.Path
+
+        init {
+            this.path = path
         }
-      }
 
-      // Everything else.
-      codedOut.write((byte) 0);
+        override fun getRelative(rootRelativePath: PathFragment?): com.google.devtools.build.lib.vfs.Path? {
+            return path.getRelative(rootRelativePath)
+        }
 
-      if (root instanceof PathRoot) {
-        codedOut.writeBoolNoTag(true);
-        PATH_ROOT_CODEC.serialize(context, root, codedOut);
-      } else if (root instanceof AbsoluteRoot) {
-        codedOut.writeBoolNoTag(false);
-        ABSOLUTE_ROOT_CODEC.serialize(context, root, codedOut);
-      } else {
-        throw new IllegalStateException("Unexpected Root: " + root);
-      }
+        override fun getRelative(rootRelativePath: String?): com.google.devtools.build.lib.vfs.Path? {
+            return path.getRelative(rootRelativePath)
+        }
+
+        override fun relativize(path: com.google.devtools.build.lib.vfs.Path): PathFragment? {
+            return path.relativeTo(this.path)
+        }
+
+        override fun relativize(absolutePathFragment: PathFragment): PathFragment? {
+            com.google.common.base.Preconditions.checkArgument(absolutePathFragment.isAbsolute())
+            return absolutePathFragment.relativeTo(path.asFragment())
+        }
+
+        override fun contains(path: com.google.devtools.build.lib.vfs.Path): Boolean {
+            return path.startsWith(this.path)
+        }
+
+        override fun contains(absolutePathFragment: PathFragment): Boolean {
+            return absolutePathFragment.isAbsolute()
+                    && absolutePathFragment.startsWith(path.asFragment())
+        }
+
+        override fun asPath(): com.google.devtools.build.lib.vfs.Path {
+            return path
+        }
+
+        override fun getFileSystem(): com.google.devtools.build.lib.vfs.FileSystem? {
+            return path.getFileSystem()
+        }
+
+        override fun isAbsolute(): Boolean {
+            return false
+        }
+
+        override fun toString(): String {
+            return path.toString()
+        }
+
+        override fun compareTo(o: Root): Int {
+            if (o is AbsoluteRoot) {
+                return 1
+            } else if (o is PathRoot) {
+                return path.compareTo(o.path)
+            } else {
+                throw java.lang.AssertionError("Unknown Root subclass: " + o.getClass().getName())
+            }
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false
+            }
+            val pathRoot = o as PathRoot
+            return path == pathRoot.path
+        }
+
+        override fun hashCode(): Int {
+            return path.hashCode()
+        }
     }
 
-    @Override
-    public Root deserializeAsync(AsyncDeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      int likelyIndicator = codedIn.readRawByte();
-      if (likelyIndicator != 0) {
-        RootCodecDependencies codecDeps = context.getDependency(RootCodecDependencies.class);
-        Root popularRoot = codecDeps.likelyPopularRoots.get(likelyIndicator - 1);
-        context.registerInitialValue(popularRoot);
-        return popularRoot;
-      }
+    /** An absolute root of a file system. Can only resolve absolute path fragments.  */
+    class AbsoluteRoot internal constructor(fileSystem: com.google.devtools.build.lib.vfs.FileSystem?) : Root() {
+        private val fileSystem: com.google.devtools.build.lib.vfs.FileSystem
 
-      return (Root)
-          (codedIn.readBool() ? PATH_ROOT_CODEC : ABSOLUTE_ROOT_CODEC)
-              .deserializeAsync(context, codedIn);
+        init {
+            this.fileSystem =
+                com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.lib.vfs.FileSystem>(
+                    fileSystem
+                )
+        }
+
+        override fun getRelative(rootRelativePath: PathFragment): com.google.devtools.build.lib.vfs.Path? {
+            com.google.common.base.Preconditions.checkArgument(rootRelativePath.isAbsolute())
+            return fileSystem.getPath(rootRelativePath)
+        }
+
+        override fun getRelative(rootRelativePath: String?): com.google.devtools.build.lib.vfs.Path? {
+            return getRelative(PathFragment.Companion.create(rootRelativePath))
+        }
+
+        override fun relativize(path: com.google.devtools.build.lib.vfs.Path): PathFragment? {
+            return path.asFragment()
+        }
+
+        override fun relativize(absolutePathFragment: PathFragment): PathFragment {
+            com.google.common.base.Preconditions.checkArgument(absolutePathFragment.isAbsolute())
+            return absolutePathFragment
+        }
+
+        override fun contains(path: com.google.devtools.build.lib.vfs.Path?): Boolean {
+            return true
+        }
+
+        override fun contains(absolutePathFragment: PathFragment): Boolean {
+            return absolutePathFragment.isAbsolute()
+        }
+
+        override fun isAbsolute(): Boolean {
+            return true
+        }
+
+        override fun asPath(): com.google.devtools.build.lib.vfs.Path? {
+            return null
+        }
+
+        override fun getFileSystem(): com.google.devtools.build.lib.vfs.FileSystem {
+            return fileSystem
+        }
+
+        override fun toString(): String {
+            return "<absolute root>"
+        }
+
+        override fun compareTo(o: Root): Int {
+            if (o is AbsoluteRoot) {
+                return java.lang.Integer.compare(hashCode(), o.hashCode())
+            } else if (o is PathRoot) {
+                return -1
+            } else {
+                throw java.lang.AssertionError("Unknown Root subclass: " + o.getClass().getName())
+            }
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o !is AbsoluteRoot) {
+                return false
+            }
+            return fileSystem == o.fileSystem
+        }
+
+        override fun hashCode(): Int {
+            return 31 + fileSystem.hashCode()
+        }
     }
-  }
+
+    /** Serialization dependencies for [RootCodec].  */
+    class RootCodecDependencies @kotlin.jvm.JvmOverloads constructor(likelyPopularRoots: Iterable<Root?> = com.google.common.collect.ImmutableList.of<Root?>()) {
+        private val likelyPopularRoots: com.google.common.collect.ImmutableList<Root>
+
+        /** Convenience constructor for an instance with one likely root.  */
+        constructor(likelyPopularRoot: Root) : this(com.google.common.collect.ImmutableList.of<Root?>(likelyPopularRoot))
+
+        /**
+         * Creates an instance with the given likely roots.
+         * 
+         * 
+         * When the RootCodec serializes any Root that compares equal to one of the likely roots, it
+         * will be emitted as a single byte. Upon deserializing, that exact Root will be returned
+         * (thereby canonicalizing to that Root instance).
+         * 
+         * 
+         * Up to 255 likely roots may be specified. In practice, there should only be very few of
+         * them; each serialization event may incur an equality comparison with all the likely roots.
+         * Since the likely roots are checked in order, they should be ordered with the most likely ones
+         * coming first.
+         */
+        /** Convenience constructor for an instance with no likely roots.  */
+        init {
+            this.likelyPopularRoots = com.google.common.collect.ImmutableList.copyOf<Root?>(likelyPopularRoots)
+            // max length 255; value at index i encoded as number i + 1; value 0 means "not one of these".
+            com.google.common.base.Preconditions.checkArgument(this.likelyPopularRoots.size() < 256)
+        }
+    }
+
+    @Suppress("unused") // Used at run-time via classpath scanning + reflection.
+    private class RootCodec : AsyncObjectCodec<Root?>() {
+        val encodedClass: java.lang.Class<out Root?>
+            get() = Root::class.java
+
+        @Throws(SerializationException::class, IOException::class)
+        public override fun serialize(context: SerializationContext, root: Root, codedOut: CodedOutputStream) {
+            // Common case of a common root.
+            val codecDeps: RootCodecDependencies = context.getDependency(RootCodecDependencies::class.java)
+            for (i in codecDeps.likelyPopularRoots.indices) {
+                val likely: Root = codecDeps.likelyPopularRoots.get(i)
+                if (root == likely) {
+                    codedOut.write((i + 1).toByte())
+                    return
+                }
+            }
+
+            // Everything else.
+            codedOut.write(0.toByte())
+
+            if (root is PathRoot) {
+                codedOut.writeBoolNoTag(true)
+                PATH_ROOT_CODEC.serialize(context, root, codedOut)
+            } else if (root is AbsoluteRoot) {
+                codedOut.writeBoolNoTag(false)
+                ABSOLUTE_ROOT_CODEC.serialize(context, root, codedOut)
+            } else {
+                throw java.lang.IllegalStateException("Unexpected Root: " + root)
+            }
+        }
+
+        @Throws(SerializationException::class, IOException::class)
+        public override fun deserializeAsync(context: AsyncDeserializationContext, codedIn: CodedInputStream): Root? {
+            val likelyIndicator: Int = codedIn.readRawByte().toInt()
+            if (likelyIndicator != 0) {
+                val codecDeps: RootCodecDependencies = context.getDependency(RootCodecDependencies::class.java)
+                val popularRoot: Root = codecDeps.likelyPopularRoots.get(likelyIndicator - 1)
+                context.registerInitialValue(popularRoot)
+                return popularRoot
+            }
+
+            return (if (codedIn.readBool()) PATH_ROOT_CODEC else ABSOLUTE_ROOT_CODEC)
+                .deserializeAsync(context, codedIn) as Root?
+        }
+
+        companion object {
+            private val PATH_ROOT_CODEC: DynamicCodec = DynamicCodec(PathRoot::class.java)
+            private val ABSOLUTE_ROOT_CODEC: DynamicCodec = DynamicCodec(AbsoluteRoot::class.java)
+        }
+    }
+
+    companion object {
+        /** Constructs a root from a path.  */
+        fun fromPath(path: com.google.devtools.build.lib.vfs.Path): Root {
+            return PathRoot(path)
+        }
+
+        /** Returns an absolute root. Can only be used with absolute path fragments.  */
+        fun absoluteRoot(fileSystem: com.google.devtools.build.lib.vfs.FileSystem): Root {
+            return fileSystem.getAbsoluteRoot()
+        }
+
+        fun toFileSystem(root: Root, fileSystem: com.google.devtools.build.lib.vfs.FileSystem): Root {
+            return if (root.isAbsolute)
+                AbsoluteRoot(fileSystem)
+            else
+                PathRoot(fileSystem.getPath(root.asPath().asFragment()))
+        }
+    }
 }

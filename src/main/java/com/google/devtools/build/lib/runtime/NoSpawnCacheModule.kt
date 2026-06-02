@@ -11,22 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import com.google.devtools.build.lib.buildtool.BuildRequest;
-import com.google.devtools.build.lib.exec.ModuleActionContextRegistry;
-import com.google.devtools.build.lib.exec.SpawnCache;
+import com.google.devtools.build.lib.buildtool.BuildRequest
 
 /**
  * Module providing a default no-op spawn cache.
  */
-public final class NoSpawnCacheModule extends BlazeModule {
-
-  @Override
-  public void registerActionContexts(
-      ModuleActionContextRegistry.Builder registryBuilder,
-      CommandEnvironment env,
-      BuildRequest buildRequest) {
-    registryBuilder.register(SpawnCache.class, SpawnCache.NO_CACHE, "no-cache");
-  }
+class NoSpawnCacheModule : BlazeModule() {
+    public override fun registerActionContexts(
+        registryBuilder: ModuleActionContextRegistry.Builder,
+        env: CommandEnvironment?,
+        buildRequest: BuildRequest?
+    ) {
+        registryBuilder.register(SpawnCache::class.java, SpawnCache.NO_CACHE, "no-cache")
+    }
 }

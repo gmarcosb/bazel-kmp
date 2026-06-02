@@ -11,50 +11,45 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.config;
+package com.google.devtools.build.lib.rules.config
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.BaseRuleClasses;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider.RuleSet;
-import com.google.devtools.build.lib.analysis.starlark.StarlarkConfig;
-import com.google.devtools.build.lib.rules.config.ConfigFeatureFlagTaggedTrimmingTransitionFactory.ConfigFeatureFlagTaggedTrimmingTransition;
-import com.google.devtools.build.lib.rules.core.CoreRules;
-import com.google.devtools.build.lib.rules.platform.PlatformRules;
-import com.google.devtools.build.lib.starlarkbuildapi.config.ConfigBootstrap;
+import com.google.devtools.build.lib.analysis.BaseRuleClasses
 
 /**
  * Set of rules to specify or manipulate configuration settings.
  */
-public final class ConfigRules implements RuleSet {
-  public static final ConfigRules INSTANCE = new ConfigRules();
+class ConfigRules private constructor() : RuleSet {
+    public override fun init(builder: ConfiguredRuleClassProvider.Builder) {
+        builder.addTrimmingTransitionFactory(
+            ConfigFeatureFlagTaggedTrimmingTransitionFactory(BaseRuleClasses.TAGGED_TRIMMING_ATTR)
+        )
 
-  private ConfigRules() {
-    // Use the static INSTANCE field instead.
-  }
+        // This implementation trims all feature flags out of toolchains. This is performant assuming
+        // toolchains don't need to read feature flags (which should be practically the case). We can
+        // turn this into a no-op should that need ever arise (and pay the added performance cost).
+        builder.setToolchainTaggedTrimmingTransition(ConfigFeatureFlagTaggedTrimmingTransition.Companion.EMPTY)
 
-  @Override
-  public void init(ConfiguredRuleClassProvider.Builder builder) {
-    builder.addTrimmingTransitionFactory(
-        new ConfigFeatureFlagTaggedTrimmingTransitionFactory(BaseRuleClasses.TAGGED_TRIMMING_ATTR));
+        builder.addRuleDefinition(ConfigBaseRule())
+        builder.addRuleDefinition(ConfigSettingRule())
+        builder.addConfigurationFragment(ConfigFeatureFlagConfiguration::class.java)
 
-    // This implementation trims all feature flags out of toolchains. This is performant assuming
-    // toolchains don't need to read feature flags (which should be practically the case). We can
-    // turn this into a no-op should that need ever arise (and pay the added performance cost).
-    builder.setToolchainTaggedTrimmingTransition(ConfigFeatureFlagTaggedTrimmingTransition.EMPTY);
+        builder.addRuleDefinition(ConfigFeatureFlagRule())
+        builder.addStarlarkBootstrap(
+            ConfigBootstrap(
+                ConfigStarlarkCommon(), StarlarkConfig(), ConfigGlobalLibrary()
+            )
+        )
+    }
 
-    builder.addRuleDefinition(new ConfigRuleClasses.ConfigBaseRule());
-    builder.addRuleDefinition(new ConfigRuleClasses.ConfigSettingRule());
-    builder.addConfigurationFragment(ConfigFeatureFlagConfiguration.class);
+    public override fun requires(): com.google.common.collect.ImmutableList<RuleSet?> {
+        return com.google.common.collect.ImmutableList.of<E?>(
+            CoreRules.Companion.INSTANCE,
+            PlatformRules.Companion.INSTANCE
+        )
+    }
 
-    builder.addRuleDefinition(new ConfigRuleClasses.ConfigFeatureFlagRule());
-    builder.addStarlarkBootstrap(
-        new ConfigBootstrap(
-            new ConfigStarlarkCommon(), new StarlarkConfig(), new ConfigGlobalLibrary()));
-  }
-
-  @Override
-  public ImmutableList<RuleSet> requires() {
-    return ImmutableList.of(CoreRules.INSTANCE, PlatformRules.INSTANCE);
-  }
+    companion object {
+        @kotlin.jvm.JvmField
+        val INSTANCE: ConfigRules = ConfigRules()
+    }
 }

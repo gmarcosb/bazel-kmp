@@ -11,39 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.unix
 
-package com.google.devtools.build.lib.unix;
+import com.google.devtools.build.lib.runtime.BlazeService
+import java.util.concurrent.atomic.AtomicReference
 
-import com.google.devtools.build.lib.runtime.BlazeService;
-import com.google.devtools.build.lib.skybridge.SkybridgeInterface;
-import java.util.concurrent.atomic.AtomicReference;
+/** Service for various UNIX process utilities.  */
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface
+interface ProcessUtilsService : BlazeService {
+    /**
+     * Returns the real group ID of the current process.
+     * 
+     * @throws UnsatisfiedLinkError when JNI is not available.
+     * @throws UnsupportedOperationException on operating systems where this call is not implemented.
+     */
+    fun getgid(): Int
 
-/** Service for various UNIX process utilities. */
-@SkybridgeInterface
-public interface ProcessUtilsService extends BlazeService {
-  static final AtomicReference<ProcessUtilsService> service = new AtomicReference<>();
+    /**
+     * Returns the real user ID of the current process.
+     * 
+     * @throws UnsatisfiedLinkError when JNI is not available.
+     * @throws UnsupportedOperationException on operating systems where this call is not implemented.
+     */
+    fun getuid(): Int
 
-  public static void registerJniService(ProcessUtilsService service) {
-    ProcessUtilsService.service.set(service);
-  }
+    companion object {
+        val service: AtomicReference<ProcessUtilsService?> = AtomicReference<ProcessUtilsService?>()
 
-  public static ProcessUtilsService getService() {
-    return service.get();
-  }
+        fun registerJniService(service: ProcessUtilsService?) {
+            Companion.service.set(service)
+        }
 
-  /**
-   * Returns the real group ID of the current process.
-   *
-   * @throws UnsatisfiedLinkError when JNI is not available.
-   * @throws UnsupportedOperationException on operating systems where this call is not implemented.
-   */
-  int getgid();
-
-  /**
-   * Returns the real user ID of the current process.
-   *
-   * @throws UnsatisfiedLinkError when JNI is not available.
-   * @throws UnsupportedOperationException on operating systems where this call is not implemented.
-   */
-  int getuid();
+        fun getService(): ProcessUtilsService? {
+            return service.get()
+        }
+    }
 }

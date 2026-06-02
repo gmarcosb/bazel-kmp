@@ -11,57 +11,55 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.java
 
-package com.google.devtools.build.lib.rules.java;
+import com.google.devtools.build.lib.collect.nestedset.Depset
+import net.starlark.java.eval.EvalException
+import net.starlark.java.eval.Sequence
+import net.starlark.java.eval.Starlark
 
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.packages.RuleClass.ConfiguredTargetFactory.RuleErrorException;
-import com.google.devtools.build.lib.packages.StructImpl;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Sequence;
-import net.starlark.java.eval.Starlark;
+/** Base class for sharing utility code between wrapped Starlark provider instances  */
+internal abstract class StarlarkInfoWrapper protected constructor(underlying: StructImpl) {
+    protected val underlying: StructImpl
 
-/** Base class for sharing utility code between wrapped Starlark provider instances */
-abstract class StarlarkInfoWrapper {
-
-  protected final StructImpl underlying;
-
-  protected StarlarkInfoWrapper(StructImpl underlying) {
-    this.underlying = underlying;
-  }
-
-  protected <T> T getUnderlyingValue(String key, Class<T> type) throws RuleErrorException {
-    try {
-      if (underlying.getValue(key) == Starlark.NONE) {
-        return null;
-      } else {
-        return underlying.getValue(key, type);
-      }
-    } catch (EvalException e) {
-      throw new RuleErrorException(e);
+    init {
+        this.underlying = underlying
     }
-  }
 
-  protected <T> NestedSet<T> getUnderlyingNestedSet(String key, Class<T> type)
-      throws RuleErrorException {
-    try {
-      return Depset.noneableCast(noneIfNull(underlying.getValue(key)), type, key);
-    } catch (EvalException e) {
-      throw new RuleErrorException(e);
+    @Throws(RuleErrorException::class)
+    protected fun <T> getUnderlyingValue(key: String?, type: Class<T?>?): T? {
+        try {
+            if (underlying.getValue(key) === Starlark.NONE) {
+                return null
+            } else {
+                return underlying.getValue(key, type)
+            }
+        } catch (e: EvalException) {
+            throw RuleErrorException(e)
+        }
     }
-  }
 
-  protected <T> Sequence<T> getUnderlyingSequence(String key, Class<T> type)
-      throws RuleErrorException {
-    try {
-      return Sequence.noneableCast(noneIfNull(underlying.getValue(key)), type, key);
-    } catch (EvalException e) {
-      throw new RuleErrorException(e);
+    @Throws(RuleErrorException::class)
+    protected fun <T> getUnderlyingNestedSet(key: String?, type: Class<T?>?): NestedSet<T?> {
+        try {
+            return Depset.noneableCast(noneIfNull(underlying.getValue(key)), type, key)
+        } catch (e: EvalException) {
+            throw RuleErrorException(e)
+        }
     }
-  }
 
-  private static Object noneIfNull(Object value) {
-    return value == null ? Starlark.NONE : value;
-  }
+    @Throws(RuleErrorException::class)
+    protected fun <T> getUnderlyingSequence(key: String?, type: Class<T?>?): Sequence<T?>? {
+        try {
+            return Sequence.noneableCast<T?>(noneIfNull(underlying.getValue(key)), type, key)
+        } catch (e: EvalException) {
+            throw RuleErrorException(e)
+        }
+    }
+
+    companion object {
+        private fun noneIfNull(value: Any?): Any? {
+            return if (value == null) Starlark.NONE else value
+        }
+    }
 }

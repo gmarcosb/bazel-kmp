@@ -11,112 +11,103 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.base.Objects;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.AbstractSkyKey;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Collection;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
- * {@link SkyValue} for finding the PROJECT files associated with a package.
- *
- * <p>See {@link com.google.devtools.build.lib.analysis.Project}.
+ * [SkyValue] for finding the PROJECT files associated with a package.
+ * 
+ * 
+ * See [com.google.devtools.build.lib.analysis.Project].
  */
-public class ProjectFilesLookupValue implements SkyValue {
-  private final ImmutableList<Label> projectFiles;
+class ProjectFilesLookupValue private constructor(projectFiles: com.google.common.collect.ImmutableList<Label?>?) :
+    SkyValue {
+    private val projectFiles: com.google.common.collect.ImmutableList<Label?>?
 
-  /**
-   * Returns the {@link com.google.devtools.build.lib.analysis.Project} files associated with the
-   * corresponding {@link Key}'s package.
-   *
-   * <p>Given {@code a/b/c/d}, project resolution walks up the package path (i.e. walks up the
-   * directory tree from {@code d} back to {@code a}, only counting directories with BUILD files).
-   * Each directory with both a BUILD file and project file has a label reference to the project
-   * file here.
-   *
-   * <p>Order is innermost to outermost: if both {@code a/PROJECT.scl} and {@code a/b/c/PROJECT.scl}
-   * are included, {@code a/b/c/PROJECT.scl} appears first.
-   */
-  public ImmutableList<Label> getProjectFiles() {
-    return projectFiles;
-  }
-
-  /**
-   * Lookup key.
-   *
-   * @param id the package for which to find enclosing {@link
-   *     com.google.devtools.build.lib.analysis.Project} files
-   */
-  public static Key key(PackageIdentifier id) {
-    Preconditions.checkArgument(!id.getPackageFragment().isAbsolute(), id);
-    return Key.create(id);
-  }
-
-  private static final ProjectFilesLookupValue NO_PROJECT_FILES =
-      new ProjectFilesLookupValue(ImmutableList.of());
-
-  static ProjectFilesLookupValue of(Collection<Label> projectFiles) {
-    return projectFiles.isEmpty()
-        ? NO_PROJECT_FILES
-        : new ProjectFilesLookupValue(ImmutableList.copyOf(projectFiles));
-  }
-
-  private ProjectFilesLookupValue(ImmutableList<Label> projectFiles) {
-    this.projectFiles = projectFiles;
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (this == o) {
-      return true;
-    }
-    if (!(o instanceof ProjectFilesLookupValue)) {
-      return false;
-    }
-    return Objects.equal(projectFiles, ((ProjectFilesLookupValue) o).projectFiles);
-  }
-
-  @Override
-  public int hashCode() {
-    return java.util.Objects.hashCode(projectFiles);
-  }
-
-  /** {@link SkyKey} for {@code ProjectFilesLookupValue}. */
-  @AutoCodec
-  public static class Key extends AbstractSkyKey<PackageIdentifier> {
-    private static final SkyKeyInterner<Key> interner = SkyKey.newInterner();
-
-    private Key(PackageIdentifier arg) {
-      super(arg);
+    /**
+     * Returns the [com.google.devtools.build.lib.analysis.Project] files associated with the
+     * corresponding [Key]'s package.
+     * 
+     * 
+     * Given `a/b/c/d`, project resolution walks up the package path (i.e. walks up the
+     * directory tree from `d` back to `a`, only counting directories with BUILD files).
+     * Each directory with both a BUILD file and project file has a label reference to the project
+     * file here.
+     * 
+     * 
+     * Order is innermost to outermost: if both `a/PROJECT.scl` and `a/b/c/PROJECT.scl`
+     * are included, `a/b/c/PROJECT.scl` appears first.
+     */
+    fun getProjectFiles(): com.google.common.collect.ImmutableList<Label?>? {
+        return projectFiles
     }
 
-    private static Key create(PackageIdentifier arg) {
-      return interner.intern(new Key(arg));
+    init {
+        this.projectFiles = projectFiles
     }
 
-    @VisibleForSerialization
-    @AutoCodec.Interner
-    static Key intern(Key key) {
-      return interner.intern(key);
+    override fun equals(o: Any?): Boolean {
+        if (this === o) {
+            return true
+        }
+        if (o !is ProjectFilesLookupValue) {
+            return false
+        }
+        return com.google.common.base.Objects.equal(projectFiles, o.projectFiles)
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.PROJECT_FILES_LOOKUP;
+    override fun hashCode(): Int {
+        return java.util.Objects.hashCode(projectFiles)
     }
 
-    @Override
-    public SkyKeyInterner<Key> getSkyKeyInterner() {
-      return interner;
+    /** [SkyKey] for `ProjectFilesLookupValue`.  */
+    @AutoCodec
+    class Key private constructor(arg: PackageIdentifier?) : AbstractSkyKey<PackageIdentifier?>(arg) {
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.PROJECT_FILES_LOOKUP
+        }
+
+        val skyKeyInterner: SkyKeyInterner<Key?>
+            get() = com.google.devtools.build.lib.skyframe.ProjectFilesLookupValue.Key.Companion.interner
+
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
+
+            private fun create(arg: PackageIdentifier?): Key {
+                return com.google.devtools.build.lib.skyframe.ProjectFilesLookupValue.Key.Companion.interner.intern(
+                    com.google.devtools.build.lib.skyframe.ProjectFilesLookupValue.Key(
+                        arg
+                    )
+                )
+            }
+
+            @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+            @AutoCodec.Interner
+            fun intern(key: Key?): Key {
+                return com.google.devtools.build.lib.skyframe.ProjectFilesLookupValue.Key.Companion.interner.intern(key)
+            }
+        }
     }
-  }
+
+    companion object {
+        /**
+         * Lookup key.
+         * 
+         * @param id the package for which to find enclosing [     ] files
+         */
+        fun key(id: PackageIdentifier): Key {
+            com.google.common.base.Preconditions.checkArgument(!id.getPackageFragment().isAbsolute(), id)
+            return com.google.devtools.build.lib.skyframe.ProjectFilesLookupValue.Key.Companion.create(id)
+        }
+
+        private val NO_PROJECT_FILES = ProjectFilesLookupValue(com.google.common.collect.ImmutableList.of<Label?>())
+
+        fun of(projectFiles: MutableCollection<Label?>): ProjectFilesLookupValue? {
+            return if (projectFiles.isEmpty())
+                NO_PROJECT_FILES
+            else
+                ProjectFilesLookupValue(com.google.common.collect.ImmutableList.copyOf<Label?>(projectFiles))
+        }
+    }
 }

@@ -11,45 +11,57 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
-
-import com.google.devtools.build.lib.skybridge.SkybridgeInterface;
+package com.google.devtools.build.skyframe
 
 /**
- * Encapsulates the two versions relevant to a {@link NodeEntry}: when it was last evaluated, and
+ * Encapsulates the two versions relevant to a [NodeEntry]: when it was last evaluated, and
  * when its value last changed.
  */
-@SkybridgeInterface
-public interface NodeVersion {
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface
+interface NodeVersion {
+    /**
+     * Returns the last version at which a node's value changed.
+     * 
+     * 
+     * In [NodeEntry.setValue] it may be determined that the value being set is the same as
+     * the already-stored value. In that case, the last changed version will remain the same.
+     */
+    fun lastChanged(): com.google.devtools.build.skyframe.Version?
 
-  /**
-   * Returns the last version at which a node's value changed.
-   *
-   * <p>In {@link NodeEntry#setValue} it may be determined that the value being set is the same as
-   * the already-stored value. In that case, the last changed version will remain the same.
-   */
-  Version lastChanged();
+    /**
+     * Returns the last version a [NodeEntry] was evaluated at, even if it re-evaluated to the
+     * same value.
+     * 
+     * 
+     * When a child signals a node with the last version it was changed at in [ ][NodeEntry.signalDep], the node need not re-evaluate if the child's version is [ ][Version.atMost] this version, even if [.lastChanged] is lower.
+     */
+    fun lastEvaluated(): com.google.devtools.build.skyframe.Version?
 
-  /**
-   * Returns the last version a {@link NodeEntry} was evaluated at, even if it re-evaluated to the
-   * same value.
-   *
-   * <p>When a child signals a node with the last version it was changed at in {@link
-   * NodeEntry#signalDep}, the node need not re-evaluate if the child's version is {@link
-   * Version#atMost} this version, even if {@link #lastChanged} is lower.
-   */
-  Version lastEvaluated();
+    /**
+     * Basic implementation of [NodeVersion] for the case where [.lastChanged] and [ ][.lastEvaluated] are different versions.
+     */
+    class ChangePruned(
+        lastChanged: com.google.devtools.build.skyframe.Version?,
+        lastEvaluated: com.google.devtools.build.skyframe.Version?
+    ) : NodeVersion {
+        val lastChanged: com.google.devtools.build.skyframe.Version?
+        val lastEvaluated: com.google.devtools.build.skyframe.Version?
 
-  static NodeVersion of(Version lastChanged, Version lastEvaluated) {
-    if (lastChanged.equals(lastEvaluated)) {
-      return lastChanged;
+        init {
+            this.lastChanged = lastChanged
+            this.lastEvaluated = lastEvaluated
+        }
     }
-    return new ChangePruned(lastChanged, lastEvaluated);
-  }
 
-  /**
-   * Basic implementation of {@link NodeVersion} for the case where {@link #lastChanged} and {@link
-   * #lastEvaluated} are different versions.
-   */
-  record ChangePruned(Version lastChanged, Version lastEvaluated) implements NodeVersion {}
+    companion object {
+        fun of(
+            lastChanged: com.google.devtools.build.skyframe.Version,
+            lastEvaluated: com.google.devtools.build.skyframe.Version?
+        ): NodeVersion {
+            if (lastChanged == lastEvaluated) {
+                return lastChanged
+            }
+            return ChangePruned(lastChanged, lastEvaluated)
+        }
+    }
 }

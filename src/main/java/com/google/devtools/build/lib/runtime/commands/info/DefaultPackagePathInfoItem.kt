@@ -11,39 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime.commands.info
 
-package com.google.devtools.build.lib.runtime.commands.info;
-
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.base.Joiner;
-import com.google.common.base.Supplier;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.pkgcache.PackageOptions;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.InfoItem;
-import com.google.devtools.common.options.OptionsParsingResult;
+import com.google.common.base.Joiner
+import com.google.common.base.Preconditions
+import com.google.common.base.Supplier
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue
+import com.google.devtools.common.options.OptionsParsingResult
 
 /**
  * Info item for the default package path. It is deprecated, it still works, when explicitly
  * requested, but are not shown by default. It prints multi-line messages and thus don't play well
  * with grep. We don't print them unless explicitly requested.
  */
-@Deprecated
-public final class DefaultPackagePathInfoItem extends InfoItem {
-  private static final Joiner JOINER = Joiner.on(":");
+@Deprecated("")
+class DefaultPackagePathInfoItem(private val commandOptions: OptionsParsingResult?) :
+    InfoItem("default-package-path", "The default package path", true) {
+    public override fun get(
+        configurationSupplier: Supplier<BuildConfigurationValue?>?, env: CommandEnvironment?
+    ): ByteArray {
+        Preconditions.checkNotNull<OptionsParsingResult?>(commandOptions)
+        return print(JOINER.join(commandOptions!!.getOptions<O?>(PackageOptions::class.java).getPackagePath()))
+    }
 
-  private final OptionsParsingResult commandOptions;
-
-  public DefaultPackagePathInfoItem(OptionsParsingResult commandOptions) {
-    super("default-package-path", "The default package path", true);
-    this.commandOptions = commandOptions;
-  }
-
-  @Override
-  public byte[] get(
-      Supplier<BuildConfigurationValue> configurationSupplier, CommandEnvironment env) {
-    checkNotNull(commandOptions);
-    return print(JOINER.join(commandOptions.getOptions(PackageOptions.class).getPackagePath()));
-  }
+    companion object {
+        private val JOINER: Joiner = Joiner.on(":")
+    }
 }

@@ -11,166 +11,157 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.eval
 
-package net.starlark.java.eval;
+import java.util.concurrent.atomic.AtomicReference
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Predicate;
-import javax.annotation.Nullable;
-import net.starlark.java.syntax.Location;
+/** Debugger API.  */ // TODO(adonovan): move Debugger to Debug.Debugger.
+object Debug {
+    val debugger: AtomicReference<Debugger?> = AtomicReference<Debugger?>()
 
-/** Debugger API. */
-// TODO(adonovan): move Debugger to Debug.Debugger.
-public final class Debug {
-
-  /**
-   * A simple interface for the Starlark interpreter to notify a debugger of events during
-   * execution.
-   */
-  public interface Debugger {
-    /** Notify the debugger that execution is at the point immediately before {@code loc}. */
-    void before(StarlarkThread thread, Location loc);
-
-    /** Notify the debugger that it will no longer receive events from the interpreter. */
-    void close();
-  }
-
-  /** A Starlark value that can expose additional information to a debugger. */
-  public interface ValueWithDebugAttributes extends StarlarkValue {
     /**
-     * Returns a list of DebugAttribute of this value. For example, it can be the internal fields of
-     * a value that are not accessible from Starlark, or the values inside a collection.
+     * Installs a global hook that causes subsequently executed Starlark threads to notify the
+     * debugger of important events. Closes any previously set debugger. Call `setDebugger(null)` to disable debugging.
      */
-    ImmutableList<DebugAttribute> getDebugAttributes();
-  }
-
-  /** A name/value pair used in the return value of getDebugAttributes. */
-  public static final class DebugAttribute {
-    public final String name;
-    public final Object value; // a legal Starlark value
-
-    public DebugAttribute(String name, Object value) {
-      this.name = name;
-      this.value = value;
+    @kotlin.jvm.JvmStatic
+    fun setDebugger(dbg: Debugger?) {
+        val prev: Debugger? = net.starlark.java.eval.Debug.debugger.getAndSet(dbg)
+        if (prev != null) {
+            prev.close()
+        }
     }
-  }
 
-  /** See stepControl */
-  public interface ReadyToPause extends Predicate<StarlarkThread> {}
-
-  /**
-   * Describes the stepping behavior that should occur when execution of a thread is continued.
-   * (Debugger API)
-   */
-  public enum Stepping {
-    /** Continue execution without stepping. */
-    NONE,
     /**
-     * If the thread is paused on a statement that contains a function call, step into that
-     * function. Otherwise, this is the same as OVER.
+     * Returns a copy of the current stack of call frames, outermost call first.
+     * 
+     * 
+     * This function is intended for use only when execution of `thread` is stopped, for
+     * example at a breakpoint. The resulting DebugFrames should not be retained after execution of
+     * the thread has resumed. Most clients should instead use [StarlarkThread.getCallStack].
      */
-    INTO,
-    /**
-     * Step over the current statement and any functions that it may call, stopping at the next
-     * statement in the same frame. If no more statements are available in the current frame, same
-     * as OUT.
-     */
-    OVER,
-    /**
-     * Continue execution until the current frame has been exited and then pause. If we are
-     * currently in the outer-most frame, same as NONE.
-     */
-    OUT,
-  }
-
-  private Debug() {} // uninstantiable
-
-  static final AtomicReference<Debugger> debugger = new AtomicReference<>();
-
-  /**
-   * Installs a global hook that causes subsequently executed Starlark threads to notify the
-   * debugger of important events. Closes any previously set debugger. Call {@code
-   * setDebugger(null)} to disable debugging.
-   */
-  public static void setDebugger(Debugger dbg) {
-    Debugger prev = debugger.getAndSet(dbg);
-    if (prev != null) {
-      prev.close();
+    fun getCallStack(thread: net.starlark.java.eval.StarlarkThread): com.google.common.collect.ImmutableList<Frame?> {
+        return thread.getDebugCallStack()
     }
-  }
 
-  /**
-   * Returns a copy of the current stack of call frames, outermost call first.
-   *
-   * <p>This function is intended for use only when execution of {@code thread} is stopped, for
-   * example at a breakpoint. The resulting DebugFrames should not be retained after execution of
-   * the thread has resumed. Most clients should instead use {@link StarlarkThread#getCallStack}.
-   */
-  public static ImmutableList<Frame> getCallStack(StarlarkThread thread) {
-    return thread.getDebugCallStack();
-  }
+    /**
+     * Given a requested stepping behavior, returns a predicate over the context that tells the
+     * debugger when to pause. (Debugger API)
+     * 
+     * 
+     * The predicate will return true if we are at the next statement where execution should pause,
+     * and it will return false if we are not yet at that statement. No guarantee is made about the
+     * predicate's return value after we have reached the desired statement.
+     * 
+     * 
+     * A null return value indicates that no further pausing should occur.
+     */
+    fun stepControl(th: net.starlark.java.eval.StarlarkThread, stepping: Stepping): ReadyToPause? {
+        val depth: Int = th.getCallStackSize()
+        when (stepping) {
+            net.starlark.java.eval.Debug.Stepping.NONE -> return null
+            net.starlark.java.eval.Debug.Stepping.INTO ->         // pause at the very next statement
+                return net.starlark.java.eval.Debug.ReadyToPause { thread: net.starlark.java.eval.StarlarkThread? -> true }
 
-  /**
-   * Given a requested stepping behavior, returns a predicate over the context that tells the
-   * debugger when to pause. (Debugger API)
-   *
-   * <p>The predicate will return true if we are at the next statement where execution should pause,
-   * and it will return false if we are not yet at that statement. No guarantee is made about the
-   * predicate's return value after we have reached the desired statement.
-   *
-   * <p>A null return value indicates that no further pausing should occur.
-   */
-  @Nullable
-  public static Debug.ReadyToPause stepControl(StarlarkThread th, Debug.Stepping stepping) {
-    final int depth = th.getCallStackSize();
-    switch (stepping) {
-      case NONE:
-        return null;
-      case INTO:
-        // pause at the very next statement
-        return thread -> true;
-      case OVER:
-        return thread -> thread.getCallStackSize() <= depth;
-      case OUT:
-        // if we're at the outermost frame, same as NONE
-        return depth == 0 ? null : thread -> thread.getCallStackSize() < depth;
+            net.starlark.java.eval.Debug.Stepping.OVER -> return net.starlark.java.eval.Debug.ReadyToPause { thread: net.starlark.java.eval.StarlarkThread? -> thread.getCallStackSize() <= depth }
+            net.starlark.java.eval.Debug.Stepping.OUT ->         // if we're at the outermost frame, same as NONE
+                return if (depth == 0) null else net.starlark.java.eval.Debug.ReadyToPause { thread: net.starlark.java.eval.StarlarkThread? -> thread.getCallStackSize() < depth }
+        }
+        throw java.lang.IllegalArgumentException("Unsupported stepping type: " + stepping)
     }
-    throw new IllegalArgumentException("Unsupported stepping type: " + stepping);
-  }
 
-  /** Debugger interface to the interpreter's internal call frame representation. */
-  public interface Frame {
+    var threadHook: ThreadHook? = null
 
-    /** Returns function called in this frame. */
-    StarlarkCallable getFunction();
+    /**
+     * Installs a global hook that is notified each time a thread pushes or pops its top-level frame.
+     * This interface is provided to support special tools; ordinary clients should have no need for
+     * it.
+     */
+    @kotlin.jvm.JvmStatic
+    fun setThreadHook(hook: ThreadHook?) {
+        net.starlark.java.eval.Debug.threadHook = hook
+    }
 
-    /** Returns the location of the current program counter. */
-    Location getLocation();
+    /**
+     * A simple interface for the Starlark interpreter to notify a debugger of events during
+     * execution.
+     */
+    interface Debugger {
+        /** Notify the debugger that execution is at the point immediately before `loc`.  */
+        fun before(thread: net.starlark.java.eval.StarlarkThread?, loc: net.starlark.java.syntax.Location?)
 
-    /** Returns the local environment of this frame. */
-    ImmutableMap<String, Object> getLocals();
-  }
+        /** Notify the debugger that it will no longer receive events from the interpreter.  */
+        fun close()
+    }
 
-  /**
-   * Interface by which debugging tools are notified of a thread entering or leaving its top-level
-   * frame.
-   */
-  public interface ThreadHook {
-    void onPushFirst(StarlarkThread thread);
+    /** A Starlark value that can expose additional information to a debugger.  */
+    interface ValueWithDebugAttributes : net.starlark.java.eval.StarlarkValue {
+        /**
+         * Returns a list of DebugAttribute of this value. For example, it can be the internal fields of
+         * a value that are not accessible from Starlark, or the values inside a collection.
+         */
+        fun getDebugAttributes(): com.google.common.collect.ImmutableList<DebugAttribute?>?
+    }
 
-    void onPopLast(StarlarkThread thread);
-  }
+    /** A name/value pair used in the return value of getDebugAttributes.  */
+    class DebugAttribute(
+        val name: String?, // a legal Starlark value
+        val value: Any?
+    ) {
+        init {
+            this.value = value
+        }
+    }
 
-  static ThreadHook threadHook = null;
+    /** See stepControl  */
+    interface ReadyToPause : java.util.function.Predicate<net.starlark.java.eval.StarlarkThread?>
 
-  /**
-   * Installs a global hook that is notified each time a thread pushes or pops its top-level frame.
-   * This interface is provided to support special tools; ordinary clients should have no need for
-   * it.
-   */
-  public static void setThreadHook(ThreadHook hook) {
-    threadHook = hook;
-  }
+    /**
+     * Describes the stepping behavior that should occur when execution of a thread is continued.
+     * (Debugger API)
+     */
+    enum class Stepping {
+        /** Continue execution without stepping.  */
+        NONE,
+
+        /**
+         * If the thread is paused on a statement that contains a function call, step into that
+         * function. Otherwise, this is the same as OVER.
+         */
+        INTO,
+
+        /**
+         * Step over the current statement and any functions that it may call, stopping at the next
+         * statement in the same frame. If no more statements are available in the current frame, same
+         * as OUT.
+         */
+        OVER,
+
+        /**
+         * Continue execution until the current frame has been exited and then pause. If we are
+         * currently in the outer-most frame, same as NONE.
+         */
+        OUT,
+    }
+
+    /** Debugger interface to the interpreter's internal call frame representation.  */
+    interface Frame {
+        /** Returns function called in this frame.  */
+        fun getFunction(): net.starlark.java.eval.StarlarkCallable?
+
+        /** Returns the location of the current program counter.  */
+        fun getLocation(): net.starlark.java.syntax.Location?
+
+        /** Returns the local environment of this frame.  */
+        fun getLocals(): com.google.common.collect.ImmutableMap<String?, Any?>?
+    }
+
+    /**
+     * Interface by which debugging tools are notified of a thread entering or leaving its top-level
+     * frame.
+     */
+    interface ThreadHook {
+        fun onPushFirst(thread: net.starlark.java.eval.StarlarkThread?)
+
+        fun onPopLast(thread: net.starlark.java.eval.StarlarkThread?)
+    }
 }

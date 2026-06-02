@@ -11,19 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import java.io.IOException;
-
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.vfs.FileStatus
+import java.io.IOException
 
 /**
  * A FileStatus that also optionally returns a Digest.
  */
-public interface FileStatusWithDigest extends FileStatus {
-  /**
-   * @return the digest of the file - optional.
-   */
-  @Nullable
-  byte[] getDigest() throws IOException;
+interface FileStatusWithDigest : FileStatus {
+    @kotlin.jvm.JvmField
+    @get:Throws(IOException::class)
+    val digest: ByteArray?
 }

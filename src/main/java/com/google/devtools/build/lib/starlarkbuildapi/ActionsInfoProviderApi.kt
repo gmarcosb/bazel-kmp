@@ -11,18 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi
 
-package com.google.devtools.build.lib.starlarkbuildapi;
+import com.google.devtools.build.lib.starlarkbuildapi.core.ProviderApi
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.starlarkbuildapi.core.ProviderApi;
-import net.starlark.java.annot.StarlarkBuiltin;
-
-/** Provider for structs containing actions created during the analysis of a rule. */
-@StarlarkBuiltin(
+/** Provider for structs containing actions created during the analysis of a rule.  */
+@net.starlark.java.annot.StarlarkBuiltin(
     name = "Actions",
     doc = "<b>Deprecated and subject to imminent removal. Please do not use.</b>",
     documented = false,
-    category = DocCategory.PROVIDER)
-// TODO(cparsons): Deprecate and remove this API.
-public interface ActionsInfoProviderApi extends ProviderApi {}
+    category = com.google.devtools.build.docgen.annot.DocCategory.PROVIDER
+) // TODO(cparsons): Deprecate and remove this API.
+interface ActionsInfoProviderApi : ProviderApi

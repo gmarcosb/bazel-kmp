@@ -11,61 +11,55 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static java.util.Objects.requireNonNull;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.pkgcache.FilteringPolicy;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
+/** Singleton result of [CollectTargetsInPackageFunction].  */
+object CollectTargetsInPackageValue : SkyValue {
+    @SerializationConstant
+    val INSTANCE: CollectTargetsInPackageValue = CollectTargetsInPackageValue()
 
-/** Singleton result of {@link CollectTargetsInPackageFunction}. */
-public class CollectTargetsInPackageValue implements SkyValue {
-  @SerializationConstant
-  public static final CollectTargetsInPackageValue INSTANCE = new CollectTargetsInPackageValue();
-
-  private CollectTargetsInPackageValue() {}
-
-  /**
-   * Creates a key for evaluation of {@link CollectTargetsInPackageFunction}. See that class's
-   * comment for what callers should have done beforehand.
-   */
-  public static CollectTargetsInPackageKey key(
-      PackageIdentifier packageId, FilteringPolicy filteringPolicy) {
-    return CollectTargetsInPackageKey.create(packageId, filteringPolicy);
-  }
-
-  /** {@link SkyKey} argument. */
-  @AutoCodec
-  public record CollectTargetsInPackageKey(
-      PackageIdentifier packageId, FilteringPolicy filteringPolicy) implements SkyKey {
-    public CollectTargetsInPackageKey {
-      requireNonNull(packageId, "packageId");
-      requireNonNull(filteringPolicy, "filteringPolicy");
+    /**
+     * Creates a key for evaluation of [CollectTargetsInPackageFunction]. See that class's
+     * comment for what callers should have done beforehand.
+     */
+    fun key(
+        packageId: PackageIdentifier?, filteringPolicy: FilteringPolicy?
+    ): CollectTargetsInPackageKey {
+        return CollectTargetsInPackageKey.Companion.create(packageId, filteringPolicy)
     }
 
-    private static final SkyKeyInterner<CollectTargetsInPackageKey> interner = SkyKey.newInterner();
+    /** [SkyKey] argument.  */
+    @AutoCodec
+    class CollectTargetsInPackageKey(packageId: PackageIdentifier?, filteringPolicy: FilteringPolicy?) : SkyKey {
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.COLLECT_TARGETS_IN_PACKAGE
+        }
 
-    @VisibleForSerialization
-    @AutoCodec.Instantiator
-    public static CollectTargetsInPackageKey create(
-        PackageIdentifier packageId, FilteringPolicy filteringPolicy) {
-      return interner.intern(new CollectTargetsInPackageKey(packageId, filteringPolicy));
-    }
+        val skyKeyInterner: SkyKeyInterner<CollectTargetsInPackageKey?>
+            get() = interner
+        val packageId: PackageIdentifier?
+        val filteringPolicy: FilteringPolicy?
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.COLLECT_TARGETS_IN_PACKAGE;
-    }
+        init {
+            this.filteringPolicy = filteringPolicy
+            this.packageId = packageId
+            java.util.Objects.requireNonNull<Any?>(packageId, "packageId")
+            java.util.Objects.requireNonNull<Any?>(filteringPolicy, "filteringPolicy")
+        }
 
-    @Override
-    public SkyKeyInterner<CollectTargetsInPackageKey> getSkyKeyInterner() {
-      return interner;
+        companion object {
+            private val interner: SkyKeyInterner<CollectTargetsInPackageKey?> =
+                SkyKey.newInterner<CollectTargetsInPackageKey?>()
+
+            @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+            @AutoCodec.Instantiator
+            fun create(
+                packageId: PackageIdentifier?, filteringPolicy: FilteringPolicy?
+            ): CollectTargetsInPackageKey {
+                return interner.intern(CollectTargetsInPackageKey(packageId, filteringPolicy))
+            }
+        }
     }
-  }
 }

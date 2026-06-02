@@ -11,100 +11,91 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.buildeventstream.BuildEventContext;
-import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventWithOrderConstraint;
-import com.google.devtools.build.lib.buildeventstream.GenericBuildEvent;
-import com.google.devtools.build.lib.runtime.proto.InvocationPolicyOuterClass.InvocationPolicy;
-import com.google.devtools.build.lib.util.OptionsUtils;
-import com.google.devtools.common.options.OptionsParsingResult;
-import java.util.Collection;
-import java.util.Objects;
+import com.google.devtools.build.lib.buildeventstream.BuildEventContext
 
-/** An event in which the command line options are discovered. */
-public class GotOptionsEvent implements BuildEventWithOrderConstraint {
+/** An event in which the command line options are discovered.  */
+class GotOptionsEvent(
+    startupOptions: com.google.devtools.common.options.OptionsParsingResult,
+    options: com.google.devtools.common.options.OptionsParsingResult,
+    invocationPolicy: InvocationPolicy?
+) : BuildEventWithOrderConstraint {
+    private val startupOptions: com.google.devtools.common.options.OptionsParsingResult
+    private val options: com.google.devtools.common.options.OptionsParsingResult
+    private val invocationPolicy: InvocationPolicy?
 
-  private final OptionsParsingResult startupOptions;
-  private final OptionsParsingResult options;
-  private final InvocationPolicy invocationPolicy;
+    /**
+     * Construct the options event.
+     * 
+     * @param startupOptions the parsed startup options
+     * @param options the parsed options
+     */
+    init {
+        this.startupOptions = startupOptions
+        this.options = options
+        this.invocationPolicy = invocationPolicy
+    }
 
-  /**
-   * Construct the options event.
-   *
-   * @param startupOptions the parsed startup options
-   * @param options the parsed options
-   */
-  public GotOptionsEvent(
-      OptionsParsingResult startupOptions,
-      OptionsParsingResult options,
-      InvocationPolicy invocationPolicy) {
-    this.startupOptions = startupOptions;
-    this.options = options;
-    this.invocationPolicy = invocationPolicy;
-  }
+    /** @return the parsed startup options
+     */
+    fun getStartupOptions(): com.google.devtools.common.options.OptionsParsingResult {
+        return startupOptions
+    }
 
-  /** @return the parsed startup options */
-  public OptionsParsingResult getStartupOptions() {
-    return startupOptions;
-  }
+    /** @return the parsed options.
+     */
+    fun getOptions(): com.google.devtools.common.options.OptionsParsingResult {
+        return options
+    }
 
-  /** @return the parsed options. */
-  public OptionsParsingResult getOptions() {
-    return options;
-  }
+    /** @return the invocation policy.
+     */
+    fun getInvocationPolicy(): InvocationPolicy? {
+        return invocationPolicy
+    }
 
-  /** @return the invocation policy. */
-  public InvocationPolicy getInvocationPolicy() {
-    return invocationPolicy;
-  }
+    val eventId: BuildEventId
+        get() = BuildEventIdUtil.optionsParsedId()
 
-  @Override
-  public BuildEventId getEventId() {
-    return BuildEventIdUtil.optionsParsedId();
-  }
+    val childrenEvents: MutableCollection<BuildEventId>
+        get() = com.google.common.collect.ImmutableList.of<BuildEventId?>()
 
-  @Override
-  public Collection<BuildEventId> getChildrenEvents() {
-    return ImmutableList.of();
-  }
+    public override fun asStreamProto(converters: BuildEventContext?): BuildEventStreamProtos.BuildEvent {
+        val optionsBuilder: BuildEventStreamProtos.OptionsParsed.Builder =
+            BuildEventStreamProtos.OptionsParsed.newBuilder()
 
-  @Override
-  public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
-    BuildEventStreamProtos.OptionsParsed.Builder optionsBuilder =
-        BuildEventStreamProtos.OptionsParsed.newBuilder();
+        var options: com.google.devtools.common.options.OptionsParsingResult = getStartupOptions()
+        optionsBuilder.addAllStartupOptions(OptionsUtils.asArgumentList(options))
+        optionsBuilder.addAllExplicitStartupOptions(
+            OptionsUtils.asArgumentList(
+                com.google.common.collect.Iterables.filter<com.google.devtools.common.options.ParsedOptionDescription?>(
+                    options.asListOfExplicitOptions(),
+                    com.google.common.base.Predicate { input: com.google.devtools.common.options.ParsedOptionDescription? -> input.getSource() != "default" })
+            )
+        )
+        options = getOptions()
+        optionsBuilder.addAllCmdLine(OptionsUtils.asArgumentList(options))
+        optionsBuilder.addAllExplicitCmdLine(
+            OptionsUtils.asArgumentList(
+                com.google.common.collect.Iterables.filter<com.google.devtools.common.options.ParsedOptionDescription?>(
+                    options.asListOfExplicitOptions(),
+                    com.google.common.base.Predicate { input: com.google.devtools.common.options.ParsedOptionDescription? -> input.getSource() == "command line options" })
+            )
+        )
 
-    OptionsParsingResult options = getStartupOptions();
-    optionsBuilder.addAllStartupOptions(OptionsUtils.asArgumentList(options));
-    optionsBuilder.addAllExplicitStartupOptions(
-        OptionsUtils.asArgumentList(
-            Iterables.filter(
-                options.asListOfExplicitOptions(),
-                input -> !Objects.equals(input.getSource(), "default"))));
-    options = getOptions();
-    optionsBuilder.addAllCmdLine(OptionsUtils.asArgumentList(options));
-    optionsBuilder.addAllExplicitCmdLine(
-        OptionsUtils.asArgumentList(
-            Iterables.filter(
-                options.asListOfExplicitOptions(),
-                input -> Objects.equals(input.getSource(), "command line options"))));
+        optionsBuilder.setInvocationPolicy(getInvocationPolicy())
 
-    optionsBuilder.setInvocationPolicy(getInvocationPolicy());
+        val commonOptions: CommonCommandOptions? =
+            getOptions().getOptions<CommonCommandOptions?>(CommonCommandOptions::class.java)
+        optionsBuilder.setToolTag(commonOptions.getToolTag())
 
-    CommonCommandOptions commonOptions = getOptions().getOptions(CommonCommandOptions.class);
-    optionsBuilder.setToolTag(commonOptions.getToolTag());
+        return GenericBuildEvent.protoChaining(this).setOptionsParsed(optionsBuilder.build()).build()
+    }
 
-    return GenericBuildEvent.protoChaining(this).setOptionsParsed(optionsBuilder.build()).build();
-  }
-
-  @Override
-  public Collection<BuildEventId> postedAfter() {
-    return ImmutableList.of(
-        BuildEventIdUtil.buildStartedId(), BuildEventIdUtil.unstructuredCommandlineId());
-  }
+    public override fun postedAfter(): MutableCollection<BuildEventId?> {
+        return com.google.common.collect.ImmutableList.of<E?>(
+            BuildEventIdUtil.buildStartedId(), BuildEventIdUtil.unstructuredCommandlineId()
+        )
+    }
 }

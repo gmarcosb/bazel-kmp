@@ -11,22 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.config;
+package com.google.devtools.build.lib.skyframe.config
 
-import com.google.devtools.build.lib.actions.MissingInputFileException;
-import java.io.IOException;
+import com.google.devtools.build.lib.actions.MissingInputFileException
 
-/** Exception class for errors while computing platform mappings. */
-public final class PlatformMappingException extends Exception {
-  PlatformMappingException(MissingInputFileException cause) {
-    super(cause);
-  }
+/** Exception class for errors while computing platform mappings.  */
+class PlatformMappingException : java.lang.Exception {
+    internal constructor(cause: MissingInputFileException?) : super(cause)
 
-  PlatformMappingException(IOException cause) {
-    super(cause);
-  }
+    internal constructor(cause: IOException?) : super(cause)
 
-  PlatformMappingException(PlatformMappingParsingException cause) {
-    super(cause);
-  }
+    internal constructor(cause: PlatformMappingParsingException?) : super(cause)
 }

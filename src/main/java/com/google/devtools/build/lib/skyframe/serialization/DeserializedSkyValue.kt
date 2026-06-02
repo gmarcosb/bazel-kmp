@@ -11,13 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.devtools.build.skyframe.SkyValue;
+import com.google.devtools.build.skyframe.SkyValue
 
 /**
  * A SkyValue deserialized from a remote cache. Such SkyValues need special handling at the
  * beginning of a new Skyframe evaluation, as their invalidation requires information from the
  * remote caching service.
  */
-public interface DeserializedSkyValue extends SkyValue {}
+interface DeserializedSkyValue : SkyValue

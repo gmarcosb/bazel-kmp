@@ -11,1038 +11,1009 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.base.Throwables.throwIfInstanceOf;
-import static com.google.common.base.Throwables.throwIfUnchecked;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.base.Predicate;
-import com.google.common.base.Throwables;
-import com.google.common.collect.HashMultiset;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Multiset;
-import com.google.common.collect.Multisets;
-import com.google.common.collect.Range;
-import com.google.common.collect.Sets;
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.ActionLookupData;
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.actions.CommandLineExpansionException;
-import com.google.devtools.build.lib.actions.OutputChecker;
-import com.google.devtools.build.lib.analysis.AnalysisOptions;
-import com.google.devtools.build.lib.analysis.AspectValue;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.ConfiguredTargetValue;
-import com.google.devtools.build.lib.analysis.TransitiveInfoProviderMap;
-import com.google.devtools.build.lib.analysis.WorkspaceStatusAction.Factory;
-import com.google.devtools.build.lib.analysis.actions.TemplateExpansionException;
-import com.google.devtools.build.lib.analysis.config.CoreOptions;
-import com.google.devtools.build.lib.analysis.configuredtargets.RuleConfiguredTarget;
-import com.google.devtools.build.lib.bugreport.BugReporter;
-import com.google.devtools.build.lib.buildtool.BuildRequestOptions;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.collect.nestedset.ArtifactNestedSetKey;
-import com.google.devtools.build.lib.concurrent.NamedForkJoinPool;
-import com.google.devtools.build.lib.concurrent.PooledInterner;
-import com.google.devtools.build.lib.concurrent.QuiescingExecutors;
-import com.google.devtools.build.lib.concurrent.Uninterruptibles;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.packages.AspectClass;
-import com.google.devtools.build.lib.packages.BuildFileName;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.PackageFactory;
-import com.google.devtools.build.lib.packages.RuleClassId;
-import com.google.devtools.build.lib.packages.StarlarkInfo;
-import com.google.devtools.build.lib.packages.StarlarkProvider;
-import com.google.devtools.build.lib.pkgcache.PathPackageLocator;
-import com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.ProfilerTask;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator.AspectKey;
-import com.google.devtools.build.lib.skyframe.DiffAwarenessManager.EvaluatingVersionDiff;
-import com.google.devtools.build.lib.skyframe.ExternalFilesHelper.ExternalFileAction;
-import com.google.devtools.build.lib.skyframe.PackageFunction.ActionOnFilesystemErrorCodeLoadingBzlFile;
-import com.google.devtools.build.lib.skyframe.PackageFunction.ActionOnIOExceptionReadingBuildFile;
-import com.google.devtools.build.lib.skyframe.PackageLookupFunction.CrossRepositoryLabelViolationStrategy;
-import com.google.devtools.build.lib.skyframe.actiongraph.v2.ActionGraphDump;
-import com.google.devtools.build.lib.skyframe.actiongraph.v2.AqueryConsumingOutputHandler;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.lib.skyframe.rewinding.RewindableGraphInconsistencyReceiver;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import com.google.devtools.build.lib.util.io.TimestampGranularityMonitor;
-import com.google.devtools.build.lib.vfs.BatchStat;
-import com.google.devtools.build.lib.vfs.FileStateKey;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.ModifiedFileSet;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.skyframe.DelegatingGraphInconsistencyReceiver;
-import com.google.devtools.build.skyframe.EmittedEventState;
-import com.google.devtools.build.skyframe.EvaluationContext;
-import com.google.devtools.build.skyframe.EventFilter;
-import com.google.devtools.build.skyframe.GraphInconsistencyReceiver;
-import com.google.devtools.build.skyframe.InMemoryMemoizingEvaluator;
-import com.google.devtools.build.skyframe.Injectable;
-import com.google.devtools.build.skyframe.MemoizingEvaluator;
-import com.google.devtools.build.skyframe.NodeEntry.DirtyType;
-import com.google.devtools.build.skyframe.RecordingDifferencer;
-import com.google.devtools.build.skyframe.SequencedRecordingDifferencer;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.common.options.OptionsProvider;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import com.google.errorprone.annotations.ForOverride;
-import java.io.IOException;
-import java.io.PrintStream;
-import java.time.Duration;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionKeyContext
 
 /**
  * A SkyframeExecutor that implicitly assumes that builds can be done incrementally from the most
  * recent build. In other words, builds are "sequenced".
  */
-public class SequencedSkyframeExecutor extends SkyframeExecutor {
+class SequencedSkyframeExecutor protected constructor(
+    skyframeExecutorConsumerOnInit: java.util.function.Consumer<SkyframeExecutor?>?,
+    pkgFactory: PackageFactory,
+    fileSystem: com.google.devtools.build.lib.vfs.FileSystem?,
+    directories: BlazeDirectories?,
+    actionKeyContext: ActionKeyContext?,
+    workspaceStatusActionFactory: Factory?,
+    diffAwarenessFactories: Iterable<out DiffAwareness.Factory?>?,
+    workspaceInfoFromDiffReceiver: WorkspaceInfoFromDiffReceiver?,
+    extraSkyFunctions: com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?>?,
+    syscallCache: SyscallCache?,
+    ignoredSubdirectoriesFunction: SkyFunction?,
+    crossRepositoryLabelViolationStrategy: CrossRepositoryLabelViolationStrategy?,
+    buildFilesByPriority: com.google.common.collect.ImmutableList<BuildFileName?>?,
+    allowExternalRepositories: Boolean,
+    repoContentsCachePathSupplier: java.util.function.Supplier<com.google.devtools.build.lib.vfs.Path?>?,
+    actionOnIOExceptionReadingBuildFile: ActionOnIOExceptionReadingBuildFile?,
+    actionOnFilesystemErrorCodeLoadingBzlFile: ActionOnFilesystemErrorCodeLoadingBzlFile?,
+    shouldUseRepoDotBazel: Boolean,
+    skyKeyStateReceiver: SkyKeyStateReceiver,
+    bugReporter: BugReporter?,
+    globUnderSingleDep: Boolean,
+    diffCheckNotificationOptions: java.util.Optional<DiffCheckNotificationOptions?>?
+) : SkyframeExecutor(
+    skyframeExecutorConsumerOnInit,
+    pkgFactory,
+    fileSystem,
+    directories,
+    actionKeyContext,
+    workspaceStatusActionFactory,
+    extraSkyFunctions,
+    syscallCache,
+    ExternalFileAction.DEPEND_ON_EXTERNAL_PKG_FOR_EXTERNAL_REPO_PATHS,
+    ignoredSubdirectoriesFunction,
+    crossRepositoryLabelViolationStrategy,
+    buildFilesByPriority,
+    actionOnIOExceptionReadingBuildFile,
+    actionOnFilesystemErrorCodeLoadingBzlFile,
+    shouldUseRepoDotBazel,  /* shouldUnblockCpuWorkWhenFetchingDeps= */
+    false,
+    PackageProgressReceiver(),
+    AnalysisProgressReceiver(),
+    skyKeyStateReceiver,
+    bugReporter,
+    diffAwarenessFactories,
+    workspaceInfoFromDiffReceiver,
+    SequencedRecordingDifferencer(),
+    allowExternalRepositories,
+    repoContentsCachePathSupplier,
+    globUnderSingleDep,
+    diffCheckNotificationOptions
+) {
+    /**
+     * If false, the graph will not store state useful for incremental builds, saving memory but
+     * leaving the graph un-reusable. Subsequent builds will therefore not be incremental.
+     * 
+     * 
+     * Avoids storing edges entirely and dereferences each action after execution.
+     */
+    private var trackIncrementalState = true
 
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
-  private static final int MODIFIED_OUTPUT_PATHS_SAMPLE_SIZE = 100;
+    private var evaluatorNeedsReset = false
+    private var lastCommandKeptState = false
+    private var needGcAfterResettingEvaluator = false
 
-  /**
-   * If false, the graph will not store state useful for incremental builds, saving memory but
-   * leaving the graph un-reusable. Subsequent builds will therefore not be incremental.
-   *
-   * <p>Avoids storing edges entirely and dereferences each action after execution.
-   */
-  private boolean trackIncrementalState = true;
+    private val outputDirtyFiles: AtomicInteger = AtomicInteger()
+    private val outputDirtyFilesExecPathSample: ArrayBlockingQueue<String?> = ArrayBlockingQueue<String?>(
+        MODIFIED_OUTPUT_PATHS_SAMPLE_SIZE
+    )
+    private val modifiedFilesDuringPreviousBuild: AtomicInteger = AtomicInteger()
 
-  private boolean evaluatorNeedsReset = false;
-  private boolean lastCommandKeptState = false;
-  private boolean needGcAfterResettingEvaluator = false;
+    private var outputTreeDiffCheckingDuration: java.time.Duration? = java.time.Duration.ofSeconds(-1L)
 
-  private final AtomicInteger outputDirtyFiles = new AtomicInteger();
-  private final ArrayBlockingQueue<String> outputDirtyFilesExecPathSample =
-      new ArrayBlockingQueue<>(MODIFIED_OUTPUT_PATHS_SAMPLE_SIZE);
-  private final AtomicInteger modifiedFilesDuringPreviousBuild = new AtomicInteger();
+    // Use delegation so that the underlying inconsistency receiver can be changed per-command without
+    // recreating the evaluator.
+    protected val inconsistencyReceiver: DelegatingGraphInconsistencyReceiver =
+        DelegatingGraphInconsistencyReceiver(GraphInconsistencyReceiver.THROWING)
 
-  private Duration outputTreeDiffCheckingDuration = Duration.ofSeconds(-1L);
-
-  // Use delegation so that the underlying inconsistency receiver can be changed per-command without
-  // recreating the evaluator.
-  protected final DelegatingGraphInconsistencyReceiver inconsistencyReceiver =
-      new DelegatingGraphInconsistencyReceiver(GraphInconsistencyReceiver.THROWING);
-
-  protected SequencedSkyframeExecutor(
-      Consumer<SkyframeExecutor> skyframeExecutorConsumerOnInit,
-      PackageFactory pkgFactory,
-      FileSystem fileSystem,
-      BlazeDirectories directories,
-      ActionKeyContext actionKeyContext,
-      Factory workspaceStatusActionFactory,
-      Iterable<? extends DiffAwareness.Factory> diffAwarenessFactories,
-      WorkspaceInfoFromDiffReceiver workspaceInfoFromDiffReceiver,
-      ImmutableMap<SkyFunctionName, SkyFunction> extraSkyFunctions,
-      SyscallCache syscallCache,
-      SkyFunction ignoredSubdirectoriesFunction,
-      CrossRepositoryLabelViolationStrategy crossRepositoryLabelViolationStrategy,
-      ImmutableList<BuildFileName> buildFilesByPriority,
-      boolean allowExternalRepositories,
-      Supplier<Path> repoContentsCachePathSupplier,
-      ActionOnIOExceptionReadingBuildFile actionOnIOExceptionReadingBuildFile,
-      ActionOnFilesystemErrorCodeLoadingBzlFile actionOnFilesystemErrorCodeLoadingBzlFile,
-      boolean shouldUseRepoDotBazel,
-      SkyKeyStateReceiver skyKeyStateReceiver,
-      BugReporter bugReporter,
-      boolean globUnderSingleDep,
-      Optional<DiffCheckNotificationOptions> diffCheckNotificationOptions) {
-    super(
-        skyframeExecutorConsumerOnInit,
-        pkgFactory,
-        fileSystem,
-        directories,
-        actionKeyContext,
-        workspaceStatusActionFactory,
-        extraSkyFunctions,
-        syscallCache,
-        ExternalFileAction.DEPEND_ON_EXTERNAL_PKG_FOR_EXTERNAL_REPO_PATHS,
-        ignoredSubdirectoriesFunction,
-        crossRepositoryLabelViolationStrategy,
-        buildFilesByPriority,
-        actionOnIOExceptionReadingBuildFile,
-        actionOnFilesystemErrorCodeLoadingBzlFile,
-        shouldUseRepoDotBazel,
-        /* shouldUnblockCpuWorkWhenFetchingDeps= */ false,
-        new PackageProgressReceiver(),
-        new AnalysisProgressReceiver(),
-        skyKeyStateReceiver,
-        bugReporter,
-        diffAwarenessFactories,
-        workspaceInfoFromDiffReceiver,
-        new SequencedRecordingDifferencer(),
-        allowExternalRepositories,
-        repoContentsCachePathSupplier,
-        globUnderSingleDep,
-        diffCheckNotificationOptions);
-  }
-
-  @Override
-  public void resetEvaluator() {
-    super.resetEvaluator();
-    diffAwarenessManager.reset();
-  }
-
-  @Override
-  protected MemoizingEvaluator createEvaluator(
-      ImmutableMap<SkyFunctionName, SkyFunction> skyFunctions,
-      SkyframeProgressReceiver progressReceiver,
-      EmittedEventState emittedEventState) {
-    return new InMemoryMemoizingEvaluator(
-        skyFunctions,
-        recordingDiffer,
-        progressReceiver,
-        inconsistencyReceiver,
-        trackIncrementalState ? DEFAULT_EVENT_FILTER_WITH_ACTIONS : EventFilter.NO_STORAGE,
-        emittedEventState,
-        trackIncrementalState,
-        /* usePooledInterning= */ true);
-  }
-
-  @Override
-  protected Injectable injectable() {
-    return recordingDiffer;
-  }
-
-  @VisibleForTesting
-  public RecordingDifferencer getDifferencerForTesting() {
-    return recordingDiffer;
-  }
-
-  @Override
-  protected SkyframeProgressReceiver newSkyframeProgressReceiver() {
-    return new SequencedSkyframeProgressReceiver();
-  }
-
-  /** A {@link SkyframeProgressReceiver} tracks dirty {@link FileKey}s. */
-  protected class SequencedSkyframeProgressReceiver extends SkyframeProgressReceiver {
-    @Override
-    public void dirtied(SkyKey skyKey, DirtyType dirtyType) {
-      super.dirtied(skyKey, dirtyType);
-      if (skyKey instanceof FileKey) {
-        incrementalBuildMonitor.reportInvalidatedFileValue();
-      }
+    override fun resetEvaluator() {
+        super.resetEvaluator()
+        diffAwarenessManager.reset()
     }
-  }
 
-  @Nullable
-  @Override
-  public WorkspaceInfoFromDiff sync(
-      ExtendedEventHandler eventHandler,
-      PathPackageLocator packageLocator,
-      UUID commandId,
-      Map<String, String> clientEnv,
-      TimestampGranularityMonitor tsgm,
-      QuiescingExecutors executors,
-      OptionsProvider options,
-      String commandName,
-      boolean commandExecutes)
-      throws InterruptedException, AbruptExitException {
-    inconsistencyReceiver.setDelegate(getGraphInconsistencyReceiverForCommand(options));
+    override fun createEvaluator(
+        skyFunctions: com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?>?,
+        progressReceiver: SkyframeProgressReceiver?,
+        emittedEventState: EmittedEventState?
+    ): MemoizingEvaluator {
+        return InMemoryMemoizingEvaluator(
+            skyFunctions,
+            recordingDiffer,
+            progressReceiver,
+            inconsistencyReceiver,
+            if (trackIncrementalState) SkyframeExecutor.Companion.DEFAULT_EVENT_FILTER_WITH_ACTIONS else com.google.devtools.build.skyframe.EventFilter.NO_STORAGE,
+            emittedEventState,
+            trackIncrementalState,  /* usePooledInterning= */
+            true
+        )
+    }
 
-    if (diffAwarenessManager != null) {
-      for (Root pkgRoot : packageLocator.getPathEntries()) {
-        Optional<EvaluatingVersionDiff> evaluatingVersionDiff =
-            diffAwarenessManager.getEvaluatingVersionDiff(pkgRoot, options);
-        if (evaluatingVersionDiff.isPresent()) {
-          EvaluatingVersionDiff versionDiff = evaluatingVersionDiff.get();
-          eventHandler.post(versionDiff);
-          if (!evaluatorNeedsReset
-              && diffCheckNotificationOptions.isPresent()
-              && !diffCheckNotificationOptions
-                  .get()
-                  .allowDiffCheck(versionDiff, eventHandler, options)) {
-            evaluatorNeedsReset = true;
-            needGcAfterResettingEvaluator = true;
-          }
+    public override fun injectable(): Injectable? {
+        return recordingDiffer
+    }
+
+    @get:com.google.common.annotations.VisibleForTesting
+    val differencerForTesting: RecordingDifferencer?
+        get() = recordingDiffer
+
+    override fun newSkyframeProgressReceiver(): SkyframeProgressReceiver {
+        return SequencedSkyframeProgressReceiver()
+    }
+
+    /** A [SkyframeProgressReceiver] tracks dirty [FileKey]s.  */
+    protected inner class SequencedSkyframeProgressReceiver : SkyframeProgressReceiver() {
+        override fun dirtied(skyKey: SkyKey?, dirtyType: DirtyType?) {
+            super.dirtied(skyKey, dirtyType)
+            if (skyKey is FileKey) {
+                incrementalBuildMonitor.reportInvalidatedFileValue()
+            }
         }
-      }
     }
 
-    if (evaluatorNeedsReset) {
-      // Recreate MemoizingEvaluator so that graph is recreated with correct edge-clearing status,
-      // or if the graph doesn't have edges, so that a fresh graph can be used.
-      resetEvaluator();
-      evaluatorNeedsReset = false;
-      if (needGcAfterResettingEvaluator) {
-        // Collect weakly reachable objects to avoid resurrection. See b/291641466.
-        try (var profiler =
-            GoogleAutoProfilerUtils.logged(
-                "manual GC to clean up from --keep_state_after_build command")) {
-          System.gc();
-        }
-        try (var profiler =
-            GoogleAutoProfilerUtils.logged(
-                "shrinking pooled interners after resetting evaluator")) {
-          PooledInterner.shrinkAll();
-        }
-        needGcAfterResettingEvaluator = false;
-      }
-    }
-    super.sync(
-        eventHandler,
-        packageLocator,
-        commandId,
-        clientEnv,
-        tsgm,
-        executors,
-        options,
-        commandName,
-        commandExecutes);
-    long startTime = System.nanoTime();
-    WorkspaceInfoFromDiff workspaceInfo = handleDiffs(eventHandler, options);
-    long stopTime = System.nanoTime();
-    Profiler.instance().logSimpleTask(startTime, stopTime, ProfilerTask.INFO, "handleDiffs");
-    long duration = stopTime - startTime;
-    sourceDiffCheckingDuration = duration > 0 ? Duration.ofNanos(duration) : Duration.ZERO;
-    return workspaceInfo;
-  }
+    @Throws(java.lang.InterruptedException::class, AbruptExitException::class)
+    override fun sync(
+        eventHandler: ExtendedEventHandler,
+        packageLocator: PathPackageLocator,
+        commandId: UUID?,
+        clientEnv: MutableMap<String?, String?>?,
+        tsgm: TimestampGranularityMonitor?,
+        executors: QuiescingExecutors?,
+        options: com.google.devtools.common.options.OptionsProvider,
+        commandName: String?,
+        commandExecutes: Boolean
+    ): WorkspaceInfoFromDiff? {
+        inconsistencyReceiver.setDelegate(getGraphInconsistencyReceiverForCommand(options))
 
-  private GraphInconsistencyReceiver getGraphInconsistencyReceiverForCommand(
-      OptionsProvider options) {
-    var someNodeDroppingExpected =
-        (options.getOptions(AnalysisOptions.class) != null
-                && options.getOptions(AnalysisOptions.class).getDiscardAnalysisCache())
-            || !trackIncrementalState
-            || heuristicallyDropNodes;
-    var skymeldInconsistenciesExpected =
-        someNodeDroppingExpected && isMergedSkyframeAnalysisExecution();
-    if (rewindingEnabled(options)) {
-      return new RewindableGraphInconsistencyReceiver(
-          heuristicallyDropNodes, skymeldInconsistenciesExpected);
-    }
-
-    if (heuristicallyDropNodes || skymeldInconsistenciesExpected) {
-      return new NodeDroppingInconsistencyReceiver(
-          heuristicallyDropNodes, skymeldInconsistenciesExpected);
-    }
-    return GraphInconsistencyReceiver.THROWING;
-  }
-
-  private static boolean rewindingEnabled(OptionsProvider options) {
-    var buildRequestOptions = options.getOptions(BuildRequestOptions.class);
-    return buildRequestOptions != null && buildRequestOptions.rewindLostInputs;
-  }
-
-  /**
-   * The value types whose builders have direct access to the package locator, rather than accessing
-   * it via an explicit Skyframe dependency. They need to be invalidated if the package locator
-   * changes.
-   */
-  private static final ImmutableSet<SkyFunctionName> PACKAGE_LOCATOR_DEPENDENT_VALUES =
-      ImmutableSet.of(
-          FileStateKey.FILE_STATE,
-          SkyFunctions.FILE,
-          SkyFunctions.DIRECTORY_LISTING_STATE,
-          SkyFunctions.PREPARE_DEPS_OF_PATTERN,
-          SkyFunctions.TARGET_PATTERN,
-          SkyFunctions.TARGET_PATTERN_PHASE);
-
-  @Override
-  void onPkgLocatorChange() {
-    invalidate(SkyFunctionName.functionIsIn(PACKAGE_LOCATOR_DEPENDENT_VALUES));
-  }
-
-  void invalidate(Predicate<SkyKey> pred) {
-    recordingDiffer.invalidate(Iterables.filter(memoizingEvaluator.getValues().keySet(), pred));
-  }
-
-  /** Sets the packages that should be treated as deleted and ignored. */
-  @Override
-  @VisibleForTesting // productionVisibility = Visibility.PRIVATE
-  public void setDeletedPackages(Iterable<PackageIdentifier> pkgs) {
-    ImmutableSet<PackageIdentifier> newDeletedPackagesSet = ImmutableSet.copyOf(pkgs);
-
-    Set<PackageIdentifier> newlyDeletedOrNotDeletedPackages =
-        Sets.symmetricDifference(deletedPackages.get(), newDeletedPackagesSet);
-    if (!newlyDeletedOrNotDeletedPackages.isEmpty()) {
-      // PackageLookupValue is a HERMETIC node type, so we can't invalidate it.
-      memoizingEvaluator.delete(
-          k -> PackageLookupValue.appliesToKey(k, newlyDeletedOrNotDeletedPackages::contains));
-    }
-
-    deletedPackages.set(newDeletedPackagesSet);
-  }
-
-  /**
-   * {@inheritDoc}
-   *
-   * <p>Necessary conditions to not store graph edges are either
-   *
-   * <ol>
-   *   <li>batch (since incremental builds are not possible) and discard_analysis_cache (since
-   *       otherwise user isn't concerned about saving memory this way).
-   *   <li>track_incremental_state set to false.
-   * </ol>
-   */
-  @Override
-  public void decideKeepIncrementalState(
-      boolean batch,
-      boolean keepStateAfterBuild,
-      boolean shouldTrackIncrementalState,
-      boolean heuristicallyDropNodes,
-      boolean discardAnalysisCache,
-      EventHandler eventHandler) {
-    Preconditions.checkState(!active);
-    boolean oldValueOfTrackIncrementalState = trackIncrementalState;
-
-    // First check if the incrementality state should be kept around during the build.
-    boolean explicitlyRequestedNoIncrementalData = !shouldTrackIncrementalState;
-    boolean implicitlyRequestedNoIncrementalData = (batch && discardAnalysisCache);
-    trackIncrementalState =
-        !explicitlyRequestedNoIncrementalData && !implicitlyRequestedNoIncrementalData;
-    if (explicitlyRequestedNoIncrementalData != implicitlyRequestedNoIncrementalData) {
-      if (!explicitlyRequestedNoIncrementalData) {
-        eventHandler.handle(
-            Event.warn(
-                "--batch and --discard_analysis_cache specified, but --notrack_incremental_state "
-                    + "not specified: incrementality data is implicitly discarded, but you may need"
-                    + " to specify --notrack_incremental_state in the future if you want to "
-                    + "maximize memory savings."));
-      }
-      if (!batch && keepStateAfterBuild) {
-        eventHandler.handle(
-            Event.warn(
-                "--notrack_incremental_state was specified, but without "
-                    + "--nokeep_state_after_build. Inmemory state from this build will not be "
-                    + "reusable, but it will not get fully wiped until the beginning of the next "
-                    + "build. Use --nokeep_state_after_build to clean up eagerly."));
-      }
-    }
-
-    if (trackIncrementalState) {
-      if (heuristicallyDropNodes) {
-        eventHandler.handle(
-            Event.warn(
-                "--heuristically_drop_nodes was specified with track incremental state also being"
-                    + " true. The flag is ignored and no node is heuristically dropped in the track"
-                    + " incremental mode."));
-      }
-      this.heuristicallyDropNodes = false;
-    } else {
-      this.heuristicallyDropNodes = heuristicallyDropNodes;
-    }
-
-    // Now check if it is necessary to wipe the previous state. We do this if either the previous
-    // or current command requires the build to have been isolated.
-    if (oldValueOfTrackIncrementalState != trackIncrementalState) {
-      logger.atInfo().log("Set incremental state to %b", trackIncrementalState);
-      evaluatorNeedsReset = true;
-    } else if (!trackIncrementalState) {
-      evaluatorNeedsReset = true;
-    }
-    if (evaluatorNeedsReset && lastCommandKeptState) {
-      needGcAfterResettingEvaluator = true;
-    }
-    lastCommandKeptState = keepStateAfterBuild;
-  }
-
-  @Override
-  public boolean tracksStateForIncrementality() {
-    return trackIncrementalState;
-  }
-
-  @Override
-  public void clearAnalysisCacheImpl(
-      ImmutableSet<ConfiguredTarget> topLevelTargets, ImmutableSet<AspectKey> topLevelAspects) {
-    discardPreExecutionCache(
-        topLevelTargets,
-        topLevelAspects,
-        trackIncrementalState ? DiscardType.ANALYSIS_REFS_ONLY : DiscardType.ALL);
-  }
-
-  @Override
-  public void invalidateTransientErrors() {
-    checkActive();
-    recordingDiffer.invalidateTransientErrors();
-  }
-
-  @Override
-  public void detectModifiedOutputFiles(
-      ModifiedFileSet modifiedOutputFiles,
-      @Nullable Range<Long> lastExecutionTimeRange,
-      OutputChecker outputChecker,
-      int fsvcThreads)
-      throws InterruptedException {
-    long startTime = System.nanoTime();
-    FilesystemValueChecker fsvc =
-        new FilesystemValueChecker(
-            Preconditions.checkNotNull(tsgm.get()),
-            syscallCache,
-            outputService::getXattrProvider,
-            fsvcThreads);
-    BatchStat batchStatter = outputService.getBatchStatter();
-    recordingDiffer.invalidate(
-        fsvc.getDirtyActionValues(
-            memoizingEvaluator.getValues(),
-            batchStatter,
-            modifiedOutputFiles,
-            outputChecker,
-            (maybeModifiedTime, artifact) -> {
-              modifiedFiles.incrementAndGet();
-              int dirtyOutputsCount = outputDirtyFiles.incrementAndGet();
-              if (lastExecutionTimeRange != null
-                  && lastExecutionTimeRange.contains(maybeModifiedTime)) {
-                modifiedFilesDuringPreviousBuild.incrementAndGet();
-              }
-              if (dirtyOutputsCount <= MODIFIED_OUTPUT_PATHS_SAMPLE_SIZE) {
-                outputDirtyFilesExecPathSample.offer(artifact.getExecPathString());
-              }
-            }));
-    logger.atInfo().log("Found %d modified files from last build", modifiedFiles.get());
-    long stopTime = System.nanoTime();
-    Profiler.instance()
-        .logSimpleTask(startTime, stopTime, ProfilerTask.INFO, "detectModifiedOutputFiles");
-    long duration = stopTime - startTime;
-    outputTreeDiffCheckingDuration = duration > 0 ? Duration.ofNanos(duration) : Duration.ZERO;
-  }
-
-  @Override
-  @Nullable
-  public SkyframeStats getSkyframeStats() {
-    Map<String, SkyKeyStats> ruleStats = new HashMap<>();
-    Map<String, SkyKeyStats> aspectStats = new HashMap<>();
-    Multiset<StarlarkProvider> starlarkProviders = HashMultiset.create();
-    for (Map.Entry<SkyKey, SkyValue> skyKeyAndValue :
-        memoizingEvaluator.getDoneValues().entrySet()) {
-      SkyValue value = skyKeyAndValue.getValue();
-      SkyKey key = skyKeyAndValue.getKey();
-      SkyFunctionName functionName = key.functionName();
-      if (value instanceof RuleConfiguredTargetValue ctValue) {
-        ConfiguredTarget configuredTarget = ctValue.getConfiguredTarget();
-        if (configuredTarget instanceof RuleConfiguredTarget ruleCfgTarget) {
-          RuleClassId ruleClassId = ruleCfgTarget.getRuleClassId();
-          SkyKeyStats ruleStat =
-              ruleStats.computeIfAbsent(
-                  ruleClassId.key(), k -> new SkyKeyStats(k, ruleClassId.name()));
-          ruleStat.countWithActions(ctValue.getActions().size());
-          addStarlarkProviders(ruleCfgTarget.getProvidersForMetrics(), starlarkProviders);
-        }
-      } else if (functionName.equals(SkyFunctions.ASPECT)) {
-        AspectValue aspectValue = (AspectValue) value;
-
-        // Aspect can't be retrieved from the value, move on.
-        if (aspectValue.isCleared()) {
-          continue;
-        }
-        AspectClass aspectClass = aspectValue.getAspect().getAspectClass();
-        SkyKeyStats aspectStat =
-            aspectStats.computeIfAbsent(
-                aspectClass.getKey(), k -> new SkyKeyStats(k, aspectClass.getName()));
-        aspectStat.countWithActions(aspectValue.getActions().size());
-        addStarlarkProviders(aspectValue.getProviders(), starlarkProviders);
-      }
-    }
-    return new SkyframeStats(
-        /* ruleStats= */ ImmutableList.sortedCopyOf(SkyKeyStats.BY_COUNT_DESC, ruleStats.values()),
-        /* aspectStats= */ ImmutableList.sortedCopyOf(
-            SkyKeyStats.BY_COUNT_DESC, aspectStats.values()),
-        Multisets.copyHighestCountFirst(starlarkProviders));
-  }
-
-  private static void addStarlarkProviders(
-      TransitiveInfoProviderMap providers, Multiset<StarlarkProvider> starlarkProviders) {
-    for (int i = 0; i < providers.providerCount; i++) {
-      if (providers.getProviderInstanceAt(i) instanceof StarlarkInfo info
-          && info.getProvider() instanceof StarlarkProvider provider
-          && !provider.getLocation().file().startsWith("/virtual_builtins_bzl/")) {
-        starlarkProviders.add(provider);
-      }
-    }
-  }
-
-  public void dumpSkyframeStateInParallel(
-      ActionGraphDump actionGraphDump, AqueryConsumingOutputHandler aqueryConsumingOutputHandler)
-      throws CommandLineExpansionException, IOException, TemplateExpansionException {
-    ImmutableList.Builder<Callable<Void>> tasks = ImmutableList.builder();
-
-    try {
-      for (Map.Entry<SkyKey, SkyValue> skyKeyAndValue :
-          memoizingEvaluator.getDoneValues().entrySet()) {
-        SkyKey key = skyKeyAndValue.getKey();
-        SkyValue skyValue = skyKeyAndValue.getValue();
-        if (skyValue == null) {
-          // The skyValue may be null in case analysis of the previous build failed.
-          continue;
-        }
-        if (skyValue instanceof RuleConfiguredTargetValue) {
-          tasks.add(
-              () -> {
-                var configuredTarget = (RuleConfiguredTargetValue) skyValue;
-                // Only dumps the value for non-delegating keys.
-                if (configuredTarget.getConfiguredTarget().getLookupKey().equals(key)) {
-                  actionGraphDump.dumpConfiguredTarget(configuredTarget);
+        if (diffAwarenessManager != null) {
+            for (pkgRoot in packageLocator.getPathEntries()) {
+                val evaluatingVersionDiff: java.util.Optional<EvaluatingVersionDiff> =
+                    diffAwarenessManager.getEvaluatingVersionDiff(pkgRoot, options)
+                if (evaluatingVersionDiff.isPresent()) {
+                    val versionDiff: EvaluatingVersionDiff = evaluatingVersionDiff.get()
+                    eventHandler.post(versionDiff)
+                    if (!evaluatorNeedsReset && diffCheckNotificationOptions.isPresent()
+                        && !diffCheckNotificationOptions
+                            .get()
+                            .allowDiffCheck(versionDiff, eventHandler, options)
+                    ) {
+                        evaluatorNeedsReset = true
+                        needGcAfterResettingEvaluator = true
+                    }
                 }
-                return null;
-              });
-        } else if (key.functionName().equals(SkyFunctions.ASPECT)) {
-          AspectValue aspectValue = (AspectValue) skyValue;
-          AspectKey aspectKey = (AspectKey) key;
-          ConfiguredTargetValue configuredTargetValue =
-              (ConfiguredTargetValue)
-                  memoizingEvaluator.getExistingValue(aspectKey.getBaseConfiguredTargetKey());
-          tasks.add(
-              () -> {
-                actionGraphDump.dumpAspect(aspectValue, configuredTargetValue);
-                return null;
-              });
+            }
         }
-      }
-      ForkJoinPool executor =
-          NamedForkJoinPool.newNamedPool(
-              "action-graph-dump", Runtime.getRuntime().availableProcessors());
-      try {
-        Future<Void> consumerFuture = executor.submit(aqueryConsumingOutputHandler.startConsumer());
-        List<Future<Void>> futures = executor.invokeAll(tasks.build());
-        for (Future<Void> future : futures) {
-          future.get();
+
+        if (evaluatorNeedsReset) {
+            // Recreate MemoizingEvaluator so that graph is recreated with correct edge-clearing status,
+            // or if the graph doesn't have edges, so that a fresh graph can be used.
+            resetEvaluator()
+            evaluatorNeedsReset = false
+            if (needGcAfterResettingEvaluator) {
+                // Collect weakly reachable objects to avoid resurrection. See b/291641466.
+                GoogleAutoProfilerUtils.logged(
+                    "manual GC to clean up from --keep_state_after_build command"
+                ).use { profiler ->
+                    java.lang.System.gc()
+                }
+                GoogleAutoProfilerUtils.logged(
+                    "shrinking pooled interners after resetting evaluator"
+                ).use { profiler ->
+                    PooledInterner.shrinkAll()
+                }
+                needGcAfterResettingEvaluator = false
+            }
         }
-        aqueryConsumingOutputHandler.stopConsumer(/* discardRemainingTasks= */ false);
-        // Get any possible exception from the consumer.
-        consumerFuture.get();
-      } catch (ExecutionException e) {
-        aqueryConsumingOutputHandler.stopConsumer(/* discardRemainingTasks= */ true);
-        Throwable cause = Throwables.getRootCause(e);
-        throwIfInstanceOf(cause, CommandLineExpansionException.class);
-        throwIfInstanceOf(cause, TemplateExpansionException.class);
-        throwIfInstanceOf(cause, IOException.class);
-        throwIfInstanceOf(cause, InterruptedException.class);
-        throwIfUnchecked(cause);
-        throw new IllegalStateException("Unexpected exception type: ", e);
-      } finally {
-        executor.shutdown();
-      }
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
+        super.sync(
+            eventHandler,
+            packageLocator,
+            commandId,
+            clientEnv,
+            tsgm,
+            executors,
+            options,
+            commandName,
+            commandExecutes
+        )
+        val startTime: Long = java.lang.System.nanoTime()
+        val workspaceInfo: WorkspaceInfoFromDiff? = handleDiffs(eventHandler, options)
+        val stopTime: Long = java.lang.System.nanoTime()
+        Profiler.instance().logSimpleTask(startTime, stopTime, ProfilerTask.INFO, "handleDiffs")
+        val duration = stopTime - startTime
+        sourceDiffCheckingDuration = if (duration > 0) java.time.Duration.ofNanos(duration) else java.time.Duration.ZERO
+        return workspaceInfo
     }
-  }
 
-  /** Support for aquery output. */
-  public void dumpSkyframeState(ActionGraphDump actionGraphDump)
-      throws CommandLineExpansionException, IOException, TemplateExpansionException {
-
-    for (Map.Entry<SkyKey, SkyValue> skyKeyAndValue :
-        memoizingEvaluator.getDoneValues().entrySet()) {
-      SkyKey key = skyKeyAndValue.getKey();
-      SkyValue skyValue = skyKeyAndValue.getValue();
-      if (skyValue == null) {
-        // The skyValue may be null in case analysis of the previous build failed.
-        continue;
-      }
-      try {
-        if (skyValue instanceof RuleConfiguredTargetValue configuredTarget) {
-          // Only dumps the value for non-delegating keys.
-          if (configuredTarget.getConfiguredTarget().getLookupKey().equals(key)) {
-            actionGraphDump.dumpConfiguredTarget(configuredTarget);
-          }
-        } else if (key.functionName().equals(SkyFunctions.ASPECT)) {
-          AspectValue aspectValue = (AspectValue) skyValue;
-          AspectKey aspectKey = (AspectKey) key;
-          ConfiguredTargetValue configuredTargetValue =
-              (ConfiguredTargetValue)
-                  memoizingEvaluator.getExistingValue(aspectKey.getBaseConfiguredTargetKey());
-          actionGraphDump.dumpAspect(aspectValue, configuredTargetValue);
+    private fun getGraphInconsistencyReceiverForCommand(
+        options: com.google.devtools.common.options.OptionsProvider
+    ): GraphInconsistencyReceiver {
+        val someNodeDroppingExpected =
+            (options.getOptions<O?>(AnalysisOptions::class.java) != null
+                    && options.getOptions<O?>(AnalysisOptions::class.java).getDiscardAnalysisCache())
+                    || !trackIncrementalState || heuristicallyDropNodes
+        val skymeldInconsistenciesExpected =
+            someNodeDroppingExpected && isMergedSkyframeAnalysisExecution()
+        if (rewindingEnabled(options)) {
+            return RewindableGraphInconsistencyReceiver(
+                heuristicallyDropNodes, skymeldInconsistenciesExpected
+            )
         }
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        throw new IllegalStateException("No interruption in sequenced evaluation", e);
-      }
-    }
-  }
 
-  /**
-   * In addition to calling the superclass method, deletes all analysis-related values from the
-   * Skyframe cache. This is done to save memory (e.g. on a configuration change); since the
-   * configuration is part of the key, these key/value pairs will be sitting around doing nothing
-   * until the configuration changes back to the previous value.
-   *
-   * <p>The next evaluation will delete all invalid values.
-   */
-  @Override
-  public void handleAnalysisInvalidatingChange() {
-    super.handleAnalysisInvalidatingChange();
-    memoizingEvaluator.delete(this::shouldDeleteOnAnalysisInvalidatingChange);
-  }
-
-  @ForOverride
-  protected boolean shouldDeleteOnAnalysisInvalidatingChange(SkyKey k, @Nullable SkyValue v) {
-    if (v != null && v.isCleared()) {
-      // Anything that had memory cleared should be discarded and re-evaluated.
-      return true;
+        if (heuristicallyDropNodes || skymeldInconsistenciesExpected) {
+            return NodeDroppingInconsistencyReceiver(
+                heuristicallyDropNodes, skymeldInconsistenciesExpected
+            )
+        }
+        return GraphInconsistencyReceiver.THROWING
     }
 
-    // TODO: b/330770905 - Rewrite this to use pattern matching when available.
-    // Also remove ActionLookupData since all such nodes depend on ActionLookupKey nodes and
-    // deleting en masse is cheaper than deleting via graph traversal (b/192863968).
-    if (k instanceof ArtifactNestedSetKey || k instanceof ActionLookupData) {
-      return true;
-    }
-    // Remove BuildConfigurationKeys except for the currently active key and the key for
-    // EMPTY_OPTIONS, which is a constant and will be re-used frequently.
-    if (k instanceof BuildConfigurationKey buildConfigurationKey) {
-      if (isEmptyOptionsKey(buildConfigurationKey)) {
-        return false;
-      }
-      if (getSkyframeBuildView().getBuildConfiguration() != null
-          && k.equals(getSkyframeBuildView().getBuildConfiguration().getKey())) {
-        return false;
-      }
-      if (isExecConfig(buildConfigurationKey)) {
-        return false;
-      }
-      return true;
-    }
-    // Remove ActionLookupKeys unless they are for the empty options config, in which case they will
-    // be re-used frequently and we can avoid re-creating them. They are dependencies of the empty
-    // configuration key and will never change.
-    if (k instanceof ActionLookupKey lookupKey) {
-      if (isEmptyOptionsKey(lookupKey.getConfigurationKey())) {
-        return false;
-      }
-      if (isExecConfig(lookupKey.getConfigurationKey())) {
-        return false;
-      }
-      if (lookupKey.getConfigurationKey() == null) {
-        return false;
-      }
-      return true;
-    }
-    return false;
-  }
-
-  private static boolean isExecConfig(@Nullable BuildConfigurationKey bck) {
-    return bck != null && bck.getOptions().get(CoreOptions.class).getIsExec();
-  }
-
-  /**
-   * Deletes all ConfiguredTarget values from the Skyframe cache.
-   *
-   * <p>After the execution of this method all invalidated and marked for deletion values (and the
-   * values depending on them) will be deleted from the cache.
-   *
-   * <p>WARNING: Note that a call to this method leaves legacy data inconsistent with Skyframe. The
-   * next build should clear the legacy caches.
-   */
-  @Override
-  protected void dropConfiguredTargetsNow(final ExtendedEventHandler eventHandler) {
-    handleAnalysisInvalidatingChange();
-    // Run the invalidator to actually delete the values.
-    try {
-      progressReceiver.ignoreInvalidations = true;
-      Uninterruptibles.callUninterruptibly(
-          () -> {
-            EvaluationContext evaluationContext =
-                newEvaluationContextBuilder()
-                    .setKeepGoing(false)
-                    .setParallelism(Runtime.getRuntime().availableProcessors())
-                    .setEventHandler(eventHandler)
-                    .build();
-            memoizingEvaluator.evaluate(ImmutableList.of(), evaluationContext);
-            return null;
-          });
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    } finally {
-      progressReceiver.ignoreInvalidations = false;
-    }
-  }
-
-  @Override
-  protected ExecutionFinishedEvent.Builder createExecutionFinishedEventInternal() {
-    ExecutionFinishedEvent.Builder builder =
-        ExecutionFinishedEvent.builder()
-            .setOutputDirtyFiles(outputDirtyFiles.getAndSet(0))
-            .setOutputDirtyFileExecPathSample(ImmutableList.copyOf(outputDirtyFilesExecPathSample))
-            .setOutputModifiedFilesDuringPreviousBuild(
-                modifiedFilesDuringPreviousBuild.getAndSet(0))
-            .setSourceDiffCheckingDuration(sourceDiffCheckingDuration)
-            .setNumSourceFilesCheckedBecauseOfMissingDiffs(
-                numSourceFilesCheckedBecauseOfMissingDiffs)
-            .setOutputTreeDiffCheckingDuration(outputTreeDiffCheckingDuration);
-    outputDirtyFilesExecPathSample.clear();
-    sourceDiffCheckingDuration = Duration.ZERO;
-    outputTreeDiffCheckingDuration = Duration.ZERO;
-    return builder;
-  }
-
-  @Override
-  public void deleteOldNodes(long versionWindowForDirtyGc) {
-    // TODO(bazel-team): perhaps we should come up with a separate GC class dedicated to maintaining
-    // value garbage. If we ever do so, this logic should be moved there.
-    if (trackIncrementalState) {
-      memoizingEvaluator.deleteDirty(versionWindowForDirtyGc);
-    }
-  }
-
-  @Override
-  protected void dumpPackages(PrintStream out) {
-    Iterable<SkyKey> packageSkyKeys =
-        Iterables.filter(
-            memoizingEvaluator.getValues().keySet(),
-            SkyFunctions.isSkyFunction(SkyFunctions.PACKAGE));
-    out.println(Iterables.size(packageSkyKeys) + " packages");
-    for (SkyKey packageSkyKey : packageSkyKeys) {
-      PackageValue pkgVal = ((PackageValue) memoizingEvaluator.getValues().get(packageSkyKey));
-      if (pkgVal != null) {
-        Package pkg =
-            ((PackageValue) memoizingEvaluator.getValues().get(packageSkyKey)).getPackage();
-        pkg.dump(out);
-      } else {
-        out.println("  Package " + packageSkyKey + " is in error.");
-      }
-    }
-  }
-
-  public static Builder builder() {
-    return new Builder();
-  }
-
-  /**
-   * Builder class for {@link SequencedSkyframeExecutor}.
-   *
-   * <p>Allows addition of the new arguments to {@link SequencedSkyframeExecutor} constructor
-   * without the need to modify all the places, where {@link SequencedSkyframeExecutor} is
-   * constructed (if the default value can be provided for the new argument in Builder).
-   */
-  public static final class Builder {
-    PackageFactory pkgFactory;
-    FileSystem fileSystem;
-    BlazeDirectories directories;
-    ActionKeyContext actionKeyContext;
-    private CrossRepositoryLabelViolationStrategy crossRepositoryLabelViolationStrategy;
-    private ImmutableList<BuildFileName> buildFilesByPriority;
-    private ActionOnIOExceptionReadingBuildFile actionOnIOExceptionReadingBuildFile;
-    private ActionOnFilesystemErrorCodeLoadingBzlFile actionOnFilesystemErrorCodeLoadingBzlFile;
-    private boolean shouldUseRepoDotBazel = true;
-
-    // Fields with default values.
-    private ImmutableMap<SkyFunctionName, SkyFunction> extraSkyFunctions = ImmutableMap.of();
-    private Factory workspaceStatusActionFactory;
-    private Iterable<? extends DiffAwareness.Factory> diffAwarenessFactories = ImmutableList.of();
-    private WorkspaceInfoFromDiffReceiver workspaceInfoFromDiffReceiver =
-        (ignored1, ignored2) -> {};
-    private boolean allowExternalRepositories = false;
-    private Supplier<Path> repoContentsCachePathSupplier = () -> null;
-    private Consumer<SkyframeExecutor> skyframeExecutorConsumerOnInit = skyframeExecutor -> {};
-    private SkyFunction ignoredSubdirectoriesFunction;
-    private BugReporter bugReporter = BugReporter.defaultInstance();
-    private SkyKeyStateReceiver skyKeyStateReceiver = SkyKeyStateReceiver.NULL_INSTANCE;
-    private SyscallCache syscallCache = null;
-    private boolean globUnderSingleDep = true;
-    private DiffCheckNotificationOptions diffCheckNotificationOptions;
-
-    private Builder() {}
-
-    public SequencedSkyframeExecutor build() {
-      // Check that the values were explicitly set.
-      Preconditions.checkNotNull(pkgFactory);
-      Preconditions.checkNotNull(fileSystem);
-      Preconditions.checkNotNull(directories);
-      Preconditions.checkNotNull(actionKeyContext);
-      Preconditions.checkNotNull(crossRepositoryLabelViolationStrategy);
-      Preconditions.checkNotNull(buildFilesByPriority);
-      Preconditions.checkNotNull(actionOnIOExceptionReadingBuildFile);
-      Preconditions.checkNotNull(actionOnFilesystemErrorCodeLoadingBzlFile);
-      Preconditions.checkNotNull(ignoredSubdirectoriesFunction);
-
-      SequencedSkyframeExecutor skyframeExecutor =
-          new SequencedSkyframeExecutor(
-              skyframeExecutorConsumerOnInit,
-              pkgFactory,
-              fileSystem,
-              directories,
-              actionKeyContext,
-              workspaceStatusActionFactory,
-              diffAwarenessFactories,
-              workspaceInfoFromDiffReceiver,
-              extraSkyFunctions,
-              Preconditions.checkNotNull(syscallCache),
-              ignoredSubdirectoriesFunction,
-              crossRepositoryLabelViolationStrategy,
-              buildFilesByPriority,
-              allowExternalRepositories,
-              repoContentsCachePathSupplier,
-              actionOnIOExceptionReadingBuildFile,
-              actionOnFilesystemErrorCodeLoadingBzlFile,
-              shouldUseRepoDotBazel,
-              skyKeyStateReceiver,
-              bugReporter,
-              globUnderSingleDep,
-              Optional.ofNullable(diffCheckNotificationOptions));
-      skyframeExecutor.init();
-      return skyframeExecutor;
+    override fun onPkgLocatorChange() {
+        invalidate(SkyFunctionName.functionIsIn(PACKAGE_LOCATOR_DEPENDENT_VALUES))
     }
 
-    @CanIgnoreReturnValue
-    public Builder setPkgFactory(PackageFactory pkgFactory) {
-      this.pkgFactory = pkgFactory;
-      return this;
+    fun invalidate(pred: com.google.common.base.Predicate<SkyKey?>) {
+        recordingDiffer.invalidate(
+            com.google.common.collect.Iterables.filter<SkyKey?>(
+                memoizingEvaluator.getValues().keySet(), pred
+            )
+        )
     }
 
-    @CanIgnoreReturnValue
-    public Builder setFileSystem(FileSystem fileSystem) {
-      this.fileSystem = fileSystem;
-      return this;
+    /** Sets the packages that should be treated as deleted and ignored.  */
+    @com.google.common.annotations.VisibleForTesting // productionVisibility = Visibility.PRIVATE
+    override fun setDeletedPackages(pkgs: Iterable<PackageIdentifier?>) {
+        val newDeletedPackagesSet: com.google.common.collect.ImmutableSet<PackageIdentifier?> =
+            com.google.common.collect.ImmutableSet.copyOf<PackageIdentifier?>(pkgs)
+
+        val newlyDeletedOrNotDeletedPackages: MutableSet<PackageIdentifier?> =
+            com.google.common.collect.Sets.symmetricDifference<PackageIdentifier?>(
+                deletedPackages.get(),
+                newDeletedPackagesSet
+            )
+        if (!newlyDeletedOrNotDeletedPackages.isEmpty()) {
+            // PackageLookupValue is a HERMETIC node type, so we can't invalidate it.
+            memoizingEvaluator.delete(
+                java.util.function.Predicate { k: SkyKey? ->
+                    PackageLookupValue.appliesToKey(
+                        k,
+                        newlyDeletedOrNotDeletedPackages::contains
+                    )
+                })
+        }
+
+        deletedPackages.set(newDeletedPackagesSet)
     }
 
-    @CanIgnoreReturnValue
-    public Builder setDirectories(BlazeDirectories directories) {
-      this.directories = directories;
-      return this;
+    /**
+     * {@inheritDoc}
+     * 
+     * 
+     * Necessary conditions to not store graph edges are either
+     * 
+     * 
+     *  1. batch (since incremental builds are not possible) and discard_analysis_cache (since
+     * otherwise user isn't concerned about saving memory this way).
+     *  1. track_incremental_state set to false.
+     * 
+     */
+    override fun decideKeepIncrementalState(
+        batch: Boolean,
+        keepStateAfterBuild: Boolean,
+        shouldTrackIncrementalState: Boolean,
+        heuristicallyDropNodes: Boolean,
+        discardAnalysisCache: Boolean,
+        eventHandler: com.google.devtools.build.lib.events.EventHandler
+    ) {
+        com.google.common.base.Preconditions.checkState(!active)
+        val oldValueOfTrackIncrementalState = trackIncrementalState
+
+        // First check if the incrementality state should be kept around during the build.
+        val explicitlyRequestedNoIncrementalData = !shouldTrackIncrementalState
+        val implicitlyRequestedNoIncrementalData = (batch && discardAnalysisCache)
+        trackIncrementalState =
+            !explicitlyRequestedNoIncrementalData && !implicitlyRequestedNoIncrementalData
+        if (explicitlyRequestedNoIncrementalData != implicitlyRequestedNoIncrementalData) {
+            if (!explicitlyRequestedNoIncrementalData) {
+                eventHandler.handle(
+                    com.google.devtools.build.lib.events.Event.warn(
+                        ("--batch and --discard_analysis_cache specified, but --notrack_incremental_state "
+                                + "not specified: incrementality data is implicitly discarded, but you may need"
+                                + " to specify --notrack_incremental_state in the future if you want to "
+                                + "maximize memory savings.")
+                    )
+                )
+            }
+            if (!batch && keepStateAfterBuild) {
+                eventHandler.handle(
+                    com.google.devtools.build.lib.events.Event.warn(
+                        ("--notrack_incremental_state was specified, but without "
+                                + "--nokeep_state_after_build. Inmemory state from this build will not be "
+                                + "reusable, but it will not get fully wiped until the beginning of the next "
+                                + "build. Use --nokeep_state_after_build to clean up eagerly.")
+                    )
+                )
+            }
+        }
+
+        if (trackIncrementalState) {
+            if (heuristicallyDropNodes) {
+                eventHandler.handle(
+                    com.google.devtools.build.lib.events.Event.warn(
+                        ("--heuristically_drop_nodes was specified with track incremental state also being"
+                                + " true. The flag is ignored and no node is heuristically dropped in the track"
+                                + " incremental mode.")
+                    )
+                )
+            }
+            this.heuristicallyDropNodes = false
+        } else {
+            this.heuristicallyDropNodes = heuristicallyDropNodes
+        }
+
+        // Now check if it is necessary to wipe the previous state. We do this if either the previous
+        // or current command requires the build to have been isolated.
+        if (oldValueOfTrackIncrementalState != trackIncrementalState) {
+            logger.atInfo().log("Set incremental state to %b", trackIncrementalState)
+            evaluatorNeedsReset = true
+        } else if (!trackIncrementalState) {
+            evaluatorNeedsReset = true
+        }
+        if (evaluatorNeedsReset && lastCommandKeptState) {
+            needGcAfterResettingEvaluator = true
+        }
+        lastCommandKeptState = keepStateAfterBuild
     }
 
-    @CanIgnoreReturnValue
-    public Builder setActionKeyContext(ActionKeyContext actionKeyContext) {
-      this.actionKeyContext = actionKeyContext;
-      return this;
+    override fun tracksStateForIncrementality(): Boolean {
+        return trackIncrementalState
     }
 
-    @CanIgnoreReturnValue
-    public Builder setIgnoredSubdirectories(SkyFunction ignoredSubdirectoriesFunction) {
-      this.ignoredSubdirectoriesFunction = ignoredSubdirectoriesFunction;
-      return this;
+    public override fun clearAnalysisCacheImpl(
+        topLevelTargets: com.google.common.collect.ImmutableSet<ConfiguredTarget?>?,
+        topLevelAspects: com.google.common.collect.ImmutableSet<AspectKey?>?
+    ) {
+        discardPreExecutionCache(
+            topLevelTargets,
+            topLevelAspects,
+            if (trackIncrementalState) DiscardType.ANALYSIS_REFS_ONLY else DiscardType.ALL
+        )
     }
 
-    @CanIgnoreReturnValue
-    public Builder setBugReporter(BugReporter bugReporter) {
-      this.bugReporter = bugReporter;
-      return this;
+    override fun invalidateTransientErrors() {
+        checkActive()
+        recordingDiffer.invalidateTransientErrors()
     }
 
-    @CanIgnoreReturnValue
-    public Builder setExtraSkyFunctions(
-        ImmutableMap<SkyFunctionName, SkyFunction> extraSkyFunctions) {
-      this.extraSkyFunctions = extraSkyFunctions;
-      return this;
+    @Throws(java.lang.InterruptedException::class)
+    override fun detectModifiedOutputFiles(
+        modifiedOutputFiles: ModifiedFileSet?,
+        lastExecutionTimeRange: com.google.common.collect.Range<Long?>?,
+        outputChecker: OutputChecker?,
+        fsvcThreads: Int
+    ) {
+        val startTime: Long = java.lang.System.nanoTime()
+        val fsvc: FilesystemValueChecker =
+            FilesystemValueChecker(
+                com.google.common.base.Preconditions.checkNotNull<T?>(tsgm.get()),
+                syscallCache,
+                { delegate: XattrProvider? -> outputService.getXattrProvider(delegate) },
+                fsvcThreads
+            )
+        val batchStatter: BatchStat? = outputService.getBatchStatter()
+        recordingDiffer.invalidate(
+            fsvc.getDirtyActionValues(
+                memoizingEvaluator.getValues(),
+                batchStatter,
+                modifiedOutputFiles,
+                outputChecker,
+                { maybeModifiedTime, artifact ->
+                    modifiedFiles.incrementAndGet()
+                    val dirtyOutputsCount: Int = outputDirtyFiles.incrementAndGet()
+                    if (lastExecutionTimeRange != null
+                        && lastExecutionTimeRange.contains(maybeModifiedTime)
+                    ) {
+                        modifiedFilesDuringPreviousBuild.incrementAndGet()
+                    }
+                    if (dirtyOutputsCount <= MODIFIED_OUTPUT_PATHS_SAMPLE_SIZE) {
+                        outputDirtyFilesExecPathSample.offer(artifact.getExecPathString())
+                    }
+                })
+        )
+        logger.atInfo().log("Found %d modified files from last build", modifiedFiles.get())
+        val stopTime: Long = java.lang.System.nanoTime()
+        Profiler.instance()
+            .logSimpleTask(startTime, stopTime, ProfilerTask.INFO, "detectModifiedOutputFiles")
+        val duration = stopTime - startTime
+        outputTreeDiffCheckingDuration =
+            if (duration > 0) java.time.Duration.ofNanos(duration) else java.time.Duration.ZERO
     }
 
-    @CanIgnoreReturnValue
-    public Builder setWorkspaceStatusActionFactory(@Nullable Factory workspaceStatusActionFactory) {
-      this.workspaceStatusActionFactory = workspaceStatusActionFactory;
-      return this;
+    val skyframeStats: SkyframeStats?
+        get() {
+            val ruleStats: MutableMap<String?, SkyKeyStats> =
+                HashMap<String?, SkyKeyStats>()
+            val aspectStats: MutableMap<String?, SkyKeyStats> =
+                HashMap<String?, SkyKeyStats>()
+            val starlarkProviders: com.google.common.collect.Multiset<StarlarkProvider?> =
+                com.google.common.collect.HashMultiset.create<StarlarkProvider?>()
+            for (skyKeyAndValue in memoizingEvaluator.getDoneValues().entrySet()) {
+                val value: SkyValue? = skyKeyAndValue.getValue()
+                val key: SkyKey = skyKeyAndValue.getKey()
+                val functionName: SkyFunctionName = key.functionName()
+                if (value is RuleConfiguredTargetValue) {
+                    val configuredTarget: ConfiguredTarget? = value.getConfiguredTarget()
+                    if (configuredTarget is RuleConfiguredTarget) {
+                        val ruleClassId: RuleClassId = configuredTarget.getRuleClassId()
+                        val ruleStat: SkyKeyStats =
+                            ruleStats.computeIfAbsent(
+                                ruleClassId.key(),
+                                java.util.function.Function { k: String? ->
+                                    SkyKeyStats(
+                                        k,
+                                        ruleClassId.name()
+                                    )
+                                })
+                        ruleStat.countWithActions(value.getActions().size())
+                        addStarlarkProviders(
+                            configuredTarget.getProvidersForMetrics(),
+                            starlarkProviders
+                        )
+                    }
+                } else if (functionName == SkyFunctions.ASPECT) {
+                    val aspectValue: AspectValue = value as AspectValue
+
+                    // Aspect can't be retrieved from the value, move on.
+                    if (aspectValue.isCleared()) {
+                        continue
+                    }
+                    val aspectClass: AspectClass = aspectValue.getAspect().getAspectClass()
+                    val aspectStat: SkyKeyStats =
+                        aspectStats.computeIfAbsent(
+                            aspectClass.getKey(),
+                            java.util.function.Function { k: String? -> SkyKeyStats(k, aspectClass.getName()) })
+                    aspectStat.countWithActions(aspectValue.getActions().size())
+                    addStarlarkProviders(
+                        aspectValue.getProviders(),
+                        starlarkProviders
+                    )
+                }
+            }
+            return SkyframeStats( /* ruleStats= */
+                com.google.common.collect.ImmutableList.sortedCopyOf<SkyKeyStats?>(
+                    SkyKeyStats.BY_COUNT_DESC,
+                    ruleStats.values()
+                ),  /* aspectStats= */
+                com.google.common.collect.ImmutableList.sortedCopyOf<SkyKeyStats?>(
+                    SkyKeyStats.BY_COUNT_DESC, aspectStats.values()
+                ),
+                com.google.common.collect.Multisets.copyHighestCountFirst<StarlarkProvider?>(starlarkProviders)
+            )
+        }
+
+    @Throws(CommandLineExpansionException::class, IOException::class, TemplateExpansionException::class)
+    fun dumpSkyframeStateInParallel(
+        actionGraphDump: ActionGraphDump, aqueryConsumingOutputHandler: AqueryConsumingOutputHandler
+    ) {
+        val tasks: com.google.common.collect.ImmutableList.Builder<java.util.concurrent.Callable<java.lang.Void?>?> =
+            com.google.common.collect.ImmutableList.builder<java.util.concurrent.Callable<java.lang.Void?>?>()
+
+        try {
+            for (skyKeyAndValue in memoizingEvaluator.getDoneValues().entrySet()) {
+                val key: SkyKey = skyKeyAndValue.getKey()
+                val skyValue: SkyValue? = skyKeyAndValue.getValue()
+                if (skyValue == null) {
+                    // The skyValue may be null in case analysis of the previous build failed.
+                    continue
+                }
+                if (skyValue is RuleConfiguredTargetValue) {
+                    tasks.add(
+                        java.util.concurrent.Callable {
+                            val configuredTarget: RuleConfiguredTargetValue = skyValue as RuleConfiguredTargetValue
+                            // Only dumps the value for non-delegating keys.
+                            if (configuredTarget.getConfiguredTarget().getLookupKey().equals(key)) {
+                                actionGraphDump.dumpConfiguredTarget(configuredTarget)
+                            }
+                            null
+                        })
+                } else if (key.functionName() == SkyFunctions.ASPECT) {
+                    val aspectValue: AspectValue = skyValue as AspectValue
+                    val aspectKey: AspectKey = key as AspectKey
+                    val configuredTargetValue: ConfiguredTargetValue? =
+                        memoizingEvaluator.getExistingValue(aspectKey.getBaseConfiguredTargetKey()) as ConfiguredTargetValue?
+                    tasks.add(
+                        java.util.concurrent.Callable {
+                            actionGraphDump.dumpAspect(aspectValue, configuredTargetValue)
+                            null
+                        })
+                }
+            }
+            val executor: ForkJoinPool =
+                NamedForkJoinPool.newNamedPool(
+                    "action-graph-dump", java.lang.Runtime.getRuntime().availableProcessors()
+                )
+            try {
+                val consumerFuture: java.util.concurrent.Future<java.lang.Void?> =
+                    executor.submit<java.lang.Void?>(aqueryConsumingOutputHandler.startConsumer())
+                val futures: MutableList<java.util.concurrent.Future<java.lang.Void?>> =
+                    executor.invokeAll<java.lang.Void?>(tasks.build())
+                for (future in futures) {
+                    future.get()
+                }
+                aqueryConsumingOutputHandler.stopConsumer( /* discardRemainingTasks= */false)
+                // Get any possible exception from the consumer.
+                consumerFuture.get()
+            } catch (e: ExecutionException) {
+                aqueryConsumingOutputHandler.stopConsumer( /* discardRemainingTasks= */true)
+                val cause: Throwable = com.google.common.base.Throwables.getRootCause(e)
+                com.google.common.base.Throwables.throwIfInstanceOf<X?>(
+                    cause,
+                    CommandLineExpansionException::class.java
+                )
+                com.google.common.base.Throwables.throwIfInstanceOf<X?>(cause, TemplateExpansionException::class.java)
+                com.google.common.base.Throwables.throwIfInstanceOf<IOException?>(cause, IOException::class.java)
+                com.google.common.base.Throwables.throwIfInstanceOf<java.lang.InterruptedException?>(
+                    cause,
+                    java.lang.InterruptedException::class.java
+                )
+                com.google.common.base.Throwables.throwIfUnchecked(cause)
+                throw java.lang.IllegalStateException("Unexpected exception type: ", e)
+            } finally {
+                executor.shutdown()
+            }
+        } catch (e: java.lang.InterruptedException) {
+            java.lang.Thread.currentThread().interrupt()
+        }
     }
 
-    @CanIgnoreReturnValue
-    public Builder setDiffAwarenessFactories(
-        Iterable<? extends DiffAwareness.Factory> diffAwarenessFactories) {
-      this.diffAwarenessFactories = diffAwarenessFactories;
-      return this;
+    /** Support for aquery output.  */
+    @Throws(CommandLineExpansionException::class, IOException::class, TemplateExpansionException::class)
+    fun dumpSkyframeState(actionGraphDump: ActionGraphDump) {
+        for (skyKeyAndValue in memoizingEvaluator.getDoneValues().entrySet()) {
+            val key: SkyKey = skyKeyAndValue.getKey()
+            val skyValue: SkyValue? = skyKeyAndValue.getValue()
+            if (skyValue == null) {
+                // The skyValue may be null in case analysis of the previous build failed.
+                continue
+            }
+            try {
+                if (skyValue is RuleConfiguredTargetValue) {
+                    // Only dumps the value for non-delegating keys.
+                    if (skyValue.getConfiguredTarget().getLookupKey().equals(key)) {
+                        actionGraphDump.dumpConfiguredTarget(skyValue)
+                    }
+                } else if (key.functionName() == SkyFunctions.ASPECT) {
+                    val aspectValue: AspectValue = skyValue as AspectValue
+                    val aspectKey: AspectKey = key as AspectKey
+                    val configuredTargetValue: ConfiguredTargetValue? =
+                        memoizingEvaluator.getExistingValue(aspectKey.getBaseConfiguredTargetKey()) as ConfiguredTargetValue?
+                    actionGraphDump.dumpAspect(aspectValue, configuredTargetValue)
+                }
+            } catch (e: java.lang.InterruptedException) {
+                java.lang.Thread.currentThread().interrupt()
+                throw java.lang.IllegalStateException("No interruption in sequenced evaluation", e)
+            }
+        }
     }
 
-    @CanIgnoreReturnValue
-    public Builder setWorkspaceInfoFromDiffReceiver(
-        WorkspaceInfoFromDiffReceiver workspaceInfoFromDiffReceiver) {
-      this.workspaceInfoFromDiffReceiver = workspaceInfoFromDiffReceiver;
-      return this;
+    /**
+     * In addition to calling the superclass method, deletes all analysis-related values from the
+     * Skyframe cache. This is done to save memory (e.g. on a configuration change); since the
+     * configuration is part of the key, these key/value pairs will be sitting around doing nothing
+     * until the configuration changes back to the previous value.
+     * 
+     * 
+     * The next evaluation will delete all invalid values.
+     */
+    override fun handleAnalysisInvalidatingChange() {
+        super.handleAnalysisInvalidatingChange()
+        memoizingEvaluator.delete(java.util.function.BiPredicate { k: SkyKey?, v: SkyValue? ->
+            this.shouldDeleteOnAnalysisInvalidatingChange(
+                k,
+                v
+            )
+        })
     }
 
-    @CanIgnoreReturnValue
-    public Builder allowExternalRepositories(boolean allowExternalRepositories) {
-      this.allowExternalRepositories = allowExternalRepositories;
-      return this;
+    @com.google.errorprone.annotations.ForOverride
+    protected fun shouldDeleteOnAnalysisInvalidatingChange(k: SkyKey, v: SkyValue?): Boolean {
+        if (v != null && v.isCleared()) {
+            // Anything that had memory cleared should be discarded and re-evaluated.
+            return true
+        }
+
+        // TODO: b/330770905 - Rewrite this to use pattern matching when available.
+        // Also remove ActionLookupData since all such nodes depend on ActionLookupKey nodes and
+        // deleting en masse is cheaper than deleting via graph traversal (b/192863968).
+        if (k is ArtifactNestedSetKey || k is ActionLookupData) {
+            return true
+        }
+        // Remove BuildConfigurationKeys except for the currently active key and the key for
+        // EMPTY_OPTIONS, which is a constant and will be re-used frequently.
+        if (k is BuildConfigurationKey) {
+            if (SkyframeExecutor.Companion.isEmptyOptionsKey(k)) {
+                return false
+            }
+            if (getSkyframeBuildView().getBuildConfiguration() != null
+                && k == getSkyframeBuildView().getBuildConfiguration().getKey()
+            ) {
+                return false
+            }
+            if (isExecConfig(k)) {
+                return false
+            }
+            return true
+        }
+        // Remove ActionLookupKeys unless they are for the empty options config, in which case they will
+        // be re-used frequently and we can avoid re-creating them. They are dependencies of the empty
+        // configuration key and will never change.
+        if (k is ActionLookupKey) {
+            if (SkyframeExecutor.Companion.isEmptyOptionsKey(k.getConfigurationKey())) {
+                return false
+            }
+            if (isExecConfig(k.getConfigurationKey())) {
+                return false
+            }
+            if (k.getConfigurationKey() == null) {
+                return false
+            }
+            return true
+        }
+        return false
     }
 
-    @CanIgnoreReturnValue
-    public Builder setRepoContentsCachePathSupplier(Supplier<Path> repoContentsCachePathSupplier) {
-      this.repoContentsCachePathSupplier = repoContentsCachePathSupplier;
-      return this;
+    /**
+     * Deletes all ConfiguredTarget values from the Skyframe cache.
+     * 
+     * 
+     * After the execution of this method all invalidated and marked for deletion values (and the
+     * values depending on them) will be deleted from the cache.
+     * 
+     * 
+     * WARNING: Note that a call to this method leaves legacy data inconsistent with Skyframe. The
+     * next build should clear the legacy caches.
+     */
+    override fun dropConfiguredTargetsNow(eventHandler: ExtendedEventHandler?) {
+        handleAnalysisInvalidatingChange()
+        // Run the invalidator to actually delete the values.
+        try {
+            progressReceiver.ignoreInvalidations = true
+            com.google.devtools.build.lib.concurrent.Uninterruptibles.callUninterruptibly<Any?>(
+                java.util.concurrent.Callable {
+                    val evaluationContext: com.google.devtools.build.skyframe.EvaluationContext? =
+                        newEvaluationContextBuilder()
+                            .setKeepGoing(false)
+                            .setParallelism(java.lang.Runtime.getRuntime().availableProcessors())
+                            .setEventHandler(eventHandler)
+                            .build()
+                    memoizingEvaluator.evaluate<SkyValue?>(
+                        com.google.common.collect.ImmutableList.of<SkyKey?>(),
+                        evaluationContext
+                    )
+                    null
+                })
+        } catch (e: java.lang.Exception) {
+            throw java.lang.IllegalStateException(e)
+        } finally {
+            progressReceiver.ignoreInvalidations = false
+        }
     }
 
-    @CanIgnoreReturnValue
-    public Builder setCrossRepositoryLabelViolationStrategy(
-        CrossRepositoryLabelViolationStrategy crossRepositoryLabelViolationStrategy) {
-      this.crossRepositoryLabelViolationStrategy = crossRepositoryLabelViolationStrategy;
-      return this;
+    override fun createExecutionFinishedEventInternal(): ExecutionFinishedEvent.Builder? {
+        val builder: ExecutionFinishedEvent.Builder? =
+            ExecutionFinishedEvent.builder()
+                .setOutputDirtyFiles(outputDirtyFiles.getAndSet(0))
+                .setOutputDirtyFileExecPathSample(com.google.common.collect.ImmutableList.< E > copyOf < E ? > (outputDirtyFilesExecPathSample))
+                .setOutputModifiedFilesDuringPreviousBuild(
+                    modifiedFilesDuringPreviousBuild.getAndSet(0)
+                )
+                .setSourceDiffCheckingDuration(sourceDiffCheckingDuration)
+                .setNumSourceFilesCheckedBecauseOfMissingDiffs(
+                    numSourceFilesCheckedBecauseOfMissingDiffs
+                )
+                .setOutputTreeDiffCheckingDuration(outputTreeDiffCheckingDuration)
+        outputDirtyFilesExecPathSample.clear()
+        sourceDiffCheckingDuration = java.time.Duration.ZERO
+        outputTreeDiffCheckingDuration = java.time.Duration.ZERO
+        return builder
     }
 
-    @CanIgnoreReturnValue
-    public Builder setBuildFilesByPriority(ImmutableList<BuildFileName> buildFilesByPriority) {
-      this.buildFilesByPriority = buildFilesByPriority;
-      return this;
+    override fun deleteOldNodes(versionWindowForDirtyGc: Long) {
+        // TODO(bazel-team): perhaps we should come up with a separate GC class dedicated to maintaining
+        // value garbage. If we ever do so, this logic should be moved there.
+        if (trackIncrementalState) {
+            memoizingEvaluator.deleteDirty(versionWindowForDirtyGc)
+        }
     }
 
-    @CanIgnoreReturnValue
-    public Builder setActionOnIOExceptionReadingBuildFile(
-        ActionOnIOExceptionReadingBuildFile actionOnIOExceptionReadingBuildFile) {
-      this.actionOnIOExceptionReadingBuildFile = actionOnIOExceptionReadingBuildFile;
-      return this;
+    override fun dumpPackages(out: PrintStream) {
+        val packageSkyKeys: Iterable<SkyKey?> =
+            com.google.common.collect.Iterables.filter(
+                memoizingEvaluator.getValues().keySet(),
+                SkyFunctions.isSkyFunction(SkyFunctions.PACKAGE)
+            )
+        out.println(com.google.common.collect.Iterables.size(packageSkyKeys).toString() + " packages")
+        for (packageSkyKey in packageSkyKeys) {
+            val pkgVal: PackageValue? = (memoizingEvaluator.getValues().get(packageSkyKey) as PackageValue?)
+            if (pkgVal != null) {
+                val pkg: Package =
+                    (memoizingEvaluator.getValues().get(packageSkyKey) as PackageValue).getPackage()
+                pkg.dump(out)
+            } else {
+                out.println("  Package " + packageSkyKey + " is in error.")
+            }
+        }
     }
 
-    @CanIgnoreReturnValue
-    public Builder setActionOnFilesystemErrorCodeLoadingBzlFile(
-        ActionOnFilesystemErrorCodeLoadingBzlFile actionOnFilesystemErrorCodeLoadingBzlFile) {
-      this.actionOnFilesystemErrorCodeLoadingBzlFile = actionOnFilesystemErrorCodeLoadingBzlFile;
-      return this;
+    /**
+     * Builder class for [SequencedSkyframeExecutor].
+     * 
+     * 
+     * Allows addition of the new arguments to [SequencedSkyframeExecutor] constructor
+     * without the need to modify all the places, where [SequencedSkyframeExecutor] is
+     * constructed (if the default value can be provided for the new argument in Builder).
+     */
+    class Builder private constructor() {
+        var pkgFactory: PackageFactory? = null
+        var fileSystem: com.google.devtools.build.lib.vfs.FileSystem? = null
+        var directories: BlazeDirectories? = null
+        var actionKeyContext: ActionKeyContext? = null
+        private var crossRepositoryLabelViolationStrategy: CrossRepositoryLabelViolationStrategy? = null
+        private var buildFilesByPriority: com.google.common.collect.ImmutableList<BuildFileName?>? = null
+        private var actionOnIOExceptionReadingBuildFile: ActionOnIOExceptionReadingBuildFile? = null
+        private var actionOnFilesystemErrorCodeLoadingBzlFile: ActionOnFilesystemErrorCodeLoadingBzlFile? = null
+        private var shouldUseRepoDotBazel = true
+
+        // Fields with default values.
+        private var extraSkyFunctions: com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?>? =
+            com.google.common.collect.ImmutableMap.of<SkyFunctionName?, SkyFunction?>()
+        private var workspaceStatusActionFactory: Factory? = null
+        private var diffAwarenessFactories: Iterable<out DiffAwareness.Factory?>? =
+            com.google.common.collect.ImmutableList.of<DiffAwareness.Factory?>()
+        private var workspaceInfoFromDiffReceiver: WorkspaceInfoFromDiffReceiver? =
+            WorkspaceInfoFromDiffReceiver { ignored1: PathFragment?, ignored2: WorkspaceInfoFromDiff? -> }
+        private var allowExternalRepositories = false
+        private var repoContentsCachePathSupplier: java.util.function.Supplier<com.google.devtools.build.lib.vfs.Path?>? =
+            java.util.function.Supplier { null }
+        private var skyframeExecutorConsumerOnInit: java.util.function.Consumer<SkyframeExecutor?>? =
+            java.util.function.Consumer { skyframeExecutor: SkyframeExecutor? -> }
+        private var ignoredSubdirectoriesFunction: SkyFunction? = null
+        private var bugReporter: BugReporter? = BugReporter.defaultInstance()
+        private var skyKeyStateReceiver: SkyKeyStateReceiver = SkyKeyStateReceiver.Companion.NULL_INSTANCE
+        private var syscallCache: SyscallCache? = null
+        private var globUnderSingleDep = true
+        private var diffCheckNotificationOptions: DiffCheckNotificationOptions? = null
+
+        fun build(): SequencedSkyframeExecutor {
+            // Check that the values were explicitly set.
+            com.google.common.base.Preconditions.checkNotNull<Any?>(pkgFactory)
+            com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.lib.vfs.FileSystem?>(fileSystem)
+            com.google.common.base.Preconditions.checkNotNull<Any?>(directories)
+            com.google.common.base.Preconditions.checkNotNull<Any?>(actionKeyContext)
+            com.google.common.base.Preconditions.checkNotNull<Any?>(crossRepositoryLabelViolationStrategy)
+            com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableList<BuildFileName?>?>(
+                buildFilesByPriority
+            )
+            com.google.common.base.Preconditions.checkNotNull<ActionOnIOExceptionReadingBuildFile?>(
+                actionOnIOExceptionReadingBuildFile
+            )
+            com.google.common.base.Preconditions.checkNotNull<ActionOnFilesystemErrorCodeLoadingBzlFile?>(
+                actionOnFilesystemErrorCodeLoadingBzlFile
+            )
+            com.google.common.base.Preconditions.checkNotNull<SkyFunction?>(ignoredSubdirectoriesFunction)
+
+            val skyframeExecutor =
+                SequencedSkyframeExecutor(
+                    skyframeExecutorConsumerOnInit,
+                    pkgFactory,
+                    fileSystem,
+                    directories,
+                    actionKeyContext,
+                    workspaceStatusActionFactory,
+                    diffAwarenessFactories,
+                    workspaceInfoFromDiffReceiver,
+                    extraSkyFunctions,
+                    com.google.common.base.Preconditions.checkNotNull<SyscallCache?>(syscallCache),
+                    ignoredSubdirectoriesFunction,
+                    crossRepositoryLabelViolationStrategy,
+                    buildFilesByPriority,
+                    allowExternalRepositories,
+                    repoContentsCachePathSupplier,
+                    actionOnIOExceptionReadingBuildFile,
+                    actionOnFilesystemErrorCodeLoadingBzlFile,
+                    shouldUseRepoDotBazel,
+                    skyKeyStateReceiver,
+                    bugReporter,
+                    globUnderSingleDep,
+                    java.util.Optional.ofNullable<DiffCheckNotificationOptions?>(diffCheckNotificationOptions)
+                )
+            skyframeExecutor.init()
+            return skyframeExecutor
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setPkgFactory(pkgFactory: PackageFactory?): Builder {
+            this.pkgFactory = pkgFactory
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setFileSystem(fileSystem: com.google.devtools.build.lib.vfs.FileSystem?): Builder {
+            this.fileSystem = fileSystem
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setDirectories(directories: BlazeDirectories?): Builder {
+            this.directories = directories
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setActionKeyContext(actionKeyContext: ActionKeyContext?): Builder {
+            this.actionKeyContext = actionKeyContext
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setIgnoredSubdirectories(ignoredSubdirectoriesFunction: SkyFunction?): Builder {
+            this.ignoredSubdirectoriesFunction = ignoredSubdirectoriesFunction
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setBugReporter(bugReporter: BugReporter?): Builder {
+            this.bugReporter = bugReporter
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setExtraSkyFunctions(
+            extraSkyFunctions: com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?>?
+        ): Builder {
+            this.extraSkyFunctions = extraSkyFunctions
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setWorkspaceStatusActionFactory(workspaceStatusActionFactory: Factory?): Builder {
+            this.workspaceStatusActionFactory = workspaceStatusActionFactory
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setDiffAwarenessFactories(
+            diffAwarenessFactories: Iterable<out DiffAwareness.Factory?>?
+        ): Builder {
+            this.diffAwarenessFactories = diffAwarenessFactories
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setWorkspaceInfoFromDiffReceiver(
+            workspaceInfoFromDiffReceiver: WorkspaceInfoFromDiffReceiver?
+        ): Builder {
+            this.workspaceInfoFromDiffReceiver = workspaceInfoFromDiffReceiver
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun allowExternalRepositories(allowExternalRepositories: Boolean): Builder {
+            this.allowExternalRepositories = allowExternalRepositories
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setRepoContentsCachePathSupplier(repoContentsCachePathSupplier: java.util.function.Supplier<com.google.devtools.build.lib.vfs.Path?>?): Builder {
+            this.repoContentsCachePathSupplier = repoContentsCachePathSupplier
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setCrossRepositoryLabelViolationStrategy(
+            crossRepositoryLabelViolationStrategy: CrossRepositoryLabelViolationStrategy?
+        ): Builder {
+            this.crossRepositoryLabelViolationStrategy = crossRepositoryLabelViolationStrategy
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setBuildFilesByPriority(buildFilesByPriority: com.google.common.collect.ImmutableList<BuildFileName?>?): Builder {
+            this.buildFilesByPriority = buildFilesByPriority
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setActionOnIOExceptionReadingBuildFile(
+            actionOnIOExceptionReadingBuildFile: ActionOnIOExceptionReadingBuildFile?
+        ): Builder {
+            this.actionOnIOExceptionReadingBuildFile = actionOnIOExceptionReadingBuildFile
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setActionOnFilesystemErrorCodeLoadingBzlFile(
+            actionOnFilesystemErrorCodeLoadingBzlFile: ActionOnFilesystemErrorCodeLoadingBzlFile?
+        ): Builder {
+            this.actionOnFilesystemErrorCodeLoadingBzlFile = actionOnFilesystemErrorCodeLoadingBzlFile
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setShouldUseRepoDotBazel(shouldUseRepoDotBazel: Boolean): Builder {
+            this.shouldUseRepoDotBazel = shouldUseRepoDotBazel
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setSkyframeExecutorConsumerOnInit(
+            skyframeExecutorConsumerOnInit: java.util.function.Consumer<SkyframeExecutor?>?
+        ): Builder {
+            this.skyframeExecutorConsumerOnInit = skyframeExecutorConsumerOnInit
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setSkyKeyStateReceiver(skyKeyStateReceiver: SkyKeyStateReceiver?): Builder {
+            this.skyKeyStateReceiver =
+                com.google.common.base.Preconditions.checkNotNull<SkyKeyStateReceiver>(skyKeyStateReceiver)
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setSyscallCache(syscallCache: SyscallCache?): Builder {
+            this.syscallCache = syscallCache
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setGlobUnderSingleDep(globUnderSingleDep: Boolean): Builder {
+            this.globUnderSingleDep = globUnderSingleDep
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setDiffCheckNotificationOptions(
+            diffCheckNotificationOptions: DiffCheckNotificationOptions?
+        ): Builder {
+            this.diffCheckNotificationOptions = diffCheckNotificationOptions
+            return this
+        }
     }
 
-    @CanIgnoreReturnValue
-    public Builder setShouldUseRepoDotBazel(boolean shouldUseRepoDotBazel) {
-      this.shouldUseRepoDotBazel = shouldUseRepoDotBazel;
-      return this;
-    }
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+        private const val MODIFIED_OUTPUT_PATHS_SAMPLE_SIZE = 100
 
-    @CanIgnoreReturnValue
-    public Builder setSkyframeExecutorConsumerOnInit(
-        Consumer<SkyframeExecutor> skyframeExecutorConsumerOnInit) {
-      this.skyframeExecutorConsumerOnInit = skyframeExecutorConsumerOnInit;
-      return this;
-    }
+        private fun rewindingEnabled(options: com.google.devtools.common.options.OptionsProvider): Boolean {
+            val buildRequestOptions: O? = options.getOptions<O?>(BuildRequestOptions::class.java)
+            return buildRequestOptions != null && buildRequestOptions.rewindLostInputs
+        }
 
-    @CanIgnoreReturnValue
-    public Builder setSkyKeyStateReceiver(SkyKeyStateReceiver skyKeyStateReceiver) {
-      this.skyKeyStateReceiver = Preconditions.checkNotNull(skyKeyStateReceiver);
-      return this;
-    }
+        /**
+         * The value types whose builders have direct access to the package locator, rather than accessing
+         * it via an explicit Skyframe dependency. They need to be invalidated if the package locator
+         * changes.
+         */
+        private val PACKAGE_LOCATOR_DEPENDENT_VALUES: com.google.common.collect.ImmutableSet<SkyFunctionName?> =
+            com.google.common.collect.ImmutableSet.of<SkyFunctionName?>(
+                FileStateKey.FILE_STATE,
+                SkyFunctions.FILE,
+                SkyFunctions.DIRECTORY_LISTING_STATE,
+                SkyFunctions.PREPARE_DEPS_OF_PATTERN,
+                SkyFunctions.TARGET_PATTERN,
+                SkyFunctions.TARGET_PATTERN_PHASE
+            )
 
-    @CanIgnoreReturnValue
-    public Builder setSyscallCache(SyscallCache syscallCache) {
-      this.syscallCache = syscallCache;
-      return this;
-    }
+        private fun addStarlarkProviders(
+            providers: TransitiveInfoProviderMap,
+            starlarkProviders: com.google.common.collect.Multiset<StarlarkProvider?>
+        ) {
+            for (i in 0..<providers.providerCount) {
+                if (providers.getProviderInstanceAt(i) is StarlarkInfo
+                    && info.getProvider() is StarlarkProvider
+                    && !provider.getLocation().file().startsWith("/virtual_builtins_bzl/")
+                ) {
+                    starlarkProviders.add(provider)
+                }
+            }
+        }
 
-    @CanIgnoreReturnValue
-    public Builder setGlobUnderSingleDep(boolean globUnderSingleDep) {
-      this.globUnderSingleDep = globUnderSingleDep;
-      return this;
-    }
+        private fun isExecConfig(bck: BuildConfigurationKey?): Boolean {
+            return bck != null && bck.getOptions().get(CoreOptions::class.java).getIsExec()
+        }
 
-    @CanIgnoreReturnValue
-    public Builder setDiffCheckNotificationOptions(
-        DiffCheckNotificationOptions diffCheckNotificationOptions) {
-      this.diffCheckNotificationOptions = diffCheckNotificationOptions;
-      return this;
+        fun builder(): Builder {
+            return com.google.devtools.build.lib.skyframe.SequencedSkyframeExecutor.Builder()
+        }
     }
-  }
 }

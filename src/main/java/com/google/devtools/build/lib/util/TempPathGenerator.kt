@@ -11,28 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import com.google.devtools.build.lib.vfs.Path;
-import java.util.concurrent.atomic.AtomicInteger;
-import javax.annotation.concurrent.ThreadSafe;
+import java.util.concurrent.atomic.AtomicInteger
 
-/** Generates temporary paths under a given directory. */
-@ThreadSafe
-public class TempPathGenerator {
-  private final Path tempDir;
-  private final AtomicInteger index = new AtomicInteger();
+/** Generates temporary paths under a given directory.  */
+@javax.annotation.concurrent.ThreadSafe
+class TempPathGenerator(tempDir: com.google.devtools.build.lib.vfs.Path) {
+    private val tempDir: com.google.devtools.build.lib.vfs.Path
+    private val index: AtomicInteger = AtomicInteger()
 
-  public TempPathGenerator(Path tempDir) {
-    this.tempDir = tempDir;
-  }
+    init {
+        this.tempDir = tempDir
+    }
 
-  /** Generates a temporary path. */
-  public Path generateTempPath() {
-    return tempDir.getChild(index.getAndIncrement() + ".tmp");
-  }
+    /** Generates a temporary path.  */
+    fun generateTempPath(): com.google.devtools.build.lib.vfs.Path? {
+        return tempDir.getChild(index.getAndIncrement().toString() + ".tmp")
+    }
 
-  public Path getTempDir() {
-    return tempDir;
-  }
+    fun getTempDir(): com.google.devtools.build.lib.vfs.Path {
+        return tempDir
+    }
 }

@@ -11,75 +11,72 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import java.util.Objects;
+import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories
 
 /**
- * A RecursivePkgKey is a tuple of a {@link RootedPath}, {@code rootedPath}, defining the directory
- * to recurse beneath in search of packages, and an {@link ImmutableSet} of {@link PathFragment}s,
- * {@code excludedPaths}, relative to {@code rootedPath.getRoot}, defining the set of subdirectories
- * strictly beneath {@code rootedPath} to skip.
- *
- * <p>Throws {@link IllegalArgumentException} if {@code excludedPaths} contains any paths that are
- * equal to {@code rootedPath} or that are not beneath {@code rootedPath}.
+ * A RecursivePkgKey is a tuple of a [RootedPath], `rootedPath`, defining the directory
+ * to recurse beneath in search of packages, and an [ImmutableSet] of [PathFragment]s,
+ * `excludedPaths`, relative to `rootedPath.getRoot`, defining the set of subdirectories
+ * strictly beneath `rootedPath` to skip.
+ * 
+ * 
+ * Throws [IllegalArgumentException] if `excludedPaths` contains any paths that are
+ * equal to `rootedPath` or that are not beneath `rootedPath`.
  */
 @ThreadSafe
-public class RecursivePkgKey {
-  @VisibleForSerialization final RepositoryName repositoryName;
-  @VisibleForSerialization final RootedPath rootedPath;
-  @VisibleForSerialization final IgnoredSubdirectories excludedPaths;
+open class RecursivePkgKey(
+    repositoryName: RepositoryName,
+    rootedPath: RootedPath,
+    excludedPaths: IgnoredSubdirectories
+) {
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    val repositoryName: RepositoryName
 
-  public RecursivePkgKey(
-      RepositoryName repositoryName, RootedPath rootedPath, IgnoredSubdirectories excludedPaths) {
-    Preconditions.checkArgument(excludedPaths.allPathsAreUnder(rootedPath.getRootRelativePath()));
-    this.repositoryName = repositoryName;
-    this.rootedPath = Preconditions.checkNotNull(rootedPath);
-    this.excludedPaths = Preconditions.checkNotNull(excludedPaths);
-  }
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    val rootedPath: RootedPath
 
-  public RepositoryName getRepositoryName() {
-    return repositoryName;
-  }
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    val excludedPaths: IgnoredSubdirectories
 
-  public RootedPath getRootedPath() {
-    return rootedPath;
-  }
-
-  public IgnoredSubdirectories getExcludedPaths() {
-    return excludedPaths;
-  }
-
-  @Override
-  public String toString() {
-    return "rootedPath=" + rootedPath + ", excludedPaths=<omitted>";
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (this == o) {
-      return true;
-    }
-    if (!(o instanceof RecursivePkgKey that)) {
-      return false;
+    init {
+        com.google.common.base.Preconditions.checkArgument(excludedPaths.allPathsAreUnder(rootedPath.getRootRelativePath()))
+        this.repositoryName = repositoryName
+        this.rootedPath = com.google.common.base.Preconditions.checkNotNull<RootedPath>(rootedPath)
+        this.excludedPaths = com.google.common.base.Preconditions.checkNotNull<IgnoredSubdirectories>(excludedPaths)
     }
 
-    return excludedPaths.equals(that.excludedPaths)
-        && rootedPath.equals(that.rootedPath)
-        && repositoryName.equals(that.repositoryName);
-  }
+    fun getRepositoryName(): RepositoryName {
+        return repositoryName
+    }
 
-  @Override
-  public int hashCode() {
-    return Objects.hash(rootedPath, excludedPaths, repositoryName);
-  }
+    fun getRootedPath(): RootedPath {
+        return rootedPath
+    }
+
+    fun getExcludedPaths(): IgnoredSubdirectories {
+        return excludedPaths
+    }
+
+    override fun toString(): String {
+        return "rootedPath=" + rootedPath + ", excludedPaths=<omitted>"
+    }
+
+    override fun equals(o: Any?): Boolean {
+        if (this === o) {
+            return true
+        }
+        if (o !is RecursivePkgKey) {
+            return false
+        }
+
+        return excludedPaths.equals(o.excludedPaths)
+                && rootedPath == o.rootedPath
+                && repositoryName.equals(o.repositoryName)
+    }
+
+    override fun hashCode(): Int {
+        return java.util.Objects.hash(rootedPath, excludedPaths, repositoryName)
+    }
 }

@@ -11,72 +11,49 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import java.util.Objects;
-import javax.annotation.Nullable;
-
-/** An immutable, semantic-free ordered pair of nullable values. Avoid using it in public APIs. */
-public final class Pair<A, B> {
-
-  /**
-   * Creates a new pair containing the given elements in order.
-   */
-  public static <A, B> Pair<A, B> of(@Nullable A first, @Nullable B second) {
-    return new Pair<>(first, second);
-  }
-
-  /**
-   * The first element of the pair.
-   */
-  @Nullable
-  public final A first;
-
-  /**
-   * The second element of the pair.
-   */
-  @Nullable
-  public final B second;
-
-  /**
-   * Constructor.  It is usually easier to call {@link #of}.
-   */
-  public Pair(@Nullable A first, @Nullable B second) {
-    this.first = first;
-    this.second = second;
-  }
-
-  @Nullable
-  public A getFirst() {
-    return first;
-  }
-
-  @Nullable
-  public B getSecond() {
-    return second;
-  }
-
-  @Override
-  public String toString() {
-    return "(" + first + ", " + second + ")";
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (this == o) {
-      return true;
+/** An immutable, semantic-free ordered pair of nullable values. Avoid using it in public APIs.  */
+class Pair<A, B>
+/**
+ * Constructor.  It is usually easier to call [.of].
+ */(
+    /**
+     * The first element of the pair.
+     */
+    @kotlin.jvm.JvmField val first: A?,
+    /**
+     * The second element of the pair.
+     */
+    @kotlin.jvm.JvmField val second: B?
+) {
+    override fun toString(): String {
+        return "(" + first + ", " + second + ")"
     }
-    if (!(o instanceof Pair)) {
-      return false;
-    }
-    Pair<?, ?> p = (Pair<?, ?>) o;
-    return Objects.equals(first, p.first) && Objects.equals(second, p.second);
-  }
 
-  @Override
-  public int hashCode() {
-    int hash1 = first == null ? 0 : first.hashCode();
-    int hash2 = second == null ? 0 : second.hashCode();
-    return 31 * hash1 + hash2;
-  }
+    override fun equals(o: Any?): Boolean {
+        if (this === o) {
+            return true
+        }
+        if (o !is Pair<*, *>) {
+            return false
+        }
+        val p = o
+        return first == p.first && second == p.second
+    }
+
+    override fun hashCode(): Int {
+        val hash1 = if (first == null) 0 else first.hashCode()
+        val hash2 = if (second == null) 0 else second.hashCode()
+        return 31 * hash1 + hash2
+    }
+
+    companion object {
+        /**
+         * Creates a new pair containing the given elements in order.
+         */
+        fun <A, B> of(first: A?, second: B?): Pair<A?, B?> {
+            return com.google.devtools.build.lib.util.Pair<A?, B?>(first, second)
+        }
+    }
 }

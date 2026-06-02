@@ -82,7 +82,7 @@ public final class SkyframeFocuserTest extends BuildViewTestCase {
 
     assertThat(focusResult.deps()).isEmpty();
     assertThat(focusResult.rdeps()).containsExactly(cat, dog);
-    assertThat(graph.getValues().keySet()).containsExactly(cat, dog);
+    assertThat(graph.values.keySet()).containsExactly(cat, dog);
   }
 
   @Test
@@ -104,7 +104,7 @@ public final class SkyframeFocuserTest extends BuildViewTestCase {
 
     assertThat(focusResult.deps()).isEmpty();
     assertThat(focusResult.rdeps()).containsExactly(cat);
-    assertThat(graph.getValues().keySet()).containsExactly(cat);
+    assertThat(graph.values.keySet()).containsExactly(cat);
   }
 
   @Test
@@ -125,7 +125,7 @@ public final class SkyframeFocuserTest extends BuildViewTestCase {
 
     assertThat(focusResult.deps()).isEmpty();
     assertThat(focusResult.rdeps()).containsExactly(cat, dog);
-    assertThat(graph.getValues().keySet()).containsExactly(cat, dog);
+    assertThat(graph.values.keySet()).containsExactly(cat, dog);
   }
 
   @Test
@@ -146,7 +146,7 @@ public final class SkyframeFocuserTest extends BuildViewTestCase {
 
     assertThat(focusResult.deps()).containsExactly(cat, dog);
     assertThat(focusResult.rdeps()).isEmpty();
-    assertThat(graph.getValues().keySet()).containsExactly(cat, dog);
+    assertThat(graph.values.keySet()).containsExactly(cat, dog);
   }
 
   @Test
@@ -167,7 +167,7 @@ public final class SkyframeFocuserTest extends BuildViewTestCase {
 
     assertThat(focusResult.deps()).containsExactly(cat);
     assertThat(focusResult.rdeps()).isEmpty();
-    assertThat(graph.getValues().keySet()).containsExactly(cat);
+    assertThat(graph.values.keySet()).containsExactly(cat);
   }
 
   @Test
@@ -209,7 +209,7 @@ public final class SkyframeFocuserTest extends BuildViewTestCase {
     assertThat(focusResult.rdeps()).containsExactly(civet, dog, cat);
 
     // no monkey (isolated) and bird (indirect dep)
-    assertThat(graph.getValues().keySet()).containsExactly(hamster, fish, civet, dog, cat);
+    assertThat(graph.values.keySet()).containsExactly(hamster, fish, civet, dog, cat);
   }
 
   @Test

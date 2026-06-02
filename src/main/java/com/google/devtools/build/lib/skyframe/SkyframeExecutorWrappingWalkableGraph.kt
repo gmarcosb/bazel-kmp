@@ -11,55 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.skyframe.DelegatingWalkableGraph;
-import com.google.devtools.build.skyframe.MemoizingEvaluator;
-import com.google.devtools.build.skyframe.NodeEntry;
-import com.google.devtools.build.skyframe.QueryableGraph;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.util.HashMap;
-import java.util.Map;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.skyframe.SkyframeExecutor
+import com.google.devtools.build.skyframe.DelegatingWalkableGraph
+import com.google.devtools.build.skyframe.MemoizingEvaluator
+import com.google.devtools.build.skyframe.NodeEntry
+import com.google.devtools.build.skyframe.QueryableGraph
+import com.google.devtools.build.skyframe.QueryableGraph.LookupHint
+import com.google.devtools.build.skyframe.SkyKey
+import java.util.HashMap
 
 /**
- * {@link com.google.devtools.build.skyframe.WalkableGraph} backed by a {@link SkyframeExecutor}.
+ * [com.google.devtools.build.skyframe.WalkableGraph] backed by a [SkyframeExecutor].
  */
-public class SkyframeExecutorWrappingWalkableGraph extends DelegatingWalkableGraph {
-
-  private SkyframeExecutorWrappingWalkableGraph(MemoizingEvaluator evaluator) {
-    super(
-        new QueryableGraph() {
-          @Nullable
-          @Override
-          public NodeEntry get(@Nullable SkyKey requestor, Reason reason, SkyKey key)
-              throws InterruptedException {
-            return evaluator.getExistingEntryAtCurrentlyEvaluatingVersion(key);
-          }
-
-          @Override
-          public LookupHint getLookupHint(SkyKey key) {
-            return LookupHint.INDIVIDUAL;
-          }
-
-          @Override
-          public Map<SkyKey, ? extends NodeEntry> getBatchMap(
-              @Nullable SkyKey requestor, Reason reason, Iterable<? extends SkyKey> keys)
-              throws InterruptedException {
-            Map<SkyKey, NodeEntry> result = new HashMap<>();
-            for (SkyKey key : keys) {
-              NodeEntry nodeEntry = get(requestor, reason, key);
-              if (nodeEntry != null) {
-                result.put(key, nodeEntry);
-              }
+class SkyframeExecutorWrappingWalkableGraph private constructor(evaluator: MemoizingEvaluator) :
+    DelegatingWalkableGraph(
+        object : QueryableGraph() {
+            @Throws(java.lang.InterruptedException::class)
+            override fun get(
+                requestor: SkyKey?,
+                reason: com.google.devtools.build.skyframe.QueryableGraph.Reason?,
+                key: SkyKey?
+            ): NodeEntry? {
+                return evaluator.getExistingEntryAtCurrentlyEvaluatingVersion(key)
             }
-            return result;
-          }
-        });
-  }
 
-  public static SkyframeExecutorWrappingWalkableGraph of(SkyframeExecutor skyframeExecutor) {
-    // TODO(janakr): Provide the graph in a more principled way.
-    return new SkyframeExecutorWrappingWalkableGraph(skyframeExecutor.getEvaluator());
-  }
+            override fun getLookupHint(key: SkyKey?): LookupHint {
+                return LookupHint.INDIVIDUAL
+            }
+
+            @Throws(java.lang.InterruptedException::class)
+            override fun getBatchMap(
+                requestor: SkyKey?,
+                reason: com.google.devtools.build.skyframe.QueryableGraph.Reason?,
+                keys: Iterable<out SkyKey?>
+            ): MutableMap<SkyKey?, out NodeEntry?> {
+                val result: MutableMap<SkyKey?, NodeEntry?> = HashMap<SkyKey?, NodeEntry?>()
+                for (key in keys) {
+                    val nodeEntry: NodeEntry? = get(requestor, reason, key)
+                    if (nodeEntry != null) {
+                        result.put(key, nodeEntry)
+                    }
+                }
+                return result
+            }
+        }) {
+    companion object {
+        fun of(skyframeExecutor: SkyframeExecutor): SkyframeExecutorWrappingWalkableGraph {
+            // TODO(janakr): Provide the graph in a more principled way.
+            return SkyframeExecutorWrappingWalkableGraph(skyframeExecutor.getEvaluator())
+        }
+    }
 }

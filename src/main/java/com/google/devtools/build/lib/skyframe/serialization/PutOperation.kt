@@ -11,14 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.devtools.build.lib.skyframe.serialization.WriteStatuses.WriteStatus;
+import com.google.devtools.build.lib.skyframe.serialization.PackedFingerprint
+import com.google.devtools.build.lib.skyframe.serialization.WriteStatuses.WriteStatus
 
 /**
- * Tuple representing a {@link FingerprintValueStore#put} operation.
- *
+ * Tuple representing a [FingerprintValueStore.put] operation.
+ * 
  * @param fingerprint key used to store the value.
- * @param writeStatus result of storing the value in the {@link FingerprintValueStore}.
+ * @param writeStatus result of storing the value in the [FingerprintValueStore].
  */
-public record PutOperation(PackedFingerprint fingerprint, WriteStatus writeStatus) {}
+class PutOperation(fingerprint: PackedFingerprint?, writeStatus: WriteStatus?) {
+    val fingerprint: PackedFingerprint?
+    val writeStatus: WriteStatus?
+
+    init {
+        this.fingerprint = fingerprint
+        this.writeStatus = writeStatus
+    }
+}

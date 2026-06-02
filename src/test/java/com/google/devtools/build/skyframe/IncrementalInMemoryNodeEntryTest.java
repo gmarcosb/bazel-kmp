@@ -267,7 +267,7 @@ public class IncrementalInMemoryNodeEntryTest extends InMemoryNodeEntryTest<IntV
     assertThat(setValue(entry, new SkyValue() {}, /* errorInfo= */ null, incrementalVersion))
         .containsExactly(parent);
     assertThat(entry.getVersion()).isEqualTo(incrementalVersion);
-    assertThat(entry.getDirectDeps()).containsExactly(dep); // No more dep on error transience.
+    assertThat(entry.directDeps).containsExactly(dep); // No more dep on error transience.
   }
 
   @Test
@@ -614,7 +614,7 @@ public class IncrementalInMemoryNodeEntryTest extends InMemoryNodeEntryTest<IntV
       }
     }
     entry.setValue(new IntegerValue(42), IntVersion.of(42L), null);
-    assertThat(GroupedDeps.decompress(entry.getCompressedDirectDepsForDoneEntry()))
+    assertThat(GroupedDeps.decompress(entry.compressedDirectDepsForDoneEntry))
         .containsExactlyElementsIn(groupedDirectDeps)
         .inOrder();
   }
@@ -863,7 +863,7 @@ public class IncrementalInMemoryNodeEntryTest extends InMemoryNodeEntryTest<IntV
     SkyValue newValue = valueChanges ? new IntegerValue(2) : oldValue;
     assertThat(setValue(entry, newValue, /* errorInfo= */ null, incrementalVersion))
         .containsExactly(resetDirtyParent, lateDirtyParent, lateNewParent);
-    assertThat(entry.getValue()).isEqualTo(newValue);
+    assertThat(entry.value).isEqualTo(newValue);
     if (valueChanges) {
       assertThat(entry.getVersion()).isEqualTo(incrementalVersion);
     } else {
@@ -871,7 +871,7 @@ public class IncrementalInMemoryNodeEntryTest extends InMemoryNodeEntryTest<IntV
     }
 
     // Check rdep accounting.
-    assertThat(entry.getReverseDepsForDoneEntry())
+    assertThat(entry.reverseDepsForDoneEntry)
         .containsExactly(
             cleanParent,
             earlyDirtyParent,

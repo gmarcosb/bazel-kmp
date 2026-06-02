@@ -702,22 +702,22 @@ public abstract class GlobTestBase {
 
           @Override
           public long getSize() throws IOException {
-            return realStat.getSize();
+            return realStat.size;
           }
 
           @Override
           public long getLastModifiedTime() throws IOException {
-            return realStat.getLastModifiedTime();
+            return realStat.lastModifiedTime;
           }
 
           @Override
           public long getLastChangeTime() throws IOException {
-            return realStat.getLastChangeTime();
+            return realStat.lastChangeTime;
           }
 
           @Override
           public long getNodeId() throws IOException {
-            return realStat.getNodeId();
+            return realStat.nodeId;
           }
         });
     // But the dir listing say foo/bar/wiz/file is a symlink.
@@ -880,22 +880,22 @@ public abstract class GlobTestBase {
 
           @Override
           public long getSize() throws IOException {
-            return realStat.getSize();
+            return realStat.size;
           }
 
           @Override
           public long getLastModifiedTime() throws IOException {
-            return realStat.getLastModifiedTime();
+            return realStat.lastModifiedTime;
           }
 
           @Override
           public long getLastChangeTime() throws IOException {
-            return realStat.getLastChangeTime();
+            return realStat.lastChangeTime;
           }
 
           @Override
           public long getNodeId() throws IOException {
-            return realStat.getNodeId();
+            return realStat.nodeId;
           }
         });
 

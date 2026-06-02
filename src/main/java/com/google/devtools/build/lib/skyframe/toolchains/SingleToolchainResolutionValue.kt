@@ -11,122 +11,120 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.toolchains
 
-package com.google.devtools.build.lib.skyframe.toolchains;
-
-import static java.util.Objects.requireNonNull;
-
-import com.google.auto.value.AutoValue;
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.config.ToolchainTypeRequirement;
-import com.google.devtools.build.lib.analysis.platform.ToolchainTypeInfo;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.List;
+import com.google.devtools.build.lib.analysis.config.ToolchainTypeRequirement
 
 /**
  * A value which represents the map of potential execution platforms and resolved toolchains for a
  * single toolchain type. This allows for a Skyframe cache per toolchain type.
- *
+ * 
  * @param toolchainType Returns the resolved details about the requested toolchain type.
- * @param availableToolchainLabels Returns the resolved set of toolchain labels (as {@link Label})
- *     for the requested toolchain type, keyed by the execution platforms (as {@link
- *     ConfiguredTargetKey}). Ordering is not preserved, if the caller cares about the order of
- *     platforms it must take care of that directly.
+ * @param availableToolchainLabels Returns the resolved set of toolchain labels (as [Label])
+ * for the requested toolchain type, keyed by the execution platforms (as [     ]). Ordering is not preserved, if the caller cares about the order of
+ * platforms it must take care of that directly.
  */
 @AutoCodec
-public record SingleToolchainResolutionValue(
-    ToolchainTypeInfo toolchainType,
-    ImmutableMap<ConfiguredTargetKey, Label> availableToolchainLabels)
-    implements SkyValue {
-  public SingleToolchainResolutionValue {
-    requireNonNull(toolchainType, "toolchainType");
-    requireNonNull(availableToolchainLabels, "availableToolchainLabels");
-  }
+class SingleToolchainResolutionValue(
+    toolchainType: ToolchainTypeInfo?,
+    availableToolchainLabels: com.google.common.collect.ImmutableMap<ConfiguredTargetKey?, Label?>?
+) : SkyValue {
+    /** [SkyKey] implementation used for [SingleToolchainResolutionFunction].  */
+    @AutoValue
+    abstract class SingleToolchainResolutionKey : SkyKey {
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.SINGLE_TOOLCHAIN_RESOLUTION
+        }
 
-  // A key representing the input data.
-  public static SingleToolchainResolutionKey key(
-      BuildConfigurationKey configurationKey,
-      ToolchainTypeRequirement toolchainType,
-      ToolchainTypeInfo toolchainTypeInfo,
-      ConfiguredTargetKey targetPlatformKey,
-      List<ConfiguredTargetKey> availableExecutionPlatformKeys) {
-    return key(
-        configurationKey,
-        toolchainType,
-        toolchainTypeInfo,
-        targetPlatformKey,
-        availableExecutionPlatformKeys,
-        false);
-  }
+        abstract fun configurationKey(): BuildConfigurationKey?
 
-  public static SingleToolchainResolutionKey key(
-      BuildConfigurationKey configurationKey,
-      ToolchainTypeRequirement toolchainType,
-      ToolchainTypeInfo toolchainTypeInfo,
-      ConfiguredTargetKey targetPlatformKey,
-      List<ConfiguredTargetKey> availableExecutionPlatformKeys,
-      boolean debugTarget) {
-    return SingleToolchainResolutionKey.create(
-        configurationKey,
-        toolchainType,
-        toolchainTypeInfo,
-        targetPlatformKey,
-        availableExecutionPlatformKeys,
-        debugTarget);
-  }
+        abstract fun toolchainType(): ToolchainTypeRequirement?
 
-  /** {@link SkyKey} implementation used for {@link SingleToolchainResolutionFunction}. */
-  @AutoValue
-  public abstract static class SingleToolchainResolutionKey implements SkyKey {
+        abstract fun toolchainTypeInfo(): ToolchainTypeInfo?
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.SINGLE_TOOLCHAIN_RESOLUTION;
+        abstract fun targetPlatformKey(): ConfiguredTargetKey?
+
+        abstract fun availableExecutionPlatformKeys(): com.google.common.collect.ImmutableList<ConfiguredTargetKey?>?
+
+        abstract fun debugTarget(): Boolean
+
+        companion object {
+            fun create(
+                configurationKey: BuildConfigurationKey?,
+                toolchainType: ToolchainTypeRequirement?,
+                toolchainTypeInfo: ToolchainTypeInfo?,
+                targetPlatformKey: ConfiguredTargetKey?,
+                availableExecutionPlatformKeys: MutableList<ConfiguredTargetKey?>?,
+                debugTarget: Boolean
+            ): SingleToolchainResolutionKey {
+                return AutoValue_SingleToolchainResolutionValue_SingleToolchainResolutionKey(
+                    configurationKey,
+                    toolchainType,
+                    toolchainTypeInfo,
+                    targetPlatformKey,
+                    com.google.common.collect.ImmutableList.< E > copyOf < E ? > (availableExecutionPlatformKeys),
+                    debugTarget
+                )
+            }
+        }
     }
 
-    abstract BuildConfigurationKey configurationKey();
+    val toolchainType: ToolchainTypeInfo?
+    val availableToolchainLabels: com.google.common.collect.ImmutableMap<ConfiguredTargetKey?, Label?>?
 
-    public abstract ToolchainTypeRequirement toolchainType();
-
-    public abstract ToolchainTypeInfo toolchainTypeInfo();
-
-    abstract ConfiguredTargetKey targetPlatformKey();
-
-    abstract ImmutableList<ConfiguredTargetKey> availableExecutionPlatformKeys();
-
-    abstract boolean debugTarget();
-
-    static SingleToolchainResolutionKey create(
-        BuildConfigurationKey configurationKey,
-        ToolchainTypeRequirement toolchainType,
-        ToolchainTypeInfo toolchainTypeInfo,
-        ConfiguredTargetKey targetPlatformKey,
-        List<ConfiguredTargetKey> availableExecutionPlatformKeys,
-        boolean debugTarget) {
-      return new AutoValue_SingleToolchainResolutionValue_SingleToolchainResolutionKey(
-          configurationKey,
-          toolchainType,
-          toolchainTypeInfo,
-          targetPlatformKey,
-          ImmutableList.copyOf(availableExecutionPlatformKeys),
-          debugTarget);
+    init {
+        this.availableToolchainLabels = availableToolchainLabels
+        this.toolchainType = toolchainType
+        java.util.Objects.requireNonNull<Any?>(toolchainType, "toolchainType")
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableMap<ConfiguredTargetKey?, Label?>?>(
+            availableToolchainLabels,
+            "availableToolchainLabels"
+        )
     }
-  }
 
-  @VisibleForTesting
-  public static SingleToolchainResolutionValue create(
-      ToolchainTypeInfo toolchainType,
-      ImmutableMap<ConfiguredTargetKey, Label> availableToolchainLabels) {
-    return new SingleToolchainResolutionValue(toolchainType, availableToolchainLabels);
-  }
+    companion object {
+        // A key representing the input data.
+        fun key(
+            configurationKey: BuildConfigurationKey?,
+            toolchainType: ToolchainTypeRequirement?,
+            toolchainTypeInfo: ToolchainTypeInfo?,
+            targetPlatformKey: ConfiguredTargetKey?,
+            availableExecutionPlatformKeys: MutableList<ConfiguredTargetKey?>?
+        ): SingleToolchainResolutionKey {
+            return key(
+                configurationKey,
+                toolchainType,
+                toolchainTypeInfo,
+                targetPlatformKey,
+                availableExecutionPlatformKeys,
+                false
+            )
+        }
 
+        fun key(
+            configurationKey: BuildConfigurationKey?,
+            toolchainType: ToolchainTypeRequirement?,
+            toolchainTypeInfo: ToolchainTypeInfo?,
+            targetPlatformKey: ConfiguredTargetKey?,
+            availableExecutionPlatformKeys: MutableList<ConfiguredTargetKey?>?,
+            debugTarget: Boolean
+        ): SingleToolchainResolutionKey {
+            return SingleToolchainResolutionKey.Companion.create(
+                configurationKey,
+                toolchainType,
+                toolchainTypeInfo,
+                targetPlatformKey,
+                availableExecutionPlatformKeys,
+                debugTarget
+            )
+        }
+
+        @com.google.common.annotations.VisibleForTesting
+        fun create(
+            toolchainType: ToolchainTypeInfo?,
+            availableToolchainLabels: com.google.common.collect.ImmutableMap<ConfiguredTargetKey?, Label?>?
+        ): SingleToolchainResolutionValue {
+            return SingleToolchainResolutionValue(toolchainType, availableToolchainLabels)
+        }
+    }
 }

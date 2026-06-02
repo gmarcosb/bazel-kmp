@@ -11,274 +11,270 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
-
-import com.google.common.base.Preconditions;
-import java.util.Arrays;
+package com.google.devtools.build.lib.util
 
 /**
  * A list of primitive long values.
- *
- * <p>Grows its backing array internally when necessary and such that constant amortized addition of
+ * 
+ * 
+ * Grows its backing array internally when necessary and such that constant amortized addition of
  * elements is guaranteed.
- *
- * <p>Does not shrink its array except by explicit calls to {@link #trim}.
+ * 
+ * 
+ * Does not shrink its array except by explicit calls to [.trim].
  */
-public class LongArrayList {
+class LongArrayList {
+    private var array: LongArray
+    private var size = 0
 
-  private static final int DEFAULT_CAPACITY = 12;
-
-  private long[] array;
-  private int size;
-
-  /**
-   * Initialize a new LongArrayList with default capacity.
-   */
-  public LongArrayList() {
-    this.array = new long[DEFAULT_CAPACITY];
-  }
-
-  /**
-   * Initialize a new LongArrayList with space for elements equal to the given capacity.
-   * @throws IndexOutOfBoundsException if the capacity is negative
-   */
-  public LongArrayList(int capacity) {
-    Preconditions.checkArgument(capacity >= 0, "Initial capacity must not be negative.");
-    this.array = new long[capacity];
-  }
-
-  /**
-   * Create a new LongArrayList backed by the given array. No copy is made.
-   */
-  public LongArrayList(long[] array) {
-    Preconditions.checkNotNull(array);
-    this.array = array;
-    this.size = array.length;
-  }
-
-  /**
-   * Add a value at a specific position to this list. All elements at larger indices will
-   * shift to the right by one.
-   * @param position may be any index within the array or equal to the size, to append at the end
-   * @throws IndexOutOfBoundsException if the index is outside the interval [0, {@link #size()})
-   */
-  public void add(int position, long value) {
-    Preconditions.checkPositionIndex(position, size);
-    copyBackAndGrow(position, 1);
-    set(position, value);
-  }
-
-  /**
-   * Add a value to the end of this list.
-   */
-  public void add(long value) {
-    add(size, value);
-  }
-
-  /**
-   * Add all elements from another LongArrayList at the end of this one.
-   * @see #addAll(LongArrayList, int)
-   */
-  public boolean addAll(LongArrayList other) {
-    return addAll(other.array, 0, other.size, size);
-  }
-
-  /**
-   * Add all elements from another LongArrayList at a certain position within or at the end of
-   * this one.
-   * @param other
-   * @param position at which position to add these elements, adds at the end if equal to the size
-   * @return whether this list changed
-   * @throws IndexOutOfBoundsException if the index is outside the interval [0, {@link #size()}]
-   */
-  public boolean addAll(LongArrayList other, int position) {
-    return addAll(other.array, 0, other.size, position);
-  }
-
-  /**
-   * Add all elements from the given array to the end of this array.
-   * @see #addAll(long[], int, int, int)
-   */
-  public boolean addAll(long[] array) {
-    return addAll(array, 0, array.length, size);
-  }
-
-  /**
-   * Add certain elements from the given array to the end of this array.
-   * @see #addAll(long[], int, int, int)
-   */
-  public boolean addAll(long[] array, int fromIndex, int length) {
-    return addAll(array, fromIndex, length, size);
-  }
-
-  /**
-   * Add certain elements from the given array at a certain position in this list.
-   * @param array the array from which to take the elements
-   * @param fromIndex the position of the first element to add
-   * @param length how many elements to add
-   * @param position at which position to add these elements, adds at the end if equal to the size
-   * @return whether this list has changed
-   * @throws IndexOutOfBoundsException if fromIndex and length violate the boundaries of the given
-   *    array or atIndex is not a valid index in this array or equal to the size
-   */
-  public boolean addAll(long[] array, int fromIndex, int length, int position) {
-    Preconditions.checkNotNull(array);
-    Preconditions.checkPositionIndex(fromIndex + length, array.length);
-    if (length == 0) {
-      return false;
+    /**
+     * Initialize a new LongArrayList with default capacity.
+     */
+    constructor() {
+        this.array = LongArray(com.google.devtools.build.lib.util.LongArrayList.Companion.DEFAULT_CAPACITY)
     }
-    // check other positions later to allow "adding" empty arrays anywhere within this array
-    Preconditions.checkElementIndex(fromIndex, array.length);
-    Preconditions.checkPositionIndex(position, size);
-    copyBackAndGrow(position, length);
-    System.arraycopy(array, fromIndex, this.array, position, length);
-    return true;
-  }
 
-  /**
-   * Resize the backing array to fit at least this many elements if necessary.
-   */
-  public void ensureCapacity(int capacity) {
-    if (capacity > array.length) {
-      long[] newArray = new long[growCapacity(capacity)];
-      System.arraycopy(array, 0, newArray, 0, size);
-      array = newArray;
+    /**
+     * Initialize a new LongArrayList with space for elements equal to the given capacity.
+     * @throws IndexOutOfBoundsException if the capacity is negative
+     */
+    constructor(capacity: Int) {
+        com.google.common.base.Preconditions.checkArgument(capacity >= 0, "Initial capacity must not be negative.")
+        this.array = LongArray(capacity)
     }
-  }
 
-  /**
-   * @return the element at the specified index
-   * @throws IndexOutOfBoundsException if the index is outside the interval [0, {@link #size()})
-   */
-  public long get(int index) {
-    Preconditions.checkElementIndex(index, size);
-    return array[index];
-  }
-
-  /**
-   * Search for the first index at which the given value is found.
-   * @return -1 if the value is not found, the index at which it was found otherwise
-   */
-  public int indexOf(long value) {
-    for (int index = 0; index < size; index++) {
-      if (array[index] == value) {
-        return index;
-      }
+    /**
+     * Create a new LongArrayList backed by the given array. No copy is made.
+     */
+    constructor(array: LongArray) {
+        com.google.common.base.Preconditions.checkNotNull<LongArray?>(array)
+        this.array = array
+        this.size = array.size
     }
-    return -1;
-  }
 
-  /**
-   * Remove the element at the specified index and shift all elements at higher indices down by
-   * one.
-   * @return the removed element
-   * @throws IndexOutOfBoundsException if the index is outside the interval [0, {@link #size()})
-   */
-  public long remove(int index) {
-    Preconditions.checkElementIndex(index, size);
-    long previous = array[index];
-    System.arraycopy(array, index + 1, array, index, size - index - 1);
-    size--;
-    return previous;
-  }
-
-  /**
-   * Remove the first occurrence of a value and shift all elements at higher indices down by one.
-   * @return true, if the list changed and thus contained the value, false otherwise
-   */
-  public boolean remove(long value) {
-    int index = indexOf(value);
-    if (index == -1) {
-      return false;
+    /**
+     * Add a value at a specific position to this list. All elements at larger indices will
+     * shift to the right by one.
+     * @param position may be any index within the array or equal to the size, to append at the end
+     * @throws IndexOutOfBoundsException if the index is outside the interval [0, [.size])
+     */
+    fun add(position: Int, value: Long) {
+        com.google.common.base.Preconditions.checkPositionIndex(position, size)
+        copyBackAndGrow(position, 1)
+        set(position, value)
     }
-    remove(index);
-    return true;
-  }
 
-  /**
-   * Overwrites the element at a certain index with the given value and returns the previous
-   * element.
-   * @throws IndexOutOfBoundsException if the index is outside the interval [0, {@link #size()})
-   */
-  public long set(int index, long value) {
-    Preconditions.checkElementIndex(index, size);
-    long previous = array[index];
-    array[index] = value;
-    return previous;
-  }
-
-  /**
-   * @return the amount of elements in this list
-   */
-  public int size() {
-    return size;
-  }
-
-  /**
-   * Sort the list in ascending order.
-   */
-  public void sort() {
-    Arrays.sort(array, 0, size);
-  }
-
-  /**
-   * Sort the sub list from the first index (inclusive) to the second index (exclusive) in
-   * ascending order.
-   * @see Arrays#sort(long[], int, int)
-   * @throws IndexOutOfBoundsException if fromIndex is outside the interval [0, {@link #size()})
-   * or toIndex is outside [0, {@link #size()}]
-   */
-  public void sort(int fromIndex, int toIndex) {
-    Arrays.sort(array, fromIndex, toIndex);
-  }
-
-  /**
-   * Build a String of the form [0, 1, 2]
-   */
-  @Override
-  public String toString() {
-    final StringBuilder sb = new StringBuilder("[");
-    String separator = "";
-    for (int index = 0; index < size; index++) {
-      sb.append(separator);
-      sb.append(array[index]);
-      separator = ", ";
+    /**
+     * Add a value to the end of this list.
+     */
+    fun add(value: Long) {
+        add(size, value)
     }
-    sb.append("]");
-    return sb.toString();
-  }
 
-  /**
-   * Remove any excess capacity to save space.
-   */
-  public void trim() {
-    if (size < array.length) {
-      long[] newArray = new long[size];
-      System.arraycopy(array, 0, newArray, 0, size);
-      array = newArray;
+    /**
+     * Add all elements from another LongArrayList at the end of this one.
+     * @see .addAll
+     */
+    fun addAll(other: LongArrayList): Boolean {
+        return addAll(other.array, 0, other.size, size)
     }
-  }
 
-  /**
-   * Copy the end of the array from a certain index back to make room for length many items and
-   * adds length to the size.
-   *
-   * @param fromIndex may be equal to the current size, then no element needs to be copied, but the
-   *    array may grow
-   */
-  private void copyBackAndGrow(int fromIndex, int length) {
-    int newSize = size + length;
-    ensureCapacity(newSize);
-    System.arraycopy(array, fromIndex, array, fromIndex + length, size - fromIndex);
-    size = newSize;
-  }
+    /**
+     * Add all elements from another LongArrayList at a certain position within or at the end of
+     * this one.
+     * @param other
+     * @param position at which position to add these elements, adds at the end if equal to the size
+     * @return whether this list changed
+     * @throws IndexOutOfBoundsException if the index is outside the interval [0, [.size]]
+     */
+    fun addAll(other: LongArrayList, position: Int): Boolean {
+        return addAll(other.array, 0, other.size, position)
+    }
 
-  /**
-   * The new capacity when growing the array to contain at least newSize many elements.
-   * Uses a growth factor of 1.5.
-   */
-  private int growCapacity(int newSize) {
-    return newSize + (newSize >> 1);
-  }
+    /**
+     * Add all elements from the given array to the end of this array.
+     * @see .addAll
+     */
+    fun addAll(array: LongArray): Boolean {
+        return addAll(array, 0, array.size, size)
+    }
+
+    /**
+     * Add certain elements from the given array at a certain position in this list.
+     * @param array the array from which to take the elements
+     * @param fromIndex the position of the first element to add
+     * @param length how many elements to add
+     * @param position at which position to add these elements, adds at the end if equal to the size
+     * @return whether this list has changed
+     * @throws IndexOutOfBoundsException if fromIndex and length violate the boundaries of the given
+     * array or atIndex is not a valid index in this array or equal to the size
+     */
+    /**
+     * Add certain elements from the given array to the end of this array.
+     * @see .addAll
+     */
+    @kotlin.jvm.JvmOverloads
+    fun addAll(array: LongArray?, fromIndex: Int, length: Int, position: Int = size): Boolean {
+        com.google.common.base.Preconditions.checkNotNull<LongArray?>(array)
+        com.google.common.base.Preconditions.checkPositionIndex(fromIndex + length, array!!.size)
+        if (length == 0) {
+            return false
+        }
+        // check other positions later to allow "adding" empty arrays anywhere within this array
+        com.google.common.base.Preconditions.checkElementIndex(fromIndex, array.size)
+        com.google.common.base.Preconditions.checkPositionIndex(position, size)
+        copyBackAndGrow(position, length)
+        java.lang.System.arraycopy(array, fromIndex, this.array, position, length)
+        return true
+    }
+
+    /**
+     * Resize the backing array to fit at least this many elements if necessary.
+     */
+    fun ensureCapacity(capacity: Int) {
+        if (capacity > array.size) {
+            val newArray = LongArray(growCapacity(capacity))
+            java.lang.System.arraycopy(array, 0, newArray, 0, size)
+            array = newArray
+        }
+    }
+
+    /**
+     * @return the element at the specified index
+     * @throws IndexOutOfBoundsException if the index is outside the interval [0, [.size])
+     */
+    fun get(index: Int): Long {
+        com.google.common.base.Preconditions.checkElementIndex(index, size)
+        return array[index]
+    }
+
+    /**
+     * Search for the first index at which the given value is found.
+     * @return -1 if the value is not found, the index at which it was found otherwise
+     */
+    fun indexOf(value: Long): Int {
+        for (index in 0..<size) {
+            if (array[index] == value) {
+                return index
+            }
+        }
+        return -1
+    }
+
+    /**
+     * Remove the element at the specified index and shift all elements at higher indices down by
+     * one.
+     * @return the removed element
+     * @throws IndexOutOfBoundsException if the index is outside the interval [0, [.size])
+     */
+    fun remove(index: Int): Long {
+        com.google.common.base.Preconditions.checkElementIndex(index, size)
+        val previous = array[index]
+        java.lang.System.arraycopy(array, index + 1, array, index, size - index - 1)
+        size--
+        return previous
+    }
+
+    /**
+     * Remove the first occurrence of a value and shift all elements at higher indices down by one.
+     * @return true, if the list changed and thus contained the value, false otherwise
+     */
+    fun remove(value: Long): Boolean {
+        val index = indexOf(value)
+        if (index == -1) {
+            return false
+        }
+        remove(index)
+        return true
+    }
+
+    /**
+     * Overwrites the element at a certain index with the given value and returns the previous
+     * element.
+     * @throws IndexOutOfBoundsException if the index is outside the interval [0, [.size])
+     */
+    fun set(index: Int, value: Long): Long {
+        com.google.common.base.Preconditions.checkElementIndex(index, size)
+        val previous = array[index]
+        array[index] = value
+        return previous
+    }
+
+    /**
+     * @return the amount of elements in this list
+     */
+    fun size(): Int {
+        return size
+    }
+
+    /**
+     * Sort the list in ascending order.
+     */
+    fun sort() {
+        java.util.Arrays.sort(array, 0, size)
+    }
+
+    /**
+     * Sort the sub list from the first index (inclusive) to the second index (exclusive) in
+     * ascending order.
+     * @see Arrays.sort
+     * @throws IndexOutOfBoundsException if fromIndex is outside the interval [0, [.size])
+     * or toIndex is outside [0, [.size]]
+     */
+    fun sort(fromIndex: Int, toIndex: Int) {
+        java.util.Arrays.sort(array, fromIndex, toIndex)
+    }
+
+    /**
+     * Build a String of the form [0, 1, 2]
+     */
+    override fun toString(): String {
+        val sb: java.lang.StringBuilder = java.lang.StringBuilder("[")
+        var separator = ""
+        for (index in 0..<size) {
+            sb.append(separator)
+            sb.append(array[index])
+            separator = ", "
+        }
+        sb.append("]")
+        return sb.toString()
+    }
+
+    /**
+     * Remove any excess capacity to save space.
+     */
+    fun trim() {
+        if (size < array.size) {
+            val newArray = LongArray(size)
+            java.lang.System.arraycopy(array, 0, newArray, 0, size)
+            array = newArray
+        }
+    }
+
+    /**
+     * Copy the end of the array from a certain index back to make room for length many items and
+     * adds length to the size.
+     * 
+     * @param fromIndex may be equal to the current size, then no element needs to be copied, but the
+     * array may grow
+     */
+    private fun copyBackAndGrow(fromIndex: Int, length: Int) {
+        val newSize = size + length
+        ensureCapacity(newSize)
+        java.lang.System.arraycopy(array, fromIndex, array, fromIndex + length, size - fromIndex)
+        size = newSize
+    }
+
+    /**
+     * The new capacity when growing the array to contain at least newSize many elements.
+     * Uses a growth factor of 1.5.
+     */
+    private fun growCapacity(newSize: Int): Int {
+        return newSize + (newSize shr 1)
+    }
+
+    companion object {
+        private const val DEFAULT_CAPACITY = 12
+    }
 }
 

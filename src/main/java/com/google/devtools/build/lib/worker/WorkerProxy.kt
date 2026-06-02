@@ -11,115 +11,93 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.worker
 
-package com.google.devtools.build.lib.worker;
+import com.google.devtools.build.lib.actions.UserExecException
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.actions.UserExecException;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.sandbox.Cgroup;
-import com.google.devtools.build.lib.sandbox.SandboxHelpers.SandboxInputs;
-import com.google.devtools.build.lib.sandbox.SandboxHelpers.SandboxOutputs;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.worker.WorkerProtocol.WorkRequest;
-import com.google.devtools.build.lib.worker.WorkerProtocol.WorkResponse;
-import java.io.IOException;
-import java.util.Optional;
-import java.util.Set;
+/** A proxy that talks to the multiplexer  */
+internal open class WorkerProxy(
+    workerKey: WorkerKey?,
+    workerId: Int,
+    logFile: com.google.devtools.build.lib.vfs.Path?,
+    workerMultiplexer: WorkerMultiplexer,
+    workDir: com.google.devtools.build.lib.vfs.Path?
+) : com.google.devtools.build.lib.worker.Worker(workerKey, workerId, logFile, workerMultiplexer.getStatus()) {
+    @kotlin.jvm.JvmField
+    val workerMultiplexer: WorkerMultiplexer
 
-/** A proxy that talks to the multiplexer */
-class WorkerProxy extends Worker {
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
-  protected final WorkerMultiplexer workerMultiplexer;
+    /** The execution root of the worker. This is the CWD of the worker process.  */
+    @kotlin.jvm.JvmField
+    val workDir: com.google.devtools.build.lib.vfs.Path?
 
-  /** The execution root of the worker. This is the CWD of the worker process. */
-  protected final Path workDir;
-
-  WorkerProxy(
-      WorkerKey workerKey,
-      int workerId,
-      Path logFile,
-      WorkerMultiplexer workerMultiplexer,
-      Path workDir) {
-    // Worker proxies of the same multiplexer share a WorkerProcessStatus.
-    super(workerKey, workerId, logFile, workerMultiplexer.getStatus());
-    this.workDir = workDir;
-    this.workerMultiplexer = workerMultiplexer;
-  }
-
-  @Override
-  public Cgroup getCgroup() {
-    // WorkerProxy does not have a cgroup at the momemnt. Consider adding it to the
-    // multiplexer and returning it here?
-    return null;
-  }
-
-  @Override
-  public boolean isSandboxed() {
-    return false;
-  }
-
-  @Override
-  void setReporter(EventHandler reporter) {
-    // We might have created this multiplexer after setting the reporter for existing multiplexers
-    workerMultiplexer.setReporter(reporter);
-  }
-
-  @Override
-  public void prepareExecution(
-      SandboxInputs inputFiles,
-      SandboxOutputs outputs,
-      Set<PathFragment> workerFiles,
-      ImmutableMap<String, String> clientEnv)
-      throws IOException, InterruptedException {
-    workerMultiplexer.createProcess(workDir, clientEnv);
-  }
-
-  @Override
-  synchronized void destroy() {
-    try {
-      WorkerMultiplexerManager.removeInstance(workerKey);
-    } catch (UserExecException e) {
-      logger.atWarning().withCause(e).log("Exception");
+    init {
+        // Worker proxies of the same multiplexer share a WorkerProcessStatus.
+        this.workDir = workDir
+        this.workerMultiplexer = workerMultiplexer
     }
-  }
 
-  /** Send the WorkRequest to multiplexer. */
-  @Override
-  protected void putRequest(WorkRequest request) throws IOException {
-    workerMultiplexer.putRequest(request);
-  }
+    val cgroup: Cgroup?
+        get() =// WorkerProxy does not have a cgroup at the momemnt. Consider adding it to the
+            // multiplexer and returning it here?
+            null
 
-  /** Wait for WorkResponse from multiplexer. */
-  @Override
-  WorkResponse getResponse(int requestId) throws InterruptedException, IOException {
-    return workerMultiplexer.getResponse(requestId);
-  }
+    val isSandboxed: Boolean
+        get() = false
 
-  @Override
-  boolean diedUnexpectedly() {
-    return workerMultiplexer.diedUnexpectedly();
-  }
+    override fun setReporter(reporter: EventHandler?) {
+        // We might have created this multiplexer after setting the reporter for existing multiplexers
+        workerMultiplexer.setReporter(reporter)
+    }
 
-  @Override
-  public Optional<Integer> getExitValue() {
-    return workerMultiplexer.getExitValue();
-  }
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    override fun prepareExecution(
+        inputFiles: SandboxInputs?,
+        outputs: SandboxOutputs?,
+        workerFiles: MutableSet<PathFragment?>?,
+        clientEnv: com.google.common.collect.ImmutableMap<String?, String?>?
+    ) {
+        workerMultiplexer.createProcess(workDir, clientEnv)
+    }
 
-  @Override
-  String getRecordingStreamMessage() {
-    return workerMultiplexer.getRecordingStreamMessage();
-  }
+    @kotlin.jvm.Synchronized
+    override fun destroy() {
+        try {
+            WorkerMultiplexerManager.removeInstance(workerKey)
+        } catch (e: UserExecException) {
+            logger.atWarning().withCause(e).log("Exception")
+        }
+    }
 
-  @Override
-  public String toString() {
-    return workerKey.getMnemonic() + " proxy worker #" + workerId;
-  }
+    /** Send the WorkRequest to multiplexer.  */
+    @Throws(IOException::class)
+    public override fun putRequest(request: WorkRequest?) {
+        workerMultiplexer.putRequest(request)
+    }
 
-  @Override
-  public long getProcessId() {
-    return workerMultiplexer.getProcessId();
-  }
+    /** Wait for WorkResponse from multiplexer.  */
+    @Throws(java.lang.InterruptedException::class, IOException::class)
+    override fun getResponse(requestId: Int): WorkResponse? {
+        return workerMultiplexer.getResponse(requestId)
+    }
+
+    override fun diedUnexpectedly(): Boolean {
+        return workerMultiplexer.diedUnexpectedly()
+    }
+
+    val exitValue: java.util.Optional<Int?>?
+        get() = workerMultiplexer.getExitValue()
+
+    val recordingStreamMessage: String?
+        get() = workerMultiplexer.getRecordingStreamMessage()
+
+    override fun toString(): String {
+        return workerKey.getMnemonic() + " proxy worker #" + workerId
+    }
+
+    val processId: Long
+        get() = workerMultiplexer.getProcessId()
+
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+    }
 }

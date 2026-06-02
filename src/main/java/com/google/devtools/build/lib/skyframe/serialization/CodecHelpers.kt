@@ -11,40 +11,42 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
 /**
  * Helper methods for writing codecs.
- *
- * <p>Supports 16-bit types that not included in {@link CodedInputStream} and {@link
- * CodedOutputStream}.
+ * 
+ * 
+ * Supports 16-bit types that not included in [CodedInputStream] and [ ].
  */
-public final class CodecHelpers {
-  public static void writeShort(CodedOutputStream codedOut, short value) throws IOException {
-    codedOut.writeRawByte((byte) (value >> 8));
-    codedOut.writeRawByte((byte) value);
-  }
+object CodecHelpers {
+    @Throws(IOException::class)
+    fun writeShort(codedOut: CodedOutputStream, value: Short) {
+        codedOut.writeRawByte((value.toInt() shr 8).toByte())
+        codedOut.writeRawByte(value.toByte())
+    }
 
-  public static short readShort(CodedInputStream codedIn) throws IOException {
-    int buffer = codedIn.readRawByte() << 8;
-    buffer |= (codedIn.readRawByte() & 0xFF);
-    return (short) buffer;
-  }
+    @Throws(IOException::class)
+    fun readShort(codedIn: CodedInputStream): Short {
+        var buffer: Int = codedIn.readRawByte().toInt() shl 8
+        buffer = buffer or (codedIn.readRawByte().toInt() and 0xFF)
+        return buffer.toShort()
+    }
 
-  public static void writeChar(CodedOutputStream codedOut, char value) throws IOException {
-    codedOut.writeRawByte((byte) (value >> 8));
-    codedOut.writeRawByte((byte) value);
-  }
+    @Throws(IOException::class)
+    fun writeChar(codedOut: CodedOutputStream, value: Char) {
+        codedOut.writeRawByte((value.code shr 8).toByte())
+        codedOut.writeRawByte(value.code.toByte())
+    }
 
-  public static char readChar(CodedInputStream codedIn) throws IOException {
-    int buffer = codedIn.readRawByte() << 8;
-    buffer |= (codedIn.readRawByte() & 0xFF);
-    return (char) buffer;
-  }
-
-  private CodecHelpers() {} // Just a static method namespace. No instances.
+    @Throws(IOException::class)
+    fun readChar(codedIn: CodedInputStream): Char {
+        var buffer: Int = codedIn.readRawByte().toInt() shl 8
+        buffer = buffer or (codedIn.readRawByte().toInt() and 0xFF)
+        return buffer.toChar()
+    }
 }

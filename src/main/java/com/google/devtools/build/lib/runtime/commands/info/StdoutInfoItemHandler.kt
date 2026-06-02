@@ -11,35 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime.commands.info;
+package com.google.devtools.build.lib.runtime.commands.info
 
-import com.google.devtools.build.lib.runtime.InfoItem;
-import com.google.devtools.build.lib.unsafe.StringUnsafe;
-import com.google.devtools.build.lib.util.io.OutErr;
-import java.io.IOException;
+/** Prints [InfoItem]s to the console.  */
+class StdoutInfoItemHandler(outErr: OutErr, printKeys: Boolean) : InfoItemHandler {
+    private val outErr: OutErr
+    private val printKeys: Boolean
 
-/** Prints {@link InfoItem}s to the console. */
-public class StdoutInfoItemHandler implements InfoItemHandler {
-  private final OutErr outErr;
-  private final boolean printKeys;
-
-  public StdoutInfoItemHandler(OutErr outErr, boolean printKeys) {
-    this.outErr = outErr;
-    this.printKeys = printKeys;
-  }
-
-  @Override
-  public void addInfoItem(String key, byte[] value) throws IOException {
-    if (printKeys) {
-      outErr.getOutputStream().write(StringUnsafe.getInternalStringBytes(key));
-      outErr.getOutputStream().write(':');
-      outErr.getOutputStream().write(' ');
+    init {
+        this.outErr = outErr
+        this.printKeys = printKeys
     }
-    outErr.getOutputStream().write(value);
-  }
 
-  @Override
-  public void close() throws IOException {
-    outErr.getOutputStream().flush();
-  }
+    @Throws(IOException::class)
+    override fun addInfoItem(key: String?, value: ByteArray?) {
+        if (printKeys) {
+            outErr.getOutputStream().write(StringUnsafe.getInternalStringBytes(key))
+            outErr.getOutputStream().write(':'.code)
+            outErr.getOutputStream().write(' '.code)
+        }
+        outErr.getOutputStream().write(value)
+    }
+
+    @Throws(IOException::class)
+    override fun close() {
+        outErr.getOutputStream().flush()
+    }
 }

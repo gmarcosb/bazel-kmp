@@ -11,19 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.devtools.build.lib.skyframe.serialization.WriteStatuses.WriteStatus;
+import com.google.devtools.build.lib.skyframe.serialization.Fingerprinter
+import com.google.devtools.build.lib.skyframe.serialization.KeyBytesProvider
+import com.google.devtools.build.lib.skyframe.serialization.WriteStatuses.WriteStatus
 
-/** An interface for fingerprinting/key generation and writing key-value data. */
-public interface KeyValueWriter extends Fingerprinter {
-
-  /**
-   * Stores the given serialized bytes under the key provided.
-   *
-   * @param key A provider for the key bytes.
-   * @param serializedBytes The data to store.
-   * @return A WriteStatus indicating the result of the put operation.
-   */
-  WriteStatus put(KeyBytesProvider key, byte[] serializedBytes);
+/** An interface for fingerprinting/key generation and writing key-value data.  */
+interface KeyValueWriter : Fingerprinter {
+    /**
+     * Stores the given serialized bytes under the key provided.
+     * 
+     * @param key A provider for the key bytes.
+     * @param serializedBytes The data to store.
+     * @return A WriteStatus indicating the result of the put operation.
+     */
+    fun put(key: KeyBytesProvider?, serializedBytes: ByteArray?): WriteStatus?
 }

@@ -11,50 +11,45 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.NoSuchElementException;
+import com.google.devtools.build.lib.vfs.PathFragment
+import java.util.Collections
 
 /**
  * Lazily iterates over the segments of a path string.
- *
- * <p>Expects the path string to already be normalized.
+ * 
+ * 
+ * Expects the path string to already be normalized.
  */
-final class PathSegmentIterator implements Iterator<String> {
-
-  static Iterator<String> create(String normalizedPath, int driveStrLength) {
-    return normalizedPath.length() > driveStrLength
-        ? new PathSegmentIterator(normalizedPath, driveStrLength)
-        : Collections.emptyIterator();
-  }
-
-  private final String normalizedPath;
-  private int start;
-
-  private PathSegmentIterator(String normalizedPath, int driveStrLength) {
-    this.normalizedPath = normalizedPath;
-    this.start = driveStrLength;
-  }
-
-  @Override
-  public boolean hasNext() {
-    return start < normalizedPath.length();
-  }
-
-  @Override
-  public String next() {
-    if (!hasNext()) {
-      throw new NoSuchElementException("No more segments: " + normalizedPath);
+internal class PathSegmentIterator private constructor(private val normalizedPath: String, private var start: Int) :
+    MutableIterator<String?> {
+    override fun hasNext(): Boolean {
+        return start < normalizedPath.length()
     }
-    int end = start + 1;
-    while (end < normalizedPath.length()
-        && normalizedPath.charAt(end) != PathFragment.SEPARATOR_CHAR) {
-      end++;
+
+    override fun next(): String {
+        if (!hasNext()) {
+            throw java.util.NoSuchElementException("No more segments: " + normalizedPath)
+        }
+        var end = start + 1
+        while (end < normalizedPath.length()
+            && normalizedPath.charAt(end) != PathFragment.Companion.SEPARATOR_CHAR
+        ) {
+            end++
+        }
+        val segment: String = normalizedPath.substring(start, end)
+        start = end + 1
+        return segment
     }
-    String segment = normalizedPath.substring(start, end);
-    start = end + 1;
-    return segment;
-  }
+
+    companion object {
+        @kotlin.jvm.JvmStatic
+        fun create(normalizedPath: String, driveStrLength: Int): MutableIterator<String?>? {
+            return if (normalizedPath.length() > driveStrLength)
+                PathSegmentIterator(normalizedPath, driveStrLength)
+            else
+                Collections.emptyIterator<String?>()
+        }
+    }
 }

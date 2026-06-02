@@ -11,35 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.cpp;
+package com.google.devtools.build.lib.rules.cpp
 
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.StarlarkInfo;
-import net.starlark.java.eval.EvalException;
+import com.google.devtools.build.lib.actions.Artifact
 
-/** Structure for C++ module maps. Stores the name of the module and a .cppmap artifact. */
-@Immutable
-public final class CppModuleMap {
-  private final StarlarkInfo moduleMap;
+/** Structure for C++ module maps. Stores the name of the module and a .cppmap artifact.  */
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+class CppModuleMap(moduleMap: StarlarkInfo) {
+    private val moduleMap: StarlarkInfo
 
-  public CppModuleMap(StarlarkInfo moduleMap) {
-    this.moduleMap = moduleMap;
-  }
-
-  public Artifact getArtifact() {
-    try {
-      return moduleMap.getValue("file", Artifact.class);
-    } catch (EvalException e) {
-      throw new IllegalStateException(e);
+    init {
+        this.moduleMap = moduleMap
     }
-  }
 
-  public String getName() {
-    try {
-      return moduleMap.getValue("name", String.class);
-    } catch (EvalException e) {
-      throw new IllegalStateException(e);
-    }
-  }
+    val artifact: Artifact
+        get() {
+            try {
+                return moduleMap.getValue("file", Artifact::class.java)
+            } catch (e: net.starlark.java.eval.EvalException) {
+                throw java.lang.IllegalStateException(e)
+            }
+        }
+
+    val name: String
+        get() {
+            try {
+                return moduleMap.getValue("name", String::class.java)
+            } catch (e: net.starlark.java.eval.EvalException) {
+                throw java.lang.IllegalStateException(e)
+            }
+        }
 }

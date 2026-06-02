@@ -1252,7 +1252,7 @@ public class RemoteSpawnCacheTest {
 
   private void testParamFilesAreMaterializedForFlag(String flag) throws Exception {
     RemoteOptions remoteOptions = Options.getDefaults(RemoteOptions.class);
-    ExecutionOptions executionOptions = Options.parse(ExecutionOptions.class, flag).getOptions();
+    ExecutionOptions executionOptions = Options.parse(ExecutionOptions.class, flag).options;
     var cache = remoteSpawnCacheWithOptions(remoteOptions, executionOptions);
 
     ImmutableList<String> args = ImmutableList.of("--foo", "--bar");

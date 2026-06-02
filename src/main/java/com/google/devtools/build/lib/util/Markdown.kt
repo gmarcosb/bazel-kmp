@@ -11,19 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.util
 
-package com.google.devtools.build.lib.util;
+import org.commonmark.renderer.html.HtmlRenderer
 
-import org.commonmark.parser.Parser;
-import org.commonmark.renderer.html.HtmlRenderer;
+/** Helpers for markdown.  */
+object Markdown {
+    private val PARSER: org.commonmark.parser.Parser = org.commonmark.parser.Parser.builder().build()
+    private val HTML_RENDERER: HtmlRenderer = HtmlRenderer.builder().escapeHtml(true).build()
 
-/** Helpers for markdown. */
-public class Markdown {
-  private static final Parser PARSER = Parser.builder().build();
-  private static final HtmlRenderer HTML_RENDERER = HtmlRenderer.builder().escapeHtml(true).build();
-
-  /** Parses a string as markdown and renders it as HTML. */
-  public static String renderToHtml(String md) {
-    return HTML_RENDERER.render(PARSER.parse(md)).trim();
-  }
+    /** Parses a string as markdown and renders it as HTML.  */
+    fun renderToHtml(md: String?): String {
+        return HTML_RENDERER.render(PARSER.parse(md)).trim { it <= ' ' }
+    }
 }

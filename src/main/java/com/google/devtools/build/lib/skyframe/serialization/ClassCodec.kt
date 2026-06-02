@@ -11,67 +11,72 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext
+import com.google.devtools.build.lib.skyframe.serialization.strings.UnsafeStringCodec
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
-import static com.google.devtools.build.lib.skyframe.serialization.strings.UnsafeStringCodec.stringCodec;
+/** Codec for [Class].  */
+internal class ClassCodec : LeafObjectCodec<java.lang.Class<*>?>() {
+    val encodedClass: java.lang.Class<java.lang.Class<*>?>
+        get() = java.lang.Class::class.java as Any as java.lang.Class<java.lang.Class<*>?>
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableBiMap;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-
-/** Codec for {@link Class}. */
-class ClassCodec extends LeafObjectCodec<Class<?>> {
-  private static final ClassCodec INSTANCE = new ClassCodec();
-
-  static ClassCodec classCodec() {
-    return INSTANCE;
-  }
-
-  @SuppressWarnings("unchecked")
-  @Override
-  public Class<Class<?>> getEncodedClass() {
-    return (Class<Class<?>>) (Object) Class.class;
-  }
-
-  @Override
-  public void serialize(LeafSerializationContext context, Class<?> obj, CodedOutputStream codedOut)
-      throws SerializationException, IOException {
-    codedOut.writeBoolNoTag(obj.isPrimitive());
-    if (obj.isPrimitive()) {
-      codedOut.writeInt32NoTag(Preconditions.checkNotNull(PRIMITIVE_CLASS_INDEX_MAP.get(obj), obj));
-    } else {
-      context.serializeLeaf(obj.getName(), stringCodec(), codedOut);
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun serialize(context: LeafSerializationContext, obj: java.lang.Class<*>, codedOut: CodedOutputStream) {
+        codedOut.writeBoolNoTag(obj.isPrimitive())
+        if (obj.isPrimitive()) {
+            codedOut.writeInt32NoTag(
+                com.google.common.base.Preconditions.checkNotNull<Int?>(
+                    PRIMITIVE_CLASS_INDEX_MAP.get(
+                        obj
+                    ), obj
+                )
+            )
+        } else {
+            context.serializeLeaf<String?>(obj.getName(), UnsafeStringCodec.Companion.stringCodec(), codedOut)
+        }
     }
-  }
 
-  @Override
-  public Class<?> deserialize(LeafDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    boolean isPrimitive = codedIn.readBool();
-    if (isPrimitive) {
-      return PRIMITIVE_CLASS_INDEX_MAP.inverse().get(codedIn.readInt32());
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun deserialize(context: LeafDeserializationContext, codedIn: CodedInputStream): java.lang.Class<*>? {
+        val isPrimitive: Boolean = codedIn.readBool()
+        if (isPrimitive) {
+            return PRIMITIVE_CLASS_INDEX_MAP.inverse().get(codedIn.readInt32())
+        }
+        val className: String? = context.deserializeLeaf<String?>(codedIn, UnsafeStringCodec.Companion.stringCodec())
+        try {
+            return java.lang.Class.forName(className)
+        } catch (e: java.lang.ClassNotFoundException) {
+            throw com.google.devtools.build.lib.skyframe.serialization.SerializationException(
+                "Couldn't find class for " + className,
+                e
+            )
+        }
     }
-    String className = context.deserializeLeaf(codedIn, stringCodec());
-    try {
-      return Class.forName(className);
-    } catch (ClassNotFoundException e) {
-      throw new SerializationException("Couldn't find class for " + className, e);
-    }
-  }
 
-  private static final ImmutableBiMap<Class<?>, Integer> PRIMITIVE_CLASS_INDEX_MAP =
-      ImmutableBiMap.<Class<?>, Integer>builder()
-          .put(byte.class, 1)
-          .put(short.class, 2)
-          .put(int.class, 3)
-          .put(long.class, 4)
-          .put(char.class, 5)
-          .put(float.class, 6)
-          .put(double.class, 7)
-          .put(boolean.class, 8)
-          .put(void.class, 9)
-          .buildOrThrow();
+    companion object {
+        private val INSTANCE = ClassCodec()
+
+        fun classCodec(): ClassCodec {
+            return INSTANCE
+        }
+
+        private val PRIMITIVE_CLASS_INDEX_MAP: com.google.common.collect.ImmutableBiMap<java.lang.Class<*>?, Int?> =
+            com.google.common.collect.ImmutableBiMap.builder<java.lang.Class<*>?, Int?>()
+                .put(Byte::class.javaPrimitiveType, 1)
+                .put(Short::class.javaPrimitiveType, 2)
+                .put(Int::class.javaPrimitiveType, 3)
+                .put(Long::class.javaPrimitiveType, 4)
+                .put(Char::class.javaPrimitiveType, 5)
+                .put(Float::class.javaPrimitiveType, 6)
+                .put(Double::class.javaPrimitiveType, 7)
+                .put(Boolean::class.javaPrimitiveType, 8)
+                .put(Void.TYPE, 9)
+                .buildOrThrow()
+    }
 }

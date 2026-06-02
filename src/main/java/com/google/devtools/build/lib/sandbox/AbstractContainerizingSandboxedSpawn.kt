@@ -11,191 +11,168 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.sandbox
 
-package com.google.devtools.build.lib.sandbox;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.exec.TreeDeleter;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.sandbox.SandboxHelpers.SandboxInputs;
-import com.google.devtools.build.lib.sandbox.SandboxHelpers.SandboxOutputs;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.IOException;
-import java.util.LinkedHashSet;
-import java.util.Set;
-import java.util.stream.Collectors;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.exec.TreeDeleter
 
 /**
  * Implements the general flow of a sandboxed spawn that uses a container directory to build an
  * execution root for a spawn.
  */
-public abstract class AbstractContainerizingSandboxedSpawn implements SandboxedSpawn {
+abstract class AbstractContainerizingSandboxedSpawn(
+    sandboxPath: com.google.devtools.build.lib.vfs.Path?,
+    sandboxExecRoot: com.google.devtools.build.lib.vfs.Path,
+    arguments: com.google.common.collect.ImmutableList<String?>?,
+    environment: com.google.common.collect.ImmutableMap<String?, String?>?,
+    inputs: SandboxInputs,
+    outputs: SandboxOutputs,
+    writableDirs: MutableSet<com.google.devtools.build.lib.vfs.Path?>,
+    treeDeleter: TreeDeleter,
+    sandboxDebugPath: com.google.devtools.build.lib.vfs.Path?,
+    statisticsPath: com.google.devtools.build.lib.vfs.Path?,
+    mnemonic: String?
+) : SandboxedSpawn {
+    val sandboxPath: com.google.devtools.build.lib.vfs.Path?
+    val sandboxExecRoot: com.google.devtools.build.lib.vfs.Path
+    private val arguments: com.google.common.collect.ImmutableList<String?>?
+    private val environment: com.google.common.collect.ImmutableMap<String?, String?>?
+    val inputs: SandboxInputs
+    val outputs: SandboxOutputs
+    private val writableDirs: MutableSet<com.google.devtools.build.lib.vfs.Path?>
+    protected val treeDeleter: TreeDeleter
+    private val sandboxDebugPath: com.google.devtools.build.lib.vfs.Path?
+    private val statisticsPath: com.google.devtools.build.lib.vfs.Path?
+    val mnemonic: String?
 
-  final Path sandboxPath;
-  final Path sandboxExecRoot;
-  private final ImmutableList<String> arguments;
-  private final ImmutableMap<String, String> environment;
-  final SandboxInputs inputs;
-  final SandboxOutputs outputs;
-  private final Set<Path> writableDirs;
-  protected final TreeDeleter treeDeleter;
-  @Nullable private final Path sandboxDebugPath;
-  @Nullable private final Path statisticsPath;
-  private final String mnemonic;
-
-  public AbstractContainerizingSandboxedSpawn(
-      Path sandboxPath,
-      Path sandboxExecRoot,
-      ImmutableList<String> arguments,
-      ImmutableMap<String, String> environment,
-      SandboxInputs inputs,
-      SandboxOutputs outputs,
-      Set<Path> writableDirs,
-      TreeDeleter treeDeleter,
-      @Nullable Path sandboxDebugPath,
-      @Nullable Path statisticsPath,
-      String mnemonic) {
-    this.sandboxPath = sandboxPath;
-    this.sandboxExecRoot = sandboxExecRoot;
-    this.arguments = arguments;
-    this.environment = environment;
-    this.inputs = inputs;
-    this.outputs = outputs;
-    this.writableDirs = writableDirs;
-    this.treeDeleter = treeDeleter;
-    this.sandboxDebugPath = sandboxDebugPath;
-    this.statisticsPath = statisticsPath;
-    this.mnemonic = mnemonic;
-  }
-
-  @Override
-  public Path getSandboxExecRoot() {
-    return sandboxExecRoot;
-  }
-
-  @Override
-  public ImmutableList<String> getArguments() {
-    return arguments;
-  }
-
-  @Override
-  public ImmutableMap<String, String> getEnvironment() {
-    return environment;
-  }
-
-  @Override
-  @Nullable
-  public Path getSandboxDebugPath() {
-    return sandboxDebugPath;
-  }
-
-  @Override
-  @Nullable
-  public Path getStatisticsPath() {
-    return statisticsPath;
-  }
-
-  @Override
-  public String getMnemonic() {
-    return mnemonic;
-  }
-
-  @Override
-  public void createFileSystem() throws IOException, InterruptedException {
-    // First compute all the inputs and directories that we need. This is based only on
-    // `workerFiles`, `inputs` and `outputs` and won't do any I/O.
-    Set<PathFragment> inputsToCreate = new LinkedHashSet<>();
-    Set<PathFragment> dirsToCreate = new LinkedHashSet<>();
-    Set<PathFragment> writableSandboxDirs =
-        writableDirs.stream()
-            .filter(p -> p.startsWith(sandboxExecRoot))
-            .map(p -> p.relativeTo(sandboxExecRoot))
-            .collect(Collectors.toSet());
-    try (SilentCloseable c = Profiler.instance().profile("sandbox.populateInputsAndDirsToCreate")) {
-      SandboxHelpers.populateInputsAndDirsToCreate(
-          writableSandboxDirs,
-          inputsToCreate,
-          dirsToCreate,
-          Iterables.concat(
-              ImmutableSet.of(), inputs.getFiles().keySet(), inputs.getSymlinks().keySet()),
-          outputs);
+    init {
+        this.sandboxPath = sandboxPath
+        this.sandboxExecRoot = sandboxExecRoot
+        this.arguments = arguments
+        this.environment = environment
+        this.inputs = inputs
+        this.outputs = outputs
+        this.writableDirs = writableDirs
+        this.treeDeleter = treeDeleter
+        this.sandboxDebugPath = sandboxDebugPath
+        this.statisticsPath = statisticsPath
+        this.mnemonic = mnemonic
     }
 
-    try (SilentCloseable c = Profiler.instance().profile("sandbox.filterInputsAndDirsToCreate")) {
-      // Allow subclasses to filter out inputs and dirs that don't need to be created.
-      filterInputsAndDirsToCreate(inputsToCreate, dirsToCreate);
+    override fun getSandboxExecRoot(): com.google.devtools.build.lib.vfs.Path {
+        return sandboxExecRoot
     }
 
-    // Finally create what needs creating.
-    try (SilentCloseable c = Profiler.instance().profile("sandbox.createDirectories")) {
-      SandboxHelpers.createDirectories(dirsToCreate, sandboxExecRoot, /* strict= */ true);
+    override fun getArguments(): com.google.common.collect.ImmutableList<String?>? {
+        return arguments
     }
-    try (SilentCloseable c = Profiler.instance().profile("sandbox.createInputs")) {
-      createInputs(inputsToCreate, inputs);
+
+    override fun getEnvironment(): com.google.common.collect.ImmutableMap<String?, String?>? {
+        return environment
     }
-    SandboxStash.setLastModified(sandboxPath, System.currentTimeMillis());
-  }
 
-  protected void filterInputsAndDirsToCreate(
-      Set<PathFragment> inputsToCreate, Set<PathFragment> dirsToCreate)
-      throws IOException, InterruptedException {}
+    override fun getSandboxDebugPath(): com.google.devtools.build.lib.vfs.Path? {
+        return sandboxDebugPath
+    }
 
-  /**
-   * Creates all inputs needed for this spawn's sandbox.
-   *
-   * @param inputsToCreate The inputs that actually need to be created. Some inputs may already
-   *     exist if we're reusing a previously existing sandbox.
-   * @param inputs All the inputs for this spawn.
-   */
-  void createInputs(Iterable<PathFragment> inputsToCreate, SandboxInputs inputs)
-      throws IOException, InterruptedException {
-    for (PathFragment fragment : inputsToCreate) {
-      if (Thread.interrupted()) {
-        throw new InterruptedException("Interrupted creating inputs");
-      }
-      Path key = sandboxExecRoot.getRelative(fragment);
-      if (inputs.getFiles().containsKey(fragment)) {
-        Path fileDest = inputs.getFiles().get(fragment);
-        if (fileDest != null) {
-          copyFile(fileDest, key);
-        } else {
-          FileSystemUtils.createEmptyFile(key);
+    override fun getStatisticsPath(): com.google.devtools.build.lib.vfs.Path? {
+        return statisticsPath
+    }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    override fun createFileSystem() {
+        // First compute all the inputs and directories that we need. This is based only on
+        // `workerFiles`, `inputs` and `outputs` and won't do any I/O.
+        val inputsToCreate: MutableSet<PathFragment?> = LinkedHashSet<PathFragment?>()
+        val dirsToCreate: MutableSet<PathFragment?> = LinkedHashSet<PathFragment?>()
+        val writableSandboxDirs: MutableSet<PathFragment?> =
+            writableDirs.stream()
+                .filter { p: com.google.devtools.build.lib.vfs.Path? -> p.startsWith(sandboxExecRoot) }
+                .map<PathFragment?> { p: com.google.devtools.build.lib.vfs.Path? -> p.relativeTo(sandboxExecRoot) }
+                .collect(Collectors.toSet())
+        Profiler.instance().profile("sandbox.populateInputsAndDirsToCreate").use { c ->
+            SandboxHelpers.populateInputsAndDirsToCreate(
+                writableSandboxDirs,
+                inputsToCreate,
+                dirsToCreate,
+                com.google.common.collect.Iterables.concat<PathFragment?>(
+                    com.google.common.collect.ImmutableSet.of<PathFragment?>(),
+                    inputs.getFiles().keys,
+                    inputs.getSymlinks().keys
+                ),
+                outputs
+            )
         }
-      } else if (inputs.getSymlinks().containsKey(fragment)) {
-        PathFragment symlinkDest = inputs.getSymlinks().get(fragment);
-        if (symlinkDest != null) {
-          key.createSymbolicLink(symlinkDest);
+        Profiler.instance().profile("sandbox.filterInputsAndDirsToCreate").use { c ->
+            // Allow subclasses to filter out inputs and dirs that don't need to be created.
+            filterInputsAndDirsToCreate(inputsToCreate, dirsToCreate)
         }
-      }
+        Profiler.instance().profile("sandbox.createDirectories").use { c ->
+            SandboxHelpers.createDirectories(dirsToCreate, sandboxExecRoot,  /* strict= */true)
+        }
+        Profiler.instance().profile("sandbox.createInputs").use { c ->
+            createInputs(inputsToCreate, inputs)
+        }
+        SandboxStash.Companion.setLastModified(sandboxPath, java.lang.System.currentTimeMillis())
     }
-  }
 
-  protected abstract void copyFile(Path source, Path target) throws IOException;
-
-  @Override
-  public void copyOutputs(Path execRoot) throws IOException, InterruptedException {
-    SandboxHelpers.moveOutputs(outputs, sandboxExecRoot, execRoot);
-  }
-
-  @Override
-  public void delete() {
-    try {
-      treeDeleter.deleteTree(sandboxPath);
-    } catch (IOException e) {
-      // This usually means that the Spawn itself exited, but still has children running that
-      // we couldn't wait for, which now block deletion of the sandbox directory. On Linux this
-      // should never happen, as we use PID namespaces and where they are not available the
-      // subreaper feature to make sure all children have been reliably killed before returning,
-      // but on other OS this might not always work. The SandboxModule will try to delete them
-      // again when the build is all done, at which point it hopefully works, so let's just go
-      // on here.
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    protected open fun filterInputsAndDirsToCreate(
+        inputsToCreate: MutableSet<PathFragment?>?, dirsToCreate: MutableSet<PathFragment?>?
+    ) {
     }
-  }
+
+    /**
+     * Creates all inputs needed for this spawn's sandbox.
+     * 
+     * @param inputsToCreate The inputs that actually need to be created. Some inputs may already
+     * exist if we're reusing a previously existing sandbox.
+     * @param inputs All the inputs for this spawn.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun createInputs(inputsToCreate: Iterable<PathFragment?>, inputs: SandboxInputs) {
+        for (fragment in inputsToCreate) {
+            if (java.lang.Thread.interrupted()) {
+                throw java.lang.InterruptedException("Interrupted creating inputs")
+            }
+            val key: com.google.devtools.build.lib.vfs.Path = sandboxExecRoot.getRelative(fragment)
+            if (inputs.getFiles().containsKey(fragment)) {
+                val fileDest: com.google.devtools.build.lib.vfs.Path? = inputs.getFiles().get(fragment)
+                if (fileDest != null) {
+                    copyFile(fileDest, key)
+                } else {
+                    com.google.devtools.build.lib.vfs.FileSystemUtils.createEmptyFile(key)
+                }
+            } else if (inputs.getSymlinks().containsKey(fragment)) {
+                val symlinkDest: PathFragment? = inputs.getSymlinks().get(fragment)
+                if (symlinkDest != null) {
+                    key.createSymbolicLink(symlinkDest)
+                }
+            }
+        }
+    }
+
+    @Throws(IOException::class)
+    protected abstract fun copyFile(
+        source: com.google.devtools.build.lib.vfs.Path?,
+        target: com.google.devtools.build.lib.vfs.Path?
+    )
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    override fun copyOutputs(execRoot: com.google.devtools.build.lib.vfs.Path?) {
+        SandboxHelpers.moveOutputs(outputs, sandboxExecRoot, execRoot)
+    }
+
+    override fun delete() {
+        try {
+            treeDeleter.deleteTree(sandboxPath)
+        } catch (e: IOException) {
+            // This usually means that the Spawn itself exited, but still has children running that
+            // we couldn't wait for, which now block deletion of the sandbox directory. On Linux this
+            // should never happen, as we use PID namespaces and where they are not available the
+            // subreaper feature to make sure all children have been reliably killed before returning,
+            // but on other OS this might not always work. The SandboxModule will try to delete them
+            // again when the build is all done, at which point it hopefully works, so let's just go
+            // on here.
+        }
+    }
 }

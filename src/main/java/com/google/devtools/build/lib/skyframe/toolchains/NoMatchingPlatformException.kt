@@ -11,18 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.toolchains;
+package com.google.devtools.build.lib.skyframe.toolchains
 
-import com.google.devtools.build.lib.server.FailureDetails;
+import com.google.devtools.build.lib.server.FailureDetails
 
-/** Indicates a missing execution platform. */
-public final class NoMatchingPlatformException extends ToolchainException {
-  public NoMatchingPlatformException(NoMatchingPlatformData error) {
-    super(error.formatError());
-  }
-
-  @Override
-  protected FailureDetails.Toolchain.Code getDetailedCode() {
-    return FailureDetails.Toolchain.Code.NO_MATCHING_EXECUTION_PLATFORM;
-  }
+/** Indicates a missing execution platform.  */
+class NoMatchingPlatformException(error: NoMatchingPlatformData) : ToolchainException(error.formatError()) {
+    val detailedCode: FailureDetails.Toolchain.Code
+        get() = FailureDetails.Toolchain.Code.NO_MATCHING_EXECUTION_PLATFORM
 }

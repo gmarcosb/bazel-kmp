@@ -10,244 +10,229 @@
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.events.Reportable;
-import java.util.Objects;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.collect.nestedset.NestedSet
 
-/** Encapsulation of data stored by {@link NodeEntry} when the value has finished building. */
-public abstract class ValueWithMetadata implements SkyValue {
-  protected final SkyValue value;
+/** Encapsulation of data stored by [NodeEntry] when the value has finished building.  */
+abstract class ValueWithMetadata private constructor(value: SkyValue?) : SkyValue {
+    protected val value: SkyValue?
 
-  private static final NestedSet<Reportable> NO_EVENTS =
-      NestedSetBuilder.emptySet(Order.STABLE_ORDER);
-
-  private ValueWithMetadata(SkyValue value) {
-    this.value = value;
-  }
-
-  /** Builds a value entry that has an error (and no value). */
-  public static ValueWithMetadata error(
-      ErrorInfo errorInfo, NestedSet<Reportable> transitiveEvents) {
-    return (ValueWithMetadata) normal(null, errorInfo, transitiveEvents);
-  }
-
-  /**
-   * Builds a SkyValue that has a value, and possibly an error, and possibly events/postables. If it
-   * has only a value, returns just the value in order to save memory.
-   */
-  public static SkyValue normal(
-      @Nullable SkyValue value,
-      @Nullable ErrorInfo errorInfo,
-      NestedSet<Reportable> transitiveEvents) {
-    Preconditions.checkState(
-        value != null || errorInfo != null, "Value and error cannot both be null");
-    if (errorInfo == null) {
-      return transitiveEvents.isEmpty()
-          ? value
-          : ValueWithEvents.createValueWithEvents(value, transitiveEvents);
-    }
-    return new ErrorInfoValue(errorInfo, value, transitiveEvents);
-  }
-
-  public boolean hasError() {
-    return false;
-  }
-
-  @Nullable
-  SkyValue getValue() {
-    return value;
-  }
-
-  @Nullable
-  abstract ErrorInfo getErrorInfo();
-
-  public abstract NestedSet<Reportable> getTransitiveEvents();
-
-  /** Implementation of {@link ValueWithMetadata} for the value case. */
-  @VisibleForTesting
-  public static class ValueWithEvents extends ValueWithMetadata {
-    private final NestedSet<Reportable> transitiveEvents;
-
-    private ValueWithEvents(SkyValue value, NestedSet<Reportable> transitiveEvents) {
-      super(Preconditions.checkNotNull(value));
-      this.transitiveEvents = Preconditions.checkNotNull(transitiveEvents);
+    init {
+        this.value = value
     }
 
-    private static ValueWithEvents createValueWithEvents(
-        SkyValue value, NestedSet<Reportable> transitiveEvents) {
-      if (value instanceof NotComparableSkyValue) {
-        return new NotComparableValueWithEvents(value, transitiveEvents);
-      } else {
-        return new ValueWithEvents(value, transitiveEvents);
-      }
+    open fun hasError(): Boolean {
+        return false
     }
 
-    @Nullable
-    @Override
-    ErrorInfo getErrorInfo() {
-      return null;
+    fun getValue(): SkyValue? {
+        return value
     }
 
-    @Override
-    public NestedSet<Reportable> getTransitiveEvents() {
-      return transitiveEvents;
+    abstract fun getErrorInfo(): com.google.devtools.build.skyframe.ErrorInfo?
+
+    abstract fun getTransitiveEvents(): NestedSet<Reportable?>?
+
+    /** Implementation of [ValueWithMetadata] for the value case.  */
+    @com.google.common.annotations.VisibleForTesting
+    open class ValueWithEvents private constructor(value: SkyValue?, transitiveEvents: NestedSet<Reportable?>?) :
+        ValueWithMetadata(com.google.common.base.Preconditions.checkNotNull<SkyValue?>(value)) {
+        private val transitiveEvents: NestedSet<Reportable?>
+
+        init {
+            this.transitiveEvents =
+                com.google.common.base.Preconditions.checkNotNull<NestedSet<Reportable?>>(transitiveEvents)
+        }
+
+        override fun getErrorInfo(): com.google.devtools.build.skyframe.ErrorInfo? {
+            return null
+        }
+
+        override fun getTransitiveEvents(): NestedSet<Reportable?> {
+            return transitiveEvents
+        }
+
+        /**
+         * We override equals so that if the same value is written to a [NodeEntry] twice, it can
+         * verify that the two values are equal, and avoid incrementing its version.
+         */
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o !is ValueWithEvents) {
+                return false
+            }
+
+            // Shallow equals is a middle ground between using default equals, which might miss
+            // nested sets with the same elements, and deep equality checking, which would be expensive.
+            // All three choices are sound, since shallow equals and default equals are more
+            // conservative than deep equals. Using shallow equals means that we may unnecessarily
+            // consider some values unequal that are actually equal, but this is still a net win over
+            // deep equals.
+            return value == o.value && transitiveEvents.shallowEquals(o.transitiveEvents)
+        }
+
+        override fun hashCode(): Int {
+            return 31 * value.hashCode() + transitiveEvents.shallowHashCode()
+        }
+
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(this)
+                .add("value", value)
+                .add("transitiveEvents size", transitiveEvents.memoizedFlattenAndGetSize())
+                .toString()
+        }
+
+        companion object {
+            private fun createValueWithEvents(
+                value: SkyValue?, transitiveEvents: NestedSet<Reportable?>?
+            ): ValueWithEvents {
+                if (value is NotComparableSkyValue) {
+                    return NotComparableValueWithEvents(value, transitiveEvents)
+                } else {
+                    return ValueWithEvents(value, transitiveEvents)
+                }
+            }
+        }
     }
+
+    private class NotComparableValueWithEvents(value: SkyValue?, transitiveEvents: NestedSet<Reportable?>?) :
+        ValueWithEvents(value, transitiveEvents), NotComparableSkyValue
 
     /**
-     * We override equals so that if the same value is written to a {@link NodeEntry} twice, it can
-     * verify that the two values are equal, and avoid incrementing its version.
+     * Implementation of [ValueWithMetadata] for the error case.
+     * 
+     * 
+     * Mark NotComparableSkyValue because it's unlikely that re-evaluation gives the same error.
      */
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (!(o instanceof ValueWithEvents that)) {
-        return false;
-      }
+    private class ErrorInfoValue(
+        errorInfo: com.google.devtools.build.skyframe.ErrorInfo?,
+        value: SkyValue?,
+        transitiveEvents: NestedSet<Reportable?>?
+    ) : ValueWithMetadata(value), NotComparableSkyValue {
+        private val errorInfo: com.google.devtools.build.skyframe.ErrorInfo?
+        private val transitiveEvents: NestedSet<Reportable?>
 
-      // Shallow equals is a middle ground between using default equals, which might miss
-      // nested sets with the same elements, and deep equality checking, which would be expensive.
-      // All three choices are sound, since shallow equals and default equals are more
-      // conservative than deep equals. Using shallow equals means that we may unnecessarily
-      // consider some values unequal that are actually equal, but this is still a net win over
-      // deep equals.
-      return value.equals(that.value) && transitiveEvents.shallowEquals(that.transitiveEvents);
-    }
-
-    @Override
-    public int hashCode() {
-      return 31 * value.hashCode() + transitiveEvents.shallowHashCode();
-    }
-
-    @Override
-    public String toString() {
-      return MoreObjects.toStringHelper(this)
-          .add("value", value)
-          .add("transitiveEvents size", transitiveEvents.memoizedFlattenAndGetSize())
-          .toString();
-    }
-  }
-
-  private static final class NotComparableValueWithEvents extends ValueWithEvents
-      implements NotComparableSkyValue {
-    private NotComparableValueWithEvents(SkyValue value, NestedSet<Reportable> transitiveEvents) {
-      super(value, transitiveEvents);
-    }
-  }
-
-  /**
-   * Implementation of {@link ValueWithMetadata} for the error case.
-   *
-   * <p>Mark NotComparableSkyValue because it's unlikely that re-evaluation gives the same error.
-   */
-  private static final class ErrorInfoValue extends ValueWithMetadata
-      implements NotComparableSkyValue {
-
-    private final ErrorInfo errorInfo;
-    private final NestedSet<Reportable> transitiveEvents;
-
-    ErrorInfoValue(
-        ErrorInfo errorInfo, @Nullable SkyValue value, NestedSet<Reportable> transitiveEvents) {
-      super(value);
-      this.errorInfo = Preconditions.checkNotNull(errorInfo);
-      this.transitiveEvents = Preconditions.checkNotNull(transitiveEvents);
-    }
-
-    @Override
-    public boolean hasError() {
-      return true;
-    }
-
-    @Nullable
-    @Override
-    ErrorInfo getErrorInfo() {
-      return errorInfo;
-    }
-
-    @Override
-    public NestedSet<Reportable> getTransitiveEvents() {
-      return transitiveEvents;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (o == null || getClass() != o.getClass()) {
-        return false;
-      }
-
-      ErrorInfoValue that = (ErrorInfoValue) o;
-
-      // Shallow equals is a middle ground between using default equals, which might miss
-      // nested sets with the same elements, and deep equality checking, which would be expensive.
-      // All three choices are sound, since shallow equals and default equals are more
-      // conservative than deep equals. Using shallow equals means that we may unnecessarily
-      // consider some values unequal that are actually equal, but this is still a net win over
-      // deep equals.
-      return Objects.equals(this.value, that.value)
-          && Objects.equals(this.errorInfo, that.errorInfo)
-          && transitiveEvents.shallowEquals(that.transitiveEvents);
-    }
-
-    @Override
-    public int hashCode() {
-      return 31 * Objects.hash(value, errorInfo) + transitiveEvents.shallowHashCode();
-    }
-
-    @Override
-    public String toString() {
-      StringBuilder result = new StringBuilder();
-      if (value != null) {
-        result.append("Value: ").append(value);
-      }
-      if (errorInfo != null) {
-        if (result.length() > 0) {
-          result.append("; ");
+        init {
+            this.errorInfo =
+                com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.skyframe.ErrorInfo?>(
+                    errorInfo
+                )
+            this.transitiveEvents =
+                com.google.common.base.Preconditions.checkNotNull<NestedSet<Reportable?>>(transitiveEvents)
         }
-        result.append("Error: ").append(errorInfo);
-      }
-      return result.toString();
-    }
-  }
 
-  @Nullable
-  public static SkyValue justValue(SkyValue value) {
-    if (value instanceof ValueWithMetadata valueWithMetadata) {
-      return valueWithMetadata.value;
-    }
-    return value;
-  }
+        override fun hasError(): Boolean {
+            return true
+        }
 
-  public static ValueWithMetadata wrapWithMetadata(SkyValue value) {
-    if (value instanceof ValueWithMetadata valueWithMetadata) {
-      return valueWithMetadata;
-    }
-    return ValueWithEvents.createValueWithEvents(value, NO_EVENTS);
-  }
+        override fun getErrorInfo(): com.google.devtools.build.skyframe.ErrorInfo? {
+            return errorInfo
+        }
 
-  @Nullable
-  public static ErrorInfo getMaybeErrorInfo(SkyValue value) {
-    if (value instanceof ErrorInfoValue) {
-      return ((ValueWithMetadata) value).getErrorInfo();
-    }
-    return null;
-  }
+        override fun getTransitiveEvents(): NestedSet<Reportable?> {
+            return transitiveEvents
+        }
 
-  public static NestedSet<Reportable> getEvents(SkyValue value) {
-    if (value instanceof ValueWithMetadata valueWithMetadata) {
-      return valueWithMetadata.getTransitiveEvents();
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false
+            }
+
+            val that = o as ErrorInfoValue
+
+            // Shallow equals is a middle ground between using default equals, which might miss
+            // nested sets with the same elements, and deep equality checking, which would be expensive.
+            // All three choices are sound, since shallow equals and default equals are more
+            // conservative than deep equals. Using shallow equals means that we may unnecessarily
+            // consider some values unequal that are actually equal, but this is still a net win over
+            // deep equals.
+            return this.value == that.value
+                    && this.errorInfo == that.errorInfo
+                    && transitiveEvents.shallowEquals(that.transitiveEvents)
+        }
+
+        override fun hashCode(): Int {
+            return 31 * java.util.Objects.hash(value, errorInfo) + transitiveEvents.shallowHashCode()
+        }
+
+        override fun toString(): String {
+            val result: java.lang.StringBuilder = java.lang.StringBuilder()
+            if (value != null) {
+                result.append("Value: ").append(value)
+            }
+            if (errorInfo != null) {
+                if (result.length() > 0) {
+                    result.append("; ")
+                }
+                result.append("Error: ").append(errorInfo)
+            }
+            return result.toString()
+        }
     }
-    return NO_EVENTS;
-  }
+
+    companion object {
+        private val NO_EVENTS: NestedSet<Reportable?>? = NestedSetBuilder.emptySet(Order.STABLE_ORDER)
+
+        /** Builds a value entry that has an error (and no value).  */
+        fun error(
+            errorInfo: com.google.devtools.build.skyframe.ErrorInfo?, transitiveEvents: NestedSet<Reportable?>
+        ): ValueWithMetadata? {
+            return normal(null, errorInfo, transitiveEvents) as ValueWithMetadata?
+        }
+
+        /**
+         * Builds a SkyValue that has a value, and possibly an error, and possibly events/postables. If it
+         * has only a value, returns just the value in order to save memory.
+         */
+        fun normal(
+            value: SkyValue?,
+            errorInfo: com.google.devtools.build.skyframe.ErrorInfo?,
+            transitiveEvents: NestedSet<Reportable?>
+        ): SkyValue {
+            com.google.common.base.Preconditions.checkState(
+                value != null || errorInfo != null, "Value and error cannot both be null"
+            )
+            if (errorInfo == null) {
+                return if (transitiveEvents.isEmpty())
+                    value
+                else
+                    ValueWithEvents.Companion.createValueWithEvents(value, transitiveEvents)
+            }
+            return ErrorInfoValue(errorInfo, value, transitiveEvents)
+        }
+
+        fun justValue(value: SkyValue?): SkyValue? {
+            if (value is ValueWithMetadata) {
+                return value.value
+            }
+            return value
+        }
+
+        fun wrapWithMetadata(value: SkyValue?): ValueWithMetadata {
+            if (value is ValueWithMetadata) {
+                return value
+            }
+            return ValueWithEvents.Companion.createValueWithEvents(value, NO_EVENTS)
+        }
+
+        fun getMaybeErrorInfo(value: SkyValue?): com.google.devtools.build.skyframe.ErrorInfo? {
+            if (value is ErrorInfoValue) {
+                return (value as ValueWithMetadata).getErrorInfo()
+            }
+            return null
+        }
+
+        fun getEvents(value: SkyValue?): NestedSet<Reportable?>? {
+            if (value is ValueWithMetadata) {
+                return value.getTransitiveEvents()
+            }
+            return NO_EVENTS
+        }
+    }
 }

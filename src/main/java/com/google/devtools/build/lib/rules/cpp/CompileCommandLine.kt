@@ -11,247 +11,249 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.cpp;
+package com.google.devtools.build.lib.rules.cpp
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.AbstractCommandLine;
-import com.google.devtools.build.lib.actions.CommandLine;
-import com.google.devtools.build.lib.actions.CommandLineExpansionException;
-import com.google.devtools.build.lib.actions.PathMapper;
-import com.google.devtools.build.lib.rules.cpp.CcCommon.CoptsFilter;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.FeatureConfiguration;
-import com.google.devtools.build.lib.util.Pair;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.ArrayList;
-import java.util.List;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.AbstractCommandLine
 
-/** The compile command line for the C++ compile action. */
-public final class CompileCommandLine {
-  private final CoptsFilter coptsFilter;
-  private final FeatureConfiguration featureConfiguration;
-  private final CcToolchainVariables variables;
-  private final String actionName;
+/** The compile command line for the C++ compile action.  */
+class CompileCommandLine private constructor(
+    coptsFilter: CoptsFilter,
+    featureConfiguration: FeatureConfiguration?,
+    variables: CcToolchainVariables?,
+    actionName: String?
+) {
+    private val coptsFilter: CoptsFilter
+    private val featureConfiguration: FeatureConfiguration
+    private val variables: CcToolchainVariables?
+    private val actionName: String?
 
-  private CompileCommandLine(
-      CoptsFilter coptsFilter,
-      FeatureConfiguration featureConfiguration,
-      CcToolchainVariables variables,
-      String actionName) {
-    this.coptsFilter = coptsFilter;
-    this.featureConfiguration = Preconditions.checkNotNull(featureConfiguration);
-    this.variables = variables;
-    this.actionName = actionName;
-  }
-
-  /** Returns the environment variables that should be set for C++ compile actions. */
-  ImmutableMap<String, String> getEnvironment(PathMapper pathMapper)
-      throws CommandLineExpansionException {
-    try {
-      return featureConfiguration.getEnvironmentVariables(actionName, variables, pathMapper);
-    } catch (ExpansionException e) {
-      throw new CommandLineExpansionException(e.getMessage());
+    init {
+        this.coptsFilter = coptsFilter
+        this.featureConfiguration =
+            com.google.common.base.Preconditions.checkNotNull<FeatureConfiguration>(featureConfiguration)
+        this.variables = variables
+        this.actionName = actionName
     }
-  }
 
-  /** Returns the tool path for the compilation based on the current feature configuration. */
-  @VisibleForTesting
-  public String getToolPath() {
-    Preconditions.checkArgument(
-        featureConfiguration.actionIsConfigured(actionName),
-        "Expected action_config for '%s' to be configured",
-        actionName);
-    return featureConfiguration.getToolPathForAction(actionName);
-  }
-
-  /**
-   * Returns the arguments for the compilation.
-   *
-   * @param overwrittenVariables: Variables that will overwrite original build variables. When null,
-   *     unmodified original variables are used.
-   * @param pathMapper: The path mapper to remap paths within the output directory.
-   */
-  List<String> getArguments(
-      @Nullable CcToolchainVariables overwrittenVariables, PathMapper pathMapper)
-      throws CommandLineExpansionException {
-    return getArgumentsWithCompilerOptions(
-        pathMapper, getCompilerOptions(overwrittenVariables, pathMapper));
-  }
-
-  /**
-   * Returns the arguments for the compilation when compilerOptions have already been generated.
-   *
-   * @param pathMapper: The path mapper to remap paths within the output directory.
-   * @param compilerOptions: The compiler options to use. Essentially all arguments except the tool
-   *     itself.
-   */
-  List<String> getArgumentsWithCompilerOptions(
-      PathMapper pathMapper, @Nullable List<String> compilerOptions) {
-    List<String> commandLine = new ArrayList<>();
-    // first: The command name.
-    commandLine.add(getToolPathForCommandLine(pathMapper));
-    // second: The compiler options.
-    commandLine.addAll(compilerOptions);
-    return commandLine;
-  }
-
-  /**
-   * Returns the arguments for the compilation when using a parameter file.
-   *
-   * @param pathMapper: The path mapper to remap paths within the output directory.
-   * @param parameterFilePath: The path to the parameter file. When null, the arguments will be
-   *     returned without using a parameter file.
-   */
-  List<String> getArgumentsWithParameterFile(
-      PathMapper pathMapper, PathFragment parameterFilePath) {
-    List<String> commandLine = new ArrayList<>();
-    // first: The command name.
-    commandLine.add(getToolPathForCommandLine(pathMapper));
-    // second: The parameter file path.
-    commandLine.add("@" + parameterFilePath.getSafePathString());
-    return commandLine;
-  }
-
-  private String getToolPathForCommandLine(PathMapper pathMapper) {
-    if (pathMapper.isNoop()) {
-      return getToolPath();
-    } else {
-      // getToolPath() ultimately returns a PathFragment's getSafePathString(), so its safe to
-      // reparse it here with no risk of e.g. altering a user-specified absolute path.
-      return pathMapper.map(PathFragment.create(getToolPath())).getSafePathString();
-    }
-  }
-
-  /**
-   * Returns {@link CommandLine} instance that contains the exactly same command line as the {@link
-   * CppCompileAction}.
-   *
-   * @param cppCompileAction - {@link CppCompileAction} owning this {@link CompileCommandLine}.
-   */
-  public CommandLine getFilteredFeatureConfigurationCommandLine(CppCompileAction cppCompileAction) {
-    return new AbstractCommandLine() {
-
-      @Override
-      public Iterable<String> arguments() throws CommandLineExpansionException {
-        CcToolchainVariables overwrittenVariables = cppCompileAction.getOverwrittenVariables();
-        List<String> compilerOptions = getCompilerOptions(overwrittenVariables, PathMapper.NOOP);
-        return ImmutableList.<String>builder().add(getToolPath()).addAll(compilerOptions).build();
-      }
-    };
-  }
-
-  public List<String> getCompilerOptions(
-      @Nullable CcToolchainVariables overwrittenVariables, PathMapper pathMapper)
-      throws CommandLineExpansionException {
-    try {
-      List<String> options = new ArrayList<>();
-
-      CcToolchainVariables updatedVariables = variables;
-      if (variables != null && overwrittenVariables != null) {
-        CcToolchainVariables.Builder variablesBuilder = CcToolchainVariables.builder(variables);
-        variablesBuilder.addAllNonTransitive(overwrittenVariables);
-        updatedVariables = variablesBuilder.build();
-      }
-      addFilteredOptions(
-          options,
-          featureConfiguration.getPerFeatureExpansions(actionName, updatedVariables, pathMapper));
-
-      return options;
-    } catch (ExpansionException e) {
-      throw new CommandLineExpansionException(e.getMessage());
-    }
-  }
-
-  // For each option in 'in', add it to 'out' unless it is matched by the 'coptsFilter' regexp.
-  private void addFilteredOptions(
-      List<String> out, List<Pair<String, List<String>>> expandedFeatures) {
-    for (Pair<String, List<String>> pair : expandedFeatures) {
-      if (pair.getFirst().equals(CppRuleClasses.UNFILTERED_COMPILE_FLAGS_FEATURE_NAME)) {
-        out.addAll(pair.getSecond());
-        continue;
-      }
-      // We do not uses Java's stream API here as it causes a substantial overhead compared to the
-      // very little work that this is actually doing.
-      for (String flag : pair.getSecond()) {
-        if (coptsFilter.passesFilter(flag)) {
-          out.add(flag);
+    /** Returns the environment variables that should be set for C++ compile actions.  */
+    @Throws(CommandLineExpansionException::class)
+    fun getEnvironment(pathMapper: PathMapper?): com.google.common.collect.ImmutableMap<String?, String?>? {
+        try {
+            return featureConfiguration.getEnvironmentVariables(actionName, variables, pathMapper)
+        } catch (e: com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException) {
+            throw CommandLineExpansionException(e.getMessage())
         }
-      }
-    }
-  }
-
-  public CcToolchainVariables getVariables() {
-    return variables;
-  }
-
-  /**
-   * Returns all user provided copts flags.
-   *
-   * <p>TODO(b/64108724): Get rid of this method when we don't need to parse copts to collect
-   * include directories anymore (meaning there is a way of specifying include directories using an
-   * explicit attribute, not using platform-dependent garbage bag that copts is).
-   */
-  public ImmutableList<String> getCopts(PathMapper pathMapper) {
-    if (variables.isAvailable(CompileBuildVariables.USER_COMPILE_FLAGS.getVariableName())) {
-      try {
-        return CcToolchainVariables.toStringList(
-            variables, CompileBuildVariables.USER_COMPILE_FLAGS.getVariableName(), pathMapper);
-      } catch (ExpansionException e) {
-        throw new IllegalStateException(
-            "Should not happen - 'user_compile_flags' should be a string list, but wasn't.", e);
-      }
-    } else {
-      return ImmutableList.of();
-    }
-  }
-
-  public static Builder builder(CoptsFilter coptsFilter, String actionName) {
-    return new Builder(coptsFilter, actionName);
-  }
-
-  /** A builder for a {@link CompileCommandLine}. */
-  public static final class Builder {
-    private CoptsFilter coptsFilter;
-    private FeatureConfiguration featureConfiguration;
-    private CcToolchainVariables variables = CcToolchainVariables.empty();
-    private final String actionName;
-
-    public CompileCommandLine build() {
-      return new CompileCommandLine(
-          Preconditions.checkNotNull(coptsFilter),
-          Preconditions.checkNotNull(featureConfiguration),
-          Preconditions.checkNotNull(variables),
-          Preconditions.checkNotNull(actionName));
     }
 
-    private Builder(CoptsFilter coptsFilter, String actionName) {
-      this.coptsFilter = coptsFilter;
-      this.actionName = actionName;
+    @get:com.google.common.annotations.VisibleForTesting
+    val toolPath: String?
+        /** Returns the tool path for the compilation based on the current feature configuration.  */
+        get() {
+            com.google.common.base.Preconditions.checkArgument(
+                featureConfiguration.actionIsConfigured(actionName),
+                "Expected action_config for '%s' to be configured",
+                actionName
+            )
+            return featureConfiguration.getToolPathForAction(actionName)
+        }
+
+    /**
+     * Returns the arguments for the compilation.
+     * 
+     * @param overwrittenVariables: Variables that will overwrite original build variables. When null,
+     * unmodified original variables are used.
+     * @param pathMapper: The path mapper to remap paths within the output directory.
+     */
+    @Throws(CommandLineExpansionException::class)
+    fun getArguments(
+        overwrittenVariables: CcToolchainVariables?, pathMapper: PathMapper
+    ): MutableList<String?> {
+        return getArgumentsWithCompilerOptions(
+            pathMapper, getCompilerOptions(overwrittenVariables, pathMapper)
+        )
     }
 
-    /** Sets the feature configuration for this compile action. */
-    @CanIgnoreReturnValue
-    public Builder setFeatureConfiguration(FeatureConfiguration featureConfiguration) {
-      this.featureConfiguration = featureConfiguration;
-      return this;
+    /**
+     * Returns the arguments for the compilation when compilerOptions have already been generated.
+     * 
+     * @param pathMapper: The path mapper to remap paths within the output directory.
+     * @param compilerOptions: The compiler options to use. Essentially all arguments except the tool
+     * itself.
+     */
+    fun getArgumentsWithCompilerOptions(
+        pathMapper: PathMapper, compilerOptions: MutableList<String?>?
+    ): MutableList<String?> {
+        val commandLine: MutableList<String?> = java.util.ArrayList<String?>()
+        // first: The command name.
+        commandLine.add(getToolPathForCommandLine(pathMapper))
+        // second: The compiler options.
+        commandLine.addAll(compilerOptions!!)
+        return commandLine
     }
 
-    @CanIgnoreReturnValue
-    public Builder setVariables(CcToolchainVariables variables) {
-      this.variables = variables;
-      return this;
+    /**
+     * Returns the arguments for the compilation when using a parameter file.
+     * 
+     * @param pathMapper: The path mapper to remap paths within the output directory.
+     * @param parameterFilePath: The path to the parameter file. When null, the arguments will be
+     * returned without using a parameter file.
+     */
+    fun getArgumentsWithParameterFile(
+        pathMapper: PathMapper, parameterFilePath: PathFragment
+    ): MutableList<String?> {
+        val commandLine: MutableList<String?> = java.util.ArrayList<String?>()
+        // first: The command name.
+        commandLine.add(getToolPathForCommandLine(pathMapper))
+        // second: The parameter file path.
+        commandLine.add("@" + parameterFilePath.getSafePathString())
+        return commandLine
     }
 
-    @CanIgnoreReturnValue
-    @VisibleForTesting
-    Builder setCoptsFilter(CoptsFilter filter) {
-      this.coptsFilter = Preconditions.checkNotNull(filter);
-      return this;
+    private fun getToolPathForCommandLine(pathMapper: PathMapper): String? {
+        if (pathMapper.isNoop()) {
+            return this.toolPath
+        } else {
+            // getToolPath() ultimately returns a PathFragment's getSafePathString(), so its safe to
+            // reparse it here with no risk of e.g. altering a user-specified absolute path.
+            return pathMapper.map(PathFragment.create(this.toolPath)).getSafePathString()
+        }
     }
-  }
+
+    /**
+     * Returns [CommandLine] instance that contains the exactly same command line as the [ ].
+     * 
+     * @param cppCompileAction - [CppCompileAction] owning this [CompileCommandLine].
+     */
+    fun getFilteredFeatureConfigurationCommandLine(cppCompileAction: CppCompileAction): CommandLine {
+        return object : AbstractCommandLine() {
+            @Throws(CommandLineExpansionException::class)
+            public override fun arguments(): Iterable<String?> {
+                val overwrittenVariables: CcToolchainVariables? = cppCompileAction.getOverwrittenVariables()
+                val compilerOptions = getCompilerOptions(overwrittenVariables, PathMapper.NOOP)
+                return com.google.common.collect.ImmutableList.builder<String?>().add(this.toolPath)
+                    .addAll(compilerOptions).build()
+            }
+        }
+    }
+
+    @Throws(CommandLineExpansionException::class)
+    fun getCompilerOptions(
+        overwrittenVariables: CcToolchainVariables?, pathMapper: PathMapper?
+    ): MutableList<String?> {
+        try {
+            val options: MutableList<String?> = java.util.ArrayList<String?>()
+
+            var updatedVariables: CcToolchainVariables? = variables
+            if (variables != null && overwrittenVariables != null) {
+                val variablesBuilder: com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.Builder =
+                    CcToolchainVariables.Companion.builder(variables)
+                variablesBuilder.addAllNonTransitive(overwrittenVariables)
+                updatedVariables = variablesBuilder.build()
+            }
+            addFilteredOptions(
+                options,
+                featureConfiguration.getPerFeatureExpansions(actionName, updatedVariables, pathMapper)
+            )
+
+            return options
+        } catch (e: com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException) {
+            throw CommandLineExpansionException(e.getMessage())
+        }
+    }
+
+    // For each option in 'in', add it to 'out' unless it is matched by the 'coptsFilter' regexp.
+    private fun addFilteredOptions(
+        out: MutableList<String?>,
+        expandedFeatures: MutableList<com.google.devtools.build.lib.util.Pair<String?, MutableList<String?>?>>
+    ) {
+        for (pair in expandedFeatures) {
+            if (pair.getFirst() == CppRuleClasses.UNFILTERED_COMPILE_FLAGS_FEATURE_NAME) {
+                out.addAll(pair.getSecond())
+                continue
+            }
+            // We do not uses Java's stream API here as it causes a substantial overhead compared to the
+            // very little work that this is actually doing.
+            for (flag in pair.getSecond()) {
+                if (coptsFilter.passesFilter(flag)) {
+                    out.add(flag)
+                }
+            }
+        }
+    }
+
+    fun getVariables(): CcToolchainVariables? {
+        return variables
+    }
+
+    /**
+     * Returns all user provided copts flags.
+     * 
+     * 
+     * TODO(b/64108724): Get rid of this method when we don't need to parse copts to collect
+     * include directories anymore (meaning there is a way of specifying include directories using an
+     * explicit attribute, not using platform-dependent garbage bag that copts is).
+     */
+    fun getCopts(pathMapper: PathMapper?): com.google.common.collect.ImmutableList<String?> {
+        if (variables.isAvailable(CompileBuildVariables.USER_COMPILE_FLAGS.getVariableName())) {
+            try {
+                return CcToolchainVariables.Companion.toStringList(
+                    variables, CompileBuildVariables.USER_COMPILE_FLAGS.getVariableName(), pathMapper
+                )
+            } catch (e: com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException) {
+                throw java.lang.IllegalStateException(
+                    "Should not happen - 'user_compile_flags' should be a string list, but wasn't.", e
+                )
+            }
+        } else {
+            return com.google.common.collect.ImmutableList.of<String?>()
+        }
+    }
+
+    /** A builder for a [CompileCommandLine].  */
+    class Builder private constructor(coptsFilter: CoptsFilter?, actionName: String?) {
+        private var coptsFilter: CoptsFilter?
+        private var featureConfiguration: FeatureConfiguration? = null
+        private var variables: CcToolchainVariables? = CcToolchainVariables.Companion.empty()
+        private val actionName: String?
+
+        fun build(): CompileCommandLine {
+            return CompileCommandLine(
+                com.google.common.base.Preconditions.checkNotNull<CoptsFilter?>(coptsFilter),
+                com.google.common.base.Preconditions.checkNotNull<FeatureConfiguration?>(featureConfiguration),
+                com.google.common.base.Preconditions.checkNotNull<CcToolchainVariables?>(variables),
+                com.google.common.base.Preconditions.checkNotNull<String?>(actionName)
+            )
+        }
+
+        init {
+            this.coptsFilter = coptsFilter
+            this.actionName = actionName
+        }
+
+        /** Sets the feature configuration for this compile action.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setFeatureConfiguration(featureConfiguration: FeatureConfiguration?): Builder {
+            this.featureConfiguration = featureConfiguration
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setVariables(variables: CcToolchainVariables?): Builder {
+            this.variables = variables
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        @com.google.common.annotations.VisibleForTesting
+        fun setCoptsFilter(filter: CoptsFilter?): Builder {
+            this.coptsFilter = com.google.common.base.Preconditions.checkNotNull<CoptsFilter?>(filter)
+            return this
+        }
+    }
+
+    companion object {
+        fun builder(coptsFilter: CoptsFilter?, actionName: String?): Builder {
+            return com.google.devtools.build.lib.rules.cpp.CompileCommandLine.Builder(coptsFilter, actionName)
+        }
+    }
 }

@@ -11,64 +11,54 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.test;
+package com.google.devtools.build.lib.rules.test
 
-import com.google.common.collect.ImmutableMultimap;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.ExecException;
-import com.google.devtools.build.lib.analysis.test.TestActionContext;
-import com.google.devtools.build.lib.analysis.test.TestResult;
-import com.google.devtools.build.lib.analysis.test.TestRunnerAction;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.view.test.TestStatus.TestResultData;
-import java.io.IOException;
+import com.google.devtools.build.lib.actions.ActionExecutionContext
 
 /**
  * Test strategy wrapper called 'exclusive'. It should delegate to a test strategy for local
  * execution.
- *
- * <p>This strategy should be registered with a command line identifier of 'exclusive' which will
+ * 
+ * 
+ * This strategy should be registered with a command line identifier of 'exclusive' which will
  * trigger behavior in SkyframeExecutor to schedule test execution sequentially after non-test
  * actions. This ensures streamed test output is not polluted by other action output.
- *
- * <p>Note: It's expected that this strategy is largely identical to the one it wraps. Most of the
- * behavior specific to the 'exclusive' strategy is enabled based on the value of the <code>
- * --test_strategy</code> flag, not instance methods of this class.
+ * 
+ * 
+ * Note: It's expected that this strategy is largely identical to the one it wraps. Most of the
+ * behavior specific to the 'exclusive' strategy is enabled based on the value of the `
+ * --test_strategy` flag, not instance methods of this class.
  */
-public class ExclusiveTestStrategy implements TestActionContext {
-  private final TestActionContext parent;
+class ExclusiveTestStrategy(parent: TestActionContext) : TestActionContext {
+    private val parent: TestActionContext
 
-  public ExclusiveTestStrategy(TestActionContext parent) {
-    this.parent = parent;
-  }
+    init {
+        this.parent = parent
+    }
 
-  @Override
-  public TestRunnerSpawn createTestRunnerSpawn(
-      TestRunnerAction testRunnerAction, ActionExecutionContext actionExecutionContext)
-      throws ExecException, InterruptedException {
-    return parent.createTestRunnerSpawn(testRunnerAction, actionExecutionContext);
-  }
+    @Throws(ExecException::class, java.lang.InterruptedException::class)
+    public override fun createTestRunnerSpawn(
+        testRunnerAction: TestRunnerAction?, actionExecutionContext: ActionExecutionContext?
+    ): TestRunnerSpawn {
+        return parent.createTestRunnerSpawn(testRunnerAction, actionExecutionContext)
+    }
 
-  @Override
-  public boolean isTestKeepGoing() {
-    return parent.isTestKeepGoing();
-  }
+    val isTestKeepGoing: Boolean
+        get() = parent.isTestKeepGoing()
 
-  @Override
-  public TestResult newCachedTestResult(
-      Path execRoot,
-      TestRunnerAction action,
-      TestResultData cachedResult,
-      ImmutableMultimap<String, Path> testOutputs)
-      throws IOException {
-    return parent.newCachedTestResult(execRoot, action, cachedResult, testOutputs);
-  }
+    @Throws(IOException::class)
+    public override fun newCachedTestResult(
+        execRoot: com.google.devtools.build.lib.vfs.Path?,
+        action: TestRunnerAction?,
+        cachedResult: TestResultData?,
+        testOutputs: com.google.common.collect.ImmutableMultimap<String?, com.google.devtools.build.lib.vfs.Path?>?
+    ): TestResult {
+        return parent.newCachedTestResult(execRoot, action, cachedResult, testOutputs)
+    }
 
-  @Override
-  public AttemptGroup getAttemptGroup(ActionOwner owner, int shard) {
-    // TODO(ulfjack): Exclusive tests run sequentially, and this feature exists to allow faster
-    //  aborts of concurrent actions. It's not clear what, if anything, we should do here.
-    return AttemptGroup.NOOP;
-  }
+    public override fun getAttemptGroup(owner: ActionOwner?, shard: Int): AttemptGroup {
+        // TODO(ulfjack): Exclusive tests run sequentially, and this feature exists to allow faster
+        //  aborts of concurrent actions. It's not clear what, if anything, we should do here.
+        return AttemptGroup.NOOP
+    }
 }

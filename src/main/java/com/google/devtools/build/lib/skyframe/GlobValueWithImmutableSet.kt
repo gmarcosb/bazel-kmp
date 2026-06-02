@@ -11,51 +11,49 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.vfs.PathFragment;
+import com.google.devtools.build.lib.skyframe.GlobValue
+import com.google.devtools.build.lib.vfs.PathFragment
 
 /**
- * A value corresponding to a glob which uses {@link ImmutableSet} as the container to store
- * matching {@link PathFragment}s.
+ * A value corresponding to a glob which uses [ImmutableSet] as the container to store
+ * matching [PathFragment]s.
  */
-@Immutable
-@ThreadSafe
-public final class GlobValueWithImmutableSet extends GlobValue {
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+@com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+class GlobValueWithImmutableSet(matches: com.google.common.collect.ImmutableSet<PathFragment?>?) : GlobValue() {
+    private val matches: com.google.common.collect.ImmutableSet<PathFragment?>
 
-  public static final GlobValueWithImmutableSet EMPTY =
-      new GlobValueWithImmutableSet(ImmutableSet.of());
-
-  private final ImmutableSet<PathFragment> matches;
-
-  /** Creates a {@link GlobValueWithImmutableSet} wrapping {@code matches}. */
-  public GlobValueWithImmutableSet(ImmutableSet<PathFragment> matches) {
-    this.matches = Preconditions.checkNotNull(matches);
-  }
-
-  /** Returns an unordered {@link ImmutableSet} containing all glob matches. */
-  @Override
-  public ImmutableSet<PathFragment> getMatches() {
-    return matches;
-  }
-
-  @Override
-  public boolean equals(Object other) {
-    if (other == this) {
-      return true;
+    /** Creates a [GlobValueWithImmutableSet] wrapping `matches`.  */
+    init {
+        this.matches =
+            com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableSet<PathFragment?>>(
+                matches
+            )
     }
-    if (!(other instanceof GlobValueWithImmutableSet)) {
-      return false;
-    }
-    return matches.equals(((GlobValueWithImmutableSet) other).matches);
-  }
 
-  @Override
-  public int hashCode() {
-    return matches.hashCode();
-  }
+    /** Returns an unordered [ImmutableSet] containing all glob matches.  */
+    override fun getMatches(): com.google.common.collect.ImmutableSet<PathFragment?> {
+        return matches
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (other === this) {
+            return true
+        }
+        if (other !is GlobValueWithImmutableSet) {
+            return false
+        }
+        return matches == other.matches
+    }
+
+    override fun hashCode(): Int {
+        return matches.hashCode()
+    }
+
+    companion object {
+        val EMPTY: GlobValueWithImmutableSet =
+            GlobValueWithImmutableSet(com.google.common.collect.ImmutableSet.of<PathFragment?>())
+    }
 }

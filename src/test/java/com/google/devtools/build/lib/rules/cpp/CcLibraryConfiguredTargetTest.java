@@ -364,7 +364,7 @@ public class CcLibraryConfiguredTargetTest extends BuildViewTestCase {
             mockToolsConfig,
             CcToolchainConfig.builder()
                 .withArtifactNamePatterns(MockCcSupport.STATIC_LINK_TWEAKED_ARTIFACT_NAME_PATTERN));
-    useConfiguration("--features=" + Link.LinkTargetType.STATIC_LIBRARY.getActionName());
+    useConfiguration("--features=" + Link.LinkTargetType.STATIC_LIBRARY.actionName);
     ConfiguredTarget hello = getConfiguredTarget("//hello:hello");
     Artifact archive =
         FileType.filter(getFilesToBuild(hello).toList(), FileType.of(".lib")).iterator().next();
@@ -483,7 +483,7 @@ public class CcLibraryConfiguredTargetTest extends BuildViewTestCase {
             CcToolchainConfig.builder()
                 .withArtifactNamePatterns(
                     MockCcSupport.STATIC_LINK_AS_DOT_A_ARTIFACT_NAME_PATTERN));
-    useConfiguration("--features=" + Link.LinkTargetType.STATIC_LIBRARY.getActionName());
+    useConfiguration("--features=" + Link.LinkTargetType.STATIC_LIBRARY.actionName);
     ConfiguredTarget hello = getConfiguredTarget("//hello:hello");
     Artifact archive =
         FileType.filter(getFilesToBuild(hello).toList(), CppFileTypes.ARCHIVE).iterator().next();

@@ -11,167 +11,164 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.skyframe
 
-package com.google.devtools.build.skyframe;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.supplier.InterruptibleSupplier;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.events.Event
 
 /**
- * A {@link SkyFunction.Environment} implementation designed to be used in a different thread (the
+ * A [SkyFunction.Environment] implementation designed to be used in a different thread (the
  * "worker thread") than the corresponding SkyFunction runs in. It relies on a delegate Environment
- * object to do underlying work. Its {@link #getValue} and {@link #getValueOrThrow} methods do not
- * return {@code null} when the {@link SkyValue} in question is not available. Instead, it blocks
+ * object to do underlying work. Its [.getValue] and [.getValueOrThrow] methods do not
+ * return `null` when the [SkyValue] in question is not available. Instead, it blocks
  * and waits for the host Skyframe thread to restart, and replaces the delegate Environment with a
- * fresh one from the restarted SkyFunction before continuing. (Note that those methods <em>do</em>
- * return {@code null} if the SkyValue was evaluated but found to be in error.)
- *
- * <p>Crucially, the delegate Environment object must not be used by multiple threads at the same
+ * fresh one from the restarted SkyFunction before continuing. (Note that those methods *do*
+ * return `null` if the SkyValue was evaluated but found to be in error.)
+ * 
+ * 
+ * Crucially, the delegate Environment object must not be used by multiple threads at the same
  * time. In effect, this is guaranteed by only one of the worker thread and host thread being active
  * at any given time.
  */
-class WorkerSkyFunctionEnvironment
-    implements SkyFunction.Environment, ExtendedEventHandler, SkyframeLookupResult {
-  private SkyFunction.Environment delegate;
-  private final InterruptibleSupplier<SkyFunction.Environment> newDelegateSupplier;
+internal class WorkerSkyFunctionEnvironment
+    (
+    initialDelegate: com.google.devtools.build.skyframe.SkyFunction.Environment?,
+    newDelegateSupplier: InterruptibleSupplier<com.google.devtools.build.skyframe.SkyFunction.Environment?>
+) : com.google.devtools.build.skyframe.SkyFunction.Environment, ExtendedEventHandler, SkyframeLookupResult {
+    private var delegate: com.google.devtools.build.skyframe.SkyFunction.Environment?
+    private val newDelegateSupplier: InterruptibleSupplier<com.google.devtools.build.skyframe.SkyFunction.Environment?>
 
-  WorkerSkyFunctionEnvironment(
-      SkyFunction.Environment initialDelegate,
-      InterruptibleSupplier<SkyFunction.Environment> newDelegateSupplier) {
-    this.delegate = initialDelegate;
-    this.newDelegateSupplier = newDelegateSupplier;
-  }
-
-  @Override
-  public boolean valuesMissing() {
-    return delegate.valuesMissing();
-  }
-
-  @Override
-  public SkyframeLookupResult getValuesAndExceptions(Iterable<? extends SkyKey> depKeys)
-      throws InterruptedException {
-    delegate.getValuesAndExceptions(depKeys);
-    if (!delegate.valuesMissing()) {
-      // Do NOT just return the return value of `delegate.getValuesAndExceptions` here! That would
-      // cause anyone holding onto the returned result object to potentially use a stale version
-      // of it after a skyfunction restart.
-      return this;
+    init {
+        this.delegate = initialDelegate
+        this.newDelegateSupplier = newDelegateSupplier
     }
-    // We null out `delegate` before blocking for the fresh env so that the old one becomes
-    // eligible for GC.
-    delegate = null;
-    delegate = newDelegateSupplier.get();
-    delegate.getValuesAndExceptions(depKeys);
-    return this;
-  }
 
-  @Nullable
-  @Override
-  public <E1 extends Exception, E2 extends Exception, E3 extends Exception> SkyValue getOrThrow(
-      SkyKey skyKey, Class<E1> e1, Class<E2> e2, Class<E3> e3) throws E1, E2, E3 {
-    return delegate.getLookupHandleForPreviouslyRequestedDeps().getOrThrow(skyKey, e1, e2, e3);
-  }
-
-  @Override
-  public boolean queryDep(SkyKey key, QueryDepCallback resultCallback) {
-    return delegate.getLookupHandleForPreviouslyRequestedDeps().queryDep(key, resultCallback);
-  }
-
-  @Nullable
-  @Override
-  public SkyValue getValue(SkyKey depKey) throws InterruptedException {
-    return getValuesAndExceptions(ImmutableList.of(depKey)).get(depKey);
-  }
-
-  @Nullable
-  @Override
-  public <E1 extends Exception> SkyValue getValueOrThrow(SkyKey depKey, Class<E1> e1)
-      throws E1, InterruptedException {
-    return getValuesAndExceptions(ImmutableList.of(depKey)).getOrThrow(depKey, e1);
-  }
-
-  @Nullable
-  @Override
-  public <E1 extends Exception, E2 extends Exception> SkyValue getValueOrThrow(
-      SkyKey depKey, Class<E1> e1, Class<E2> e2) throws E1, E2, InterruptedException {
-    return getValuesAndExceptions(ImmutableList.of(depKey)).getOrThrow(depKey, e1, e2);
-  }
-
-  @Nullable
-  @Override
-  public <E1 extends Exception, E2 extends Exception, E3 extends Exception>
-      SkyValue getValueOrThrow(SkyKey depKey, Class<E1> e1, Class<E2> e2, Class<E3> e3)
-          throws E1, E2, E3, InterruptedException {
-    return getValuesAndExceptions(ImmutableList.of(depKey)).getOrThrow(depKey, e1, e2, e3);
-  }
-
-  @Nullable
-  @Override
-  public <E1 extends Exception, E2 extends Exception, E3 extends Exception, E4 extends Exception>
-      SkyValue getValueOrThrow(
-          SkyKey depKey, Class<E1> e1, Class<E2> e2, Class<E3> e3, Class<E4> e4)
-          throws E1, E2, E3, E4, InterruptedException {
-    SkyValue value = delegate.getValueOrThrow(depKey, e1, e2, e3, e4);
-    if (value != null) {
-      return value;
+    override fun valuesMissing(): Boolean {
+        return delegate.valuesMissing()
     }
-    // We null out `delegate` before blocking for the fresh env so that the old one becomes
-    // eligible for GC.
-    delegate = null;
-    delegate = newDelegateSupplier.get();
-    return delegate.getValueOrThrow(depKey, e1, e2, e3, e4);
-  }
 
-  @Override
-  public ExtendedEventHandler getListener() {
-    // Do NOT just return `delegate.getListener()` here! That would cause anyone holding onto the
-    // returned listener to potentially post events to a stale listener.
-    return this;
-  }
+    @Throws(java.lang.InterruptedException::class)
+    override fun getValuesAndExceptions(depKeys: Iterable<out SkyKey?>?): SkyframeLookupResult {
+        delegate.getValuesAndExceptions(depKeys)
+        if (!delegate.valuesMissing()) {
+            // Do NOT just return the return value of `delegate.getValuesAndExceptions` here! That would
+            // cause anyone holding onto the returned result object to potentially use a stale version
+            // of it after a skyfunction restart.
+            return this
+        }
+        // We null out `delegate` before blocking for the fresh env so that the old one becomes
+        // eligible for GC.
+        delegate = null
+        delegate = newDelegateSupplier.get()
+        delegate.getValuesAndExceptions(depKeys)
+        return this
+    }
 
-  @Override
-  public void post(Postable obj) {
-    delegate.getListener().post(obj);
-  }
+    @Throws(E1::class, E2::class, E3::class)
+    override fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?, E3 : java.lang.Exception?> getOrThrow(
+        skyKey: SkyKey?, e1: java.lang.Class<E1?>?, e2: java.lang.Class<E2?>?, e3: java.lang.Class<E3?>?
+    ): SkyValue? {
+        return delegate.getLookupHandleForPreviouslyRequestedDeps().getOrThrow<E1?, E2?, E3?>(skyKey, e1, e2, e3)
+    }
 
-  @Override
-  public void handle(Event event) {
-    delegate.getListener().handle(event);
-  }
+    override fun queryDep(key: SkyKey?, resultCallback: QueryDepCallback?): Boolean {
+        return delegate.getLookupHandleForPreviouslyRequestedDeps().queryDep(key, resultCallback)
+    }
 
-  @Override
-  public void registerDependencies(Iterable<SkyKey> keys) {
-    delegate.registerDependencies(keys);
-  }
+    @Throws(java.lang.InterruptedException::class)
+    override fun getValue(depKey: SkyKey): SkyValue? {
+        return getValuesAndExceptions(com.google.common.collect.ImmutableList.of<SkyKey?>(depKey)).get(depKey)
+    }
 
-  @Override
-  public boolean inErrorBubbling() {
-    return delegate.inErrorBubbling();
-  }
+    @Throws(E1::class, java.lang.InterruptedException::class)
+    override fun <E1 : java.lang.Exception?> getValueOrThrow(depKey: SkyKey, e1: java.lang.Class<E1?>?): SkyValue? {
+        return getValuesAndExceptions(com.google.common.collect.ImmutableList.of<SkyKey?>(depKey)).getOrThrow<E1?>(
+            depKey,
+            e1
+        )
+    }
 
-  @Override
-  public void dependOnFuture(ListenableFuture<?> future) {
-    delegate.dependOnFuture(future);
-  }
+    @Throws(E1::class, E2::class, java.lang.InterruptedException::class)
+    override fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?> getValueOrThrow(
+        depKey: SkyKey, e1: java.lang.Class<E1?>?, e2: java.lang.Class<E2?>?
+    ): SkyValue? {
+        return getValuesAndExceptions(com.google.common.collect.ImmutableList.of<SkyKey?>(depKey)).getOrThrow<E1?, E2?>(
+            depKey,
+            e1,
+            e2
+        )
+    }
 
-  @Override
-  public SkyframeLookupResult getLookupHandleForPreviouslyRequestedDeps() {
-    return delegate.getLookupHandleForPreviouslyRequestedDeps();
-  }
+    @Throws(E1::class, E2::class, E3::class, java.lang.InterruptedException::class)
+    override fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?, E3 : java.lang.Exception?>
+            getValueOrThrow(
+        depKey: SkyKey,
+        e1: java.lang.Class<E1?>?,
+        e2: java.lang.Class<E2?>?,
+        e3: java.lang.Class<E3?>?
+    ): SkyValue? {
+        return getValuesAndExceptions(com.google.common.collect.ImmutableList.of<SkyKey?>(depKey)).getOrThrow<E1?, E2?, E3?>(
+            depKey,
+            e1,
+            e2,
+            e3
+        )
+    }
 
-  @Override
-  public <T extends SkyKeyComputeState> T getState(Supplier<T> stateSupplier) {
-    return delegate.getState(stateSupplier);
-  }
+    @Throws(E1::class, E2::class, E3::class, E4::class, java.lang.InterruptedException::class)
+    override fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?, E3 : java.lang.Exception?, E4 : java.lang.Exception?>
+            getValueOrThrow(
+        depKey: SkyKey?,
+        e1: java.lang.Class<E1?>?,
+        e2: java.lang.Class<E2?>?,
+        e3: java.lang.Class<E3?>?,
+        e4: java.lang.Class<E4?>?
+    ): SkyValue? {
+        val value: SkyValue? = delegate.getValueOrThrow<E1?, E2?, E3?, E4?>(depKey, e1, e2, e3, e4)
+        if (value != null) {
+            return value
+        }
+        // We null out `delegate` before blocking for the fresh env so that the old one becomes
+        // eligible for GC.
+        delegate = null
+        delegate = newDelegateSupplier.get()
+        return delegate.getValueOrThrow<E1?, E2?, E3?, E4?>(depKey, e1, e2, e3, e4)
+    }
 
-  @Nullable
-  @Override
-  public Version getMaxTransitiveSourceVersionSoFar() {
-    return delegate.getMaxTransitiveSourceVersionSoFar();
-  }
+    override fun getListener(): ExtendedEventHandler? {
+        // Do NOT just return `delegate.getListener()` here! That would cause anyone holding onto the
+        // returned listener to potentially post events to a stale listener.
+        return this
+    }
+
+    public override fun post(obj: Postable?) {
+        delegate.getListener().post(obj)
+    }
+
+    public override fun handle(event: Event?) {
+        delegate.getListener().handle(event)
+    }
+
+    override fun registerDependencies(keys: Iterable<SkyKey?>?) {
+        delegate.registerDependencies(keys)
+    }
+
+    override fun inErrorBubbling(): Boolean {
+        return delegate.inErrorBubbling()
+    }
+
+    override fun dependOnFuture(future: com.google.common.util.concurrent.ListenableFuture<*>?) {
+        delegate.dependOnFuture(future)
+    }
+
+    override fun getLookupHandleForPreviouslyRequestedDeps(): SkyframeLookupResult? {
+        return delegate.getLookupHandleForPreviouslyRequestedDeps()
+    }
+
+    override fun <T : SkyKeyComputeState?> getState(stateSupplier: java.util.function.Supplier<T?>?): T? {
+        return delegate.getState<T?>(stateSupplier)
+    }
+
+    override fun getMaxTransitiveSourceVersionSoFar(): com.google.devtools.build.skyframe.Version? {
+        return delegate.getMaxTransitiveSourceVersionSoFar()
+    }
 }

@@ -11,14 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.common.options;
+package com.google.devtools.common.options
 
 /**
- * Marker for a {@link Converter} whose option uses the same command-line forms as a boolean flag:
- * {@code --name} (true), {@code --noname} (false), and {@code --name=value} with a boolean string.
- *
- * <p>The converter implementation must interpret the strings {@code "1"} and {@code "0"} as the
- * options parser uses them for the valueless and {@code --no*} forms.
+ * Marker for a [Converter] whose option uses the same command-line forms as a boolean flag:
+ * `--name` (true), `--noname` (false), and `--name=value` with a boolean string.
+ * 
+ * 
+ * The converter implementation must interpret the strings `"1"` and `"0"` as the
+ * options parser uses them for the valueless and `--no*` forms.
  */
-public interface BooleanStyleOption {}
+interface BooleanStyleOption 

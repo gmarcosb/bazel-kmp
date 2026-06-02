@@ -11,25 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.standalone;
+package com.google.devtools.build.lib.standalone
 
-import com.google.devtools.build.lib.actions.ArtifactResolver;
-import com.google.devtools.build.lib.rules.cpp.CppIncludeExtractionContext;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
+import com.google.devtools.build.lib.actions.ArtifactResolver
 
 /**
  * An IncludeExtractionContext that does nothing. Since local execution does not need to discover
  * inclusion in advance, we do not need include scanning.
  */
-class DummyCppIncludeExtractionContext implements CppIncludeExtractionContext {
-  private final CommandEnvironment env;
+internal class DummyCppIncludeExtractionContext(env: CommandEnvironment) : CppIncludeExtractionContext {
+    private val env: CommandEnvironment
 
-  public DummyCppIncludeExtractionContext(CommandEnvironment env) {
-    this.env = env;
-  }
+    init {
+        this.env = env
+    }
 
-  @Override
-  public ArtifactResolver getArtifactResolver() {
-    return env.getSkyframeBuildView().getArtifactFactory();
-  }
+    val artifactResolver: ArtifactResolver
+        get() = env.getSkyframeBuildView().getArtifactFactory()
 }

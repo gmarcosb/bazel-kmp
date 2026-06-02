@@ -11,277 +11,276 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.config;
+package com.google.devtools.build.lib.skyframe.config
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import com.google.devtools.build.lib.analysis.config.BuildOptions
 
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.LoadingCache;
-import com.google.common.base.MoreObjects;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.Label.PackageContext;
-import com.google.devtools.build.lib.concurrent.ThreadSafety;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.util.HashCodes;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.common.options.OptionDefinition;
-import com.google.devtools.common.options.OptionValueDescription;
-import com.google.devtools.common.options.OptionsParsingException;
-import com.google.devtools.common.options.OptionsParsingResult;
-import java.util.Map;
-
-/** Stores the {@link OptionsParsingResult} from {@link ParsedFlagsFunction}. */
+/** Stores the [OptionsParsingResult] from [ParsedFlagsFunction].  */
 @AutoCodec
-public final class ParsedFlagsValue implements SkyValue {
+class ParsedFlagsValue private constructor(
+    flags: NativeAndStarlarkFlags?,
+    parsingResult: com.google.devtools.common.options.OptionsParsingResult?
+) : SkyValue {
+    /** Key for [ParsedFlagsValue] based on the raw flags.  */
+    @ThreadSafety.Immutable
+    @AutoCodec
+    class Key private constructor(
+        rawFlags: com.google.common.collect.ImmutableList<String?>?,
+        packageContext: PackageContext?,
+        private val includeDefaultValues: Boolean,
+        flagAliasMappings: com.google.common.collect.ImmutableMap<String?, Label?>?
+    ) : SkyKey {
+        private val rawFlags: com.google.common.collect.ImmutableList<String?>
+        private val packageContext: PackageContext
 
-  /** Key for {@link ParsedFlagsValue} based on the raw flags. */
-  @ThreadSafety.Immutable
-  @AutoCodec
-  public static final class Key implements SkyKey {
-    private static final SkyKeyInterner<Key> interner = SkyKey.newInterner();
+        private val flagAliasMappings: com.google.common.collect.ImmutableMap<String?, Label?>?
 
-    /**
-     * Returns a new {@link Key} for the given command-line flags, such as {@code
-     * --compilation_mode=bdg} or {@code --//custom/starlark:flag=23}.
-     */
-    public static Key create(
-        ImmutableList<String> rawFlags,
-        PackageContext packageContext,
-        ImmutableMap<String, Label> flagAliasMappings) {
-      return create(rawFlags, packageContext, /* includeDefaultValues= */ false, flagAliasMappings);
+        init {
+            this.rawFlags =
+                com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableList<String?>>(
+                    rawFlags
+                )
+            this.packageContext = com.google.common.base.Preconditions.checkNotNull<PackageContext>(packageContext)
+            this.flagAliasMappings = flagAliasMappings
+        }
+
+        fun rawFlags(): com.google.common.collect.ImmutableList<String?> {
+            return rawFlags
+        }
+
+        fun packageContext(): PackageContext {
+            return packageContext
+        }
+
+        fun includeDefaultValues(): Boolean {
+            return includeDefaultValues
+        }
+
+        fun flagAliasMappings(): com.google.common.collect.ImmutableMap<String?, Label?>? {
+            return flagAliasMappings
+        }
+
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.PARSED_FLAGS
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o !is Key) {
+                return false
+            }
+            return rawFlags == o.rawFlags
+                    && packageContext.equals(o.packageContext)
+                    && includeDefaultValues == o.includeDefaultValues
+        }
+
+        override fun hashCode(): Int {
+            return (HashCodes.hashObjects(rawFlags, packageContext) * 31
+                    + java.lang.Boolean.hashCode(includeDefaultValues))
+        }
+
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper("ParsedFlagsValue.Key")
+                .add("rawFlags", rawFlags)
+                .add("packageContext", packageContext)
+                .add("includeDefaultValues", includeDefaultValues)
+                .toString()
+        }
+
+        val skyKeyInterner: SkyKeyInterner<Key?>
+            get() = com.google.devtools.build.lib.skyframe.config.ParsedFlagsValue.Key.Companion.interner
+
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
+
+            /**
+             * Returns a new [Key] for the given command-line flags, such as `--compilation_mode=bdg` or `--//custom/starlark:flag=23`.
+             */
+            fun create(
+                rawFlags: com.google.common.collect.ImmutableList<String?>?,
+                packageContext: PackageContext?,
+                flagAliasMappings: com.google.common.collect.ImmutableMap<String?, Label?>?
+            ): Key {
+                return com.google.devtools.build.lib.skyframe.config.ParsedFlagsValue.Key.Companion.create(
+                    rawFlags,
+                    packageContext,  /* includeDefaultValues= */
+                    false,
+                    flagAliasMappings
+                )
+            }
+
+            /**
+             * Returns a new [Key] for the given command-line flags, such as `--compilation_mode=bdg` or `--//custom/starlark:flag=23`.
+             */
+            @AutoCodec.Instantiator
+            fun create(
+                rawFlags: com.google.common.collect.ImmutableList<String?>?,
+                packageContext: PackageContext?,
+                includeDefaultValues: Boolean,
+                flagAliasMappings: com.google.common.collect.ImmutableMap<String?, Label?>?
+            ): Key {
+                return com.google.devtools.build.lib.skyframe.config.ParsedFlagsValue.Key.Companion.interner.intern(
+                    com.google.devtools.build.lib.skyframe.config.ParsedFlagsValue.Key(
+                        rawFlags,
+                        packageContext,
+                        includeDefaultValues,
+                        flagAliasMappings
+                    )
+                )
+            }
+        }
+    }
+
+    private val flags: NativeAndStarlarkFlags
+    private val parsingResult: com.google.devtools.common.options.OptionsParsingResult
+    private val mergeCache: com.github.benmanes.caffeine.cache.LoadingCache<BuildOptions?, BuildConfigurationKey?> =
+        Caffeine.newBuilder().weakKeys()
+            .build<BuildOptions?, BuildConfigurationKey?>(com.github.benmanes.caffeine.cache.CacheLoader { source: BuildOptions? ->
+                this.mergeWithImpl(source)
+            })
+
+    init {
+        this.parsingResult =
+            com.google.common.base.Preconditions.checkNotNull<com.google.devtools.common.options.OptionsParsingResult>(
+                parsingResult
+            )
+        this.flags = com.google.common.base.Preconditions.checkNotNull<NativeAndStarlarkFlags>(flags)
+    }
+
+    fun parsingResult(): com.google.devtools.common.options.OptionsParsingResult {
+        return parsingResult
     }
 
     /**
-     * Returns a new {@link Key} for the given command-line flags, such as {@code
-     * --compilation_mode=bdg} or {@code --//custom/starlark:flag=23}.
+     * Returns a new [BuildConfigurationKey] with options containing all flags from the given
+     * [BuildOptions] with [.parsingResult] merged in.
+     * 
+     * 
+     * Returns a [BuildConfigurationKey] instead of just [BuildOptions] so that caching
+     * of mappings also saves the CPU cost of interning [BuildConfigurationKey] (which is what
+     * callers typically need).
+     * 
+     * 
+     * The merging logic is as follows:
+     * 
+     * 
+     *  * For native flags, only the fragments in the original [BuildOptions] are kept.
+     *  * Any native flags in this instance, for fragments that are kept, are set to the value from
+     * this instance.
+     *  * All Starlark flags from the original [BuildOptions] are kept, then all Starlark
+     * options from this instance are added.
+     *  * Any Starlark flags which are present in both, the value from this instance is kept.
+     * 
+     * 
+     * 
+     * To preserve fragment trimming, this method will not expand the set of included native
+     * fragments from the original [BuildOptions]. If the parsing result contains native options
+     * whose owning fragment is not part of the original [BuildOptions] they will be ignored
+     * (i.e. not set on the resulting options). Starlark options are not affected by this restriction.
+     * 
+     * @param source the base options to modify
+     * @return a [BuildConfigurationKey] to request the new configuration after applying this
+     * parsed flags value to the original options
      */
-    @AutoCodec.Instantiator
-    public static Key create(
-        ImmutableList<String> rawFlags,
-        PackageContext packageContext,
-        boolean includeDefaultValues,
-        ImmutableMap<String, Label> flagAliasMappings) {
-      return interner.intern(
-          new Key(rawFlags, packageContext, includeDefaultValues, flagAliasMappings));
+    fun mergeWith(source: BuildOptions?): BuildConfigurationKey? {
+        return mergeCache.get(source)
     }
 
-    private final ImmutableList<String> rawFlags;
-    private final PackageContext packageContext;
-    private final boolean includeDefaultValues;
+    private fun mergeWithImpl(source: BuildOptions): BuildConfigurationKey? {
+        val builder: BuildOptions.Builder = source.toBuilder()
 
-    private final ImmutableMap<String, Label> flagAliasMappings;
+        // Handle native options.
+        for (optionValue in parsingResult.allOptionValues()) {
+            val optionDefinition: com.google.devtools.common.options.OptionDefinition =
+                optionValue.getOptionDefinition()
+            // All options obtained from an options parser are guaranteed to have been defined in an
+            // FragmentOptions class.
+            val fragmentOptionClass: java.lang.Class<out FragmentOptions?>? =
+                optionDefinition.getDeclaringClass<C?>(FragmentOptions::class.java)
 
-    private Key(
-        ImmutableList<String> rawFlags,
-        PackageContext packageContext,
-        boolean includeDefaultValues,
-        ImmutableMap<String, Label> flagAliasMappings) {
-      this.rawFlags = checkNotNull(rawFlags);
-      this.packageContext = checkNotNull(packageContext);
-      this.includeDefaultValues = includeDefaultValues;
-      this.flagAliasMappings = flagAliasMappings;
+            val fragment: FragmentOptions? = builder.getFragmentOptions(fragmentOptionClass)
+            if (fragment == null) {
+                // Preserve trimming by ignoring fragments not present in the original options.
+                continue
+            }
+            updateOptionValue(fragment, optionDefinition, optionValue)
+        }
+
+        // Also copy Starlark options.
+        for (starlarkOption in parsingResult.getStarlarkOptions().entrySet()) {
+            updateStarlarkFlag(builder, starlarkOption.getKey(), starlarkOption.getValue())
+        }
+
+        return BuildConfigurationKey.Companion.create(builder.addScopeTypeMap(source.getScopeTypeMap()).build())
     }
 
-    ImmutableList<String> rawFlags() {
-      return rawFlags;
+    private fun updateStarlarkFlag(
+        builder: BuildOptions.Builder, rawFlagName: String?, rawFlagValue: Any?
+    ) {
+        val flagName: Label? = Label.parseCanonicalUnchecked(rawFlagName)
+        // If the known default value is the same as the new value, unset it.
+        if (isStarlarkFlagSetToDefault(rawFlagName, rawFlagValue)) {
+            builder.removeStarlarkOption(flagName)
+        } else {
+            builder.addStarlarkOption(flagName, rawFlagValue)
+        }
     }
 
-    PackageContext packageContext() {
-      return packageContext;
+    private fun isStarlarkFlagSetToDefault(rawFlagName: String?, rawFlagValue: Any?): Boolean {
+        val defaultVal: Any? = flags.starlarkFlagDefaults().get(rawFlagName)
+        return defaultVal != null && defaultVal == rawFlagValue
     }
 
-    boolean includeDefaultValues() {
-      return includeDefaultValues;
+    override fun equals(obj: Any?): Boolean {
+        if (this === obj) {
+            return true
+        }
+        if (obj !is ParsedFlagsValue) {
+            return false
+        }
+        return flags == obj.flags
     }
 
-    ImmutableMap<String, Label> flagAliasMappings() {
-      return flagAliasMappings;
+    override fun hashCode(): Int {
+        return flags.hashCode()
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.PARSED_FLAGS;
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("flags", flags)
+            .add("parsingResult", parsingResult)
+            .toString()
     }
 
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (!(o instanceof Key that)) {
-        return false;
-      }
-      return rawFlags.equals(that.rawFlags)
-          && packageContext.equals(that.packageContext)
-          && includeDefaultValues == that.includeDefaultValues;
+    companion object {
+        @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+        fun parseAndCreate(flags: NativeAndStarlarkFlags): ParsedFlagsValue {
+            return ParsedFlagsValue(flags, flags.parse())
+        }
+
+        @AutoCodec.Instantiator
+        @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+        fun createForDeserialization(flags: NativeAndStarlarkFlags): ParsedFlagsValue {
+            try {
+                return parseAndCreate(flags)
+            } catch (e: com.google.devtools.common.options.OptionsParsingException) {
+                // Should be impossible since it parsed successfully before it was serialized.
+                throw java.lang.IllegalStateException(e)
+            }
+        }
+
+        private fun updateOptionValue(
+            fragment: FragmentOptions?,
+            optionDefinition: com.google.devtools.common.options.OptionDefinition,
+            optionValue: com.google.devtools.common.options.OptionValueDescription
+        ) {
+            // TODO: https://github.com/bazelbuild/bazel/issues/22453 - This will completely overwrite
+            //  accumulating flags, which is almost certainly not what users want. Instead this should
+            //  intelligently merge options.
+            val value: Any? = optionValue.getValue()
+            optionDefinition.setValue(fragment, value)
+        }
     }
-
-    @Override
-    public int hashCode() {
-      return HashCodes.hashObjects(rawFlags, packageContext) * 31
-          + Boolean.hashCode(includeDefaultValues);
-    }
-
-    @Override
-    public String toString() {
-      return MoreObjects.toStringHelper("ParsedFlagsValue.Key")
-          .add("rawFlags", rawFlags)
-          .add("packageContext", packageContext)
-          .add("includeDefaultValues", includeDefaultValues)
-          .toString();
-    }
-
-    @Override
-    public SkyKeyInterner<Key> getSkyKeyInterner() {
-      return interner;
-    }
-  }
-
-  static ParsedFlagsValue parseAndCreate(NativeAndStarlarkFlags flags)
-      throws OptionsParsingException {
-    return new ParsedFlagsValue(flags, flags.parse());
-  }
-
-  @AutoCodec.Instantiator
-  @VisibleForSerialization
-  static ParsedFlagsValue createForDeserialization(NativeAndStarlarkFlags flags) {
-    try {
-      return parseAndCreate(flags);
-    } catch (OptionsParsingException e) {
-      // Should be impossible since it parsed successfully before it was serialized.
-      throw new IllegalStateException(e);
-    }
-  }
-
-  private final NativeAndStarlarkFlags flags;
-  private final OptionsParsingResult parsingResult;
-  private final LoadingCache<BuildOptions, BuildConfigurationKey> mergeCache =
-      Caffeine.newBuilder().weakKeys().build(this::mergeWithImpl);
-
-  private ParsedFlagsValue(NativeAndStarlarkFlags flags, OptionsParsingResult parsingResult) {
-    this.parsingResult = checkNotNull(parsingResult);
-    this.flags = checkNotNull(flags);
-  }
-
-  public OptionsParsingResult parsingResult() {
-    return parsingResult;
-  }
-
-  /**
-   * Returns a new {@link BuildConfigurationKey} with options containing all flags from the given
-   * {@link BuildOptions} with {@link #parsingResult()} merged in.
-   *
-   * <p>Returns a {@link BuildConfigurationKey} instead of just {@link BuildOptions} so that caching
-   * of mappings also saves the CPU cost of interning {@link BuildConfigurationKey} (which is what
-   * callers typically need).
-   *
-   * <p>The merging logic is as follows:
-   *
-   * <ul>
-   *   <li>For native flags, only the fragments in the original {@link BuildOptions} are kept.
-   *   <li>Any native flags in this instance, for fragments that are kept, are set to the value from
-   *       this instance.
-   *   <li>All Starlark flags from the original {@link BuildOptions} are kept, then all Starlark
-   *       options from this instance are added.
-   *   <li>Any Starlark flags which are present in both, the value from this instance is kept.
-   * </ul>
-   *
-   * <p>To preserve fragment trimming, this method will not expand the set of included native
-   * fragments from the original {@link BuildOptions}. If the parsing result contains native options
-   * whose owning fragment is not part of the original {@link BuildOptions} they will be ignored
-   * (i.e. not set on the resulting options). Starlark options are not affected by this restriction.
-   *
-   * @param source the base options to modify
-   * @return a {@link BuildConfigurationKey} to request the new configuration after applying this
-   *     parsed flags value to the original options
-   */
-  public BuildConfigurationKey mergeWith(BuildOptions source) {
-    return mergeCache.get(source);
-  }
-
-  private BuildConfigurationKey mergeWithImpl(BuildOptions source) {
-    BuildOptions.Builder builder = source.toBuilder();
-
-    // Handle native options.
-    for (OptionValueDescription optionValue : parsingResult.allOptionValues()) {
-      OptionDefinition optionDefinition = optionValue.getOptionDefinition();
-      // All options obtained from an options parser are guaranteed to have been defined in an
-      // FragmentOptions class.
-      Class<? extends FragmentOptions> fragmentOptionClass =
-          optionDefinition.getDeclaringClass(FragmentOptions.class);
-
-      FragmentOptions fragment = builder.getFragmentOptions(fragmentOptionClass);
-      if (fragment == null) {
-        // Preserve trimming by ignoring fragments not present in the original options.
-        continue;
-      }
-      updateOptionValue(fragment, optionDefinition, optionValue);
-    }
-
-    // Also copy Starlark options.
-    for (Map.Entry<String, Object> starlarkOption : parsingResult.getStarlarkOptions().entrySet()) {
-      updateStarlarkFlag(builder, starlarkOption.getKey(), starlarkOption.getValue());
-    }
-
-    return BuildConfigurationKey.create(builder.addScopeTypeMap(source.getScopeTypeMap()).build());
-  }
-
-  private static void updateOptionValue(
-      FragmentOptions fragment,
-      OptionDefinition optionDefinition,
-      OptionValueDescription optionValue) {
-    // TODO: https://github.com/bazelbuild/bazel/issues/22453 - This will completely overwrite
-    //  accumulating flags, which is almost certainly not what users want. Instead this should
-    //  intelligently merge options.
-    Object value = optionValue.getValue();
-    optionDefinition.setValue(fragment, value);
-  }
-
-  private void updateStarlarkFlag(
-      BuildOptions.Builder builder, String rawFlagName, Object rawFlagValue) {
-    Label flagName = Label.parseCanonicalUnchecked(rawFlagName);
-    // If the known default value is the same as the new value, unset it.
-    if (isStarlarkFlagSetToDefault(rawFlagName, rawFlagValue)) {
-      builder.removeStarlarkOption(flagName);
-    } else {
-      builder.addStarlarkOption(flagName, rawFlagValue);
-    }
-  }
-
-  private boolean isStarlarkFlagSetToDefault(String rawFlagName, Object rawFlagValue) {
-    var defaultVal = flags.starlarkFlagDefaults().get(rawFlagName);
-    return defaultVal != null && defaultVal.equals(rawFlagValue);
-  }
-
-  @Override
-  public boolean equals(Object obj) {
-    if (this == obj) {
-      return true;
-    }
-    if (!(obj instanceof ParsedFlagsValue that)) {
-      return false;
-    }
-    return flags.equals(that.flags);
-  }
-
-  @Override
-  public int hashCode() {
-    return flags.hashCode();
-  }
-
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("flags", flags)
-        .add("parsingResult", parsingResult)
-        .toString();
-  }
 }

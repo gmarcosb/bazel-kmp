@@ -11,33 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.core;
+package com.google.devtools.build.lib.rules.core
 
-import com.google.devtools.build.lib.analysis.BaseRuleClasses;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider.RuleSet;
-import com.google.devtools.build.lib.analysis.test.CoverageConfiguration;
-import com.google.devtools.build.lib.analysis.test.TestConfiguration;
-import com.google.devtools.build.lib.analysis.test.TestTrimmingTransitionFactory;
+/** A set of basic rules - Bazel won't work correctly without these.  */
+class CoreRules private constructor() : RuleSet {
+    public override fun init(builder: ConfiguredRuleClassProvider.Builder) {
+        builder.setShouldInvalidateCacheForOptionDiff(
+            TestConfiguration.SHOULD_INVALIDATE_FOR_OPTION_DIFF
+        )
+        builder.addConfigurationFragment(TestConfiguration::class.java)
+        builder.addConfigurationFragment(CoverageConfiguration::class.java)
+        builder.addTrimmingTransitionFactory(TestTrimmingTransitionFactory())
+        builder.addRuleDefinition(NativeBuildRule())
+        builder.addRuleDefinition(NativeActionCreatingRule())
+        builder.addRuleDefinition(MakeVariableExpandingRule())
+        builder.addNativeAspectClass(ValidateTarget()) // internally used aspect
+    }
 
-/** A set of basic rules - Bazel won't work correctly without these. */
-public final class CoreRules implements RuleSet {
-  public static final CoreRules INSTANCE = new CoreRules();
-
-  private CoreRules() {
-    // Use the static INSTANCE field instead.
-  }
-
-  @Override
-  public void init(ConfiguredRuleClassProvider.Builder builder) {
-    builder.setShouldInvalidateCacheForOptionDiff(
-        TestConfiguration.SHOULD_INVALIDATE_FOR_OPTION_DIFF);
-    builder.addConfigurationFragment(TestConfiguration.class);
-    builder.addConfigurationFragment(CoverageConfiguration.class);
-    builder.addTrimmingTransitionFactory(new TestTrimmingTransitionFactory());
-    builder.addRuleDefinition(new BaseRuleClasses.NativeBuildRule());
-    builder.addRuleDefinition(new BaseRuleClasses.NativeActionCreatingRule());
-    builder.addRuleDefinition(new BaseRuleClasses.MakeVariableExpandingRule());
-    builder.addNativeAspectClass(new ValidateTarget()); // internally used aspect
-  }
+    companion object {
+        @kotlin.jvm.JvmField
+        val INSTANCE: CoreRules = CoreRules()
+    }
 }

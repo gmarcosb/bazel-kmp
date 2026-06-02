@@ -11,50 +11,54 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
+import com.google.devtools.build.lib.cmdline.RepositoryName
 
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.AbstractSkyKey;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyValue;
-
-/** Contains information about the REPO.bazel file at the root of a repo. */
+/** Contains information about the REPO.bazel file at the root of a repo.  */
 @AutoCodec
-public record RepoFileValue(
-    ImmutableMap<String, Object> packageArgsMap, ImmutableList<String> ignoredDirectories)
-    implements SkyValue {
-  public RepoFileValue {
-    requireNonNull(packageArgsMap, "packageArgsMap");
-    requireNonNull(ignoredDirectories, "ignoredDirectories");
-  }
-
-  public static final RepoFileValue EMPTY = of(ImmutableMap.of(), ImmutableList.of());
-
-  public static RepoFileValue of(
-      ImmutableMap<String, Object> packageArgsMap, ImmutableList<String> ignoredDirectories) {
-    return new RepoFileValue(packageArgsMap, ignoredDirectories);
-  }
-
-  public static Key key(RepositoryName repoName) {
-    return new Key(repoName);
-  }
-
-  /** Key type for {@link RepoFileValue}. */
-  public static class Key extends AbstractSkyKey<RepositoryName> {
-
-    private Key(RepositoryName repoName) {
-      super(repoName);
+class RepoFileValue(
+    packageArgsMap: com.google.common.collect.ImmutableMap<String?, Any?>?,
+    ignoredDirectories: com.google.common.collect.ImmutableList<String?>?
+) : SkyValue {
+    /** Key type for [RepoFileValue].  */
+    class Key private constructor(repoName: RepositoryName?) : AbstractSkyKey<RepositoryName?>(repoName) {
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.REPO_FILE
+        }
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.REPO_FILE;
+    val packageArgsMap: com.google.common.collect.ImmutableMap<String?, Any?>?
+    val ignoredDirectories: com.google.common.collect.ImmutableList<String?>?
+
+    init {
+        this.ignoredDirectories = ignoredDirectories
+        this.packageArgsMap = packageArgsMap
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableMap<String?, Any?>?>(
+            packageArgsMap,
+            "packageArgsMap"
+        )
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableList<String?>?>(
+            ignoredDirectories,
+            "ignoredDirectories"
+        )
     }
-  }
+
+    companion object {
+        val EMPTY: RepoFileValue = of(
+            com.google.common.collect.ImmutableMap.of<String?, Any?>(),
+            com.google.common.collect.ImmutableList.of<String?>()
+        )
+
+        fun of(
+            packageArgsMap: com.google.common.collect.ImmutableMap<String?, Any?>?,
+            ignoredDirectories: com.google.common.collect.ImmutableList<String?>?
+        ): RepoFileValue {
+            return RepoFileValue(packageArgsMap, ignoredDirectories)
+        }
+
+        fun key(repoName: RepositoryName?): Key {
+            return com.google.devtools.build.lib.skyframe.RepoFileValue.Key(repoName)
+        }
+    }
 }

@@ -11,48 +11,41 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.objc
 
-package com.google.devtools.build.lib.rules.objc;
+import com.google.common.annotations.VisibleForTesting
+import com.google.devtools.build.lib.analysis.platform.ConstraintValueInfo
+import com.google.devtools.build.lib.rules.apple.DottedVersion
+import net.starlark.java.eval.EvalException
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.devtools.build.lib.analysis.platform.ConstraintValueInfo;
-import com.google.devtools.build.lib.analysis.starlark.StarlarkRuleContext;
-import com.google.devtools.build.lib.packages.StructImpl;
-import com.google.devtools.build.lib.rules.apple.ApplePlatform;
-import com.google.devtools.build.lib.rules.apple.DottedVersion;
-import com.google.devtools.build.lib.starlarkbuildapi.objc.AppleCommonApi;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
+/** A class that exposes apple rule implementation internals to Starlark.  */
+class AppleStarlarkCommon
 
-/** A class that exposes apple rule implementation internals to Starlark. */
-public class AppleStarlarkCommon
-    implements AppleCommonApi<ConstraintValueInfo, StarlarkRuleContext> {
+    : AppleCommonApi<ConstraintValueInfo?, StarlarkRuleContext?> {
+    private var platform: StructImpl? = null
 
-  @VisibleForTesting
-  public static final String BAD_KEY_ERROR =
-      "Argument %s not a recognized key, 'strict_include', or 'providers'.";
+    val platformStruct: StructImpl?
+        get() {
+            if (platform == null) {
+                platform = ApplePlatform.Companion.getStarlarkStruct()
+            }
+            return platform
+        }
 
-  @VisibleForTesting
-  public static final String NOT_SET_ERROR = "Value for key %s must be a set, instead found %s.";
-
-  @Nullable private StructImpl platform;
-
-  public AppleStarlarkCommon() {}
-
-  @Override
-  public StructImpl getPlatformStruct() {
-    if (platform == null) {
-      platform = ApplePlatform.getStarlarkStruct();
+    @Throws(EvalException::class)
+    override fun dottedVersion(version: String?): DottedVersion {
+        try {
+            return DottedVersion.Companion.fromString(version)
+        } catch (e: InvalidDottedVersionException) {
+            throw EvalException(e.getMessage())
+        }
     }
-    return platform;
-  }
 
-  @Override
-  public DottedVersion dottedVersion(String version) throws EvalException {
-    try {
-      return DottedVersion.fromString(version);
-    } catch (DottedVersion.InvalidDottedVersionException e) {
-      throw new EvalException(e.getMessage());
+    companion object {
+        @VisibleForTesting
+        const val BAD_KEY_ERROR: String = "Argument %s not a recognized key, 'strict_include', or 'providers'."
+
+        @VisibleForTesting
+        const val NOT_SET_ERROR: String = "Value for key %s must be a set, instead found %s."
     }
-  }
 }

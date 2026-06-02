@@ -11,39 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime.commands.info
 
-package com.google.devtools.build.lib.runtime.commands.info;
+import com.google.common.base.Supplier
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue
 
-import com.google.common.base.Supplier;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.InfoItem;
-import java.util.Map;
-
-/** Info item for the effective current client environment. */
-public final class ClientEnv extends InfoItem {
-  public ClientEnv() {
-    super(
-        "client-env",
-        "The specifications that need to be added to the project-specific rc file to freeze the"
+/** Info item for the effective current client environment.  */
+class ClientEnv : InfoItem(
+    "client-env",
+    "The specifications that need to be added to the project-specific rc file to freeze the"
             + " current client environment",
-        true);
-  }
-
-  @Override
-  public byte[] get(
-      Supplier<BuildConfigurationValue> configurationSupplier, CommandEnvironment env) {
-    String result = "";
-    for (Map.Entry<String, String> entry : env.getAllowlistedActionEnv().entrySet()) {
-      // TODO(bazel-team): as the syntax of our rc-files does not support to express new-lines in
-      // values, we produce syntax errors if the value of the entry contains a newline character.
-      result += "build --action_env=" + entry.getKey() + "=" + entry.getValue() + "\n";
+    true
+) {
+    public override fun get(
+        configurationSupplier: Supplier<BuildConfigurationValue?>?, env: CommandEnvironment
+    ): ByteArray {
+        var result = ""
+        for (entry in env.getAllowlistedActionEnv().entrySet()) {
+            // TODO(bazel-team): as the syntax of our rc-files does not support to express new-lines in
+            // values, we produce syntax errors if the value of the entry contains a newline character.
+            result += "build --action_env=" + entry.getKey() + "=" + entry.getValue() + "\n"
+        }
+        for (entry in env.getAllowlistedTestEnv().entrySet()) {
+            // TODO(bazel-team): as the syntax of our rc-files does not support to express new-lines in
+            // values, we produce syntax errors if the value of the entry contains a newline character.
+            result += "build --test_env=" + entry.getKey() + "=" + entry.getValue() + "\n"
+        }
+        return print(result)
     }
-    for (Map.Entry<String, String> entry : env.getAllowlistedTestEnv().entrySet()) {
-      // TODO(bazel-team): as the syntax of our rc-files does not support to express new-lines in
-      // values, we produce syntax errors if the value of the entry contains a newline character.
-      result += "build --test_env=" + entry.getKey() + "=" + entry.getValue() + "\n";
-    }
-    return print(result);
-  }
 }

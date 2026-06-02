@@ -11,24 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import java.io.IOException;
-import java.nio.file.Path;
-import java.util.Optional;
-import java.util.logging.Logger;
+import com.google.devtools.build.lib.util.LogHandlerQuerier
+import com.google.devtools.build.lib.util.ServerLogPathService
+import java.io.IOException
 
-/** The {@link ServerLogPathService} implementation. */
-public final class ServerLogPathServiceImpl implements ServerLogPathService {
-  private static final Logger logger = Logger.getLogger(ServerLogPathServiceImpl.class.getName());
+/** The [ServerLogPathService] implementation.  */
+class ServerLogPathServiceImpl : ServerLogPathService {
+    @get:Throws(IOException::class)
+    val serverLogPath: java.util.Optional<String?>
+        get() =// This must be called by the SC, as otherwise LogHandlerQuerier would resolve to a different
+            // class when using a separate classloader for the LC.
+            LogHandlerQuerier.Companion.getConfiguredInstance()
+                .getLoggerFilePath(logger)
+                .map<java.nio.file.Path?>(java.util.function.Function { obj: java.nio.file.Path? -> obj.toAbsolutePath() })
+                .map<String?>(java.util.function.Function { obj: java.nio.file.Path? -> obj.toString() })
 
-  @Override
-  public Optional<String> getServerLogPath() throws IOException {
-    // This must be called by the SC, as otherwise LogHandlerQuerier would resolve to a different
-    // class when using a separate classloader for the LC.
-    return LogHandlerQuerier.getConfiguredInstance()
-        .getLoggerFilePath(logger)
-        .map(Path::toAbsolutePath)
-        .map(Object::toString);
-  }
+    companion object {
+        private val logger: java.util.logging.Logger? =
+            java.util.logging.Logger.getLogger(ServerLogPathServiceImpl::class.java.getName())
+    }
 }

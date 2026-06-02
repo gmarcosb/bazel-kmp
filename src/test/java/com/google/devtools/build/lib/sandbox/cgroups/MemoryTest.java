@@ -36,7 +36,7 @@ public class MemoryTest {
   public void setMemoryLimit_v1() throws IOException {
     File limit = scratch.file("cgroup/memory/memory.limit_in_bytes", "0").getPathFile();
     Memory memory = new LegacyMemory(scratch.path("cgroup/memory").getPathFile().toPath());
-    memory.setMaxBytes(1000);
+    memory.maxBytes = 1000;
     assertThat(Files.asCharSource(limit, UTF_8).read()).isEqualTo("1000");
   }
 
@@ -44,14 +44,14 @@ public class MemoryTest {
   public void getMemoryLimit_v1() throws IOException {
     scratch.file("cgroup/memory/memory.limit_in_bytes", "100");
     Memory memory = new LegacyMemory(scratch.path("cgroup/memory").getPathFile().toPath());
-    assertThat(memory.getMaxBytes()).isEqualTo(100);
+    assertThat(memory.maxBytes).isEqualTo(100);
   }
 
   @Test
   public void getMemoryUsage_v1() throws IOException {
     scratch.file("cgroup/memory/memory.usage_in_bytes", "2000");
     Memory memory = new LegacyMemory(scratch.path("cgroup/memory").getPathFile().toPath());
-    assertThat(memory.getUsageInBytes()).isEqualTo(2000);
+    assertThat(memory.usageInBytes).isEqualTo(2000);
   }
 
   @Test
@@ -59,7 +59,7 @@ public class MemoryTest {
     File limit = scratch.file("cgroup/memory/memory.max", "0").getPathFile();
     File swap = scratch.file("cgroup/memory/memory.swap.max", "0").getPathFile();
     Memory memory = new UnifiedMemory(scratch.path("cgroup/memory").getPathFile().toPath());
-    memory.setMaxBytes(1000);
+    memory.maxBytes = 1000;
     assertThat(Files.asCharSource(limit, UTF_8).read()).isEqualTo("1000");
     assertThat(Files.asCharSource(swap, UTF_8).read()).isEqualTo("0");
   }
@@ -68,13 +68,13 @@ public class MemoryTest {
   public void getMemoryLimit_v2() throws IOException {
     scratch.file("cgroup/memory/memory.max", "100");
     Memory memory = new UnifiedMemory(scratch.path("cgroup/memory").getPathFile().toPath());
-    assertThat(memory.getMaxBytes()).isEqualTo(100);
+    assertThat(memory.maxBytes).isEqualTo(100);
   }
 
   @Test
   public void getMemoryUsage_v2() throws IOException {
     scratch.file("cgroup/memory/memory.current", "2000");
     Memory memory = new UnifiedMemory(scratch.path("cgroup/memory").getPathFile().toPath());
-    assertThat(memory.getUsageInBytes()).isEqualTo(2000);
+    assertThat(memory.usageInBytes).isEqualTo(2000);
   }
 }

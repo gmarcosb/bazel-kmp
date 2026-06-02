@@ -11,78 +11,82 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import java.io.IOException;
-import java.io.OutputStream;
+import java.io.IOException
 
 /**
  * A decorator output stream that does line buffering.
  */
-public class LineBufferedOutputStream extends OutputStream {
-  private static final int DEFAULT_BUFFER_SIZE = 1024;
+class LineBufferedOutputStream @kotlin.jvm.JvmOverloads constructor(
+    wrapped: java.io.OutputStream,
+    bufferSize: Int = DEFAULT_BUFFER_SIZE
+) : java.io.OutputStream() {
+    private val wrapped: java.io.OutputStream
+    private val buffer: ByteArray
+    private var pos: Int
 
-  private final OutputStream wrapped;
-  private final byte[] buffer;
-  private int pos;
-
-  public LineBufferedOutputStream(OutputStream wrapped) {
-    this(wrapped, DEFAULT_BUFFER_SIZE);
-  }
-
-  public LineBufferedOutputStream(OutputStream wrapped, int bufferSize) {
-    this.wrapped = wrapped;
-    this.buffer = new byte[bufferSize];
-    this.pos = 0;
-  }
-
-  private void flushBuffer() throws IOException {
-    int oldPos = pos;
-    // Set pos to zero first so that if the write below throws, we are still in a consistent state.
-    pos = 0;
-    wrapped.write(buffer, 0, oldPos);
-  }
-
-  @Override
-  public synchronized void write(byte[] b, int off, int inlen) throws IOException {
-    if (inlen > buffer.length * 2) {
-      // Do not buffer large writes
-      if (pos > 0) {
-        flushBuffer();
-      }
-      wrapped.write(b, off, inlen);
-      return;
+    init {
+        this.wrapped = wrapped
+        this.buffer = ByteArray(bufferSize)
+        this.pos = 0
     }
 
-    int next = off;
-    while (next < off + inlen) {
-      buffer[pos++] = b[next];
-      if (b[next] == '\n' || pos == buffer.length) {
-        flushBuffer();
-      }
-
-      next++;
+    @Throws(IOException::class)
+    private fun flushBuffer() {
+        val oldPos = pos
+        // Set pos to zero first so that if the write below throws, we are still in a consistent state.
+        pos = 0
+        wrapped.write(buffer, 0, oldPos)
     }
-  }
 
-  @Override
-  public void write(int byteAsInt) throws IOException {
-    byte b = (byte) byteAsInt; // make sure we work with bytes in comparisons
-    write(new byte[] {b}, 0, 1);
-  }
+    @kotlin.jvm.Synchronized
+    @Throws(IOException::class)
+    override fun write(b: ByteArray, off: Int, inlen: Int) {
+        if (inlen > buffer.size * 2) {
+            // Do not buffer large writes
+            if (pos > 0) {
+                flushBuffer()
+            }
+            wrapped.write(b, off, inlen)
+            return
+        }
 
-  @Override
-  public synchronized void flush() throws IOException {
-    if (pos != 0) {
-      wrapped.write(buffer, 0, pos);
-      pos = 0;
+        var next = off
+        while (next < off + inlen) {
+            buffer[pos++] = b[next]
+            if (b[next] == '\n'.code.toByte() || pos == buffer.size) {
+                flushBuffer()
+            }
+
+            next++
+        }
     }
-    wrapped.flush();
-  }
 
-  @Override
-  public synchronized void close() throws IOException {
-    flush();
-    wrapped.close();
-  }
+    @Throws(IOException::class)
+    override fun write(byteAsInt: Int) {
+        val b = byteAsInt.toByte() // make sure we work with bytes in comparisons
+        write(byteArrayOf(b), 0, 1)
+    }
+
+    @kotlin.jvm.Synchronized
+    @Throws(IOException::class)
+    override fun flush() {
+        if (pos != 0) {
+            wrapped.write(buffer, 0, pos)
+            pos = 0
+        }
+        wrapped.flush()
+    }
+
+    @kotlin.jvm.Synchronized
+    @Throws(IOException::class)
+    override fun close() {
+        flush()
+        wrapped.close()
+    }
+
+    companion object {
+        private const val DEFAULT_BUFFER_SIZE = 1024
+    }
 }

@@ -11,90 +11,79 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static sun.misc.Unsafe.ARRAY_OBJECT_BASE_OFFSET;
-import static sun.misc.Unsafe.ARRAY_OBJECT_INDEX_SCALE;
-
-import com.google.common.collect.Sets;
-
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.concurrent.atomic.AtomicInteger;
+import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.AsyncObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.SerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
+import java.util.Collections
+import java.util.HashSet
+import java.util.LinkedHashSet
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * {@link ObjectCodec} for {@link HashSet} that returns {@link LinkedHashSet} for determinism.
- *
- * <p>This type transformation is safe because {@link LinkedHashSet} is a subclass of {@link
- * HashSet}.
+ * [ObjectCodec] for [HashSet] that returns [LinkedHashSet] for determinism.
+ * 
+ * 
+ * This type transformation is safe because [LinkedHashSet] is a subclass of [ ].
  */
-@SuppressWarnings({"rawtypes", "unchecked", "NonApiType"})
-final class HashSetCodec extends AsyncObjectCodec<HashSet> {
-  @Override
-  public Class<HashSet> getEncodedClass() {
-    return HashSet.class;
-  }
-
-  @Override
-  public void serialize(SerializationContext context, HashSet obj, CodedOutputStream codedOut)
-      throws SerializationException, IOException {
-    codedOut.writeInt32NoTag(obj.size());
-    for (Object object : obj) {
-      context.serialize(object, codedOut);
-    }
-  }
-
-  // TODO: b/386384684 - remove Unsafe usage
-  @Override
-  public HashSet deserializeAsync(AsyncDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    int size = codedIn.readInt32();
-    LinkedHashSet set = Sets.newLinkedHashSetWithExpectedSize(size);
-    context.registerInitialValue(set);
-
-    if (size == 0) {
-      return set;
+internal class HashSetCodec : AsyncObjectCodec<HashSet<*>?>() {
+    override fun getEncodedClass(): java.lang.Class<HashSet<*>?> {
+        return HashSet::class.java
     }
 
-    ElementBuffer buffer = new ElementBuffer(set, size);
-    for (int i = 0; i < size; i++) {
-      context.deserialize(
-          codedIn,
-          buffer.elements,
-          ARRAY_OBJECT_BASE_OFFSET + ARRAY_OBJECT_INDEX_SCALE * i,
-          /* done= */ (Runnable) buffer);
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun serialize(context: SerializationContext, obj: HashSet<*>, codedOut: CodedOutputStream) {
+        codedOut.writeInt32NoTag(obj.size())
+        for (`object` in obj) {
+            context.serialize(`object`, codedOut)
+        }
     }
 
-    return set;
-  }
+    // TODO: b/386384684 - remove Unsafe usage
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun deserializeAsync(context: AsyncDeserializationContext, codedIn: CodedInputStream): HashSet<*> {
+        val size: Int = codedIn.readInt32()
+        val set: LinkedHashSet<*> = com.google.common.collect.Sets.newLinkedHashSetWithExpectedSize<Any?>(size)
+        context.registerInitialValue(set)
 
-  /**
-   * Buffers the elements and populates the set once all are available.
-   *
-   * <p>This approach is implicitly thread-safe.
-   */
-  private static class ElementBuffer implements Runnable {
-    private final LinkedHashSet set;
-    private final Object[] elements;
+        if (size == 0) {
+            return set
+        }
 
-    private final AtomicInteger remaining;
+        val buffer: ElementBuffer =
+            com.google.devtools.build.lib.skyframe.serialization.HashSetCodec.ElementBuffer(set, size)
+        /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
 
-    private ElementBuffer(LinkedHashSet set, int size) {
-      this.set = set;
-      this.elements = new Object[size];
-
-      this.remaining = new AtomicInteger(size);
+        return set
     }
 
-    @Override
-    public void run() {
-      if (remaining.decrementAndGet() == 0) {
-        Collections.addAll(set, elements);
-      }
+    /**
+     * Buffers the elements and populates the set once all are available.
+     * 
+     * 
+     * This approach is implicitly thread-safe.
+     */
+    private class ElementBuffer(set: LinkedHashSet<*>?, size: Int) : java.lang.Runnable {
+        private val set: LinkedHashSet<*>?
+        private val elements: Array<Any?>
+
+        private val remaining: AtomicInteger
+
+        init {
+            this.set = set
+            this.elements = arrayOfNulls<Any>(size)
+
+            this.remaining = AtomicInteger(size)
+        }
+
+        override fun run() {
+            if (remaining.decrementAndGet() == 0) {
+                Collections.addAll<Any?>(set, *elements)
+            }
+        }
     }
-  }
 }

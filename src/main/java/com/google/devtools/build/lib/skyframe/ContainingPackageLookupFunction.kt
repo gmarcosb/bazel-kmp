@@ -11,53 +11,45 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.skyframe.PackageLookupValue.ErrorReason;
-import com.google.devtools.build.lib.skyframe.PackageLookupValue.IncorrectRepositoryReferencePackageLookupValue;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
 /**
- * SkyFunction for {@link ContainingPackageLookupValue}s.
+ * SkyFunction for [ContainingPackageLookupValue]s.
  */
-public class ContainingPackageLookupFunction implements SkyFunction {
+class ContainingPackageLookupFunction : SkyFunction {
+    @Throws(java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment): SkyValue? {
+        val dir: PackageIdentifier = skyKey.argument() as PackageIdentifier
+        val pkgLookupValue: PackageLookupValue? =
+            env.getValue(PackageLookupValue.key(dir)) as PackageLookupValue?
+        if (pkgLookupValue == null) {
+            return null
+        }
 
-  @Override
-  @Nullable
-  public SkyValue compute(SkyKey skyKey, Environment env) throws InterruptedException {
-    PackageIdentifier dir = (PackageIdentifier) skyKey.argument();
-    PackageLookupValue pkgLookupValue =
-        (PackageLookupValue) env.getValue(PackageLookupValue.key(dir));
-    if (pkgLookupValue == null) {
-      return null;
-    }
+        if (pkgLookupValue.packageExists()) {
+            return ContainingPackageLookupValue.Companion.withContainingPackage(dir, pkgLookupValue.getRoot())
+        }
 
-    if (pkgLookupValue.packageExists()) {
-      return ContainingPackageLookupValue.withContainingPackage(dir, pkgLookupValue.getRoot());
-    }
+        // Does the requested package cross into a sub-repository, which we should report via the
+        // correct package identifier?
+        if (pkgLookupValue
+                    is IncorrectRepositoryReferencePackageLookupValue
+        ) {
+            val correctPackageIdentifier: PackageIdentifier? =
+                pkgLookupValue.getCorrectedPackageIdentifier()
+            return env.getValue(ContainingPackageLookupValue.Companion.key(correctPackageIdentifier))
+        }
 
-    // Does the requested package cross into a sub-repository, which we should report via the
-    // correct package identifier?
-    if (pkgLookupValue
-        instanceof IncorrectRepositoryReferencePackageLookupValue incorrectPackageLookupValue) {
-      PackageIdentifier correctPackageIdentifier =
-          incorrectPackageLookupValue.getCorrectedPackageIdentifier();
-      return env.getValue(ContainingPackageLookupValue.key(correctPackageIdentifier));
+        if (ErrorReason.REPOSITORY_NOT_FOUND == pkgLookupValue.getErrorReason()) {
+            return ContainingPackageLookupValue.Companion.noContainingPackage(pkgLookupValue.getErrorMsg())
+        }
+        val parentDir: PathFragment? = dir.getPackageFragment().getParentDirectory()
+        if (parentDir == null) {
+            return ContainingPackageLookupValue.Companion.NONE
+        }
+        val parentId: PackageIdentifier? = PackageIdentifier.create(dir.getRepository(), parentDir)
+        return env.getValue(ContainingPackageLookupValue.Companion.key(parentId))
     }
-
-    if (ErrorReason.REPOSITORY_NOT_FOUND.equals(pkgLookupValue.getErrorReason())) {
-      return ContainingPackageLookupValue.noContainingPackage(pkgLookupValue.getErrorMsg());
-    }
-    PathFragment parentDir = dir.getPackageFragment().getParentDirectory();
-    if (parentDir == null) {
-      return ContainingPackageLookupValue.NONE;
-    }
-    PackageIdentifier parentId = PackageIdentifier.create(dir.getRepository(), parentDir);
-    return env.getValue(ContainingPackageLookupValue.key(parentId));
-  }
 }

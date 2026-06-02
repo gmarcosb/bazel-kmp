@@ -11,45 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.skyframe
 
-package com.google.devtools.build.skyframe;
-
-import static com.google.common.base.Preconditions.checkArgument;
-
-import com.google.common.collect.Sets;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetVisitor.VisitedState;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventKind;
-import com.google.devtools.build.lib.events.Reportable;
-import java.util.Set;
+import com.google.devtools.build.lib.collect.nestedset.NestedSetVisitor.VisitedState
 
 /**
- * Keeps track of visited nodes for {@linkplain com.google.devtools.build.lib.events.Reportable
- * events} stored in a {@link com.google.devtools.build.lib.collect.nestedset.NestedSet}.
- *
- * <p>Also tracks warnings for purposes of deduplication, since those are not {@linkplain
- * Event#storeForReplay stored}.
+ * Keeps track of visited nodes for [ events][com.google.devtools.build.lib.events.Reportable] stored in a [com.google.devtools.build.lib.collect.nestedset.NestedSet].
+ * 
+ * 
+ * Also tracks warnings for purposes of deduplication, since those are not [ ][Event.storeForReplay].
  */
-public final class EmittedEventState {
+class EmittedEventState {
+    private val seenEvents: MutableSet<Reportable?> = com.google.common.collect.Sets.newConcurrentHashSet<Reportable?>()
+    private val seenWarnings: MutableSet<Event?> = com.google.common.collect.Sets.newConcurrentHashSet<Event?>()
+    private var visitedState: VisitedState<Reportable?>? = VisitedState.createConcurrent(seenEvents::add)
 
-  private final Set<Reportable> seenEvents = Sets.newConcurrentHashSet();
-  private final Set<Event> seenWarnings = Sets.newConcurrentHashSet();
-  private VisitedState<Reportable> visitedState = VisitedState.createConcurrent(seenEvents::add);
+    /** Clears the seen nodes and warnings.  */
+    fun clear() {
+        seenEvents.clear()
+        seenWarnings.clear()
+        visitedState = VisitedState.createConcurrent(seenEvents::add)
+    }
 
-  /** Clears the seen nodes and warnings. */
-  public void clear() {
-    seenEvents.clear();
-    seenWarnings.clear();
-    visitedState = VisitedState.createConcurrent(seenEvents::add);
-  }
+    fun asVisitedState(): VisitedState<Reportable?>? {
+        return visitedState
+    }
 
-  VisitedState<Reportable> asVisitedState() {
-    return visitedState;
-  }
-
-  /** Returns {@code true} if the given warning was not seen before. */
-  boolean addWarning(Event warning) {
-    checkArgument(warning.getKind() == EventKind.WARNING, "Not a warning: %s", warning);
-    return seenWarnings.add(warning);
-  }
+    /** Returns `true` if the given warning was not seen before.  */
+    fun addWarning(warning: Event): Boolean {
+        com.google.common.base.Preconditions.checkArgument(
+            warning.getKind() === EventKind.WARNING,
+            "Not a warning: %s",
+            warning
+        )
+        return seenWarnings.add(warning)
+    }
 }

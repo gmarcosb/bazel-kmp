@@ -11,9 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-/** Injectable fingerprint function. */
-public interface Fingerprinter {
-  PackedFingerprint fingerprint(byte[] input);
+import com.google.devtools.build.lib.skyframe.serialization.PackedFingerprint
+
+/** Injectable fingerprint function.  */
+interface Fingerprinter {
+    fun fingerprint(input: ByteArray?): PackedFingerprint?
 }

@@ -11,55 +11,62 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.devtools.build.skyframe.SkyFunctionException.ReifiedSkyFunctionException;
-import java.util.Set;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.SkyFunctionException.ReifiedSkyFunctionException
+import com.google.devtools.build.skyframe.SkyKey
 
-/** Used by {@link ParallelEvaluator} to produce and consume {@link ErrorInfo} instances. */
-public interface ErrorInfoManager {
-  ErrorInfo fromException(
-      SkyKey key,
-      ReifiedSkyFunctionException skyFunctionException,
-      boolean isTransitivelyTransient);
+/** Used by [ParallelEvaluator] to produce and consume [ErrorInfo] instances.  */
+interface ErrorInfoManager {
+    fun fromException(
+        key: SkyKey?,
+        skyFunctionException: ReifiedSkyFunctionException?,
+        isTransitivelyTransient: Boolean
+    ): com.google.devtools.build.skyframe.ErrorInfo?
 
-  /**
-   * Returns the {@link ErrorInfo} to use when there isn't currently one because {@link
-   * SkyFunction#compute} didn't throw a {@link SkyFunctionException}.
-   */
-  @Nullable
-  ErrorInfo getErrorInfoToUse(SkyKey skyKey, boolean hasValue, Set<ErrorInfo> childErrorInfos);
+    /**
+     * Returns the [ErrorInfo] to use when there isn't currently one because [ ][SkyFunction.compute] didn't throw a [SkyFunctionException].
+     */
+    fun getErrorInfoToUse(
+        skyKey: SkyKey?,
+        hasValue: Boolean,
+        childErrorInfos: MutableSet<com.google.devtools.build.skyframe.ErrorInfo?>?
+    ): com.google.devtools.build.skyframe.ErrorInfo?
 
-  /**
-   * Trivial {@link ErrorInfoManager} implementation whose {@link #fromException} simply uses
-   * {@link ErrorInfo#fromException} and whose {@link #getErrorInfoToUse} makes an {@link ErrorInfo}
-   * from the given {@code childErrorInfos}.
-   */
-  static class UseChildErrorInfoIfNecessary implements ErrorInfoManager {
-    public static final UseChildErrorInfoIfNecessary INSTANCE = new UseChildErrorInfoIfNecessary();
+    /**
+     * Trivial [ErrorInfoManager] implementation whose [.fromException] simply uses
+     * [ErrorInfo.fromException] and whose [.getErrorInfoToUse] makes an [ErrorInfo]
+     * from the given `childErrorInfos`.
+     */
+    class UseChildErrorInfoIfNecessary private constructor() : ErrorInfoManager {
+        override fun fromException(
+            key: SkyKey?,
+            skyFunctionException: ReifiedSkyFunctionException,
+            isTransitivelyTransient: Boolean
+        ): com.google.devtools.build.skyframe.ErrorInfo {
+            return com.google.devtools.build.skyframe.ErrorInfo.Companion.fromException(
+                skyFunctionException,
+                isTransitivelyTransient
+            )
+        }
 
-    private UseChildErrorInfoIfNecessary() {
+        override fun getErrorInfoToUse(
+            skyKey: SkyKey?,
+            hasValue: Boolean,
+            childErrorInfos: MutableSet<com.google.devtools.build.skyframe.ErrorInfo?>
+        ): com.google.devtools.build.skyframe.ErrorInfo? {
+            if (childErrorInfos.isEmpty()) {
+                return null
+            }
+            val errorInfo: com.google.devtools.build.skyframe.ErrorInfo =
+                com.google.devtools.build.skyframe.ErrorInfo.Companion.fromChildErrors(skyKey, childErrorInfos)
+
+            return if (hasValue) com.google.devtools.build.skyframe.ErrorInfo.Companion.withValue(errorInfo) else errorInfo
+        }
+
+        companion object {
+            @kotlin.jvm.JvmField
+            val INSTANCE: UseChildErrorInfoIfNecessary = UseChildErrorInfoIfNecessary()
+        }
     }
-
-    @Override
-    public ErrorInfo fromException(
-        SkyKey key,
-        ReifiedSkyFunctionException skyFunctionException,
-        boolean isTransitivelyTransient) {
-      return ErrorInfo.fromException(skyFunctionException, isTransitivelyTransient);
-    }
-
-    @Override
-    @Nullable
-    public ErrorInfo getErrorInfoToUse(
-        SkyKey skyKey, boolean hasValue, Set<ErrorInfo> childErrorInfos) {
-      if (childErrorInfos.isEmpty()) {
-        return null;
-      }
-      var errorInfo = ErrorInfo.fromChildErrors(skyKey, childErrorInfos);
-
-      return hasValue ? ErrorInfo.withValue(errorInfo) : errorInfo;
-    }
-  }
 }

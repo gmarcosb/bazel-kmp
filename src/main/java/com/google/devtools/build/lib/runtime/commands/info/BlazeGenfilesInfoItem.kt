@@ -11,31 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime.commands.info
 
-package com.google.devtools.build.lib.runtime.commands.info;
+import com.google.common.base.Preconditions
+import com.google.common.base.Supplier
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.base.Supplier;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.InfoItem;
-
-/** Info item for the {blaze,bazel}-genfiles directory. */
-public final class BlazeGenfilesInfoItem extends InfoItem {
-  public BlazeGenfilesInfoItem(String productName) {
-    super(
-        productName + "-genfiles", "Configuration dependent directory for generated files.", false);
-  }
-
-  // This is one of the three (non-hidden) info items that require a configuration, because the
-  // corresponding paths contain the short name. Maybe we should recommend using the symlinks
-  // or make them hidden by default?
-  @Override
-  public byte[] get(
-      Supplier<BuildConfigurationValue> configurationSupplier, CommandEnvironment env) {
-    checkNotNull(configurationSupplier);
-    return print(configurationSupplier.get().getGenfilesDirectory(RepositoryName.MAIN).getRoot());
-  }
+/** Info item for the {blaze,bazel}-genfiles directory.  */
+class BlazeGenfilesInfoItem(productName: String?) : InfoItem(
+    productName + "-genfiles", "Configuration dependent directory for generated files.", false
+) {
+    // This is one of the three (non-hidden) info items that require a configuration, because the
+    // corresponding paths contain the short name. Maybe we should recommend using the symlinks
+    // or make them hidden by default?
+    public override fun get(
+        configurationSupplier: Supplier<BuildConfigurationValue?>?, env: CommandEnvironment?
+    ): ByteArray {
+        Preconditions.checkNotNull<Supplier<BuildConfigurationValue?>?>(configurationSupplier)
+        return print(configurationSupplier!!.get().getGenfilesDirectory(RepositoryName.MAIN).getRoot())
+    }
 }

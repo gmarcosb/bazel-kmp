@@ -11,79 +11,54 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules
 
-package com.google.devtools.build.lib.rules;
-
-import static com.google.devtools.build.lib.packages.Attribute.attr;
-
-import com.google.devtools.build.lib.actions.ActionConflictException;
-import com.google.devtools.build.lib.analysis.BaseRuleClasses;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.RuleConfiguredTargetBuilder;
-import com.google.devtools.build.lib.analysis.RuleConfiguredTargetFactory;
-import com.google.devtools.build.lib.analysis.RuleContext;
-import com.google.devtools.build.lib.analysis.RuleDefinition;
-import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment;
-import com.google.devtools.build.lib.analysis.Runfiles;
-import com.google.devtools.build.lib.analysis.RunfilesProvider;
-import com.google.devtools.build.lib.analysis.platform.ToolchainTypeInfo;
-import com.google.devtools.build.lib.packages.RuleClass;
-import com.google.devtools.build.lib.packages.RuleClass.ToolchainResolutionMode;
-import com.google.devtools.build.lib.packages.Type;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.packages.Attribute.attr
 
 /**
- * Implementation of {@code toolchain_type}.
+ * Implementation of `toolchain_type`.
  */
-public class ToolchainType implements RuleConfiguredTargetFactory {
+class ToolchainType : RuleConfiguredTargetFactory {
+    @Throws(ActionConflictException::class, java.lang.InterruptedException::class)
+    public override fun create(ruleContext: RuleContext): ConfiguredTarget? {
+        val noMatchError: String = ruleContext.attributes().get("no_match_error", Type.STRING)
+        val toolchainTypeInfo: ToolchainTypeInfo? =
+            ToolchainTypeInfo.create(
+                ruleContext.getLabel(), if (noMatchError.isEmpty()) null else noMatchError
+            )
 
-  @Override
-  @Nullable
-  public ConfiguredTarget create(RuleContext ruleContext)
-      throws ActionConflictException, InterruptedException {
+        return RuleConfiguredTargetBuilder(ruleContext)
+            .addProvider(RunfilesProvider.simple(Runfiles.EMPTY))
+            .addNativeDeclaredProvider(toolchainTypeInfo)
+            .build()
+    }
 
-    String noMatchError = ruleContext.attributes().get("no_match_error", Type.STRING);
-    ToolchainTypeInfo toolchainTypeInfo =
-        ToolchainTypeInfo.create(
-            ruleContext.getLabel(), noMatchError.isEmpty() ? null : noMatchError);
-
-    return new RuleConfiguredTargetBuilder(ruleContext)
-        .addProvider(RunfilesProvider.simple(Runfiles.EMPTY))
-        .addNativeDeclaredProvider(toolchainTypeInfo)
-        .build();
-  }
-
-  /** Definition for {@code toolchain_type}. */
-  public static class ToolchainTypeRule implements RuleDefinition {
-
-    @Override
-    public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment environment) {
-      return builder
-          .toolchainResolutionMode(ToolchainResolutionMode.DISABLED)
-          .advertiseStarlarkProvider(ToolchainTypeInfo.PROVIDER.id())
-          .removeAttribute("licenses")
-          .removeAttribute("distribs")
-          .removeAttribute(":action_listener")
-          /*<!-- #BLAZE_RULE(toolchain_type).ATTRIBUTE(no_match_error) -->
+    /** Definition for `toolchain_type`.  */
+    class ToolchainTypeRule : RuleDefinition {
+        public override fun build(builder: RuleClass.Builder, environment: RuleDefinitionEnvironment?): RuleClass {
+            return builder
+                .toolchainResolutionMode(ToolchainResolutionMode.DISABLED)
+                .advertiseStarlarkProvider(ToolchainTypeInfo.PROVIDER.id())
+                .removeAttribute("licenses")
+                .removeAttribute("distribs")
+                .removeAttribute(":action_listener") /*<!-- #BLAZE_RULE(toolchain_type).ATTRIBUTE(no_match_error) -->
           A custom error message to display when no matching toolchain is found for this type.
           <!-- #END_BLAZE_RULE.ATTRIBUTE -->*/
-          .add(
-              attr("no_match_error", Type.STRING)
-                  .nonconfigurable("low-level attribute, used in platform configuration"))
-          .build();
-    }
+                .add(
+                    attr("no_match_error", Type.STRING)
+                        .nonconfigurable("low-level attribute, used in platform configuration")
+                )
+                .build()
+        }
 
-    @Override
-    public Metadata getMetadata() {
-      return Metadata.builder()
-          .name("toolchain_type")
-          .factoryClass(ToolchainType.class)
-          .ancestors(BaseRuleClasses.NativeBuildRule.class)
-          .build();
+        val metadata: Metadata
+            get() = Metadata.builder()
+                .name("toolchain_type")
+                .factoryClass(com.google.devtools.build.lib.rules.ToolchainType::class.java)
+                .ancestors(BaseRuleClasses.NativeBuildRule::class.java)
+                .build()
     }
-  }
-}
-/*<!-- #BLAZE_RULE (NAME = toolchain_type, FAMILY = Platforms and Toolchains)[GENERIC_RULE] -->
+} /*<!-- #BLAZE_RULE (NAME = toolchain_type, FAMILY = Platforms and Toolchains)[GENERIC_RULE] -->
 
 <p>
   This rule defines a new type of toolchain -- a simple target that represents a class of tools that

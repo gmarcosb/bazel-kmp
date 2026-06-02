@@ -12,40 +12,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
+
+import com.google.devtools.build.lib.vfs.PathFragment
+import com.google.devtools.build.lib.vfs.PathTransformingDelegateFileSystem
 
 /**
- * A file system that delegates all operations to {@code delegateFs} under the hood.
- *
- * <p>This is helpful when wanting to implement a file system on top of another file system as it
- * allows code patterns like: <code>
- * {@literal @}Override
+ * A file system that delegates all operations to `delegateFs` under the hood.
+ * 
+ * 
+ * This is helpful when wanting to implement a file system on top of another file system as it
+ * allows code patterns like: `
+ * @Override
  * protected long getFileSize(PathFragment path, boolean followSymlinks) throws IOException {
- *   if (!someCondition) {
- *     return super.getFileSize(path, followSymlinks);
- *   }
- *   return rpc.getFileSize(path, followSymlinks);
+ * if (!someCondition) {
+ * return super.getFileSize(path, followSymlinks);
  * }
- * </code>
- *
- * <p>The implementation uses {@link PathTransformingDelegateFileSystem} with identity path
- * transformations ({@linkplain PathTransformingDelegateFileSystem#toDelegatePath(PathFragment)
- * toDelegatePath} and {@linkplain PathTransformingDelegateFileSystem#fromDelegatePath(PathFragment)
- * fromDelegatePath}).
+ * return rpc.getFileSize(path, followSymlinks);
+ * }
+` * 
+ * 
+ * 
+ * The implementation uses [PathTransformingDelegateFileSystem] with identity path
+ * transformations ([ toDelegatePath][PathTransformingDelegateFileSystem.toDelegatePath] and [ fromDelegatePath][PathTransformingDelegateFileSystem.fromDelegatePath]).
  */
-public abstract class DelegateFileSystem extends PathTransformingDelegateFileSystem {
+abstract class DelegateFileSystem(delegateFs: com.google.devtools.build.lib.vfs.FileSystem) :
+    PathTransformingDelegateFileSystem(delegateFs) {
+    override fun toDelegatePath(path: PathFragment?): PathFragment? {
+        return path
+    }
 
-  public DelegateFileSystem(FileSystem delegateFs) {
-    super(delegateFs);
-  }
-
-  @Override
-  protected final PathFragment toDelegatePath(PathFragment path) {
-    return path;
-  }
-
-  @Override
-  protected final PathFragment fromDelegatePath(PathFragment delegatePath) {
-    return delegatePath;
-  }
+    override fun fromDelegatePath(delegatePath: PathFragment?): PathFragment? {
+        return delegatePath
+    }
 }

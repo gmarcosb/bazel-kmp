@@ -11,44 +11,42 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.devtools.build.lib.skyframe.SkyFunctions.FILE;
+import com.google.devtools.build.lib.skyframe.FileOpNodeOrFuture.FileOpNode
+import com.google.devtools.build.lib.skyframe.SkyFunctions
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
+import com.google.devtools.build.lib.vfs.RootedPath
+import com.google.devtools.build.skyframe.AbstractSkyKey
+import com.google.devtools.build.skyframe.SkyFunctionName
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyKey.SkyKeyInterner
 
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.skyframe.AbstractSkyKey;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-
-/** Key for {@link FileFunction}. */
+/** Key for [FileFunction].  */
 @AutoCodec
-public final class FileKey extends AbstractSkyKey<RootedPath>
-    implements FileOpNodeOrFuture.FileOpNode {
-  private static final SkyKeyInterner<FileKey> interner = SkyKey.newInterner();
+class FileKey private constructor(arg: RootedPath?) : AbstractSkyKey<RootedPath?>(arg), FileOpNode {
+    override fun functionName(): SkyFunctionName {
+        return SkyFunctions.FILE
+    }
 
-  public static FileKey create(RootedPath arg) {
-    return interner.intern(new FileKey(arg));
-  }
+    val skyKeyInterner: SkyKeyInterner<FileKey?>
+        get() = com.google.devtools.build.lib.skyframe.FileKey.Companion.interner
 
-  private FileKey(RootedPath arg) {
-    super(arg);
-  }
+    companion object {
+        private val interner: SkyKeyInterner<FileKey?> = SkyKey.newInterner<FileKey?>()
 
-  @VisibleForSerialization
-  @AutoCodec.Interner
-  static FileKey intern(FileKey key) {
-    return interner.intern(key);
-  }
+        fun create(arg: RootedPath?): FileKey {
+            return com.google.devtools.build.lib.skyframe.FileKey.Companion.interner.intern(
+                com.google.devtools.build.lib.skyframe.FileKey(
+                    arg
+                )
+            )
+        }
 
-  @Override
-  public SkyFunctionName functionName() {
-    return FILE;
-  }
-
-  @Override
-  public SkyKeyInterner<FileKey> getSkyKeyInterner() {
-    return interner;
-  }
+        @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+        @AutoCodec.Interner
+        fun intern(key: FileKey?): FileKey {
+            return com.google.devtools.build.lib.skyframe.FileKey.Companion.interner.intern(key)
+        }
+    }
 }

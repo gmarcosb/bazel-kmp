@@ -11,411 +11,362 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.devtools.build.lib.cmdline.Label.labelCodec;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableTable;
-import com.google.devtools.build.lib.cmdline.BazelModuleKey;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.BzlVisibility;
-import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec;
-import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.util.HashCodes;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyKey.SkyKeyInterner;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.errorprone.annotations.Keep;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import net.starlark.java.eval.Module;
+import com.google.devtools.build.lib.cmdline.Label.labelCodec
 
 /**
- * A value that represents the .bzl (or .scl) module loaded by a Starlark {@code load()} statement.
- *
- * <p>Note: Historically, all modules had the .bzl suffix, but this is no longer true now that Bazel
+ * A value that represents the .bzl (or .scl) module loaded by a Starlark `load()` statement.
+ * 
+ * 
+ * Note: Historically, all modules had the .bzl suffix, but this is no longer true now that Bazel
  * supports the .scl dialect. In identifiers, code comments, and documentation, you should generally
  * assume any "bzl" term could mean a .scl file as well.
- *
- * <p>The key consists of an absolute {@link Label} and the context in which the load occurs. The
- * Label should not reference the special {@code external} package.
- *
- * <p>This value is also used to represent the special prelude file that may be implicitly loaded
+ * 
+ * 
+ * The key consists of an absolute [Label] and the context in which the load occurs. The
+ * Label should not reference the special `external` package.
+ * 
+ * 
+ * This value is also used to represent the special prelude file that may be implicitly loaded
  * and sourced by BUILD files. The prelude file need not end in ".bzl".
  */
-public class BzlLoadValue implements SkyValue {
+class BzlLoadValue @com.google.common.annotations.VisibleForTesting constructor(
+    module: net.starlark.java.eval.Module?,
+    transitiveDigest: ByteArray?,
+    bzlVisibility: BzlVisibility?,
+    recordedRepoMappings: com.google.common.collect.ImmutableTable<RepositoryName?, String?, RepositoryName?>?
+) : SkyValue {
+    private val module: net.starlark.java.eval.Module? // .bzl module (and indirectly, the entire load DAG)
 
-  private final Module module; // .bzl module (and indirectly, the entire load DAG)
-  // TODO(brandjon): Is this field redundant with BazelModuleContext#bzlTransitiveDigest, accessible
-  // from the Module as client data?
-  private final byte[] transitiveDigest; // of .bzl file and load dependencies
-  private final BzlVisibility bzlVisibility;
-  private final ImmutableTable<RepositoryName, String, RepositoryName> recordedRepoMappings;
-
-  @VisibleForTesting
-  public BzlLoadValue(
-      Module module,
-      byte[] transitiveDigest,
-      BzlVisibility bzlVisibility,
-      ImmutableTable<RepositoryName, String, RepositoryName> recordedRepoMappings) {
-    this.module = checkNotNull(module);
-    this.transitiveDigest = checkNotNull(transitiveDigest);
-    this.bzlVisibility = checkNotNull(bzlVisibility);
-    this.recordedRepoMappings = checkNotNull(recordedRepoMappings);
-  }
-
-  /** Returns the .bzl module. */
-  public Module getModule() {
-    return module;
-  }
-
-  /** Returns the digest of the .bzl module and its transitive load dependencies. */
-  public byte[] getTransitiveDigest() {
-    return transitiveDigest;
-  }
-
-  /** Returns the visibility of this module for the purpose of {@code load()} statements. */
-  public BzlVisibility getBzlVisibility() {
-    return bzlVisibility;
-  }
-
-  /**
-   * Returns the repo mapping entries used to laod this bzl file. Stored for correctness across
-   * Bazel server restarts.
-   */
-  public ImmutableTable<RepositoryName, String, RepositoryName> getRecordedRepoMappings() {
-    return recordedRepoMappings;
-  }
-
-  private static final SkyKeyInterner<Key> keyInterner = SkyKey.newInterner();
-
-  private abstract static sealed class KeyForLocalEval extends Key
-      permits KeyForBuild, KeyForBuiltins {}
-
-  /** SkyKey for a Starlark load. */
-  public abstract static sealed class Key implements BazelModuleKey
-      permits KeyForLocalEval, KeyForBzlmod {
-    // Closed, for class-based equals()/hashCode().
-    private Key() {}
+    /** Returns the digest of the .bzl module and its transitive load dependencies.  */
+    // TODO(brandjon): Is this field redundant with BazelModuleContext#bzlTransitiveDigest, accessible
+    // from the Module as client data?
+    @kotlin.jvm.JvmField
+    val transitiveDigest: ByteArray? // of .bzl file and load dependencies
+    private val bzlVisibility: BzlVisibility?
 
     /**
-     * Returns the absolute label of the .bzl file to be loaded.
-     *
-     * <p>For {@link KeyForBuiltins}, it must begin with {@code @_builtins//:}. (It is legal for
-     * other keys to use {@code @_builtins}, but since no real repo by that name may be defined,
-     * they won't evaluate to a successful result.)
+     * Returns the repo mapping entries used to laod this bzl file. Stored for correctness across
+     * Bazel server restarts.
      */
-    @Override
-    public abstract Label getLabel();
+    @kotlin.jvm.JvmField
+    val recordedRepoMappings: com.google.common.collect.ImmutableTable<RepositoryName?, String?, RepositoryName?>? =
+        null
 
-    /** Returns true if this is a request for the special BUILD prelude file. */
-    boolean isBuildPrelude() {
-      return false;
+    /** Returns the .bzl module.  */
+    fun getModule(): net.starlark.java.eval.Module? {
+        return module
     }
 
-    /** Returns true if this is a request for a builtins bzl file. */
-    boolean isBuiltins() {
-      return false;
+    /** Returns the visibility of this module for the purpose of `load()` statements.  */
+    fun getBzlVisibility(): BzlVisibility? {
+        return bzlVisibility
     }
 
-    /** Returns true if the requested file follows the .scl dialect. */
-    // Note: Just as with .bzl, the same .scl file can be referred to from multiple key types, for
-    // instance if a BUILD file and a module rule both load foo.scl. Conceptually, .scl files
-    // shouldn't depend on what kind of top-level file caused them to load, but in practice, this
-    // implementation quirk means that the .scl file will be loaded twice as separate copies.
-    //
-    // This shouldn't matter except in rare edge cases, such as if a Starlark function is loaded
-    // from both copies and compared for equality. Performance wise, it also means that all
-    // transitive .scl files will be double-loaded, but we don't expect that to be significant.
-    //
-    // The alternative is to use a separate key type just for .scl, but that complicates repo logic;
-    // see BzlLoadFunction#getRepositoryMapping.
-    final boolean isSclDialect() {
-      return getLabel().name.endsWith(".scl");
+    init {
+        .also {
+            this.module = it
+        }<Module> com . google . common . base . Preconditions . checkNotNull < net . starlark . java . eval . Module ? > (module)
+            .also { this.transitiveDigest = it } <
+                com.google.common.base.Preconditions.checkNotNull<ByteArray?>(transitiveDigest)
+                    .also {
+                        this.bzlVisibility = it
+                    }<BzlVisibility> com . google . common . base . Preconditions . checkNotNull < kotlin . Any ? > (bzlVisibility)
+        TODO(
+            """
+            |Cannot convert element
+            |With text:
+            |this.recordedRepoMappings = <ImmutableTable<RepositoryName, String,RepositoryName>>checkNotNull(recordedRepoMappings);
+            """.trimMargin()
+        )
+    }
+
+    private abstract class KeyForLocalEval : Key()
+
+
+    /** SkyKey for a Starlark load.  */
+    abstract class Key  // Closed, for class-based equals()/hashCode().
+    private constructor() : BazelModuleKey {
+        /**
+         * Returns the absolute label of the .bzl file to be loaded.
+         * 
+         * 
+         * For [KeyForBuiltins], it must begin with `@_builtins//:`. (It is legal for
+         * other keys to use `@_builtins`, but since no real repo by that name may be defined,
+         * they won't evaluate to a successful result.)
+         */
+        @kotlin.jvm.JvmField
+        abstract val label: Label?
+
+        open val isBuildPrelude: Boolean
+            /** Returns true if this is a request for the special BUILD prelude file.  */
+            get() = false
+
+        open val isBuiltins: Boolean
+            /** Returns true if this is a request for a builtins bzl file.  */
+            get() = false
+
+        val isSclDialect: Boolean
+            /** Returns true if the requested file follows the .scl dialect.  */
+            get() = this.label.name.endsWith(".scl")
+
+        /**
+         * Constructs a new key suitable for evaluating a `load()` dependency of this key's .bzl
+         * file.
+         * 
+         * 
+         * The new key uses the given label but the same contextual information -- whether the
+         * top-level requesting value is a BUILD or WORKSPACE file, and if it's a WORKSPACE, its
+         * chunking info.
+         */
+        abstract fun getKeyForLoad(loadLabel: Label?): Key?
+
+        /**
+         * Constructs a BzlCompileValue key suitable for retrieving the Starlark code for this .bzl,
+         * given the Root in which to find its file.
+         */
+        abstract fun getCompileKey(root: Root?): com.google.devtools.build.lib.skyframe.BzlCompileValue.Key?
+
+        public override fun valueIsShareable(): Boolean {
+            // We don't guarantee that all constructs implement equality, meaning we can't correctly
+            // compare deserialized instances. This is currently the case for attribute descriptors.
+            return false
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            if (this === obj) {
+                return true
+            }
+            if (obj == null) {
+                return false
+            }
+            if (this.getClass() != obj.getClass()) {
+                return false
+            }
+            val that = obj as Key
+            return this.label.equals(that.label)
+                    && (this.isBuildPrelude == that.isBuildPrelude)
+                    && (this.isBuiltins == that.isBuiltins)
+        }
+
+        override fun hashCode(): Int {
+            var result: Int = HashCodes.hashObjects(getClass(), this.label)
+            result = 31 * result + java.lang.Boolean.hashCode(this.isBuildPrelude)
+            result = 31 * result + java.lang.Boolean.hashCode(this.isBuiltins)
+            return result
+        }
+
+        protected fun toStringHelper(): com.google.common.base.MoreObjects.ToStringHelper {
+            return com.google.common.base.MoreObjects.toStringHelper(this)
+                .add("label", this.label)
+                .add("isBuildPrelude", this.isBuildPrelude)
+        }
+
+        override fun toString(): String {
+            return toStringHelper().toString()
+        }
+
+        val skyKeyInterner: SkyKeyInterner<Key?>
+            get() = keyInterner
+    }
+
+    /** A key for loading a .bzl during package loading (BUILD evaluation).  */
+    @Immutable
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    internal class KeyForBuild private constructor(
+        label: Label?,
+        /**
+         * True if this is the special prelude file, whose declarations are implicitly loaded by all
+         * BUILD files.
+         */
+        private val isBuildPrelude: Boolean
+    ) : KeyForLocalEval() {
+        private val label: Label
+
+        init {
+            this.label = com.google.common.base.Preconditions.checkNotNull<Label>(label)
+        }
+
+        override fun getLabel(): Label {
+            return label
+        }
+
+        override fun isBuildPrelude(): Boolean {
+            return isBuildPrelude
+        }
+
+        override fun getKeyForLoad(loadLabel: Label?): Key {
+            // Note that the returned key always has !isBuildPrelude. I.e., if the prelude file loads
+            // another .bzl, the loaded .bzl is processed as normal with no special prelude magic. This is
+            // because 1) only the prelude file, not its dependencies, should automatically re-export its
+            // loaded symbols; and 2) we don't want prelude-loaded modules to end up cloned if they're
+            // also loaded through normal means.
+            return keyForBuild(loadLabel)
+        }
+
+        override fun getCompileKey(root: Root?): com.google.devtools.build.lib.skyframe.BzlCompileValue.Key? {
+            if (isBuildPrelude) {
+                return BzlCompileValue.Companion.keyForBuildPrelude(root, label)
+            } else {
+                return BzlCompileValue.Companion.key(root, label)
+            }
+        }
     }
 
     /**
-     * Constructs a new key suitable for evaluating a {@code load()} dependency of this key's .bzl
-     * file.
-     *
-     * <p>The new key uses the given label but the same contextual information -- whether the
-     * top-level requesting value is a BUILD or WORKSPACE file, and if it's a WORKSPACE, its
-     * chunking info.
+     * A key for loading a .bzl during `@_builtins` evaluation.
+     * 
+     * 
+     * This kind of key is only requested by [StarlarkBuiltinsFunction] and its transitively
+     * loaded [BzlLoadFunction] calls.
+     * 
+     * 
+     * The label must have [RepositoryName.BUILTINS] as its repository component. (It is
+     * valid for other key types to use that repo name, but since it is not a real repository and
+     * cannot be fetched, any attempt to resolve such a key would fail.)
      */
-    abstract Key getKeyForLoad(Label loadLabel);
+    @Immutable
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    internal class KeyForBuiltins private constructor(label: Label?) : KeyForLocalEval() {
+        private val label: Label
 
-    /**
-     * Constructs a BzlCompileValue key suitable for retrieving the Starlark code for this .bzl,
-     * given the Root in which to find its file.
-     */
-    abstract BzlCompileValue.Key getCompileKey(Root root);
-
-    @Override
-    public final boolean valueIsShareable() {
-      // We don't guarantee that all constructs implement equality, meaning we can't correctly
-      // compare deserialized instances. This is currently the case for attribute descriptors.
-      return false;
-    }
-
-    @SuppressWarnings("EqualsGetClass") // All subclasses are known.
-    @Override
-    public boolean equals(Object obj) {
-      if (this == obj) {
-        return true;
-      }
-      if (obj == null) {
-        return false;
-      }
-      if (!this.getClass().equals(obj.getClass())) {
-        return false;
-      }
-      Key that = (Key) obj;
-      return this.getLabel().equals(that.getLabel())
-          && (this.isBuildPrelude() == that.isBuildPrelude())
-          && (this.isBuiltins() == that.isBuiltins());
-    }
-
-    @Override
-    public int hashCode() {
-      int result = HashCodes.hashObjects(getClass(), getLabel());
-      result = 31 * result + Boolean.hashCode(isBuildPrelude());
-      result = 31 * result + Boolean.hashCode(isBuiltins());
-      return result;
-    }
-
-    protected final MoreObjects.ToStringHelper toStringHelper() {
-      return MoreObjects.toStringHelper(this)
-          .add("label", getLabel())
-          .add("isBuildPrelude", isBuildPrelude());
-    }
-
-    @Override
-    public String toString() {
-      return toStringHelper().toString();
-    }
-
-    @Override
-    public SkyKeyInterner<Key> getSkyKeyInterner() {
-      return keyInterner;
-    }
-  }
-
-  /** A key for loading a .bzl during package loading (BUILD evaluation). */
-  @Immutable
-  @VisibleForSerialization
-  static final class KeyForBuild extends KeyForLocalEval {
-    private final Label label;
-
-    /**
-     * True if this is the special prelude file, whose declarations are implicitly loaded by all
-     * BUILD files.
-     */
-    private final boolean isBuildPrelude;
-
-    private KeyForBuild(Label label, boolean isBuildPrelude) {
-      this.label = checkNotNull(label);
-      this.isBuildPrelude = isBuildPrelude;
-    }
-
-    @Override
-    public Label getLabel() {
-      return label;
-    }
-
-    @Override
-    boolean isBuildPrelude() {
-      return isBuildPrelude;
-    }
-
-    @Override
-    Key getKeyForLoad(Label loadLabel) {
-      // Note that the returned key always has !isBuildPrelude. I.e., if the prelude file loads
-      // another .bzl, the loaded .bzl is processed as normal with no special prelude magic. This is
-      // because 1) only the prelude file, not its dependencies, should automatically re-export its
-      // loaded symbols; and 2) we don't want prelude-loaded modules to end up cloned if they're
-      // also loaded through normal means.
-      return keyForBuild(loadLabel);
-    }
-
-    @Override
-    BzlCompileValue.Key getCompileKey(Root root) {
-      if (isBuildPrelude) {
-        return BzlCompileValue.keyForBuildPrelude(root, label);
-      } else {
-        return BzlCompileValue.key(root, label);
-      }
-    }
-  }
-
-  /**
-   * A key for loading a .bzl during {@code @_builtins} evaluation.
-   *
-   * <p>This kind of key is only requested by {@link StarlarkBuiltinsFunction} and its transitively
-   * loaded {@link BzlLoadFunction} calls.
-   *
-   * <p>The label must have {@link RepositoryName#BUILTINS} as its repository component. (It is
-   * valid for other key types to use that repo name, but since it is not a real repository and
-   * cannot be fetched, any attempt to resolve such a key would fail.)
-   */
-  @Immutable
-  @VisibleForSerialization
-  static final class KeyForBuiltins extends KeyForLocalEval {
-    private final Label label;
-
-    private KeyForBuiltins(Label label) {
-      this.label = checkNotNull(label);
-      if (!StarlarkBuiltinsValue.isBuiltinsRepo(label.getRepository())) {
-        throw new IllegalArgumentException("repository name for builtins key must be '@_builtins'");
-      }
-    }
-
-    @Override
-    public Label getLabel() {
-      return label;
-    }
-
-    @Override
-    boolean isBuiltins() {
-      return true;
-    }
-
-    @Override
-    Key getKeyForLoad(Label label) {
-      return keyForBuiltins(label);
-    }
-
-    @Override
-    BzlCompileValue.Key getCompileKey(Root root) {
-      return BzlCompileValue.keyForBuiltins(root, label);
-    }
-  }
-
-  /** A key for loading a .bzl to get the repo rule required by Bzlmod generated repositories. */
-  @Immutable
-  @VisibleForSerialization
-  static sealed class KeyForBzlmod extends Key permits KeyForBzlmodBootstrap {
-    private final Label label;
-
-    private KeyForBzlmod(Label label) {
-      this.label = checkNotNull(label);
-    }
-
-    @Override
-    public Label getLabel() {
-      return label;
-    }
-
-    @Override
-    Key getKeyForLoad(Label loadLabel) {
-      return keyForBzlmod(loadLabel);
-    }
-
-    @Override
-    BzlCompileValue.Key getCompileKey(Root root) {
-      return BzlCompileValue.key(root, label);
-    }
-  }
-
-  @Immutable
-  @VisibleForSerialization
-  static final class KeyForBzlmodBootstrap extends KeyForBzlmod {
-    private KeyForBzlmodBootstrap(Label label) {
-      super(label);
-    }
-
-    @Override
-    Key getKeyForLoad(Label loadLabel) {
-      return keyForBzlmodBootstrap(loadLabel);
-    }
-  }
-
-  /** Constructs a key for loading a regular .bzl file from BUILD files. */
-  public static Key keyForBuild(Label label) {
-    return keyInterner.intern(new KeyForBuild(label, /* isBuildPrelude= */ false));
-  }
-
-  /** Constructs a key for loading a .bzl file within the {@code @_builtins} pseudo-repository. */
-  public static Key keyForBuiltins(Label label) {
-    return keyInterner.intern(new KeyForBuiltins(label));
-  }
-
-  /** Constructs a key for loading the special prelude .bzl. */
-  static Key keyForBuildPrelude(Label label) {
-    return keyInterner.intern(new KeyForBuild(label, /* isBuildPrelude= */ true));
-  }
-
-  /** Constructs a key for loading a .bzl for Bzlmod repos */
-  public static Key keyForBzlmod(Label label) {
-    return keyInterner.intern(new KeyForBzlmod(label));
-  }
-
-  public static Key keyForBzlmodBootstrap(Label label) {
-    Preconditions.checkArgument(
-        label.getRepository().equals(RepositoryName.BAZEL_TOOLS),
-        "keyForBzlmodBootstrap must be called with a label in the bazel_tools repository");
-    return keyInterner.intern(new KeyForBzlmodBootstrap(label));
-  }
-
-  public static KeyCodec bzlLoadKeyCodec() {
-    return KeyCodec.INSTANCE;
-  }
-
-  @Keep
-  private static final class KeyCodec extends LeafObjectCodec<Key> {
-    private static final KeyCodec INSTANCE = new KeyCodec();
-
-    @Override
-    public Class<KeyForLocalEval> getEncodedClass() {
-      return KeyForLocalEval.class;
-    }
-
-    @Override
-    public void serialize(LeafSerializationContext context, Key obj, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      context.serializeLeaf(obj.getLabel(), labelCodec(), codedOut);
-
-      switch (obj) {
-        case KeyForBuild forBuild -> {
-          codedOut.writeInt32NoTag(0);
-          codedOut.writeBoolNoTag(forBuild.isBuildPrelude());
+        init {
+            this.label = com.google.common.base.Preconditions.checkNotNull<Label>(label)
+            require(StarlarkBuiltinsValue.isBuiltinsRepo(label.getRepository())) { "repository name for builtins key must be '@_builtins'" }
         }
-        case KeyForBuiltins forBuiltins -> {
-          codedOut.writeInt32NoTag(1);
+
+        override fun getLabel(): Label {
+            return label
         }
-        case KeyForBzlmodBootstrap keyForBzlmodBootstrap -> {
-          codedOut.writeInt32NoTag(2);
+
+        override fun isBuiltins(): Boolean {
+            return true
         }
-        case KeyForBzlmod keyForBzlmod -> {
-          codedOut.writeInt32NoTag(3);
+
+        override fun getKeyForLoad(label: Label?): Key {
+            return keyForBuiltins(label)
         }
-      }
+
+        override fun getCompileKey(root: Root?): com.google.devtools.build.lib.skyframe.BzlCompileValue.Key? {
+            return BzlCompileValue.Companion.keyForBuiltins(root, label)
+        }
     }
 
-    @Override
-    public Key deserialize(LeafDeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      Label label = context.deserializeLeaf(codedIn, labelCodec());
-      int discriminant = codedIn.readInt32();
-      return switch (discriminant) {
-        case 0 -> codedIn.readBool() ? keyForBuildPrelude(label) : keyForBuild(label);
-        case 1 -> keyForBuiltins(label);
-        case 2 -> keyForBzlmodBootstrap(label);
-        case 3 -> keyForBzlmod(label);
-        default -> {
-          throw new SerializationException("unexpected discriminant: " + discriminant);
+    /** A key for loading a .bzl to get the repo rule required by Bzlmod generated repositories.  */
+    @Immutable
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    internal open class KeyForBzlmod private constructor(label: Label?) : Key() {
+        private val label: Label
+
+        init {
+            this.label = com.google.common.base.Preconditions.checkNotNull<Label>(label)
         }
-      };
+
+        override fun getLabel(): Label {
+            return label
+        }
+
+        override fun getKeyForLoad(loadLabel: Label?): Key {
+            return keyForBzlmod(loadLabel)
+        }
+
+        override fun getCompileKey(root: Root?): com.google.devtools.build.lib.skyframe.BzlCompileValue.Key? {
+            return BzlCompileValue.Companion.key(root, label)
+        }
     }
-  }
+
+    @Immutable
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    internal class KeyForBzlmodBootstrap private constructor(label: Label?) : KeyForBzlmod(label) {
+        override fun getKeyForLoad(loadLabel: Label): Key {
+            return keyForBzlmodBootstrap(loadLabel)
+        }
+    }
+
+    @com.google.errorprone.annotations.Keep
+    private class KeyCodec : LeafObjectCodec<Key?>() {
+        val encodedClass: java.lang.Class<KeyForLocalEval?>
+            get() = KeyForLocalEval::class.java
+
+        @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+        override fun serialize(context: LeafSerializationContext, obj: Key, codedOut: CodedOutputStream) {
+            context.serializeLeaf<T?>(obj.label, labelCodec(), codedOut)
+
+            when (obj) {
+                -> {
+                    codedOut.writeInt32NoTag(0)
+                    codedOut.writeBoolNoTag(forBuild.isBuildPrelude())
+                }
+
+                -> {
+                    codedOut.writeInt32NoTag(1)
+                }
+
+                -> {
+                    codedOut.writeInt32NoTag(2)
+                }
+
+                -> {
+                    codedOut.writeInt32NoTag(3)
+                }
+            }
+        }
+
+        @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+        override fun deserialize(context: LeafDeserializationContext, codedIn: CodedInputStream): Key? {
+            val label: Label = context.deserializeLeaf<T>(codedIn, labelCodec())
+            val discriminant: Int = codedIn.readInt32()
+            return when (discriminant) {
+                0 -> if (codedIn.readBool()) keyForBuildPrelude(label) else keyForBuild(label)
+                1 -> keyForBuiltins(label)
+                2 -> keyForBzlmodBootstrap(label)
+                3 -> keyForBzlmod(label)
+                else -> {
+                    throw com.google.devtools.build.lib.skyframe.serialization.SerializationException("unexpected discriminant: " + discriminant)
+                }
+            }
+        }
+
+        companion object {
+            private val INSTANCE = KeyCodec()
+        }
+    }
+
+    companion object {
+        private val keyInterner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
+
+        /** Constructs a key for loading a regular .bzl file from BUILD files.  */
+        fun keyForBuild(label: Label?): Key {
+            return keyInterner.intern(KeyForBuild(label,  /* isBuildPrelude= */false))
+        }
+
+        /** Constructs a key for loading a .bzl file within the `@_builtins` pseudo-repository.  */
+        fun keyForBuiltins(label: Label?): Key {
+            return keyInterner.intern(KeyForBuiltins(label))
+        }
+
+        /** Constructs a key for loading the special prelude .bzl.  */
+        fun keyForBuildPrelude(label: Label?): Key {
+            return keyInterner.intern(KeyForBuild(label,  /* isBuildPrelude= */true))
+        }
+
+        /** Constructs a key for loading a .bzl for Bzlmod repos  */
+        fun keyForBzlmod(label: Label?): Key {
+            return keyInterner.intern(KeyForBzlmod(label))
+        }
+
+        fun keyForBzlmodBootstrap(label: Label): Key {
+            com.google.common.base.Preconditions.checkArgument(
+                label.getRepository().equals(RepositoryName.BAZEL_TOOLS),
+                "keyForBzlmodBootstrap must be called with a label in the bazel_tools repository"
+            )
+            return keyInterner.intern(KeyForBzlmodBootstrap(label))
+        }
+
+        @kotlin.jvm.JvmStatic
+        fun bzlLoadKeyCodec(): KeyCodec {
+            return KeyCodec.Companion.INSTANCE
+        }
+    }
 }

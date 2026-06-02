@@ -974,7 +974,7 @@ public final class CommandServerTest {
 
     assertThat(
             idleTaskResults.get().stream()
-                .map(s -> new IdleTask.Result(s.name(), s.status(), Duration.ZERO)))
+                .map(s -> new IdleTask.Result(s.name, s.status, Duration.ZERO)))
         .containsExactly(new IdleTask.Result("task", IdleTask.Status.SUCCESS, Duration.ZERO));
   }
 

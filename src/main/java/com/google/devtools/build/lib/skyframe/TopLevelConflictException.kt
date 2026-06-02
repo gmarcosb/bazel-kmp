@@ -11,29 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.ActionConflictException;
+import com.google.devtools.build.lib.actions.ActionAnalysisMetadata
 
 /**
  * Encapsulates a collection of action conflicts of the transitive closure of a top-level
  * ActionLookupKey.
  */
-final class TopLevelConflictException extends Exception {
+internal class TopLevelConflictException(
+    message: String?,
+    actionConflicts: com.google.common.collect.ImmutableMap<ActionAnalysisMetadata?, ActionConflictException?>?
+) : java.lang.Exception(message) {
+    private val transitiveActionConflicts: com.google.common.collect.ImmutableMap<ActionAnalysisMetadata?, ActionConflictException?>?
 
-  private final ImmutableMap<ActionAnalysisMetadata, ActionConflictException>
-      transitiveActionConflicts;
 
-  TopLevelConflictException(
-      String message,
-      ImmutableMap<ActionAnalysisMetadata, ActionConflictException> actionConflicts) {
-    super(message);
-    this.transitiveActionConflicts = actionConflicts;
-  }
+    init {
+        this.transitiveActionConflicts = actionConflicts
+    }
 
-  ImmutableMap<ActionAnalysisMetadata, ActionConflictException> getTransitiveActionConflicts() {
-    return transitiveActionConflicts;
-  }
+    fun getTransitiveActionConflicts(): com.google.common.collect.ImmutableMap<ActionAnalysisMetadata?, ActionConflictException?>? {
+        return transitiveActionConflicts
+    }
 }

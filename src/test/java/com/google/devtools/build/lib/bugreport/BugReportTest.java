@@ -216,7 +216,7 @@ public final class BugReportTest {
             SecurityException.class,
             () -> BugReport.handleCrash(Crash.from(t), CrashContext.halt()));
     int code = haltCode(exitException);
-    assertThat(code).isEqualTo(expectedExitCode(crashType).getNumericExitCode());
+    assertThat(code).isEqualTo(expectedExitCode(crashType).numericExitCode);
     assertThat(BugReport.getAndResetLastCrashingThrowableIfInTest()).isSameInstanceAs(t);
 
     verify(mockRuntime)
@@ -226,8 +226,8 @@ public final class BugReportTest {
                 expectedFailureDetail));
     verifyExitCodeWritten(
         oomDetectorOverride
-            ? EXIT_CODE_BLAZE_OOMING.getNumericExitCode()
-            : crashType.expectedExitCode.getNumericExitCode());
+            ? EXIT_CODE_BLAZE_OOMING.numericExitCode
+            : crashType.expectedExitCode.numericExitCode);
     verifyFailureDetailWritten(expectedFailureDetail);
   }
 
@@ -243,7 +243,7 @@ public final class BugReportTest {
             () -> BugReport.handleCrash(Crash.from(t), CrashContext.halt()));
     int code = haltCode(exitException);
     ExitCode expectedExitCode = expectedExitCode(crashType);
-    assertThat(code).isEqualTo(expectedExitCode.getNumericExitCode());
+    assertThat(code).isEqualTo(expectedExitCode.numericExitCode);
     assertThat(BugReport.getAndResetLastCrashingThrowableIfInTest()).isSameInstanceAs(t);
     verify(mockRuntime)
         .cleanUpForCrash(
@@ -252,8 +252,8 @@ public final class BugReportTest {
                 expectedFailureDetail));
     verifyExitCodeWritten(
         oomDetectorOverride
-            ? EXIT_CODE_BLAZE_OOMING.getNumericExitCode()
-            : crashType.expectedExitCode.getNumericExitCode());
+            ? EXIT_CODE_BLAZE_OOMING.numericExitCode
+            : crashType.expectedExitCode.numericExitCode);
     verifyFailureDetailWritten(expectedFailureDetail);
   }
 
@@ -321,11 +321,11 @@ public final class BugReportTest {
     int firstCode = haltCode(firstException);
     ExitCode expectedExitCode =
         oomDetectorOverride ? EXIT_CODE_BLAZE_OOMING : ExitCode.BLAZE_INTERNAL_ERROR;
-    assertThat(firstCode).isEqualTo(expectedExitCode.getNumericExitCode());
+    assertThat(firstCode).isEqualTo(expectedExitCode.numericExitCode);
 
     SecurityException secondException = assertThrows(SecurityException.class, doSecondCrash);
     int secondCode = haltCode(secondException);
-    assertThat(secondCode).isEqualTo(expectedExitCode(crashType).getNumericExitCode());
+    assertThat(secondCode).isEqualTo(expectedExitCode(crashType).numericExitCode);
   }
 
   @Test

@@ -11,32 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.package com.google.devtools.build.lib.flags;
-package com.google.devtools.common.options;
+package com.google.devtools.common.options
 
-import com.google.common.collect.ImmutableSet;
+/** Cache mapping a command to the names of all commands it inherits from, including itself.  */
+fun interface CommandNameCache {
+    /** Class that exists only to expose a static instance variable that can be set and retrieved.  */
+    class CommandNameCacheInstance private constructor() : CommandNameCache {
+        private var delegate: CommandNameCache? = null
 
-/** Cache mapping a command to the names of all commands it inherits from, including itself. */
-@FunctionalInterface
-public interface CommandNameCache {
-  /** Class that exists only to expose a static instance variable that can be set and retrieved. */
-  class CommandNameCacheInstance implements CommandNameCache {
-    public static final CommandNameCacheInstance INSTANCE = new CommandNameCacheInstance();
-    private CommandNameCache delegate;
+        /** Only for use by `BlazeRuntime`.  */
+        fun setCommandNameCache(cache: CommandNameCache) {
+            // Can be set multiple times in tests.
+            this.delegate = cache
+        }
 
-    private CommandNameCacheInstance() {}
+        override fun get(commandName: String?): com.google.common.collect.ImmutableSet<String?>? {
+            return delegate!!.get(commandName)
+        }
 
-    /** Only for use by {@code BlazeRuntime}. */
-    public void setCommandNameCache(CommandNameCache cache) {
-      // Can be set multiple times in tests.
-      this.delegate = cache;
+        companion object {
+            @kotlin.jvm.JvmField
+            val INSTANCE: CommandNameCacheInstance =
+                com.google.devtools.common.options.CommandNameCache.CommandNameCacheInstance()
+        }
     }
 
-    @Override
-    public ImmutableSet<String> get(String commandName) {
-      return delegate.get(commandName);
-    }
-  }
-
-  /** Returns the names of all commands {@code commandName} inherits from, including itself. */
-  ImmutableSet<String> get(String commandName);
+    /** Returns the names of all commands `commandName` inherits from, including itself.  */
+    fun get(commandName: String?): com.google.common.collect.ImmutableSet<String?>?
 }

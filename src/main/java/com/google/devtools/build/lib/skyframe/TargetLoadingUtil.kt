@@ -11,144 +11,122 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.io.InconsistentFilesystemException;
-import com.google.devtools.build.lib.packages.BuildFileNotFoundException;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.NoSuchTargetException;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.skyframe.SkyFunction.Environment;
-import com.google.devtools.build.skyframe.SkyKey;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.Label
 
-/** Holds the utility method {@link #loadTarget}. */
-public class TargetLoadingUtil {
+/** Holds the utility method [.loadTarget].  */
+object TargetLoadingUtil {
+    /**
+     * Loads the [Target] specified by the [Label] by loading the label's [Package],
+     * in the context of a Skyframe evaluation.
+     * 
+     * 
+     * Establishes all Skyframe dependencies needed for incremental correctness.
+     * 
+     * 
+     * Returns [TargetAndErrorIfAny] if no dep was mising; otherwise, returns the [ ] specifying the missing dep.
+     */
+    // TODO(https://github.com/bazelbuild/bazel/issues/23852): support lazy macro expansion, don't
+    // load full packages unless needed.
+    @Throws(NoSuchTargetException::class, NoSuchPackageException::class, java.lang.InterruptedException::class)
+    fun loadTarget(env: SkyFunction.Environment, label: Label): Any? {
+        if (label.name.contains("/")) {
+            // This target is in a subdirectory, therefore it could potentially be invalidated by
+            // a new BUILD file appearing in the hierarchy.
+            val containingDirectory: PathFragment? = getContainingDirectory(label)
+            val newPkgId: PackageIdentifier? =
+                PackageIdentifier.create(label.getRepository(), containingDirectory)
+            val containingPackageLookupValue: ContainingPackageLookupValue?
+            val containingPackageKey: SkyKey? = ContainingPackageLookupValue.key(newPkgId)
+            try {
+                containingPackageLookupValue =
+                    env.getValueOrThrow<E1?, E2?>(
+                        containingPackageKey,
+                        BuildFileNotFoundException::class.java,
+                        InconsistentFilesystemException::class.java
+                    ) as ContainingPackageLookupValue?
+            } catch (e: InconsistentFilesystemException) {
+                throw NoSuchTargetException(label, e.getMessage())
+            }
+            if (containingPackageLookupValue == null) {
+                return containingPackageKey
+            }
 
-  private TargetLoadingUtil() {}
+            if (!containingPackageLookupValue.hasContainingPackage()) {
+                // This means the label's package doesn't exist. E.g. there is no package 'a' and we are
+                // trying to build the target for label 'a:b/foo'.
+                throw BuildFileNotFoundException(
+                    label.getPackageIdentifier(),
+                    ("BUILD file not found on package path for '"
+                            + label.getPackageFragment().getPathString()
+                            + "'")
+                )
+            }
+            if (!containingPackageLookupValue.containingPackageName
+                    .equals(label.getPackageIdentifier())
+            ) {
+                throw NoSuchTargetException(
+                    label,
+                    java.lang.String.format(
+                        "Label '%s' crosses boundary of subpackage '%s'",
+                        label, containingPackageLookupValue.containingPackageName
+                    )
+                )
+            }
+        }
 
-  /**
-   * Loads the {@link Target} specified by the {@link Label} by loading the label's {@link Package},
-   * in the context of a Skyframe evaluation.
-   *
-   * <p>Establishes all Skyframe dependencies needed for incremental correctness.
-   *
-   * <p>Returns {@link TargetAndErrorIfAny} if no dep was mising; otherwise, returns the {@link
-   * SkyKey} specifying the missing dep.
-   */
-  // TODO(https://github.com/bazelbuild/bazel/issues/23852): support lazy macro expansion, don't
-  // load full packages unless needed.
-  public static Object loadTarget(Environment env, Label label)
-      throws NoSuchTargetException, NoSuchPackageException, InterruptedException {
-    if (label.name.contains("/")) {
-      // This target is in a subdirectory, therefore it could potentially be invalidated by
-      // a new BUILD file appearing in the hierarchy.
-      PathFragment containingDirectory = getContainingDirectory(label);
-      PackageIdentifier newPkgId =
-          PackageIdentifier.create(label.getRepository(), containingDirectory);
-      ContainingPackageLookupValue containingPackageLookupValue;
-      SkyKey containingPackageKey = ContainingPackageLookupValue.key(newPkgId);
-      try {
-        containingPackageLookupValue =
-            (ContainingPackageLookupValue)
-                env.getValueOrThrow(
-                    containingPackageKey,
-                    BuildFileNotFoundException.class,
-                    InconsistentFilesystemException.class);
-      } catch (InconsistentFilesystemException e) {
-        throw new NoSuchTargetException(label, e.getMessage());
-      }
-      if (containingPackageLookupValue == null) {
-        return containingPackageKey;
-      }
+        val packageKey: SkyKey? = label.getPackageIdentifier()
+        val packageValue: PackageValue? =
+            env.getValueOrThrow<E?>(packageKey, NoSuchPackageException::class.java) as PackageValue?
+        if (packageValue == null) {
+            return packageKey
+        }
 
-      if (!containingPackageLookupValue.hasContainingPackage()) {
-        // This means the label's package doesn't exist. E.g. there is no package 'a' and we are
-        // trying to build the target for label 'a:b/foo'.
-        throw new BuildFileNotFoundException(
-            label.getPackageIdentifier(),
-            "BUILD file not found on package path for '"
-                + label.getPackageFragment().getPathString()
-                + "'");
-      }
-      if (!containingPackageLookupValue
-          .getContainingPackageName()
-          .equals(label.getPackageIdentifier())) {
-        throw new NoSuchTargetException(
-            label,
-            String.format(
-                "Label '%s' crosses boundary of subpackage '%s'",
-                label, containingPackageLookupValue.getContainingPackageName()));
-      }
+        val pkg: Package = packageValue.getPackage()
+        val target: Target? = pkg.getTarget(label.name)
+        val error: NoSuchTargetException? = if (pkg.containsErrors()) NoSuchTargetException(target) else null
+        return TargetAndErrorIfAny( /* packageLoadedSuccessfully= */
+            !pkg.containsErrors(), error, target, pkg
+        )
     }
 
-    SkyKey packageKey = label.getPackageIdentifier();
-    PackageValue packageValue =
-        (PackageValue) env.getValueOrThrow(packageKey, NoSuchPackageException.class);
-    if (packageValue == null) {
-      return packageKey;
-    }
-
-    Package pkg = packageValue.getPackage();
-    Target target = pkg.getTarget(label.name);
-    NoSuchTargetException error = pkg.containsErrors() ? new NoSuchTargetException(target) : null;
-    return new TargetAndErrorIfAny(
-        /* packageLoadedSuccessfully= */ !pkg.containsErrors(), error, target, pkg);
-  }
-
-  private static PathFragment getContainingDirectory(Label label) {
-    PathFragment pkg = label.getPackageFragment();
-    String name = label.name;
-    return name.equals(".") ? pkg : pkg.getRelative(name).getParentDirectory();
-  }
-
-  /**
-   * Returned by {@link #loadTarget}. Contains the loaded {@link Target} and also specifies whether
-   * there were errors during the target's package load.
-   */
-  public static class TargetAndErrorIfAny {
-
-    private final boolean packageLoadedSuccessfully;
-    @Nullable private final NoSuchTargetException errorLoadingTarget;
-    private final Target target;
-    private final Package pkg;
-
-    @VisibleForTesting
-    TargetAndErrorIfAny(
-        boolean packageLoadedSuccessfully,
-        @Nullable NoSuchTargetException errorLoadingTarget,
-        Target target,
-        Package pkg) {
-      this.packageLoadedSuccessfully = packageLoadedSuccessfully;
-      this.errorLoadingTarget = errorLoadingTarget;
-      this.target = target;
-      this.pkg = pkg;
-    }
-
-    public boolean isPackageLoadedSuccessfully() {
-      return packageLoadedSuccessfully;
-    }
-
-    @Nullable
-    public NoSuchTargetException getErrorLoadingTarget() {
-      return errorLoadingTarget;
-    }
-
-    public Target getTarget() {
-      return target;
+    private fun getContainingDirectory(label: Label): PathFragment? {
+        val pkg: PathFragment = label.getPackageFragment()
+        val name: String = label.name
+        return if (name == ".") pkg else pkg.getRelative(name).getParentDirectory()
     }
 
     /**
-     * Returns the target's full package (which, if lazy symbolic macro expansion is enabled, is not
-     * the same thing as {@code target.getPackageoid()}).
+     * Returned by [.loadTarget]. Contains the loaded [Target] and also specifies whether
+     * there were errors during the target's package load.
      */
-    public Package getPackage() {
-      return pkg;
+    class TargetAndErrorIfAny @com.google.common.annotations.VisibleForTesting internal constructor(
+        val isPackageLoadedSuccessfully: Boolean,
+        errorLoadingTarget: NoSuchTargetException?,
+        target: Target?,
+        pkg: Package?
+    ) {
+        private val errorLoadingTarget: NoSuchTargetException?
+        @kotlin.jvm.JvmField
+        val target: Target?
+        private val pkg: Package?
+
+        init {
+            this.errorLoadingTarget = errorLoadingTarget
+            this.target = target
+            this.pkg = pkg
+        }
+
+        fun getErrorLoadingTarget(): NoSuchTargetException? {
+            return errorLoadingTarget
+        }
+
+        val `package`: Package?
+            /**
+             * Returns the target's full package (which, if lazy symbolic macro expansion is enabled, is not
+             * the same thing as `target.getPackageoid()`).
+             */
+            get() = pkg
     }
-  }
 }

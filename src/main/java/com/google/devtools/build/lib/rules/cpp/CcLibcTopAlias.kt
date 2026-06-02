@@ -11,26 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.cpp
 
-package com.google.devtools.build.lib.rules.cpp;
+import com.google.devtools.build.lib.packages.Attribute.LabelLateBoundDefault
 
-import com.google.devtools.build.lib.packages.Attribute.LabelLateBoundDefault;
-import com.google.devtools.build.lib.rules.LateBoundAlias.CommonAliasRule;
-
-/** Implementation of the {@code cc_libc_top_alias} rule. */
-public class CcLibcTopAlias extends CommonAliasRule<CppConfiguration> {
-
-  public CcLibcTopAlias() {
-    super(
-        "cc_libc_top_alias",
-        env -> CcLibcTopAlias.getSysrootAttribute(),
-        CppConfiguration.class);
-  }
-
-  private static LabelLateBoundDefault<CppConfiguration> getSysrootAttribute() {
-    return LabelLateBoundDefault.fromTargetConfiguration(
-        CppConfiguration.class,
-        null,
-        (rules, attributes, cppConfig) -> cppConfig.getLibcTopLabel());
-  }
+/** Implementation of the `cc_libc_top_alias` rule.  */
+object CcLibcTopAlias : CommonAliasRule<CppConfiguration?>() {
+    private val sysrootAttribute: LabelLateBoundDefault<CppConfiguration?>
+        get() = LabelLateBoundDefault.fromTargetConfiguration(
+            CppConfiguration::class.java,
+            null,
+            { rules, attributes, cppConfig -> cppConfig.getLibcTopLabel() })
 }

@@ -11,151 +11,161 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.util.concurrent.Futures.immediateFailedFuture;
-import static com.google.common.util.concurrent.Futures.immediateFuture;
-import static com.google.devtools.build.lib.skyframe.serialization.WriteStatuses.immediateWriteStatus;
+import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueStore
+import com.google.devtools.build.lib.skyframe.serialization.KeyBytesProvider
+import com.google.devtools.build.lib.skyframe.serialization.WriteStatuses
+import com.google.devtools.build.lib.skyframe.serialization.WriteStatuses.WriteStatus
+import com.google.protobuf.ByteString
+import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentMap
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.skyframe.serialization.WriteStatuses.WriteStatus;
-import com.google.devtools.build.lib.util.Bucket;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import com.google.protobuf.ByteString;
-import java.io.IOException;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import javax.annotation.Nullable;
+/** Encapsulates fingerprint keyed bytes storage system.  */
+interface FingerprintValueStore {
+    /** Usage statistics.  */
+    class Stats(
+        val valueBytesReceived: Long,
+        val valueBytesSent: Long,
+        val keyBytesSent: Long,
+        val entriesWritten: Long,
+        val entriesFound: Long,
+        val entriesNotFound: Long,
+        val getBatches: Long,
+        val setBatches: Long,
+        getLatencyMicros: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.util.Bucket?>?,
+        setLatencyMicros: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.util.Bucket?>?,
+        getBatchLatencyMicros: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.util.Bucket?>?,
+        setBatchLatencyMicros: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.util.Bucket?>?
+    ) {
+        val getLatencyMicros: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.util.Bucket?>?
+        val setLatencyMicros: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.util.Bucket?>?
+        val getBatchLatencyMicros: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.util.Bucket?>?
+        val setBatchLatencyMicros: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.util.Bucket?>?
 
-/** Encapsulates fingerprint keyed bytes storage system. */
-public interface FingerprintValueStore {
-  /** Usage statistics. */
-  record Stats(
-      long valueBytesReceived,
-      long valueBytesSent,
-      long keyBytesSent,
-      long entriesWritten,
-      long entriesFound,
-      long entriesNotFound,
-      long getBatches,
-      long setBatches,
-      ImmutableList<Bucket> getLatencyMicros,
-      ImmutableList<Bucket> setLatencyMicros,
-      ImmutableList<Bucket> getBatchLatencyMicros,
-      ImmutableList<Bucket> setBatchLatencyMicros) {}
-
-  Stats EMPTY_STATS =
-      new Stats(
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          ImmutableList.of(),
-          ImmutableList.of(),
-          ImmutableList.of(),
-          ImmutableList.of());
-
-  default Stats getStats() {
-    return EMPTY_STATS;
-  }
-
-  default void shutdown() {}
-
-  /**
-   * Associates a fingerprint with the serialized representation of some object.
-   *
-   * <p>The caller should deduplicate {@code put} calls to avoid multiple writes of the same
-   * fingerprint.
-   *
-   * @return a future that completes when the write completes
-   */
-  WriteStatus put(KeyBytesProvider fingerprint, byte[] serializedBytes);
-
-  /**
-   * Retrieves the serialized bytes associated with {@code fingerprint}.
-   *
-   * @return a future eventually containing the serialized bytes. If the fingerprint is missing, the
-   *     future may contain null or a failed future, depending on the implementation.
-   */
-  ListenableFuture<byte[]> get(KeyBytesProvider fingerprint) throws IOException;
-
-  /**
-   * {@link FingerprintValueStore#get} was called with a fingerprint that does not exist in the
-   * store.
-   */
-  final class MissingFingerprintValueException extends Exception {
-
-    public MissingFingerprintValueException(KeyBytesProvider fingerprint) {
-      this(fingerprint, /* cause= */ null);
+        init {
+            this.getLatencyMicros = getLatencyMicros
+            this.setLatencyMicros = setLatencyMicros
+            this.getBatchLatencyMicros = getBatchLatencyMicros
+            this.setBatchLatencyMicros = setBatchLatencyMicros
+        }
     }
 
-    public MissingFingerprintValueException(
-        KeyBytesProvider fingerprint, @Nullable Throwable cause) {
-      super("No remote value for " + fingerprint, cause);
-    }
-  }
-
-  static InMemoryFingerprintValueStore inMemoryStore() {
-    return new InMemoryFingerprintValueStore();
-  }
-
-  /** An in-memory {@link FingerprintValueStore} for testing. */
-  static class InMemoryFingerprintValueStore implements FingerprintValueStore {
-    private static final ListenableFuture<byte[]> IMMEDIATE_NULL = immediateFuture((byte[]) null);
-
-    public final ConcurrentMap<ByteString, ByteString> fingerprintToContents;
-
-    private final boolean useNullForMissingValues;
-
-    public InMemoryFingerprintValueStore() {
-      this(/* useNullForMissingValues= */ false);
+    fun getStats(): Stats {
+        return EMPTY_STATS
     }
 
-    public InMemoryFingerprintValueStore(boolean useNullForMissingValues) {
-      this(new ConcurrentHashMap<>(), useNullForMissingValues);
+    fun shutdown() {}
+
+    /**
+     * Associates a fingerprint with the serialized representation of some object.
+     * 
+     * 
+     * The caller should deduplicate `put` calls to avoid multiple writes of the same
+     * fingerprint.
+     * 
+     * @return a future that completes when the write completes
+     */
+    fun put(fingerprint: KeyBytesProvider?, serializedBytes: ByteArray?): WriteStatus?
+
+    /**
+     * Retrieves the serialized bytes associated with `fingerprint`.
+     * 
+     * @return a future eventually containing the serialized bytes. If the fingerprint is missing, the
+     * future may contain null or a failed future, depending on the implementation.
+     */
+    @Throws(IOException::class)
+    fun get(fingerprint: KeyBytesProvider?): com.google.common.util.concurrent.ListenableFuture<ByteArray?>?
+
+    /**
+     * [FingerprintValueStore.get] was called with a fingerprint that does not exist in the
+     * store.
+     */
+    class MissingFingerprintValueException @kotlin.jvm.JvmOverloads constructor(
+        fingerprint: KeyBytesProvider?,
+        cause: Throwable? = null
+    ) : java.lang.Exception("No remote value for " + fingerprint, cause)
+
+    /** An in-memory [FingerprintValueStore] for testing.  */
+    class InMemoryFingerprintValueStore(
+        kvMap: ConcurrentMap<ByteString?, ByteString?>,
+        useNullForMissingValues: Boolean
+    ) : FingerprintValueStore {
+        @kotlin.jvm.JvmField
+        val fingerprintToContents: ConcurrentMap<ByteString?, ByteString?>
+
+        private val useNullForMissingValues: Boolean
+
+        @kotlin.jvm.JvmOverloads
+        constructor(useNullForMissingValues: Boolean = false) : this(
+            ConcurrentHashMap<ByteString?, ByteString?>(),
+            useNullForMissingValues
+        )
+
+        init {
+            this.fingerprintToContents = kvMap
+            this.useNullForMissingValues = useNullForMissingValues
+        }
+
+        override fun put(fingerprint: KeyBytesProvider, serializedBytes: ByteArray): WriteStatus? {
+            val wasNovel =
+                (fingerprintToContents.put(
+                    ByteString.copyFrom(fingerprint.toBytes()), ByteString.copyFrom(serializedBytes)
+                )
+                        == null)
+            return WriteStatuses.immediateWriteStatus(wasNovel)
+        }
+
+        override fun get(fingerprint: KeyBytesProvider): com.google.common.util.concurrent.ListenableFuture<ByteArray?> {
+            val serializedBytes: ByteString? =
+                fingerprintToContents.get(ByteString.copyFrom(fingerprint.toBytes()))
+            if (serializedBytes == null) {
+                return if (useNullForMissingValues)
+                    IMMEDIATE_NULL
+                else
+                    com.google.common.util.concurrent.Futures.immediateFailedFuture<ByteArray?>(
+                        MissingFingerprintValueException(fingerprint)
+                    )
+            }
+            return com.google.common.util.concurrent.Futures.immediateFuture<ByteArray?>(serializedBytes.toByteArray())
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun remove(fingerprint: KeyBytesProvider): ByteArray? {
+            val result: ByteString? = fingerprintToContents.remove(ByteString.copyFrom(fingerprint.toBytes()))
+            return if (result == null) null else result.toByteArray()
+        }
+
+        fun keys(): Iterable<ByteString?> {
+            return com.google.common.collect.ImmutableList.copyOf<ByteString?>(fingerprintToContents.keySet())
+        }
+
+        companion object {
+            private val IMMEDIATE_NULL: com.google.common.util.concurrent.ListenableFuture<ByteArray?> =
+                com.google.common.util.concurrent.Futures.immediateFuture<ByteArray?>(null as ByteArray?)
+        }
     }
 
-    public InMemoryFingerprintValueStore(
-        ConcurrentMap<ByteString, ByteString> kvMap, boolean useNullForMissingValues) {
-      this.fingerprintToContents = kvMap;
-      this.useNullForMissingValues = useNullForMissingValues;
-    }
+    companion object {
+        @kotlin.jvm.JvmStatic
+        fun inMemoryStore(): InMemoryFingerprintValueStore {
+            return InMemoryFingerprintValueStore()
+        }
 
-    @Override
-    public WriteStatus put(KeyBytesProvider fingerprint, byte[] serializedBytes) {
-      boolean wasNovel =
-          (fingerprintToContents.put(
-                  ByteString.copyFrom(fingerprint.toBytes()), ByteString.copyFrom(serializedBytes))
-              == null);
-      return immediateWriteStatus(wasNovel);
+        val EMPTY_STATS: Stats = com.google.devtools.build.lib.skyframe.serialization.FingerprintValueStore.Stats(
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            com.google.common.collect.ImmutableList.of<com.google.devtools.build.lib.util.Bucket?>(),
+            com.google.common.collect.ImmutableList.of<com.google.devtools.build.lib.util.Bucket?>(),
+            com.google.common.collect.ImmutableList.of<com.google.devtools.build.lib.util.Bucket?>(),
+            com.google.common.collect.ImmutableList.of<com.google.devtools.build.lib.util.Bucket?>()
+        )
     }
-
-    @Override
-    public ListenableFuture<byte[]> get(KeyBytesProvider fingerprint) {
-      ByteString serializedBytes =
-          fingerprintToContents.get(ByteString.copyFrom(fingerprint.toBytes()));
-      if (serializedBytes == null) {
-        return useNullForMissingValues
-            ? IMMEDIATE_NULL
-            : immediateFailedFuture(new MissingFingerprintValueException(fingerprint));
-      }
-      return immediateFuture(serializedBytes.toByteArray());
-    }
-
-    @Nullable
-    @CanIgnoreReturnValue
-    public byte[] remove(KeyBytesProvider fingerprint) {
-      ByteString result = fingerprintToContents.remove(ByteString.copyFrom(fingerprint.toBytes()));
-      return result == null ? null : result.toByteArray();
-    }
-
-    public Iterable<ByteString> keys() {
-      return ImmutableList.copyOf(fingerprintToContents.keySet());
-    }
-  }
 }

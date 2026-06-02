@@ -11,74 +11,64 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * A key requesting transitive loading of all dependencies of a given label; see
- * {@link TransitiveTargetFunction} and {@link TransitiveTargetValue}.
+ * [TransitiveTargetFunction] and [TransitiveTargetValue].
  */
 @Immutable
 @ThreadSafe
-public final class TransitiveTargetKey implements SkyKey {
-  public static final SkyFunctionName NAME = SkyFunctionName.createHermetic("TRANSITIVE_TARGET");
+class TransitiveTargetKey private constructor(label: Label?) : SkyKey {
+    private val label: Label
 
-  private static final SkyKeyInterner<TransitiveTargetKey> interner = SkyKey.newInterner();
-
-  public static TransitiveTargetKey of(Label label) {
-    return interner.intern(new TransitiveTargetKey(label));
-  }
-
-  private final Label label;
-
-  private TransitiveTargetKey(Label label) {
-    this.label = Preconditions.checkNotNull(label);
-  }
-
-  @Override
-  public SkyFunctionName functionName() {
-    return NAME;
-  }
-
-  @Override
-  public Object argument() {
-    return this;
-  }
-
-  public Label getLabel() {
-    return label;
-  }
-
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this).add("label", label).toString();
-  }
-
-  @Override
-  public int hashCode() {
-    return 31 * functionName().hashCode() + label.hashCode();
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (o == this) {
-      return true;
+    init {
+        this.label = com.google.common.base.Preconditions.checkNotNull<Label>(label)
     }
-    if (!(o instanceof TransitiveTargetKey)) {
-      return false;
-    }
-    return ((TransitiveTargetKey) o).label.equals(label);
-  }
 
-  @Override
-  public SkyKeyInterner<?> getSkyKeyInterner() {
-    return interner;
-  }
+    override fun functionName(): SkyFunctionName {
+        return NAME
+    }
+
+    override fun argument(): Any {
+        return this
+    }
+
+    fun getLabel(): Label {
+        return label
+    }
+
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this).add("label", label).toString()
+    }
+
+    override fun hashCode(): Int {
+        return 31 * functionName().hashCode() + label.hashCode()
+    }
+
+    override fun equals(o: Any?): Boolean {
+        if (o === this) {
+            return true
+        }
+        if (o !is TransitiveTargetKey) {
+            return false
+        }
+        return o.label.equals(label)
+    }
+
+    val skyKeyInterner: SkyKeyInterner<*>
+        get() = interner
+
+    companion object {
+        @kotlin.jvm.JvmField
+        val NAME: SkyFunctionName = SkyFunctionName.createHermetic("TRANSITIVE_TARGET")
+
+        private val interner: SkyKeyInterner<TransitiveTargetKey?> = SkyKey.newInterner<TransitiveTargetKey?>()
+
+        fun of(label: Label?): TransitiveTargetKey {
+            return interner.intern(TransitiveTargetKey(label))
+        }
+    }
 }

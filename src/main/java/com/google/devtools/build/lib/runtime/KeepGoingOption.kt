@@ -11,26 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
+import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryFunction.name
 
-/** Defines the --keep_going option which is used by multiple commands. */
-@OptionsClass
-public abstract class KeepGoingOption extends OptionsBase {
-  @Option(
-      name = "keep_going",
-      abbrev = 'k',
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.EXECUTION_STRATEGY,
-      effectTags = {OptionEffectTag.EAGERNESS_TO_EXIT},
-      help =
-          "Continue as much as possible after an error.  While the target that failed and those"
-              + " that depend on it cannot be analyzed, other prerequisites of these targets can"
-              + " be.")
-  public abstract boolean getKeepGoing();
+/** Defines the --keep_going option which is used by multiple commands.  */
+@com.google.devtools.common.options.OptionsClass
+abstract class KeepGoingOption : com.google.devtools.common.options.OptionsBase() {
+    @get:com.google.devtools.common.options.Option(
+        name = "keep_going",
+        abbrev = 'k',
+        defaultValue = "false",
+        documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.EXECUTION_STRATEGY,
+        effectTags = [com.google.devtools.common.options.OptionEffectTag.EAGERNESS_TO_EXIT],
+        help = ("Continue as much as possible after an error.  While the target that failed and those"
+                + " that depend on it cannot be analyzed, other prerequisites of these targets can"
+                + " be.")
+    )
+    abstract val keepGoing: Boolean
 }

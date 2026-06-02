@@ -11,53 +11,61 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.versioning;
+package com.google.devtools.build.lib.versioning
 
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.IOException;
+import com.google.devtools.build.lib.vfs.Path
+import java.io.IOException
 
-/** Strategy for retrieving the version number for paths. */
-public interface LongVersionGetter {
+/** Strategy for retrieving the version number for paths.  */
+interface LongVersionGetter {
+    /**
+     * Returns version number when the provided file/symlink was last modified (or added).
+     * 
+     * 
+     * Special value of [.CURRENT_VERSION] is used to indicate a file/symlink modified in
+     * current client snapshot.
+     */
+    @Throws(IOException::class)
+    fun getFilePathOrSymlinkVersion(path: Path?): Long
 
-  /** Indicates the item was affected in currently evaluated version. */
-  long CURRENT_VERSION = Long.MAX_VALUE;
+    /**
+     * Returns version number when the listing of given directory has last changed (or when the
+     * directory was created if there were no changes since then).
+     * 
+     * 
+     * Special value of [.CURRENT_VERSION] is used to indicate the listing has changed in
+     * current client snapshot.
+     */
+    @Throws(IOException::class)
+    fun getDirectoryListingVersion(path: Path?): Long
 
-  /**
-   * Version for a file that has never changed.
-   *
-   * <p>We use -1 because valid versions are positive longs.
-   */
-  long MINIMAL = -1;
+    /**
+     * Returns a version number for a currently nonexistent item.
+     * 
+     * 
+     * This can be the version at which it was most recently deleted or one of the special cases
+     * below.
+     * 
+     * 
+     *  * **Deleted in Current Snapshot**: returns [.CURRENT_VERSION]
+     *  * **External, unversioned, paths**: returns [.CURRENT_VERSION]
+     *  * **Never existed in the first place**: returns [.MINIMAL]
+     *  * **Parent directory doesn't exist**: returns [.MINIMAL]
+     * 
+     */
+    @Throws(IOException::class)
+    fun getNonexistentPathVersion(path: Path?): Long
 
-  /**
-   * Returns version number when the provided file/symlink was last modified (or added).
-   *
-   * <p>Special value of {@link #CURRENT_VERSION} is used to indicate a file/symlink modified in
-   * current client snapshot.
-   */
-  long getFilePathOrSymlinkVersion(Path path) throws IOException;
+    companion object {
+        /** Indicates the item was affected in currently evaluated version.  */
+        val CURRENT_VERSION: Long = Long.Companion.MAX_VALUE
 
-  /**
-   * Returns version number when the listing of given directory has last changed (or when the
-   * directory was created if there were no changes since then).
-   *
-   * <p>Special value of {@link #CURRENT_VERSION} is used to indicate the listing has changed in
-   * current client snapshot.
-   */
-  long getDirectoryListingVersion(Path path) throws IOException;
-
-  /**
-   * Returns a version number for a currently nonexistent item.
-   *
-   * <p>This can be the version at which it was most recently deleted or one of the special cases
-   * below.
-   *
-   * <ul>
-   *   <li><b>Deleted in Current Snapshot</b>: returns {@link #CURRENT_VERSION}
-   *   <li><b>External, unversioned, paths</b>: returns {@link #CURRENT_VERSION}
-   *   <li><b>Never existed in the first place</b>: returns {@link #MINIMAL}
-   *   <li><b>Parent directory doesn't exist</b>: returns {@link #MINIMAL}
-   * </ul>
-   */
-  long getNonexistentPathVersion(Path path) throws IOException;
+        /**
+         * Version for a file that has never changed.
+         * 
+         * 
+         * We use -1 because valid versions are positive longs.
+         */
+        val MINIMAL: Long = -1
+    }
 }

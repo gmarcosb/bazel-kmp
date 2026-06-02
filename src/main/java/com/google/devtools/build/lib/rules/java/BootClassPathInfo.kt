@@ -11,97 +11,87 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.java;
+package com.google.devtools.build.lib.rules.java
 
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.LoadingCache;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.Info;
-import com.google.devtools.build.lib.packages.RuleClass.ConfiguredTargetFactory.RuleErrorException;
-import com.google.devtools.build.lib.packages.StructImpl;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.util.Optional;
+import com.github.benmanes.caffeine.cache.CacheLoader
+import com.github.benmanes.caffeine.cache.LoadingCache
+import com.google.devtools.build.lib.actions.Artifact
+import com.google.devtools.build.lib.concurrent.ThreadSafety
+import java.util.*
 
-/** Information about the system APIs for a Java compilation. */
-@Immutable
-public class BootClassPathInfo extends StarlarkInfoWrapper {
+/** Information about the system APIs for a Java compilation.  */
+@ThreadSafety.Immutable
+open class BootClassPathInfo private constructor(underlying: StructImpl?) : StarlarkInfoWrapper(underlying) {
+    /** The jar files containing classes for system APIs, i.e. a Java <= 8 bootclasspath.  */
+    @Throws(RuleErrorException::class)
+    open fun bootclasspath(): NestedSet<Artifact?>? {
+        return getUnderlyingNestedSet<Artifact?>("bootclasspath", Artifact::class.java)
+    }
 
-  private static final BootClassPathInfo EMPTY =
-      new BootClassPathInfo(null) {
-        @Override
-        public NestedSet<Artifact> bootclasspath() {
-          return NestedSetBuilder.emptySet(Order.STABLE_ORDER);
+    /**
+     * The jar files containing extra classes for system APIs that should not be put in the system
+     * image to support split-package compilation scenarios.
+     */
+    @Throws(RuleErrorException::class)
+    open fun auxiliary(): NestedSet<Artifact?>? {
+        return getUnderlyingNestedSet<Artifact?>("_auxiliary", Artifact::class.java)
+    }
+
+    /** Contents of the directory that is passed to the javac >= 9 `--system` flag.  */
+    @Throws(RuleErrorException::class)
+    open fun systemInputs(): NestedSet<Artifact?>? {
+        return getUnderlyingNestedSet<Artifact?>("_system_inputs", Artifact::class.java)
+    }
+
+    /** An argument to the javac >= 9 `--system` flag.  */
+    @Throws(RuleErrorException::class)
+    open fun systemPath(): Optional<PathFragment?>? {
+        val s = getUnderlyingValue<String?>("_system_path", String::class.java)
+        return if (s != null) systemPathCache.get(s) else Optional.empty<PathFragment?>()
+    }
+
+    @get:Throws(RuleErrorException::class)
+    open val isEmpty: Boolean
+        get() = bootclasspath().isEmpty()
+                && auxiliary().isEmpty()
+                && systemInputs().isEmpty()
+                && systemPath()!!.isEmpty()
+
+    companion object {
+        private val EMPTY: BootClassPathInfo = object : BootClassPathInfo(null) {
+            override fun bootclasspath(): NestedSet<Artifact?> {
+                return NestedSetBuilder.emptySet(Order.STABLE_ORDER)
+            }
+
+            override fun auxiliary(): NestedSet<Artifact?> {
+                return NestedSetBuilder.emptySet(Order.STABLE_ORDER)
+            }
+
+            override fun systemInputs(): NestedSet<Artifact?> {
+                return NestedSetBuilder.emptySet(Order.STABLE_ORDER)
+            }
+
+            override fun systemPath(): Optional<PathFragment?> {
+                return Optional.empty<PathFragment?>()
+            }
+
+            override fun isEmpty(): Boolean {
+                return true
+            }
         }
 
-        @Override
-        public NestedSet<Artifact> auxiliary() {
-          return NestedSetBuilder.emptySet(Order.STABLE_ORDER);
+        // Ensures that we use a canonical Optional<PathFragment> instance per system path to save memory.
+        private val systemPathCache: LoadingCache<String?, Optional<PathFragment?>?> =
+            Caffeine.newBuilder().weakKeys().build<String?, Optional<PathFragment?>?>(
+                CacheLoader { s: String? -> Optional.of<PathFragment?>(PathFragment.create(s)) })
+
+        fun empty(): BootClassPathInfo {
+            return EMPTY
         }
 
-        @Override
-        public NestedSet<Artifact> systemInputs() {
-          return NestedSetBuilder.emptySet(Order.STABLE_ORDER);
+        @Throws(RuleErrorException::class)
+        fun wrap(info: Info?): BootClassPathInfo {
+            return BootClassPathInfo(info as StructImpl?)
         }
-
-        @Override
-        public Optional<PathFragment> systemPath() {
-          return Optional.empty();
-        }
-
-        @Override
-        public boolean isEmpty() {
-          return true;
-        }
-      };
-
-  // Ensures that we use a canonical Optional<PathFragment> instance per system path to save memory.
-  private static final LoadingCache<String, Optional<PathFragment>> systemPathCache =
-      Caffeine.newBuilder().weakKeys().build(s -> Optional.of(PathFragment.create(s)));
-
-  public static BootClassPathInfo empty() {
-    return EMPTY;
-  }
-
-  private BootClassPathInfo(StructImpl underlying) {
-    super(underlying);
-  }
-
-  public static BootClassPathInfo wrap(Info info) throws RuleErrorException {
-    return new BootClassPathInfo((StructImpl) info);
-  }
-
-  /** The jar files containing classes for system APIs, i.e. a Java <= 8 bootclasspath. */
-  public NestedSet<Artifact> bootclasspath() throws RuleErrorException {
-    return getUnderlyingNestedSet("bootclasspath", Artifact.class);
-  }
-
-  /**
-   * The jar files containing extra classes for system APIs that should not be put in the system
-   * image to support split-package compilation scenarios.
-   */
-  public NestedSet<Artifact> auxiliary() throws RuleErrorException {
-    return getUnderlyingNestedSet("_auxiliary", Artifact.class);
-  }
-
-  /** Contents of the directory that is passed to the javac >= 9 {@code --system} flag. */
-  public NestedSet<Artifact> systemInputs() throws RuleErrorException {
-    return getUnderlyingNestedSet("_system_inputs", Artifact.class);
-  }
-
-  /** An argument to the javac >= 9 {@code --system} flag. */
-  public Optional<PathFragment> systemPath() throws RuleErrorException {
-    String s = getUnderlyingValue("_system_path", String.class);
-    return s != null ? systemPathCache.get(s) : Optional.empty();
-  }
-
-  public boolean isEmpty() throws RuleErrorException {
-    return bootclasspath().isEmpty()
-        && auxiliary().isEmpty()
-        && systemInputs().isEmpty()
-        && systemPath().isEmpty();
-  }
+    }
 }

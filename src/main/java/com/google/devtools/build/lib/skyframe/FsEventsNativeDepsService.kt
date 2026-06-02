@@ -11,42 +11,41 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.runtime.BlazeService;
-import com.google.devtools.build.lib.skybridge.SkybridgeInterface;
-import java.util.concurrent.CountDownLatch;
+import com.google.devtools.build.lib.runtime.BlazeService
+import java.util.concurrent.CountDownLatch
 
-/** Service interface for Skyframe native dependencies. */
-@SkybridgeInterface
-public interface FsEventsNativeDepsService extends BlazeService {
-  /**
-   * Helper function to start the watch of <code>paths</code>, which is expected to be an array of
-   * byte arrays containing the UTF-8 bytes of the paths to watch, called by the constructor.
-   *
-   * @param paths the paths to watch.
-   * @param excludedPaths the paths to exclude.
-   * @param latency the latency to use for the FSEvents stream.
-   */
-  void createFsEvents(byte[][] paths, byte[][] excludedPaths, double latency);
+/** Service interface for Skyframe native dependencies.  */
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface
+interface FsEventsNativeDepsService : BlazeService {
+    /**
+     * Helper function to start the watch of `paths`, which is expected to be an array of
+     * byte arrays containing the UTF-8 bytes of the paths to watch, called by the constructor.
+     * 
+     * @param paths the paths to watch.
+     * @param excludedPaths the paths to exclude.
+     * @param latency the latency to use for the FSEvents stream.
+     */
+    fun createFsEvents(paths: Array<ByteArray?>?, excludedPaths: Array<ByteArray?>?, latency: Double)
 
-  /**
-   * Runs the main loop to listen for fsevents.
-   *
-   * @param listening latch that is decremented when the fsevents queue has been set up. The caller
-   *     must wait until this happens before polling for events to ensure no events are lost between
-   *     when this function returns and when the queue is listening.
-   */
-  void runFsEvents(CountDownLatch listening);
+    /**
+     * Runs the main loop to listen for fsevents.
+     * 
+     * @param listening latch that is decremented when the fsevents queue has been set up. The caller
+     * must wait until this happens before polling for events to ensure no events are lost between
+     * when this function returns and when the queue is listening.
+     */
+    fun runFsEvents(listening: CountDownLatch?)
 
-  /** JNI code stopping the main loop and shutting down listening to FSEvents. */
-  void doCloseFsEvents();
+    /** JNI code stopping the main loop and shutting down listening to FSEvents.  */
+    fun doCloseFsEvents()
 
-  /**
-   * JNI code returning the list of absolute path modified since last call.
-   *
-   * @return the array of paths (in the form of byte arrays containing the UTF-8 representation)
-   *     modified since the last call, or null if we can't precisely tell what changed
-   */
-  byte[][] pollFsEvents();
+    /**
+     * JNI code returning the list of absolute path modified since last call.
+     * 
+     * @return the array of paths (in the form of byte arrays containing the UTF-8 representation)
+     * modified since the last call, or null if we can't precisely tell what changed
+     */
+    fun pollFsEvents(): Array<ByteArray?>?
 }

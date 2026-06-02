@@ -11,115 +11,128 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.config;
+package com.google.devtools.build.lib.skyframe.config
 
-import static com.google.common.base.Strings.nullToEmpty;
-import static java.util.Objects.requireNonNull;
+import com.google.devtools.build.lib.analysis.config.BuildOptions
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.concurrent.ThreadSafety;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.runtime.ConfigFlagDefinitions;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import javax.annotation.Nullable;
-
-/** A return value of {@link FlagSetFunction} */
-public class FlagSetValue implements SkyValue {
-
-  private final ImmutableSet<String> flags;
-
-  /**
-   * Warnings and info messages for the caller to emit. This lets the caller persistently emit
-   * messages that Skyframe ignores on cache hits. See {@link Reportable#storeForReplay}).
-   */
-  private final ImmutableSet<Event> persistentMessages;
-
-  /** Key for {@link FlagSetValue} based on the raw flags. */
-  @ThreadSafety.Immutable
-  @AutoCodec
-  public record Key(
-      ImmutableSet<Label> targets,
-      Label projectFile,
-      @Nullable String sclConfig,
-      BuildOptions targetOptions,
-      ImmutableSet<String> allOptionNames,
-      ImmutableMap<String, String> userOptions,
-      ConfigFlagDefinitions configFlagDefinitions,
-      boolean enforceCanonical)
-      implements SkyKey {
-
-    public Key {
-      requireNonNull(targets, "targets");
-      requireNonNull(projectFile, "projectFile");
-      sclConfig = nullToEmpty(sclConfig);
-      requireNonNull(targetOptions, "targetOptions");
-      requireNonNull(allOptionNames, "allOptionNames");
-      requireNonNull(userOptions, "userOptions");
-      requireNonNull(configFlagDefinitions, "configFlagDefinitions");
-    }
-
-    private static final SkyKeyInterner<Key> interner = SkyKey.newInterner();
+/** A return value of [FlagSetFunction]  */
+class FlagSetValue(
+    flags: com.google.common.collect.ImmutableSet<String?>?,
+    persistentMessages: com.google.common.collect.ImmutableSet<Event?>?
+) : SkyValue {
+    private val flags: com.google.common.collect.ImmutableSet<String?>?
 
     /**
-     * Creating @link FlagSetValue.Key. b/409382048 requires to pass the targets to the Key so it
-     * can be used in FlagSetFunction. But this is bad for Skyframe caching. For the sake of fast
-     * iteration, this is the simplest approach. We should consider to optimize this in the future.
+     * Warnings and info messages for the caller to emit. This lets the caller persistently emit
+     * messages that Skyframe ignores on cache hits. See [Reportable.storeForReplay]).
      */
-    public static Key create(
-        ImmutableSet<Label> targets,
-        Label projectFile,
-        String sclConfig,
-        BuildOptions targetOptions,
-        ImmutableSet<String> allOptionNames,
-        ImmutableMap<String, String> userOptions,
-        ConfigFlagDefinitions configFlagDefinitions,
-        boolean enforceCanonical) {
-      return interner.intern(
-          new Key(
-              targets,
-              projectFile,
-              sclConfig,
-              targetOptions,
-              allOptionNames,
-              userOptions,
-              configFlagDefinitions,
-              enforceCanonical));
+    private val persistentMessages: com.google.common.collect.ImmutableSet<Event?>?
+
+    /** Key for [FlagSetValue] based on the raw flags.  */
+    @ThreadSafety.Immutable
+    @AutoCodec
+    class Key(
+        targets: com.google.common.collect.ImmutableSet<Label?>?,
+        projectFile: Label?,
+        sclConfig: String?,
+        targetOptions: BuildOptions?,
+        allOptionNames: com.google.common.collect.ImmutableSet<String?>?,
+        userOptions: com.google.common.collect.ImmutableMap<String?, String?>?,
+        configFlagDefinitions: ConfigFlagDefinitions?,
+        val enforceCanonical: Boolean
+    ) : SkyKey {
+        val skyKeyInterner: SkyKeyInterner<*>
+            get() = com.google.devtools.build.lib.skyframe.config.FlagSetValue.Key.Companion.interner
+
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.FLAG_SET
+        }
+
+        val targets: com.google.common.collect.ImmutableSet<Label?>?
+        val projectFile: Label?
+        val sclConfig: String?
+        val targetOptions: BuildOptions?
+        val allOptionNames: com.google.common.collect.ImmutableSet<String?>?
+        val userOptions: com.google.common.collect.ImmutableMap<String?, String?>?
+        val configFlagDefinitions: ConfigFlagDefinitions?
+
+        init {
+            this.configFlagDefinitions = configFlagDefinitions
+            this.userOptions = userOptions
+            this.allOptionNames = allOptionNames
+            this.targetOptions = targetOptions
+            this.projectFile = projectFile
+            this.targets = targets
+            var sclConfig = sclConfig
+            java.util.Objects.requireNonNull<com.google.common.collect.ImmutableSet<Label?>?>(targets, "targets")
+            Object > java.util.Objects.requireNonNull<Any?>(projectFile, "projectFile")
+            sclConfig = com.google.common.base.Strings.nullToEmpty(sclConfig)
+            Object > java.util.Objects.requireNonNull<Any?>(targetOptions, "targetOptions")
+            java.util.Objects.requireNonNull<com.google.common.collect.ImmutableSet<String?>?>(
+                allOptionNames,
+                "allOptionNames"
+            )
+            java.util.Objects.requireNonNull<com.google.common.collect.ImmutableMap<String?, String?>?>(
+                userOptions,
+                "userOptions"
+            )
+            Object > java.util.Objects.requireNonNull<Any?>(configFlagDefinitions, "configFlagDefinitions")
+            this.sclConfig = sclConfig
+        }
+
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
+
+            /**
+             * Creating @link FlagSetValue.Key. b/409382048 requires to pass the targets to the Key so it
+             * can be used in FlagSetFunction. But this is bad for Skyframe caching. For the sake of fast
+             * iteration, this is the simplest approach. We should consider to optimize this in the future.
+             */
+            fun create(
+                targets: com.google.common.collect.ImmutableSet<Label?>?,
+                projectFile: Label?,
+                sclConfig: String?,
+                targetOptions: BuildOptions?,
+                allOptionNames: com.google.common.collect.ImmutableSet<String?>?,
+                userOptions: com.google.common.collect.ImmutableMap<String?, String?>?,
+                configFlagDefinitions: ConfigFlagDefinitions?,
+                enforceCanonical: Boolean
+            ): Key {
+                return com.google.devtools.build.lib.skyframe.config.FlagSetValue.Key.Companion.interner.intern(
+                    com.google.devtools.build.lib.skyframe.config.FlagSetValue.Key(
+                        targets,
+                        projectFile,
+                        sclConfig,
+                        targetOptions,
+                        allOptionNames,
+                        userOptions,
+                        configFlagDefinitions,
+                        enforceCanonical
+                    )
+                )
+            }
+        }
     }
 
-    @Override
-    public SkyKeyInterner<?> getSkyKeyInterner() {
-      return interner;
+    init {
+        this.flags = flags
+        this.persistentMessages = persistentMessages
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.FLAG_SET;
+    val optionsFromFlagset: com.google.common.collect.ImmutableSet<String?>?
+        /** Returns the set of flags to be applied to the build from the flagset, in flag=value form.  */
+        get() = flags
+
+    fun getPersistentMessages(): com.google.common.collect.ImmutableSet<Event?>? {
+        return persistentMessages
     }
-  }
 
-  public static FlagSetValue create(
-      ImmutableSet<String> flags, ImmutableSet<Event> persistentMessages) {
-    return new FlagSetValue(flags, persistentMessages);
-  }
-
-  public FlagSetValue(ImmutableSet<String> flags, ImmutableSet<Event> persistentMessages) {
-    this.flags = flags;
-    this.persistentMessages = persistentMessages;
-  }
-
-  /** Returns the set of flags to be applied to the build from the flagset, in flag=value form. */
-  public ImmutableSet<String> getOptionsFromFlagset() {
-    return flags;
-  }
-
-  public ImmutableSet<Event> getPersistentMessages() {
-    return persistentMessages;
-  }
+    companion object {
+        fun create(
+            flags: com.google.common.collect.ImmutableSet<String?>?,
+            persistentMessages: com.google.common.collect.ImmutableSet<Event?>?
+        ): FlagSetValue {
+            return FlagSetValue(flags, persistentMessages)
+        }
+    }
 }

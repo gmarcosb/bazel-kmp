@@ -38,7 +38,7 @@ public class OptionFiltersSynchronyTest {
     // Now go through each and check that the names are equal.
     for (OptionEffectTag javaTag : OptionEffectTag.values()) {
       OptionFilters.OptionEffectTag protoTag =
-          OptionFilters.OptionEffectTag.forNumber(javaTag.getValue());
+          OptionFilters.OptionEffectTag.forNumber(javaTag.value);
 
       // First check that the tag exists with this value, then that the names are equal.
       assertWithMessage(
@@ -63,7 +63,7 @@ public class OptionFiltersSynchronyTest {
     // Now go through each and check that the names are equal.
     for (OptionMetadataTag javaTag : OptionMetadataTag.values()) {
       OptionFilters.OptionMetadataTag protoTag =
-          OptionFilters.OptionMetadataTag.forNumber(javaTag.getValue());
+          OptionFilters.OptionMetadataTag.forNumber(javaTag.value);
 
       // First check that the tag exists with this value, then that the names are equal.
       assertWithMessage(

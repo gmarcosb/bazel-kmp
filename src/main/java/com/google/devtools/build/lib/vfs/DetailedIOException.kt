@@ -11,43 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.vfs
 
-package com.google.devtools.build.lib.vfs;
-
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.Filesystem;
-import com.google.devtools.build.lib.skyframe.DetailedException;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.skyframe.SkyFunctionException.Transience;
-import java.io.IOException;
+import com.google.devtools.build.lib.server.FailureDetails.FailureDetail
 
 /**
- * An {@link IOException} that includes {@link DetailedExitCode} and {@link Transience}. Currently
- * only used for {@link Filesystem} exceptions.
+ * An [IOException] that includes [DetailedExitCode] and [Transience]. Currently
+ * only used for [Filesystem] exceptions.
  */
-public final class DetailedIOException extends IOException implements DetailedException {
+class DetailedIOException(
+    message: String?,
+    cause: IOException?,
+    filesystemCode: Filesystem.Code?,
+    transience: Transience?
+) : IOException(message, cause), DetailedException {
+    private val detailedExitCode: DetailedExitCode?
+    private val transience: Transience?
 
-  private final DetailedExitCode detailedExitCode;
-  private final Transience transience;
+    init {
+        this.detailedExitCode =
+            DetailedExitCode.of(
+                FailureDetail.newBuilder()
+                    .setMessage(message)
+                    .setFilesystem(Filesystem.newBuilder().setCode(filesystemCode))
+                    .build()
+            )
+        this.transience = transience
+    }
 
-  public DetailedIOException(
-      String message, IOException cause, Filesystem.Code filesystemCode, Transience transience) {
-    super(message, cause);
-    this.detailedExitCode =
-        DetailedExitCode.of(
-            FailureDetail.newBuilder()
-                .setMessage(message)
-                .setFilesystem(Filesystem.newBuilder().setCode(filesystemCode))
-                .build());
-    this.transience = transience;
-  }
+    public override fun getDetailedExitCode(): DetailedExitCode? {
+        return detailedExitCode
+    }
 
-  @Override
-  public DetailedExitCode getDetailedExitCode() {
-    return detailedExitCode;
-  }
-
-  public Transience getTransience() {
-    return transience;
-  }
+    fun getTransience(): Transience? {
+        return transience
+    }
 }

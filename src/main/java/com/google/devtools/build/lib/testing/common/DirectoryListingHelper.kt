@@ -11,71 +11,80 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testing.common;
+package com.google.devtools.build.lib.testing.common
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.vfs.Dirent;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.Symlinks;
-import java.io.IOException;
+import com.google.devtools.build.lib.vfs.Symlinks
+import java.io.IOException
 
-/** Namespace for helpers to test recursive directory listings. */
-public final class DirectoryListingHelper {
-
-  private DirectoryListingHelper() {}
-
-  /** Shorthand for {@link Dirent} of {@link Dirent.Type#FILE} type with a given name. */
-  public static Dirent file(String name) {
-    return new Dirent(name, Dirent.Type.FILE);
-  }
-
-  /** Shorthand for {@link Dirent} of {@link Dirent.Type#SYMLINK} type with a given name. */
-  public static Dirent symlink(String name) {
-    return new Dirent(name, Dirent.Type.SYMLINK);
-  }
-
-  /** Shorthand for {@link Dirent} of {@link Dirent.Type#DIRECTORY} type with a given name. */
-  public static Dirent directory(String name) {
-    return new Dirent(name, Dirent.Type.DIRECTORY);
-  }
-
-  /**
-   * Returns all of the leaf {@linkplain Dirent dirents} under a given directory.
-   *
-   * <p>For directory structure of:
-   *
-   * <pre>
-   *   dir/dir2
-   *   dir/file1
-   *   dir/subdir/file2
-   * </pre>
-   *
-   * will return: {@code FILE(dir/file1), FILE(dir/subdir/file2), DIRECTORY(dir/dir2)}.
-   */
-  public static ImmutableList<Dirent> leafDirectoryEntries(Path path) throws IOException {
-    ImmutableList.Builder<Dirent> entries = ImmutableList.builder();
-    leafDirectoryEntriesInternal(path, "", entries);
-    return entries.build();
-  }
-
-  private static void leafDirectoryEntriesInternal(
-      Path path, String prefix, ImmutableList.Builder<Dirent> entries) throws IOException {
-    boolean isEmpty = true;
-    for (Dirent dirent : path.readdir(Symlinks.NOFOLLOW)) {
-      isEmpty = false;
-      String entryName = prefix.isEmpty() ? dirent.getName() : prefix + "/" + dirent.getName();
-
-      if (dirent.getType() == Dirent.Type.DIRECTORY) {
-        leafDirectoryEntriesInternal(path.getChild(dirent.getName()), entryName, entries);
-        continue;
-      }
-
-      entries.add(new Dirent(entryName, dirent.getType()));
+/** Namespace for helpers to test recursive directory listings.  */
+object DirectoryListingHelper {
+    /** Shorthand for [Dirent] of [Dirent.Type.FILE] type with a given name.  */
+    @kotlin.jvm.JvmStatic
+    fun file(name: String?): com.google.devtools.build.lib.vfs.Dirent {
+        return com.google.devtools.build.lib.vfs.Dirent(name, com.google.devtools.build.lib.vfs.Dirent.Type.FILE)
     }
 
-    // Skip adding the root if it's empty.
-    if (isEmpty && !prefix.isEmpty()) {
-      entries.add(new Dirent(prefix, Dirent.Type.DIRECTORY));
+    /** Shorthand for [Dirent] of [Dirent.Type.SYMLINK] type with a given name.  */
+    @kotlin.jvm.JvmStatic
+    fun symlink(name: String?): com.google.devtools.build.lib.vfs.Dirent {
+        return com.google.devtools.build.lib.vfs.Dirent(name, com.google.devtools.build.lib.vfs.Dirent.Type.SYMLINK)
     }
-  }
+
+    /** Shorthand for [Dirent] of [Dirent.Type.DIRECTORY] type with a given name.  */
+    @kotlin.jvm.JvmStatic
+    fun directory(name: String?): com.google.devtools.build.lib.vfs.Dirent {
+        return com.google.devtools.build.lib.vfs.Dirent(name, com.google.devtools.build.lib.vfs.Dirent.Type.DIRECTORY)
+    }
+
+    /**
+     * Returns all of the leaf [dirents][Dirent] under a given directory.
+     * 
+     * 
+     * For directory structure of:
+     * 
+     * <pre>
+     * dir/dir2
+     * dir/file1
+     * dir/subdir/file2
+    </pre> * 
+     * 
+     * will return: `FILE(dir/file1), FILE(dir/subdir/file2), DIRECTORY(dir/dir2)`.
+     */
+    @Throws(IOException::class)
+    fun leafDirectoryEntries(path: com.google.devtools.build.lib.vfs.Path): com.google.common.collect.ImmutableList<com.google.devtools.build.lib.vfs.Dirent?> {
+        val entries: com.google.common.collect.ImmutableList.Builder<com.google.devtools.build.lib.vfs.Dirent?> =
+            com.google.common.collect.ImmutableList.builder<com.google.devtools.build.lib.vfs.Dirent?>()
+        leafDirectoryEntriesInternal(path, "", entries)
+        return entries.build()
+    }
+
+    @Throws(IOException::class)
+    private fun leafDirectoryEntriesInternal(
+        path: com.google.devtools.build.lib.vfs.Path,
+        prefix: String,
+        entries: com.google.common.collect.ImmutableList.Builder<com.google.devtools.build.lib.vfs.Dirent?>
+    ) {
+        var isEmpty = true
+        for (dirent in path.readdir(Symlinks.NOFOLLOW)) {
+            isEmpty = false
+            val entryName = if (prefix.isEmpty()) dirent.getName() else prefix + "/" + dirent.getName()
+
+            if (dirent.getType() == com.google.devtools.build.lib.vfs.Dirent.Type.DIRECTORY) {
+                leafDirectoryEntriesInternal(path.getChild(dirent.getName()), entryName, entries)
+                continue
+            }
+
+            entries.add(com.google.devtools.build.lib.vfs.Dirent(entryName, dirent.getType()))
+        }
+
+        // Skip adding the root if it's empty.
+        if (isEmpty && !prefix.isEmpty()) {
+            entries.add(
+                com.google.devtools.build.lib.vfs.Dirent(
+                    prefix,
+                    com.google.devtools.build.lib.vfs.Dirent.Type.DIRECTORY
+                )
+            )
+        }
+    }
 }

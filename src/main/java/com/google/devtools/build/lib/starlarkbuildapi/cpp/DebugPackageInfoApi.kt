@@ -11,99 +11,100 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.cpp
 
-package com.google.devtools.build.lib.starlarkbuildapi.cpp;
+import com.google.devtools.build.docgen.annot.DocCategory
+import com.google.devtools.build.docgen.annot.StarlarkConstructor
+import com.google.devtools.build.lib.cmdline.Label
+import net.starlark.java.annot.Param
+import net.starlark.java.annot.ParamType
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
+import net.starlark.java.eval.EvalException
+import net.starlark.java.eval.NoneType
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.docgen.annot.StarlarkConstructor;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.starlarkbuildapi.FileApi;
-import com.google.devtools.build.lib.starlarkbuildapi.core.ProviderApi;
-import com.google.devtools.build.lib.starlarkbuildapi.core.StructApi;
-import javax.annotation.Nullable;
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.ParamType;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.NoneType;
-
-/** Wrapper for the native DebugPackageProvider. */
+/** Wrapper for the native DebugPackageProvider.  */
 @StarlarkBuiltin(
     name = "DebugPackageInfo",
     category = DocCategory.PROVIDER,
-    doc =
-        "A provider for the binary file and its associated .dwp files, if fission is enabled."
+    doc = ("A provider for the binary file and its associated .dwp files, if fission is enabled."
             + "If Fission ({@url https://gcc.gnu.org/wiki/DebugFission}) is not enabled, the dwp "
             + "file will be null.")
-public interface DebugPackageInfoApi<FileT extends FileApi> extends StructApi {
-  String NAME = "DebugPackageInfo";
+)
+interface DebugPackageInfoApi<FileT : FileApi?> : StructApi {
+    @get:StarlarkMethod(
+        name = "target_label",
+        doc = "Returns the label for the *_binary target",
+        structField = true
+    )
+    val targetLabel: Label?
 
-  @StarlarkMethod(
-      name = "target_label",
-      doc = "Returns the label for the *_binary target",
-      structField = true)
-  Label getTargetLabel();
+    @get:StarlarkMethod(
+        name = "stripped_file",
+        doc = "Returns the stripped file (the explicit \".stripped\" target).",
+        allowReturnNones = true,
+        structField = true
+    )
+    val strippedArtifact: FileT?
 
-  @StarlarkMethod(
-      name = "stripped_file",
-      doc = "Returns the stripped file (the explicit \".stripped\" target).",
-      allowReturnNones = true,
-      structField = true)
-  @Nullable
-  FileT getStrippedArtifact();
+    @get:StarlarkMethod(
+        name = "unstripped_file",
+        doc = "Returns the unstripped file (the default executable target)",
+        structField = true
+    )
+    val unstrippedArtifact: FileT?
 
-  @StarlarkMethod(
-      name = "unstripped_file",
-      doc = "Returns the unstripped file (the default executable target)",
-      structField = true)
-  FileT getUnstrippedArtifact();
+    @get:StarlarkMethod(
+        name = "dwp_file",
+        doc = "Returns the .dwp file (for fission builds) or null if --fission=no.",
+        structField = true,
+        allowReturnNones = true
+    )
+    val dwpArtifact: FileT?
 
-  @StarlarkMethod(
-      name = "dwp_file",
-      doc = "Returns the .dwp file (for fission builds) or null if --fission=no.",
-      structField = true,
-      allowReturnNones = true)
-  @Nullable
-  FileT getDwpArtifact();
+    /** The provider implementing this can construct DebugPackageInfo objects.  */
+    @StarlarkBuiltin(name = "Provider", doc = "", documented = false)
+    interface Provider<FileT : FileApi?> : ProviderApi {
+        @StarlarkMethod(
+            name = NAME,
+            doc = "The <code>DebugPackageInfo</code> constructor.",
+            parameters = [Param(
+                name = "target_label",
+                doc = "The label for the *_binary target",
+                positional = false,
+                named = true
+            ), Param(
+                name = "stripped_file",
+                doc = "The stripped file (the explicit \".stripped\" target)",
+                positional = false,
+                named = true,
+                defaultValue = "None",
+                allowedTypes = [ParamType(type = FileApi::class), ParamType(type = NoneType::class)]
+            ), Param(
+                name = "unstripped_file",
+                doc = "The unstripped file (the default executable target).",
+                positional = false,
+                named = true
+            ), Param(
+                name = "dwp_file",
+                doc = "The .dwp file (for fission builds) or null if --fission=no.",
+                positional = false,
+                named = true,
+                defaultValue = "None",
+                allowedTypes = [ParamType(type = FileApi::class), ParamType(type = NoneType::class)]
+            )],
+            selfCall = true
+        )
+        @StarlarkConstructor
+        @Throws(
+            EvalException::class
+        )
+        fun createDebugPackageInfo(
+            targetLabel: Label?, strippedFile: Any?, unstrippedFile: FileT?, dwpFile: Any?
+        ): DebugPackageInfoApi<FileT?>?
+    }
 
-  /** The provider implementing this can construct DebugPackageInfo objects. */
-  @StarlarkBuiltin(name = "Provider", doc = "", documented = false)
-  interface Provider<FileT extends FileApi> extends ProviderApi {
-
-    @StarlarkMethod(
-        name = NAME,
-        doc = "The <code>DebugPackageInfo</code> constructor.",
-        parameters = {
-          @Param(
-              name = "target_label",
-              doc = "The label for the *_binary target",
-              positional = false,
-              named = true),
-          @Param(
-              name = "stripped_file",
-              doc = "The stripped file (the explicit \".stripped\" target)",
-              positional = false,
-              named = true,
-              defaultValue = "None",
-              allowedTypes = {@ParamType(type = FileApi.class), @ParamType(type = NoneType.class)}),
-          @Param(
-              name = "unstripped_file",
-              doc = "The unstripped file (the default executable target).",
-              positional = false,
-              named = true),
-          @Param(
-              name = "dwp_file",
-              doc = "The .dwp file (for fission builds) or null if --fission=no.",
-              positional = false,
-              named = true,
-              defaultValue = "None",
-              allowedTypes = {@ParamType(type = FileApi.class), @ParamType(type = NoneType.class)})
-        },
-        selfCall = true)
-    @StarlarkConstructor
-    DebugPackageInfoApi<FileT> createDebugPackageInfo(
-        Label targetLabel, Object strippedFile, FileT unstrippedFile, Object dwpFile)
-        throws EvalException;
-  }
+    companion object {
+        const val NAME: String = "DebugPackageInfo"
+    }
 }

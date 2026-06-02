@@ -11,70 +11,60 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.protobuf.UnknownFieldSet
 
-import com.google.common.collect.ImmutableList;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import com.google.protobuf.ExtensionRegistryLite;
-import com.google.protobuf.InvalidProtocolBufferException;
-import com.google.protobuf.MessageLite;
-import com.google.protobuf.UnknownFieldSet;
-import java.io.IOException;
-import java.lang.reflect.Method;
+/** Codec for protos.  */
+class MessageLiteCodec(type: java.lang.Class<out MessageLite?>) : LeafObjectCodec<MessageLite?>() {
+    private val type: java.lang.Class<out MessageLite?>?
 
-/** Codec for protos. */
-public final class MessageLiteCodec extends LeafObjectCodec<MessageLite> {
+    /** Instantiates [MessageLite.Builder] via [MessageLite.newBuilderForType].  */
+    private val defaultInstance: MessageLite
 
-  private final Class<? extends MessageLite> type;
-
-  /** Instantiates {@link MessageLite.Builder} via {@link MessageLite#newBuilderForType}. */
-  private final MessageLite defaultInstance;
-
-  public MessageLiteCodec(Class<? extends MessageLite> type) {
-    this.type = type;
-    try {
-      Method m = type.getMethod("getDefaultInstance");
-      this.defaultInstance = (MessageLite) m.invoke(null);
-    } catch (ReflectiveOperationException e) {
-      throw new IllegalArgumentException("Invalid proto class " + type.getCanonicalName(), e);
+    init {
+        this.type = type
+        try {
+            val m: java.lang.reflect.Method = type.getMethod("getDefaultInstance")
+            this.defaultInstance = m.invoke(null) as MessageLite
+        } catch (e: java.lang.ReflectiveOperationException) {
+            throw java.lang.IllegalArgumentException("Invalid proto class " + type.getCanonicalName(), e)
+        }
     }
-  }
 
-  @Override
-  public Class<? extends MessageLite> getEncodedClass() {
-    return type;
-  }
-
-  @Override
-  public void serialize(
-      LeafSerializationContext context, MessageLite message, CodedOutputStream codedOut)
-      throws IOException {
-    codedOut.writeMessageNoTag(message);
-  }
-
-  @Override
-  public MessageLite deserialize(LeafDeserializationContext context, CodedInputStream codedIn)
-      throws IOException, SerializationException {
-    // Don't hold on to full byte array when constructing this proto.
-    codedIn.enableAliasing(false);
-    try {
-      MessageLite.Builder builder = defaultInstance.newBuilderForType();
-      codedIn.readMessage(builder, ExtensionRegistryLite.getEmptyRegistry());
-      return builder.build();
-    } catch (InvalidProtocolBufferException e) {
-      throw new SerializationException("Failed to parse proto of type " + type, e);
-    } finally {
-      codedIn.enableAliasing(true);
+    override fun getEncodedClass(): java.lang.Class<out MessageLite?>? {
+        return type
     }
-  }
 
-  @SuppressWarnings("unused") // Used reflectively.
-  private static class MessageLiteCodecRegisterer implements CodecRegisterer {
-    @Override
-    public ImmutableList<ObjectCodec<?>> getCodecsToRegister() {
-      return ImmutableList.of(new MessageLiteCodec(UnknownFieldSet.class));
+    @Throws(IOException::class)
+    override fun serialize(
+        context: LeafSerializationContext?, message: MessageLite?, codedOut: CodedOutputStream
+    ) {
+        codedOut.writeMessageNoTag(message)
     }
-  }
+
+    @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    override fun deserialize(context: LeafDeserializationContext?, codedIn: CodedInputStream): MessageLite? {
+        // Don't hold on to full byte array when constructing this proto.
+        codedIn.enableAliasing(false)
+        try {
+            val builder: MessageLite.Builder = defaultInstance.newBuilderForType()
+            codedIn.readMessage(builder, ExtensionRegistryLite.getEmptyRegistry())
+            return builder.build()
+        } catch (e: InvalidProtocolBufferException) {
+            throw com.google.devtools.build.lib.skyframe.serialization.SerializationException(
+                "Failed to parse proto of type " + type,
+                e
+            )
+        } finally {
+            codedIn.enableAliasing(true)
+        }
+    }
+
+    @Suppress("unused") // Used reflectively.
+    private class MessageLiteCodecRegisterer : CodecRegisterer {
+        override fun getCodecsToRegister(): com.google.common.collect.ImmutableList<ObjectCodec<*>?> {
+            return com.google.common.collect.ImmutableList.of<ObjectCodec<*>?>(MessageLiteCodec(UnknownFieldSet::class.java))
+        }
+    }
 }

@@ -11,23 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.skyframe.NotComparableSkyValue;
+import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
 
 /**
  * Represent a "promise" that the Artifacts under a NestedSet are evaluated by Skyframe.
- *
- * <p>Implements {@link NotComparableSkyValue} to prohibit value-based change pruning.
+ * 
+ * 
+ * Implements [NotComparableSkyValue] to prohibit value-based change pruning.
  */
 @Immutable
 @ThreadSafe
-public enum ArtifactNestedSetValue implements NotComparableSkyValue {
-  /** All artifacts in this nested set are present. */
-  ALL_PRESENT,
+enum class ArtifactNestedSetValue : NotComparableSkyValue {
+    /** All artifacts in this nested set are present.  */
+    ALL_PRESENT,
 
-  /** Some artifacts in this nested set are missing. */
-  SOME_MISSING,
+    /** Some artifacts in this nested set are missing.  */
+    SOME_MISSING,
 }

@@ -11,21 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.starlarkprofiler;
+package com.google.devtools.build.lib.starlarkprofiler
 
-import com.google.devtools.build.lib.util.OS;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.CpuProfilerNativeSupport;
-import net.starlark.java.eval.CpuProfilerNativeSupportImpl;
+import com.google.devtools.build.lib.starlarkprofiler.CpuProfilerService
+import net.starlark.java.eval.CpuProfilerNativeSupportImpl
 
-/** Implementation of {@link CpuProfilerService}. */
-public final class CpuProfilerServiceImpl implements CpuProfilerService {
-  @Override
-  @Nullable
-  public CpuProfilerNativeSupport getCpuProfilerNativeSupport() {
-    if (OS.getCurrent() == OS.LINUX || OS.getCurrent() == OS.DARWIN) {
-      return new CpuProfilerNativeSupportImpl();
-    }
-    return null;
-  }
+/** Implementation of [CpuProfilerService].  */
+class CpuProfilerServiceImpl : CpuProfilerService {
+    val cpuProfilerNativeSupport: net.starlark.java.eval.CpuProfilerNativeSupport?
+        get() {
+            if (com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.LINUX || com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.DARWIN) {
+                return CpuProfilerNativeSupportImpl()
+            }
+            return null
+        }
 }

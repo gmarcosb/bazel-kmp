@@ -11,84 +11,84 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe.state;
+package com.google.devtools.build.skyframe.state
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunction.LookupEnvironment;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.SkyFunction.LookupEnvironment
+import com.google.devtools.build.skyframe.state.StateMachine
 
 /**
  * A state machine that outputs a value or one of three possible exceptions.
- *
- * <p>This class serves as a bridge between a {@link StateMachine} and a {@link SkyFunction}.
- *
- * <p>Subclasses should call {@link #setValue}, {@link #setException1}, {@link #setException2} or
- * {@link #setException3} to emit results.
+ * 
+ * 
+ * This class serves as a bridge between a [StateMachine] and a [SkyFunction].
+ * 
+ * 
+ * Subclasses should call [.setValue], [.setException1], [.setException2] or
+ * [.setException3] to emit results.
  */
-public abstract class ValueOrException3Producer<
-        V, E1 extends Exception, E2 extends Exception, E3 extends Exception>
-    implements StateMachine {
-  private final Driver driver = new Driver(this);
+abstract class ValueOrException3Producer<V, E1 : java.lang.Exception?, E2 : java.lang.Exception?, E3 : java.lang.Exception?>
+    : StateMachine {
+    private val driver: com.google.devtools.build.skyframe.state.Driver =
+        com.google.devtools.build.skyframe.state.Driver(this)
 
-  private V value;
-  private E1 exception1;
-  private E2 exception2;
-  private E3 exception3;
+    private var value: V? = null
+    @kotlin.jvm.JvmField
+    private var exception1: E1? = null
+    @kotlin.jvm.JvmField
+    private var exception2: E2? = null
+    @kotlin.jvm.JvmField
+    private var exception3: E3? = null
 
-  /**
-   * Tries to produce the result of the underlying state machine.
-   *
-   * <p>See comment of {@link ValueOrExceptionProducer#tryProduceValue}. If multiple exceptions are
-   * set, they are prioritized by number.
-   */
-  @Nullable
-  public final V tryProduceValue(LookupEnvironment env) throws InterruptedException, E1, E2, E3 {
-    boolean done = driver.drive(env);
-    if (exception1 != null) {
-      throw exception1;
+    /**
+     * Tries to produce the result of the underlying state machine.
+     * 
+     * 
+     * See comment of [ValueOrExceptionProducer.tryProduceValue]. If multiple exceptions are
+     * set, they are prioritized by number.
+     */
+    @Throws(java.lang.InterruptedException::class, E1::class, E2::class, E3::class)
+    fun tryProduceValue(env: LookupEnvironment?): V? {
+        val done: Boolean = driver.drive(env)
+        if (exception1 != null) {
+            throw exception1
+        }
+        if (exception2 != null) {
+            throw exception2
+        }
+        if (exception3 != null) {
+            throw exception3
+        }
+        if (done) {
+            return com.google.common.base.Preconditions.checkNotNull<V?>(value)
+        }
+        return null
     }
-    if (exception2 != null) {
-      throw exception2;
+
+    protected fun setValue(value: V?) {
+        this.value = value
     }
-    if (exception3 != null) {
-      throw exception3;
+
+    protected fun setException1(exception: E1?) {
+        this.exception1 = exception
     }
-    if (done) {
-      return checkNotNull(value);
+
+    protected fun getException1(): E1? {
+        return exception1
     }
-    return null;
-  }
 
-  protected final void setValue(V value) {
-    this.value = value;
-  }
+    protected fun setException2(exception: E2?) {
+        this.exception2 = exception
+    }
 
-  protected final void setException1(E1 exception) {
-    this.exception1 = exception;
-  }
+    protected fun getException2(): E2? {
+        return exception2
+    }
 
-  @Nullable
-  protected final E1 getException1() {
-    return exception1;
-  }
+    protected fun setException3(exception: E3?) {
+        this.exception3 = exception
+    }
 
-  protected final void setException2(E2 exception) {
-    this.exception2 = exception;
-  }
-
-  @Nullable
-  protected final E2 getException2() {
-    return exception2;
-  }
-
-  protected final void setException3(E3 exception) {
-    this.exception3 = exception;
-  }
-
-  @Nullable
-  protected final E3 getException3() {
-    return exception3;
-  }
+    protected fun getException3(): E3? {
+        return exception3
+    }
 }

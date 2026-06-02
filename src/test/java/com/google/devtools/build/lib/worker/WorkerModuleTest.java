@@ -105,7 +105,7 @@ public class WorkerModuleTest {
     workerDir.createDirectoryAndParents();
     aLog.createSymbolicLink(PathFragment.EMPTY_FRAGMENT);
     WorkerPool oldPool = module.workerPool;
-    options.setWorkerSandboxing(!options.getWorkerSandboxing());
+    options.workerSandboxing = !options.workerSandboxing;
     module.beforeCommand(env);
     module.buildStarting(buildStartingEvent(request));
     assertThat(storedEventHandler.getEvents()).isEmpty();
@@ -149,8 +149,7 @@ public class WorkerModuleTest {
       throws IOException, AbruptExitException, OptionsParsingException {
     WorkerModule module = new WorkerModule();
     WorkerOptions options =
-        Options.parse(WorkerOptions.class, "--noexperimental_worker_use_cgroups_on_linux")
-            .getOptions();
+            Options.parse(WorkerOptions.class, "--noexperimental_worker_use_cgroups_on_linux").options;
     when(request.getOptions(WorkerOptions.class)).thenReturn(options);
     setupEnvironment("/outputRoot");
 
@@ -161,8 +160,7 @@ public class WorkerModuleTest {
 
     WorkerPool oldPool = module.workerPool;
     WorkerOptions newOptions =
-        Options.parse(WorkerOptions.class, "--experimental_worker_use_cgroups_on_linux")
-            .getOptions();
+            Options.parse(WorkerOptions.class, "--experimental_worker_use_cgroups_on_linux").options;
     when(request.getOptions(WorkerOptions.class)).thenReturn(newOptions);
 
     module.beforeCommand(env);

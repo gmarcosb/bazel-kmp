@@ -74,7 +74,7 @@ class NotifyingInMemoryGraph extends NotifyingHelper.NotifyingProcessableGraph
         NotifyingHelper.EventType.GET_VALUES,
         NotifyingHelper.Order.BEFORE,
         /* context= */ null);
-    return ((InMemoryGraph) delegate).getValues();
+    return ((InMemoryGraph) delegate).values;
   }
 
   @Override
@@ -91,12 +91,12 @@ class NotifyingInMemoryGraph extends NotifyingHelper.NotifyingProcessableGraph
 
   @Override
   public Map<SkyKey, SkyValue> getDoneValues() {
-    return ((InMemoryGraph) delegate).getDoneValues();
+    return ((InMemoryGraph) delegate).doneValues;
   }
 
   @Override
   public Collection<InMemoryNodeEntry> getAllNodeEntries() {
-    return ((InMemoryGraph) delegate).getAllNodeEntries();
+    return ((InMemoryGraph) delegate).allNodeEntries;
   }
 
   @Override

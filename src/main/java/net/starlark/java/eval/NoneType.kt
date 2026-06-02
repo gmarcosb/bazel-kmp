@@ -11,55 +11,42 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.eval
 
-package net.starlark.java.eval;
-
-import com.google.common.collect.ImmutableList;
-import javax.annotation.concurrent.Immutable;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.syntax.StarlarkType;
-import net.starlark.java.syntax.TypeConstructor;
-import net.starlark.java.syntax.Types;
-
-/** The type of the Starlark None value. */
-@StarlarkBuiltin(
+/** The type of the Starlark None value.  */
+@net.starlark.java.annot.StarlarkBuiltin(
     name = "NoneType",
     documented = false,
-    doc = "The type of the Starlark None value.")
-@Immutable
-public final class NoneType implements StarlarkValue, TypeConstructor {
+    doc = "The type of the Starlark None value."
+)
+@javax.annotation.concurrent.Immutable
+class NoneType private constructor() : net.starlark.java.eval.StarlarkValue, net.starlark.java.syntax.TypeConstructor {
+    @Throws(net.starlark.java.syntax.TypeConstructor.Failure::class)
+    override fun createStarlarkType(argsTuple: com.google.common.collect.ImmutableList<net.starlark.java.syntax.TypeConstructor.Arg?>?): net.starlark.java.syntax.StarlarkType? {
+        return net.starlark.java.syntax.Types.NONE_CONSTRUCTOR.createStarlarkType(argsTuple)
+    }
 
-  @Override
-  public StarlarkType createStarlarkType(ImmutableList<Arg> argsTuple) throws Failure {
-    return Types.NONE_CONSTRUCTOR.createStarlarkType(argsTuple);
-  }
+    override fun getStarlarkType(semantics: net.starlark.java.eval.StarlarkSemantics?): net.starlark.java.syntax.StarlarkType? {
+        return net.starlark.java.syntax.Types.NONE
+    }
 
-  @Override
-  public StarlarkType getStarlarkType(StarlarkSemantics semantics) {
-    return Types.NONE;
-  }
+    override fun toString(): String {
+        return "None"
+    }
 
-  static final NoneType NONE = new NoneType();
+    override fun isImmutable(): Boolean {
+        return true
+    }
 
-  private NoneType() {}
+    override fun truth(): Boolean {
+        return false
+    }
 
-  @Override
-  public String toString() {
-    return "None";
-  }
+    override fun repr(printer: net.starlark.java.eval.Printer, semantics: net.starlark.java.eval.StarlarkSemantics?) {
+        printer.append("None")
+    }
 
-  @Override
-  public boolean isImmutable() {
-    return true;
-  }
-
-  @Override
-  public boolean truth() {
-    return false;
-  }
-
-  @Override
-  public void repr(Printer printer, StarlarkSemantics semantics) {
-    printer.append("None");
-  }
+    companion object {
+        val NONE: NoneType = net.starlark.java.eval.NoneType()
+    }
 }

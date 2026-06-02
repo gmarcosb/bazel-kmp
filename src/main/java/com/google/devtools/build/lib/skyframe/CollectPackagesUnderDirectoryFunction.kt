@@ -11,120 +11,97 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.skyframe.ProcessPackageDirectory.ProcessPackageDirectorySkyFunctionException;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Map;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
 /**
- * Computes {@link CollectPackagesUnderDirectoryValue} which describes whether the directory is a
+ * Computes [CollectPackagesUnderDirectoryValue] which describes whether the directory is a
  * package, or would have been a package but for a package loading error, and whether non-excluded
  * packages (or errors) exist below each of the directory's subdirectories. As a side effect, loads
  * all of these packages, in order to interleave the disk-bound work of checking for directories and
  * the CPU-bound work of package loading.
  */
-public class CollectPackagesUnderDirectoryFunction implements SkyFunction {
-  private final BlazeDirectories directories;
+class CollectPackagesUnderDirectoryFunction(directories: BlazeDirectories?) : SkyFunction {
+    private val directories: BlazeDirectories?
 
-  public CollectPackagesUnderDirectoryFunction(BlazeDirectories directories) {
-    this.directories = directories;
-  }
-
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws InterruptedException, ProcessPackageDirectorySkyFunctionException {
-    return new MyTraversalFunction(directories)
-        .visitDirectory((RecursivePkgKey) skyKey.argument(), env);
-  }
-
-  /** The {@link RecursiveDirectoryTraversalFunction} used by our traversal. */
-  public static class MyTraversalFunction
-      extends RecursiveDirectoryTraversalFunction<
-          MyPackageDirectoryConsumer, CollectPackagesUnderDirectoryValue> {
-    protected MyTraversalFunction(BlazeDirectories directories) {
-      super(directories);
+    init {
+        this.directories = directories
     }
 
-    @Override
-    protected MyPackageDirectoryConsumer getInitialConsumer() {
-      return new MyPackageDirectoryConsumer();
+    @Throws(java.lang.InterruptedException::class, ProcessPackageDirectorySkyFunctionException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment?): SkyValue? {
+        return com.google.devtools.build.lib.skyframe.CollectPackagesUnderDirectoryFunction.MyTraversalFunction(
+            directories
+        )
+            .visitDirectory(skyKey.argument() as RecursivePkgKey?, env)
     }
 
-    @Override
-    protected SkyKey getSkyKeyForSubdirectory(
-        RepositoryName repository,
-        RootedPath subdirectory,
-        IgnoredSubdirectories excludedSubdirectoriesBeneathSubdirectory) {
-      return CollectPackagesUnderDirectoryValue.key(
-          repository, subdirectory, excludedSubdirectoriesBeneathSubdirectory);
-    }
+    /** The [RecursiveDirectoryTraversalFunction] used by our traversal.  */
+    class MyTraversalFunction
+        (directories: BlazeDirectories?) :
+        RecursiveDirectoryTraversalFunction<MyPackageDirectoryConsumer?, CollectPackagesUnderDirectoryValue?>(
+            directories
+        ) {
+        val initialConsumer: MyPackageDirectoryConsumer
+            get() = com.google.devtools.build.lib.skyframe.CollectPackagesUnderDirectoryFunction.MyPackageDirectoryConsumer()
 
-    @Override
-    protected CollectPackagesUnderDirectoryValue aggregateWithSubdirectorySkyValues(
-        MyPackageDirectoryConsumer consumer, Map<SkyKey, SkyValue> subdirectorySkyValues) {
-      // Aggregate the child subdirectory package state.
-      ImmutableList.Builder<RootedPath> builder = ImmutableList.builder();
-      for (SkyKey key : subdirectorySkyValues.keySet()) {
-        RecursivePkgKey recursivePkgKey = (RecursivePkgKey) key.argument();
-        CollectPackagesUnderDirectoryValue collectPackagesValue =
-            (CollectPackagesUnderDirectoryValue) subdirectorySkyValues.get(key);
-
-        boolean packagesOrErrorsInSubdirectory =
-            collectPackagesValue.isDirectoryPackage()
-                || collectPackagesValue.getErrorMessage() != null
-                || !collectPackagesValue
-                    .getSubdirectoryTransitivelyContainsPackagesOrErrors()
-                    .isEmpty();
-
-        if (packagesOrErrorsInSubdirectory) {
-          builder.add(recursivePkgKey.getRootedPath());
+        override fun getSkyKeyForSubdirectory(
+            repository: RepositoryName?,
+            subdirectory: RootedPath?,
+            excludedSubdirectoriesBeneathSubdirectory: IgnoredSubdirectories?
+        ): SkyKey? {
+            return CollectPackagesUnderDirectoryValue.Companion.key(
+                repository, subdirectory, excludedSubdirectoriesBeneathSubdirectory
+            )
         }
-      }
-      ImmutableList<RootedPath> subdirectories = builder.build();
-      String errorMessage = consumer.getErrorMessage();
-      if (errorMessage != null) {
-        return CollectPackagesUnderDirectoryValue.ofError(errorMessage, subdirectories);
-      }
-      return CollectPackagesUnderDirectoryValue.ofNoError(
-          consumer.isDirectoryPackage(), subdirectories);
+
+        override fun aggregateWithSubdirectorySkyValues(
+            consumer: MyPackageDirectoryConsumer, subdirectorySkyValues: MutableMap<SkyKey, SkyValue?>
+        ): CollectPackagesUnderDirectoryValue? {
+            // Aggregate the child subdirectory package state.
+            val builder: com.google.common.collect.ImmutableList.Builder<RootedPath?> =
+                com.google.common.collect.ImmutableList.builder<RootedPath?>()
+            for (key in subdirectorySkyValues.keySet()) {
+                val recursivePkgKey: RecursivePkgKey = key.argument() as RecursivePkgKey
+                val collectPackagesValue: CollectPackagesUnderDirectoryValue =
+                    subdirectorySkyValues.get(key) as CollectPackagesUnderDirectoryValue
+
+                val packagesOrErrorsInSubdirectory =
+                    collectPackagesValue.isDirectoryPackage()
+                            || collectPackagesValue.getErrorMessage() != null || !collectPackagesValue
+                        .getSubdirectoryTransitivelyContainsPackagesOrErrors()
+                        .isEmpty()
+
+                if (packagesOrErrorsInSubdirectory) {
+                    builder.add(recursivePkgKey.getRootedPath())
+                }
+            }
+            val subdirectories: com.google.common.collect.ImmutableList<RootedPath?> = builder.build()
+            val errorMessage = consumer.errorMessage
+            if (errorMessage != null) {
+                return CollectPackagesUnderDirectoryValue.Companion.ofError(errorMessage, subdirectories)
+            }
+            return CollectPackagesUnderDirectoryValue.Companion.ofNoError(
+                consumer.isDirectoryPackage, subdirectories
+            )
+        }
     }
-  }
 
-  private static class MyPackageDirectoryConsumer
-      implements RecursiveDirectoryTraversalFunction.PackageDirectoryConsumer {
+    private class MyPackageDirectoryConsumer
 
-    private boolean isDirectoryPackage;
-    @Nullable private String errorMessage;
+        : PackageDirectoryConsumer {
+        var isDirectoryPackage: Boolean = false
+            private set
+        var errorMessage: String? = null
+            private set
 
-    private MyPackageDirectoryConsumer() {}
+        override fun notePackage(pkgPath: PathFragment?) {
+            isDirectoryPackage = true
+        }
 
-    @Override
-    public void notePackage(PathFragment pkgPath) {
-      isDirectoryPackage = true;
+        override fun notePackageError(noSuchPackageExceptionErrorMessage: String?) {
+            this.errorMessage = noSuchPackageExceptionErrorMessage
+        }
     }
-
-    @Override
-    public void notePackageError(String noSuchPackageExceptionErrorMessage) {
-      this.errorMessage = noSuchPackageExceptionErrorMessage;
-    }
-
-    boolean isDirectoryPackage() {
-      return isDirectoryPackage;
-    }
-
-    @Nullable
-    String getErrorMessage() {
-      return errorMessage;
-    }
-  }
 }

@@ -11,110 +11,97 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.util
 
-package com.google.devtools.build.lib.util;
+import com.google.devtools.build.lib.util.ObjectGraphTraverser.EdgeType
+import com.google.devtools.build.lib.util.ObjectGraphTraverser.ObjectReceiver
+import com.google.devtools.build.lib.util.ShallowObjectSizeComputer
+import java.util.Collections
+import java.util.HashMap
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.util.ObjectGraphTraverser.EdgeType;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-
-/** An object receiver for {@link ObjectGraphTraverser} that collects statistics about RAM use. */
-public class MemoryAccountant implements ObjectGraphTraverser.ObjectReceiver {
-  /** Measures the shallow size of an object. */
-  public interface Measurer {
-
-    /**
-     * Return the shallow size of an objet.
-     *
-     * <p>If this instance doesn't know how to compute it, returns -1.
-     */
-    long maybeGetShallowSize(Object o);
-  }
-
-  /** Statistics collected about RAM use. */
-  public static class Stats {
-    private final Map<String, Long> objectCountByClass;
-    private final Map<String, Long> memoryByClass;
-    private long objectCount;
-    private long memory;
-
-    private Stats(boolean collectDetails) {
-      objectCountByClass = collectDetails ? new HashMap<>() : null;
-      memoryByClass = collectDetails ? new HashMap<>() : null;
-      objectCount = 0L;
-      memory = 0L;
+/** An object receiver for [ObjectGraphTraverser] that collects statistics about RAM use.  */
+class MemoryAccountant(measurers: Iterable<Measurer?>, collectDetails: Boolean) : ObjectReceiver {
+    /** Measures the shallow size of an object.  */
+    interface Measurer {
+        /**
+         * Return the shallow size of an objet.
+         * 
+         * 
+         * If this instance doesn't know how to compute it, returns -1.
+         */
+        fun maybeGetShallowSize(o: Any?): Long
     }
 
-    private void addObject(String clazz, long size) {
-      objectCount += 1;
-      memory += size;
-      if (objectCountByClass != null) {
-        objectCountByClass.put(clazz, objectCountByClass.getOrDefault(clazz, 0L) + 1);
-      }
+    /** Statistics collected about RAM use.  */
+    class Stats private constructor(collectDetails: Boolean) {
+        private val objectCountByClass: MutableMap<String?, Long?>?
+        private val memoryByClass: MutableMap<String?, Long?>?
+        var objectCount: Long = 0L
+            private set
+        var memoryUse: Long = 0L
+            private set
 
-      if (memoryByClass != null) {
-        memoryByClass.put(clazz, memoryByClass.getOrDefault(clazz, 0L) + size);
-      }
+        init {
+            objectCountByClass = if (collectDetails) HashMap<String?, Long?>() else null
+            memoryByClass = if (collectDetails) HashMap<String?, Long?>() else null
+        }
+
+        private fun addObject(clazz: String?, size: Long) {
+            objectCount += 1
+            this.memoryUse += size
+            if (objectCountByClass != null) {
+                objectCountByClass.put(clazz, objectCountByClass.getOrDefault(clazz, 0L)!! + 1)
+            }
+
+            if (memoryByClass != null) {
+                memoryByClass.put(clazz, memoryByClass.getOrDefault(clazz, 0L)!! + size)
+            }
+        }
+
+        fun getObjectCountByClass(): MutableMap<String?, Long?> {
+            return Collections.unmodifiableMap<String?, Long?>(objectCountByClass)
+        }
+
+        fun getMemoryByClass(): MutableMap<String?, Long?> {
+            return Collections.unmodifiableMap<String?, Long?>(memoryByClass)
+        }
     }
 
-    public long getObjectCount() {
-      return objectCount;
+    private val measurers: com.google.common.collect.ImmutableList<Measurer>
+    val stats: Stats
+
+    init {
+        this.measurers = com.google.common.collect.ImmutableList.copyOf<Measurer?>(measurers)
+        stats = com.google.devtools.build.lib.util.MemoryAccountant.Stats(collectDetails)
     }
 
-    public long getMemoryUse() {
-      return memory;
+    @kotlin.jvm.Synchronized
+    override fun objectFound(o: Any, context: String?) {
+        var context = context
+        if (context == null) {
+            if (o.javaClass.isArray()) {
+                context = "[] " + o.javaClass.getComponentType().getName()
+            } else {
+                context = o.javaClass.getName()
+            }
+        }
+
+        val size = getShallowSize(o)
+        stats.addObject(context, size)
     }
 
-    public Map<String, Long> getObjectCountByClass() {
-      return Collections.unmodifiableMap(objectCountByClass);
+    private fun getShallowSize(o: Any): Long {
+        for (measurer in measurers) {
+            val candidate: Long = measurer.maybeGetShallowSize(o)
+            if (candidate >= 0) {
+                return candidate
+            }
+        }
+
+        return ShallowObjectSizeComputer.getShallowSize(o)
     }
 
-    public Map<String, Long> getMemoryByClass() {
-      return Collections.unmodifiableMap(memoryByClass);
+    override fun edgeFound(from: Any?, to: Any?, toContext: String?, edgeType: EdgeType?) {
+        // Ignored for now.
     }
-  }
-
-  private final ImmutableList<Measurer> measurers;
-  private final Stats stats;
-
-  public MemoryAccountant(Iterable<Measurer> measurers, boolean collectDetails) {
-    this.measurers = ImmutableList.copyOf(measurers);
-    stats = new Stats(collectDetails);
-  }
-
-  @Override
-  public synchronized void objectFound(Object o, String context) {
-    if (context == null) {
-      if (o.getClass().isArray()) {
-        context = "[] " + o.getClass().getComponentType().getName();
-      } else {
-        context = o.getClass().getName();
-      }
-    }
-
-    long size = getShallowSize(o);
-    stats.addObject(context, size);
-  }
-
-  private long getShallowSize(Object o) {
-    for (Measurer measurer : measurers) {
-      long candidate = measurer.maybeGetShallowSize(o);
-      if (candidate >= 0) {
-        return candidate;
-      }
-    }
-
-    return ShallowObjectSizeComputer.getShallowSize(o);
-  }
-
-  @Override
-  public void edgeFound(Object from, Object to, String toContext, EdgeType edgeType) {
-    // Ignored for now.
-  }
-
-  public Stats getStats() {
-    return stats;
-  }
 }

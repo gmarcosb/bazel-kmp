@@ -11,18 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime.commands
 
-package com.google.devtools.build.lib.runtime.commands;
+import com.google.devtools.build.lib.buildeventstream.BuildCompletingEvent
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.buildeventstream.BuildCompletingEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil;
-import com.google.devtools.build.lib.util.ExitCode;
-
-/** This event is posted by the {@link TestCommand} if no tests were found. */
-public class NoTestsFound extends BuildCompletingEvent {
-
-  public NoTestsFound(ExitCode exitCode, long finishTimeMillis) {
-    super(exitCode, finishTimeMillis, ImmutableList.of(BuildEventIdUtil.buildMetrics()));
-  }
-}
+/** This event is posted by the [TestCommand] if no tests were found.  */
+class NoTestsFound(exitCode: ExitCode?, finishTimeMillis: Long) : BuildCompletingEvent(
+    exitCode,
+    finishTimeMillis,
+    com.google.common.collect.ImmutableList.of<E?>(BuildEventIdUtil.buildMetrics())
+)

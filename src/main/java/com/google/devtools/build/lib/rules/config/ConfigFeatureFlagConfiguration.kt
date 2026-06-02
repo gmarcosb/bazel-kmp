@@ -11,23 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License
+package com.google.devtools.build.lib.rules.config
 
-package com.google.devtools.build.lib.rules.config;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.Fragment;
-import com.google.devtools.build.lib.analysis.config.RequiresOptions;
+import com.google.devtools.build.lib.analysis.config.BuildOptions
 
 /**
  * Configuration fragment for Android's config_feature_flag, flags which can be defined in BUILD
  * files. This exists only so that ConfigFeatureFlagOptions.class is retained.
  */
-@RequiresOptions(options = ConfigFeatureFlagOptions.class, starlark = true)
-public final class ConfigFeatureFlagConfiguration extends Fragment {
-  /** Creates a new configuration fragment from the given {@link ConfigFeatureFlagOptions}. */
-  public ConfigFeatureFlagConfiguration(BuildOptions buildOptions) {}
+@RequiresOptions(options = ConfigFeatureFlagOptions::class, starlark = true)
+class ConfigFeatureFlagConfiguration : Fragment {
+    /** Creates a new configuration fragment from the given [ConfigFeatureFlagOptions].  */
+    constructor(buildOptions: BuildOptions?)
 
-  @VisibleForTesting
-  ConfigFeatureFlagConfiguration() {}
+    @com.google.common.annotations.VisibleForTesting
+    internal constructor()
 }

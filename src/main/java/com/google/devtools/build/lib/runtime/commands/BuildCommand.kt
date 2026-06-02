@@ -11,34 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime.commands;
+package com.google.devtools.build.lib.runtime.commands
 
-import static com.google.devtools.build.lib.runtime.Command.BuildPhase.EXECUTES;
-
-import com.google.devtools.build.lib.analysis.AnalysisOptions;
-import com.google.devtools.build.lib.buildeventstream.BuildEventProtocolOptions;
-import com.google.devtools.build.lib.buildtool.BuildRequest;
-import com.google.devtools.build.lib.buildtool.BuildRequestOptions;
-import com.google.devtools.build.lib.buildtool.BuildTool;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.exec.ExecutionOptions;
-import com.google.devtools.build.lib.exec.local.LocalExecutionOptions;
-import com.google.devtools.build.lib.pkgcache.LoadingOptions;
-import com.google.devtools.build.lib.pkgcache.PackageOptions;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.runtime.BlazeCommand;
-import com.google.devtools.build.lib.runtime.BlazeCommandResult;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.Command;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.KeepGoingOption;
-import com.google.devtools.build.lib.runtime.LoadingPhaseThreadsOption;
-import com.google.devtools.build.lib.skyframe.SkyfocusOptions;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCachingOptions;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.common.options.OptionsParsingResult;
-import java.util.List;
+import com.google.devtools.build.lib.runtime.Command.BuildPhase.EXECUTES
 
 /**
  * Handles the 'build' command on the Blaze command line, including targets named by arguments
@@ -47,66 +22,58 @@ import java.util.List;
 @Command(
     name = "build",
     buildPhase = EXECUTES,
-    options = {
-      BuildRequestOptions.class,
-      ExecutionOptions.class,
-      LocalExecutionOptions.class,
-      PackageOptions.class,
-      AnalysisOptions.class,
-      LoadingOptions.class,
-      KeepGoingOption.class,
-      LoadingPhaseThreadsOption.class,
-      BuildEventProtocolOptions.class,
-      SkyfocusOptions.class,
-      RemoteAnalysisCachingOptions.class,
-    },
+    options = [BuildRequestOptions::class, ExecutionOptions::class, LocalExecutionOptions::class, PackageOptions::class, AnalysisOptions::class, LoadingOptions::class, KeepGoingOption::class, LoadingPhaseThreadsOption::class, BuildEventProtocolOptions::class, SkyfocusOptions::class, RemoteAnalysisCachingOptions::class
+    ],
     usesConfigurationOptions = true,
     shortDescription = "Builds the specified targets.",
     allowResidue = true,
     completion = "label",
-    help = "resource:build.txt")
-public final class BuildCommand implements BlazeCommand {
+    help = "resource:build.txt"
+)
+class BuildCommand : BlazeCommand {
+    public override fun exec(
+        env: CommandEnvironment,
+        options: com.google.devtools.common.options.OptionsParsingResult
+    ): BlazeCommandResult {
+        val runtime: BlazeRuntime = env.getRuntime()
+        val targets: MutableList<String?>
+        try {
+            targets = TargetPatternsHelper.readFrom(env, options)
+        } catch (e: TargetPatternsHelperException) {
+            env.getReporter().handle(com.google.devtools.build.lib.events.Event.error(e.message))
+            return BlazeCommandResult.failureDetail(e.getFailureDetail())
+        }
+        if (targets.isEmpty()) {
+            env.getReporter()
+                .handle(
+                    com.google.devtools.build.lib.events.Event.warn(
+                        ("Usage: "
+                                + runtime.productName
+                                + " build <options> <targets>."
+                                + "\nInvoke `"
+                                + runtime.productName
+                                + " help build` for full description of usage and options."
+                                + "\nYour request is correct, but requested an empty set of targets."
+                                + " Nothing will be built.")
+                    )
+                )
+        }
 
-  @Override
-  public BlazeCommandResult exec(CommandEnvironment env, OptionsParsingResult options) {
-    BlazeRuntime runtime = env.getRuntime();
-    List<String> targets;
-    try {
-      targets = TargetPatternsHelper.readFrom(env, options);
-    } catch (TargetPatternsHelper.TargetPatternsHelperException e) {
-      env.getReporter().handle(Event.error(e.getMessage()));
-      return BlazeCommandResult.failureDetail(e.getFailureDetail());
+        val request: BuildRequest?
+        com.google.devtools.build.lib.profiler.Profiler.instance().profile("BuildRequest.create").use { closeable ->
+            request =
+                BuildRequest.builder()
+                    .setCommandName(javaClass.getAnnotation<A?>(Command::class.java).name())
+                    .setId(env.getCommandId())
+                    .setOptions(options)
+                    .setStartupOptions(runtime.getStartupOptionsProvider())
+                    .setOutErr(env.getReporter().getOutErr())
+                    .setTargets(targets)
+                    .setStartTimeMillis(env.commandStartTime)
+                    .build()
+        }
+        val detailedExitCode: DetailedExitCode? =
+            BuildTool(env).processRequest(request, null, options).getDetailedExitCode()
+        return BlazeCommandResult.detailedExitCode(detailedExitCode)
     }
-    if (targets.isEmpty()) {
-      env.getReporter()
-          .handle(
-              Event.warn(
-                  "Usage: "
-                      + runtime.getProductName()
-                      + " build <options> <targets>."
-                      + "\nInvoke `"
-                      + runtime.getProductName()
-                      + " help build` for full description of usage and options."
-                      + "\nYour request is correct, but requested an empty set of targets."
-                      + " Nothing will be built."));
-    }
-
-    BuildRequest request;
-    try (SilentCloseable closeable = Profiler.instance().profile("BuildRequest.create")) {
-
-      request =
-          BuildRequest.builder()
-              .setCommandName(getClass().getAnnotation(Command.class).name())
-              .setId(env.getCommandId())
-              .setOptions(options)
-              .setStartupOptions(runtime.getStartupOptionsProvider())
-              .setOutErr(env.getReporter().getOutErr())
-              .setTargets(targets)
-              .setStartTimeMillis(env.getCommandStartTime())
-              .build();
-    }
-    DetailedExitCode detailedExitCode =
-        new BuildTool(env).processRequest(request, null, options).getDetailedExitCode();
-    return BlazeCommandResult.detailedExitCode(detailedExitCode);
-  }
 }

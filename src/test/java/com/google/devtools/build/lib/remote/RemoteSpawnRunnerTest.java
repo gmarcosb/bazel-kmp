@@ -1238,7 +1238,7 @@ public class RemoteSpawnRunnerTest {
     SpawnExecutionContext policy = getSpawnContext(spawn);
 
     SpawnResult result = runner.exec(spawn, policy);
-    assertThat(result.exitCode()).isEqualTo(ExitCode.REMOTE_ERROR.getNumericExitCode());
+    assertThat(result.exitCode()).isEqualTo(ExitCode.REMOTE_ERROR.numericExitCode);
     assertThat(result.getFailureMessage()).contains("reasons");
   }
 
@@ -1262,7 +1262,7 @@ public class RemoteSpawnRunnerTest {
     SpawnExecutionContext policy = getSpawnContext(spawn);
 
     SpawnResult result = runner.exec(spawn, policy);
-    assertThat(result.exitCode()).isEqualTo(ExitCode.REMOTE_ERROR.getNumericExitCode());
+    assertThat(result.exitCode()).isEqualTo(ExitCode.REMOTE_ERROR.numericExitCode);
     assertThat(result.getFailureMessage()).contains("reasons");
   }
 
@@ -1293,7 +1293,7 @@ public class RemoteSpawnRunnerTest {
     SpawnExecutionContext policy = getSpawnContext(spawn);
 
     SpawnResult result = runner.exec(spawn, policy);
-    assertThat(result.exitCode()).isEqualTo(ExitCode.REMOTE_ERROR.getNumericExitCode());
+    assertThat(result.exitCode()).isEqualTo(ExitCode.REMOTE_ERROR.numericExitCode);
     assertThat(result.getFailureMessage()).contains("beep and indeed boop");
   }
 
@@ -1309,7 +1309,7 @@ public class RemoteSpawnRunnerTest {
 
   private void testParamFilesAreMaterializedForFlag(String flag) throws Exception {
     RemoteOptions remoteOptions = Options.getDefaults(RemoteOptions.class);
-    ExecutionOptions executionOptions = Options.parse(ExecutionOptions.class, flag).getOptions();
+    ExecutionOptions executionOptions = Options.parse(ExecutionOptions.class, flag).options;
     RemoteExecutionService remoteExecutionService =
         new RemoteExecutionService(
             reporter,

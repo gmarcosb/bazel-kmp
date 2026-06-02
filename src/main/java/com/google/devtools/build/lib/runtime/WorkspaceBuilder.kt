@@ -11,251 +11,259 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.eventbus.SubscriberExceptionHandler;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.WorkspaceStatusAction;
-import com.google.devtools.build.lib.bugreport.BugReport;
-import com.google.devtools.build.lib.exec.BinTools;
-import com.google.devtools.build.lib.packages.PackageFactory;
-import com.google.devtools.build.lib.profiler.memory.AllocationTracker;
-import com.google.devtools.build.lib.skyframe.DefaultSyscallCache;
-import com.google.devtools.build.lib.skyframe.DiffAwareness;
-import com.google.devtools.build.lib.skyframe.SequencedSkyframeExecutorFactory;
-import com.google.devtools.build.lib.skyframe.SkyframeExecutor;
-import com.google.devtools.build.lib.skyframe.SkyframeExecutorFactory;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecRegistry;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCachingServicesSupplier;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.SingleFileSystemSyscallCache;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.Map;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
 /**
- * Builder class to create a {@link BlazeWorkspace} instance. This class is part of the module API,
+ * Builder class to create a [BlazeWorkspace] instance. This class is part of the module API,
  * which allows modules to affect how the workspace is initialized.
  */
-public final class WorkspaceBuilder {
-  private final BlazeDirectories directories;
-  private final BinTools binTools;
+class WorkspaceBuilder internal constructor(directories: BlazeDirectories?, binTools: BinTools?) {
+    private val directories: BlazeDirectories?
+    private val binTools: BinTools?
 
-  private SkyframeExecutorFactory skyframeExecutorFactory;
-  private WorkspaceStatusAction.Factory workspaceStatusActionFactory;
-  private final ImmutableList.Builder<DiffAwareness.Factory> diffAwarenessFactories =
-      ImmutableList.builder();
-  // We use an immutable map builder for the nice side effect that it throws if a duplicate key
-  // is inserted.
-  private final ImmutableMap.Builder<SkyFunctionName, SkyFunction> skyFunctions =
-      ImmutableMap.builder();
-  private AllocationTracker allocationTracker;
+    private var skyframeExecutorFactory: SkyframeExecutorFactory? = null
+    private var workspaceStatusActionFactory: WorkspaceStatusAction.Factory? = null
+    private val diffAwarenessFactories: com.google.common.collect.ImmutableList.Builder<com.google.devtools.build.lib.skyframe.DiffAwareness.Factory?> =
+        com.google.common.collect.ImmutableList.builder<com.google.devtools.build.lib.skyframe.DiffAwareness.Factory?>()
 
-  @Nullable private SkyframeExecutor.SkyKeyStateReceiver skyKeyStateReceiver = null;
-  private SyscallCache syscallCache;
+    // We use an immutable map builder for the nice side effect that it throws if a duplicate key
+    // is inserted.
+    private val skyFunctions: com.google.common.collect.ImmutableMap.Builder<SkyFunctionName?, SkyFunction?> =
+        com.google.common.collect.ImmutableMap.builder<SkyFunctionName?, SkyFunction?>()
+    private var allocationTracker: AllocationTracker? = null
 
-  private boolean allowExternalRepositories = true;
-  private Supplier<Path> repoContentsCachePathSupplier = () -> null;
-  @Nullable private Supplier<ObjectCodecRegistry> analysisCodecRegistrySupplier = null;
+    private var skyKeyStateReceiver: SkyKeyStateReceiver? = null
+    private var syscallCache: SyscallCache? = null
 
-  @Nullable
-  private RemoteAnalysisCachingServicesSupplier remoteAnalysisCachingServicesSupplier = null;
+    private var allowExternalRepositories = true
+    private var repoContentsCachePathSupplier: java.util.function.Supplier<com.google.devtools.build.lib.vfs.Path?>? =
+        java.util.function.Supplier { null }
+    private var analysisCodecRegistrySupplier: java.util.function.Supplier<ObjectCodecRegistry?>? = null
 
-  WorkspaceBuilder(BlazeDirectories directories, BinTools binTools) {
-    this.directories = directories;
-    this.binTools = binTools;
-  }
+    private var remoteAnalysisCachingServicesSupplier: RemoteAnalysisCachingServicesSupplier? = null
 
-  public static int getSyscallCacheInitialCapacity() {
-    // The initial capacity here translates into the size of an array in ConcurrentHashMap, so
-    // oversizing by N results in memory usage of 8N bytes. So the maximum wasted memory here is
-    // 1/2^20 of heap, or 10K on a 10G heap (which would start with 1280-capacity caches).
-    long scaledMemory = Runtime.getRuntime().maxMemory() >> 23;
-    if (scaledMemory > Integer.MAX_VALUE) {
-      // Something went very wrong.
-      BugReport.sendBugReport(
-          new IllegalStateException(
-              "Scaled memory was still too big: "
-                  + scaledMemory
-                  + ", "
-                  + Runtime.getRuntime().maxMemory()));
-      scaledMemory = 1024;
-    } else if (scaledMemory <= 0) {
-      // If Bazel is running in <8M of memory, very impressive.
-      scaledMemory = 32;
-    }
-    return (int) scaledMemory;
-  }
-
-  BlazeWorkspace build(
-      BlazeRuntime runtime,
-      PackageFactory packageFactory,
-      SubscriberExceptionHandler eventBusExceptionHandler)
-      throws AbruptExitException {
-    // Set default values if none are set.
-    if (skyframeExecutorFactory == null) {
-      skyframeExecutorFactory = new SequencedSkyframeExecutorFactory();
-    }
-    if (syscallCache == null) {
-      syscallCache =
-          DefaultSyscallCache.newBuilder()
-              .setInitialCapacity(getSyscallCacheInitialCapacity())
-              .build();
+    init {
+        this.directories = directories
+        this.binTools = binTools
     }
 
-    SingleFileSystemSyscallCache singleFsSyscallCache =
-        new SingleFileSystemSyscallCache(syscallCache, runtime.getFileSystem());
+    @Throws(AbruptExitException::class)
+    fun build(
+        runtime: BlazeRuntime,
+        packageFactory: PackageFactory?,
+        eventBusExceptionHandler: com.google.common.eventbus.SubscriberExceptionHandler?
+    ): BlazeWorkspace {
+        // Set default values if none are set.
+        if (skyframeExecutorFactory == null) {
+            skyframeExecutorFactory = SequencedSkyframeExecutorFactory()
+        }
+        if (syscallCache == null) {
+            syscallCache =
+                DefaultSyscallCache.newBuilder()
+                    .setInitialCapacity(syscallCacheInitialCapacity)
+                    .build()
+        }
 
-    SkyframeExecutor skyframeExecutor =
-        skyframeExecutorFactory.create(
-            packageFactory,
-            runtime.getFileSystem(),
+        val singleFsSyscallCache: SingleFileSystemSyscallCache =
+            SingleFileSystemSyscallCache(syscallCache, runtime.getFileSystem())
+
+        val skyframeExecutor: SkyframeExecutor? =
+            skyframeExecutorFactory.create(
+                packageFactory,
+                runtime.getFileSystem(),
+                directories,
+                runtime.getActionKeyContext(),
+                workspaceStatusActionFactory,
+                diffAwarenessFactories.build(),
+                skyFunctions.buildOrThrow(),
+                singleFsSyscallCache,
+                allowExternalRepositories,
+                repoContentsCachePathSupplier,
+                if (skyKeyStateReceiver == null)
+                    SkyframeExecutor.SkyKeyStateReceiver.NULL_INSTANCE
+                else
+                    skyKeyStateReceiver,
+                runtime.getBugReporter()
+            )
+        return BlazeWorkspace(
+            runtime,
             directories,
-            runtime.getActionKeyContext(),
+            skyframeExecutor,
+            eventBusExceptionHandler,
             workspaceStatusActionFactory,
-            diffAwarenessFactories.build(),
-            skyFunctions.buildOrThrow(),
+            binTools,
+            allocationTracker,
             singleFsSyscallCache,
-            allowExternalRepositories,
-            repoContentsCachePathSupplier,
-            skyKeyStateReceiver == null
-                ? SkyframeExecutor.SkyKeyStateReceiver.NULL_INSTANCE
-                : skyKeyStateReceiver,
-            runtime.getBugReporter());
-    return new BlazeWorkspace(
-        runtime,
-        directories,
-        skyframeExecutor,
-        eventBusExceptionHandler,
-        workspaceStatusActionFactory,
-        binTools,
-        allocationTracker,
-        singleFsSyscallCache,
-        analysisCodecRegistrySupplier,
-        remoteAnalysisCachingServicesSupplier,
-        allowExternalRepositories);
-  }
+            analysisCodecRegistrySupplier,
+            remoteAnalysisCachingServicesSupplier,
+            allowExternalRepositories
+        )
+    }
 
-  /**
-   * Sets a factory for creating {@link SkyframeExecutor} objects. Note that only one factory per
-   * workspace is allowed.
-   */
-  @CanIgnoreReturnValue
-  public WorkspaceBuilder setSkyframeExecutorFactory(
-      SkyframeExecutorFactory skyframeExecutorFactory) {
-    Preconditions.checkState(
-        this.skyframeExecutorFactory == null,
-        "At most one Skyframe factory supported. But found two: %s and %s",
-        this.skyframeExecutorFactory,
-        skyframeExecutorFactory);
-    this.skyframeExecutorFactory = Preconditions.checkNotNull(skyframeExecutorFactory);
-    return this;
-  }
+    /**
+     * Sets a factory for creating [SkyframeExecutor] objects. Note that only one factory per
+     * workspace is allowed.
+     */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setSkyframeExecutorFactory(
+        skyframeExecutorFactory: SkyframeExecutorFactory?
+    ): WorkspaceBuilder {
+        com.google.common.base.Preconditions.checkState(
+            this.skyframeExecutorFactory == null,
+            "At most one Skyframe factory supported. But found two: %s and %s",
+            this.skyframeExecutorFactory,
+            skyframeExecutorFactory
+        )
+        this.skyframeExecutorFactory =
+            com.google.common.base.Preconditions.checkNotNull<SkyframeExecutorFactory?>(skyframeExecutorFactory)
+        return this
+    }
 
-  /**
-   * Sets the workspace status action factory contributed by this module. Only one factory per
-   * workspace is allowed.
-   */
-  @CanIgnoreReturnValue
-  public WorkspaceBuilder setWorkspaceStatusActionFactory(
-      WorkspaceStatusAction.Factory workspaceStatusActionFactory) {
-    Preconditions.checkState(
-        this.workspaceStatusActionFactory == null,
-        "At most one workspace status action factory supported. But found two: %s and %s",
-        this.workspaceStatusActionFactory,
-        workspaceStatusActionFactory);
-    this.workspaceStatusActionFactory = Preconditions.checkNotNull(workspaceStatusActionFactory);
-    return this;
-  }
+    /**
+     * Sets the workspace status action factory contributed by this module. Only one factory per
+     * workspace is allowed.
+     */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setWorkspaceStatusActionFactory(
+        workspaceStatusActionFactory: WorkspaceStatusAction.Factory?
+    ): WorkspaceBuilder {
+        com.google.common.base.Preconditions.checkState(
+            this.workspaceStatusActionFactory == null,
+            "At most one workspace status action factory supported. But found two: %s and %s",
+            this.workspaceStatusActionFactory,
+            workspaceStatusActionFactory
+        )
+        this.workspaceStatusActionFactory =
+            com.google.common.base.Preconditions.checkNotNull<WorkspaceStatusAction.Factory?>(
+                workspaceStatusActionFactory
+            )
+        return this
+    }
 
-  @CanIgnoreReturnValue
-  public WorkspaceBuilder setAllocationTracker(AllocationTracker allocationTracker) {
-    Preconditions.checkState(
-        this.allocationTracker == null, "At most one allocation tracker can be set.");
-    this.allocationTracker = Preconditions.checkNotNull(allocationTracker);
-    return this;
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setAllocationTracker(allocationTracker: AllocationTracker?): WorkspaceBuilder {
+        com.google.common.base.Preconditions.checkState(
+            this.allocationTracker == null, "At most one allocation tracker can be set."
+        )
+        this.allocationTracker =
+            com.google.common.base.Preconditions.checkNotNull<AllocationTracker?>(allocationTracker)
+        return this
+    }
 
-  @CanIgnoreReturnValue
-  public WorkspaceBuilder setSyscallCache(SyscallCache syscallCache) {
-    Preconditions.checkState(
-        this.syscallCache == null, "Set twice: %s %s", this.syscallCache, syscallCache);
-    this.syscallCache = Preconditions.checkNotNull(syscallCache);
-    return this;
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setSyscallCache(syscallCache: SyscallCache?): WorkspaceBuilder {
+        com.google.common.base.Preconditions.checkState(
+            this.syscallCache == null, "Set twice: %s %s", this.syscallCache, syscallCache
+        )
+        this.syscallCache = com.google.common.base.Preconditions.checkNotNull<SyscallCache?>(syscallCache)
+        return this
+    }
 
-  /**
-   * Add a {@link DiffAwareness} factory. These will be used to determine which files, if any,
-   * changed between Blaze commands. Note that these factories are attempted in the order in which
-   * they are added to this class, so order matters - in order to guarantee a specific order, only a
-   * single module should add such factories.
-   */
-  @CanIgnoreReturnValue
-  public WorkspaceBuilder addDiffAwarenessFactory(DiffAwareness.Factory factory) {
-    this.diffAwarenessFactories.add(Preconditions.checkNotNull(factory));
-    return this;
-  }
+    /**
+     * Add a [DiffAwareness] factory. These will be used to determine which files, if any,
+     * changed between Blaze commands. Note that these factories are attempted in the order in which
+     * they are added to this class, so order matters - in order to guarantee a specific order, only a
+     * single module should add such factories.
+     */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun addDiffAwarenessFactory(factory: com.google.devtools.build.lib.skyframe.DiffAwareness.Factory?): WorkspaceBuilder {
+        this.diffAwarenessFactories.add(
+            com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.lib.skyframe.DiffAwareness.Factory?>(
+                factory
+            )
+        )
+        return this
+    }
 
-  /** Add an "extra" SkyFunction for SkyValues. */
-  @CanIgnoreReturnValue
-  public WorkspaceBuilder addSkyFunction(SkyFunctionName name, SkyFunction skyFunction) {
-    Preconditions.checkNotNull(name);
-    Preconditions.checkNotNull(skyFunction);
-    this.skyFunctions.put(name, skyFunction);
-    return this;
-  }
+    /** Add an "extra" SkyFunction for SkyValues.  */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun addSkyFunction(name: SkyFunctionName?, skyFunction: SkyFunction?): WorkspaceBuilder {
+        com.google.common.base.Preconditions.checkNotNull<SkyFunctionName?>(name)
+        com.google.common.base.Preconditions.checkNotNull<SkyFunction?>(skyFunction)
+        this.skyFunctions.put(name, skyFunction)
+        return this
+    }
 
-  /** Add "extra" SkyFunctions for SkyValues. */
-  @CanIgnoreReturnValue
-  public WorkspaceBuilder addSkyFunctions(Map<SkyFunctionName, SkyFunction> skyFunctions) {
-    this.skyFunctions.putAll(Preconditions.checkNotNull(skyFunctions));
-    return this;
-  }
+    /** Add "extra" SkyFunctions for SkyValues.  */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun addSkyFunctions(skyFunctions: MutableMap<SkyFunctionName?, SkyFunction?>?): WorkspaceBuilder {
+        this.skyFunctions.putAll(
+            com.google.common.base.Preconditions.checkNotNull<MutableMap<SkyFunctionName?, SkyFunction?>?>(
+                skyFunctions
+            )
+        )
+        return this
+    }
 
-  @CanIgnoreReturnValue
-  public WorkspaceBuilder allowExternalRepositories(boolean allowExternalRepositories) {
-    this.allowExternalRepositories = allowExternalRepositories;
-    return this;
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun allowExternalRepositories(allowExternalRepositories: Boolean): WorkspaceBuilder {
+        this.allowExternalRepositories = allowExternalRepositories
+        return this
+    }
 
-  @CanIgnoreReturnValue
-  public WorkspaceBuilder setRepoContentsCachePathSupplier(
-      Supplier<Path> repoContentsCachePathSupplier) {
-    this.repoContentsCachePathSupplier = repoContentsCachePathSupplier;
-    return this;
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setRepoContentsCachePathSupplier(
+        repoContentsCachePathSupplier: java.util.function.Supplier<com.google.devtools.build.lib.vfs.Path?>?
+    ): WorkspaceBuilder {
+        this.repoContentsCachePathSupplier = repoContentsCachePathSupplier
+        return this
+    }
 
-  @CanIgnoreReturnValue
-  public WorkspaceBuilder setSkyKeyStateReceiver(
-      SkyframeExecutor.SkyKeyStateReceiver skyKeyStateReceiver) {
-    Preconditions.checkState(
-        this.skyKeyStateReceiver == null,
-        "Multiple evaluatedSkyKeyReceiver: %s %s",
-        this.skyKeyStateReceiver,
-        skyKeyStateReceiver);
-    this.skyKeyStateReceiver = skyKeyStateReceiver;
-    return this;
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setSkyKeyStateReceiver(
+        skyKeyStateReceiver: SkyKeyStateReceiver?
+    ): WorkspaceBuilder {
+        com.google.common.base.Preconditions.checkState(
+            this.skyKeyStateReceiver == null,
+            "Multiple evaluatedSkyKeyReceiver: %s %s",
+            this.skyKeyStateReceiver,
+            skyKeyStateReceiver
+        )
+        this.skyKeyStateReceiver = skyKeyStateReceiver
+        return this
+    }
 
-  @CanIgnoreReturnValue
-  public WorkspaceBuilder setAnalysisCodecRegistrySupplier(
-      Supplier<ObjectCodecRegistry> analysisCodecRegistrySupplier) {
-    this.analysisCodecRegistrySupplier = analysisCodecRegistrySupplier;
-    return this;
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setAnalysisCodecRegistrySupplier(
+        analysisCodecRegistrySupplier: java.util.function.Supplier<ObjectCodecRegistry?>?
+    ): WorkspaceBuilder {
+        this.analysisCodecRegistrySupplier = analysisCodecRegistrySupplier
+        return this
+    }
 
-  @CanIgnoreReturnValue
-  public WorkspaceBuilder setRemoteAnalysisCachingServicesSupplier(
-      RemoteAnalysisCachingServicesSupplier remoteAnalysisCachingServicesSupplier) {
-    this.remoteAnalysisCachingServicesSupplier = remoteAnalysisCachingServicesSupplier;
-    return this;
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun setRemoteAnalysisCachingServicesSupplier(
+        remoteAnalysisCachingServicesSupplier: RemoteAnalysisCachingServicesSupplier?
+    ): WorkspaceBuilder {
+        this.remoteAnalysisCachingServicesSupplier = remoteAnalysisCachingServicesSupplier
+        return this
+    }
+
+    companion object {
+        val syscallCacheInitialCapacity: Int
+            get() {
+                // The initial capacity here translates into the size of an array in ConcurrentHashMap, so
+                // oversizing by N results in memory usage of 8N bytes. So the maximum wasted memory here is
+                // 1/2^20 of heap, or 10K on a 10G heap (which would start with 1280-capacity caches).
+                var scaledMemory: Long = java.lang.Runtime.getRuntime().maxMemory() shr 23
+                if (scaledMemory > java.lang.Integer.MAX_VALUE) {
+                    // Something went very wrong.
+                    BugReport.sendBugReport(
+                        java.lang.IllegalStateException(
+                            ("Scaled memory was still too big: "
+                                    + scaledMemory
+                                    + ", "
+                                    + java.lang.Runtime.getRuntime().maxMemory())
+                        )
+                    )
+                    scaledMemory = 1024
+                } else if (scaledMemory <= 0) {
+                    // If Bazel is running in <8M of memory, very impressive.
+                    scaledMemory = 32
+                }
+                return scaledMemory.toInt()
+            }
+    }
 }

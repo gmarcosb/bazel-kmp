@@ -11,40 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import java.lang.ref.WeakReference;
+import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.AsyncObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.SerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
 /**
  * A codec for weak references.
- *
- * <p>We must always be prepared for a weak reference to suddenly vanish, so simply not serializing
+ * 
+ * 
+ * We must always be prepared for a weak reference to suddenly vanish, so simply not serializing
  * the referenced object works.
  */
-@SuppressWarnings({"rawtypes"})
-public final class WeakReferenceCodec extends AsyncObjectCodec<WeakReference> {
+class WeakReferenceCodec : AsyncObjectCodec<java.lang.ref.WeakReference<*>?>() {
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun deserializeAsync(
+        context: AsyncDeserializationContext, codedIn: CodedInputStream?
+    ): java.lang.ref.WeakReference<*> {
+        val result: java.lang.ref.WeakReference<*> = java.lang.ref.WeakReference<Any?>(null)
+        context.registerInitialValue(result)
+        return result
+    }
 
-  @Override
-  public WeakReference deserializeAsync(
-      AsyncDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    WeakReference result = new WeakReference<>(null);
-    context.registerInitialValue(result);
-    return result;
-  }
+    override fun getEncodedClass(): java.lang.Class<java.lang.ref.WeakReference<*>?> {
+        return java.lang.ref.WeakReference::class.java
+    }
 
-  @Override
-  public Class<WeakReference> getEncodedClass() {
-    return WeakReference.class;
-  }
-
-  @Override
-  public void serialize(SerializationContext context, WeakReference obj, CodedOutputStream codedOut)
-      throws SerializationException, IOException {
-    // We don't need to serialize anything; the referenced object is simply discarded since weak
-    // references are only used for caching.
-  }
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun serialize(
+        context: SerializationContext?,
+        obj: java.lang.ref.WeakReference<*>?,
+        codedOut: CodedOutputStream?
+    ) {
+        // We don't need to serialize anything; the referenced object is simply discarded since weak
+        // references are only used for caching.
+    }
 }

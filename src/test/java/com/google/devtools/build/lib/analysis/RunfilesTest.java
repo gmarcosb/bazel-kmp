@@ -61,7 +61,7 @@ public final class RunfilesTest extends FoundationTestCase {
       throws OptionsParsingException {
     return StarlarkThread.createTransient(
         Mutability.create("test"),
-        Options.parse(BuildLanguageOptions.class, options).getOptions().toStarlarkSemantics());
+        Options.parse(BuildLanguageOptions.class, options).options.toStarlarkSemantics());
   }
 
   @Test

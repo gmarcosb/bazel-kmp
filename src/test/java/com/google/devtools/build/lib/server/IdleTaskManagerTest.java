@@ -47,7 +47,7 @@ public class IdleTaskManagerTest {
 
     assertThat(taskDone.get()).isTrue();
 
-    assertThat(stats.stream().map(s -> new IdleTask.Result(s.name(), s.status(), Duration.ZERO)))
+    assertThat(stats.stream().map(s -> new IdleTask.Result(s.name, s.status, Duration.ZERO)))
         .containsExactly(new IdleTask.Result("task", IdleTask.Status.SUCCESS, Duration.ZERO));
   }
 
@@ -75,7 +75,7 @@ public class IdleTaskManagerTest {
 
     assertThat(taskDone.get()).isTrue();
 
-    assertThat(stats.stream().map(s -> new IdleTask.Result(s.name(), s.status(), Duration.ZERO)))
+    assertThat(stats.stream().map(s -> new IdleTask.Result(s.name, s.status, Duration.ZERO)))
         .containsExactly(new IdleTask.Result("task", IdleTask.Status.FAILURE, Duration.ZERO));
   }
 
@@ -103,7 +103,7 @@ public class IdleTaskManagerTest {
 
     assertThat(taskInterrupted.get()).isTrue();
 
-    assertThat(stats.stream().map(s -> new IdleTask.Result(s.name(), s.status(), Duration.ZERO)))
+    assertThat(stats.stream().map(s -> new IdleTask.Result(s.name, s.status, Duration.ZERO)))
         .containsExactly(new IdleTask.Result("task", IdleTask.Status.INTERRUPTED, Duration.ZERO));
   }
 
@@ -143,7 +143,7 @@ public class IdleTaskManagerTest {
 
     assertThat(concurrentTasksDetected.get()).isFalse();
 
-    assertThat(stats.stream().map(s -> new IdleTask.Result(s.name(), s.status(), Duration.ZERO)))
+    assertThat(stats.stream().map(s -> new IdleTask.Result(s.name, s.status, Duration.ZERO)))
         .containsExactly(
             new IdleTask.Result("a", IdleTask.Status.SUCCESS, Duration.ZERO),
             new IdleTask.Result("b", IdleTask.Status.SUCCESS, Duration.ZERO),

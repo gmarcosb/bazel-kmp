@@ -559,7 +559,7 @@ public class SkymeldBuildIntegrationTest extends BuildIntegrationTestCase {
 
   @Test
   public void symlinksPlantedExceptProductNamePrefixAndIgnoredPaths() throws Exception {
-    String productName = getRuntime().getProductName();
+    String productName = getRuntime().productName;
     Path execroot = directories.getExecRoot(directories.getWorkspace().getBaseName());
     writeMyRuleBzl();
     Path fooDir =

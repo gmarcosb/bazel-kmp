@@ -11,96 +11,98 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
+import com.google.devtools.build.lib.concurrent.ExecutorUtil
+import com.google.devtools.build.lib.runtime.BlazeModule
+import com.google.devtools.build.lib.runtime.CommandEnvironment
+import com.google.devtools.build.lib.util.AbruptExitException
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import com.google.devtools.build.lib.concurrent.ExecutorUtil;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import java.util.ArrayList;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import javax.annotation.Nullable;
-
-/** A {@link BlazeModule} that waits for submitted tasks to terminate after every command. */
-public class BlockWaitingModule extends BlazeModule {
-
-  /** A task to be submitted. */
-  public interface Task {
-    void call() throws AbruptExitException;
-  }
-
-  /**
-   * Wraps an AbruptExitException thrown by a task.
-   *
-   * <p>This is needed because a task that can throw a checked exception cannot be submitted to
-   * {@link ExecutorService}.
-   */
-  private static class TaskException extends RuntimeException {
-    TaskException(AbruptExitException cause) {
-      super(cause);
-    }
-  }
-
-  @Nullable private ExecutorService executorService;
-  @Nullable private ArrayList<Future<?>> submittedTasks;
-
-  @Override
-  public void beforeCommand(CommandEnvironment env) throws AbruptExitException {
-    checkState(executorService == null, "executorService must be null");
-    checkState(submittedTasks == null, "submittedTasks must be null");
-
-    executorService =
-        Executors.newCachedThreadPool(
-            new ThreadFactoryBuilder().setNameFormat("block-waiting-%d").build());
-
-    submittedTasks = new ArrayList<>();
-  }
-
-  @SuppressWarnings("FutureReturnValueIgnored")
-  public void submit(Task task) {
-    checkNotNull(executorService, "executorService must not be null");
-    checkNotNull(submittedTasks, "submittedTasks must be null");
-
-    submittedTasks.add(
-        executorService.submit(
-            () -> {
-              try {
-                task.call();
-              } catch (AbruptExitException e) {
-                throw new TaskException(e);
-              }
-            }));
-  }
-
-  @Override
-  public void afterCommand() throws AbruptExitException {
-    checkNotNull(executorService, "executorService must not be null");
-
-    if (ExecutorUtil.interruptibleShutdown(executorService)) {
-      Thread.currentThread().interrupt();
+/** A [BlazeModule] that waits for submitted tasks to terminate after every command.  */
+class BlockWaitingModule : BlazeModule() {
+    /** A task to be submitted.  */
+    interface Task {
+        @Throws(AbruptExitException::class)
+        fun call()
     }
 
-    for (Future<?> f : submittedTasks) {
-      try {
-        f.get(); // guaranteed to have completed.
-      } catch (InterruptedException e) {
-        throw new AssertionError("task should not have been interrupted");
-      } catch (ExecutionException e) {
-        Throwable cause = e.getCause();
-        if (cause instanceof TaskException) {
-          checkState(cause.getCause() instanceof AbruptExitException);
-          throw (AbruptExitException) cause.getCause();
+    /**
+     * Wraps an AbruptExitException thrown by a task.
+     * 
+     * 
+     * This is needed because a task that can throw a checked exception cannot be submitted to
+     * [ExecutorService].
+     */
+    private class TaskException(cause: AbruptExitException?) : java.lang.RuntimeException(cause)
+
+    private var executorService: ExecutorService? = null
+    private var submittedTasks: java.util.ArrayList<java.util.concurrent.Future<*>>? = null
+
+    @Throws(AbruptExitException::class)
+    override fun beforeCommand(env: CommandEnvironment?) {
+        com.google.common.base.Preconditions.checkState(executorService == null, "executorService must be null")
+        com.google.common.base.Preconditions.checkState(submittedTasks == null, "submittedTasks must be null")
+
+        executorService =
+            Executors.newCachedThreadPool(
+                com.google.common.util.concurrent.ThreadFactoryBuilder().setNameFormat("block-waiting-%d").build()
+            )
+
+        submittedTasks = java.util.ArrayList<java.util.concurrent.Future<*>>()
+    }
+
+    fun submit(task: Task) {
+        com.google.common.base.Preconditions.checkNotNull<ExecutorService?>(
+            executorService,
+            "executorService must not be null"
+        )
+        com.google.common.base.Preconditions.checkNotNull<java.util.ArrayList<java.util.concurrent.Future<*>?>?>(
+            submittedTasks,
+            "submittedTasks must be null"
+        )
+
+        submittedTasks.add(
+            executorService.submit(
+                java.lang.Runnable {
+                    try {
+                        task.call()
+                    } catch (e: AbruptExitException) {
+                        throw TaskException(e)
+                    }
+                })
+        )
+    }
+
+    @Throws(AbruptExitException::class)
+    override fun afterCommand() {
+        com.google.common.base.Preconditions.checkNotNull<ExecutorService?>(
+            executorService,
+            "executorService must not be null"
+        )
+
+        if (ExecutorUtil.interruptibleShutdown(executorService)) {
+            java.lang.Thread.currentThread().interrupt()
         }
-        throw new RuntimeException(e);
-      }
-    }
 
-    executorService = null;
-    submittedTasks = null;
-  }
+        for (f in submittedTasks) {
+            try {
+                f.get() // guaranteed to have completed.
+            } catch (e: java.lang.InterruptedException) {
+                throw java.lang.AssertionError("task should not have been interrupted")
+            } catch (e: ExecutionException) {
+                val cause: Throwable? = e.getCause()
+                if (cause is TaskException) {
+                    com.google.common.base.Preconditions.checkState(cause.getCause() is AbruptExitException)
+                    throw cause.getCause() as AbruptExitException?
+                }
+                throw java.lang.RuntimeException(e)
+            }
+        }
+
+        executorService = null
+        submittedTasks = null
+    }
 }

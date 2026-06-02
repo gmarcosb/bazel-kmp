@@ -11,16 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.test
 
-package com.google.devtools.build.lib.starlarkbuildapi.test;
-
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.docgen.annot.StarlarkConstructor;
-import com.google.devtools.build.lib.starlarkbuildapi.core.ProviderApi;
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkValue;
+import com.google.devtools.build.docgen.annot.DocCategory
+import com.google.devtools.build.docgen.annot.StarlarkConstructor
+import com.google.devtools.build.lib.starlarkbuildapi.core.ProviderApi
+import net.starlark.java.annot.Param
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
+import net.starlark.java.eval.StarlarkValue
 
 /**
  * Encapsulates information about an analysis-phase error which would have occurred during a build.
@@ -28,52 +27,47 @@ import net.starlark.java.eval.StarlarkValue;
 @StarlarkBuiltin(
     name = "AnalysisTestResultInfo",
     category = DocCategory.PROVIDER,
-    doc =
-        "Encapsulates the result of analyis-phase testing. Build targets which return an instance"
+    doc = ("Encapsulates the result of analyis-phase testing. Build targets which return an instance"
             + " of this provider signal to the build system that it should generate a 'stub' test"
             + " executable which generates the equivalent test result. Analysis test rules (rules"
             + " created with <code>analysis_test=True</code> <b>must</b> return an instance of"
             + " this provider, and non-analysis-phase test rules <b>cannot</b> return this "
             + "provider.")
-public interface AnalysisTestResultInfoApi extends StarlarkValue {
+)
+interface AnalysisTestResultInfoApi : StarlarkValue {
+    @get:StarlarkMethod(
+        name = "success", doc = ("If true, then the analysis-phase test represented by this target passed. If "
+                + "false, the test failed."), structField = true
+    )
+    val success: Boolean?
 
-  @StarlarkMethod(
-      name = "success",
-      doc =
-          "If true, then the analysis-phase test represented by this target passed. If "
-              + "false, the test failed.",
-      structField = true)
-  Boolean getSuccess();
+    @get:StarlarkMethod(
+        name = "message",
+        doc = "A descriptive message containing information about the test and its success/failure.",
+        structField = true
+    )
+    val message: String?
 
-  @StarlarkMethod(
-      name = "message",
-      doc = "A descriptive message containing information about the test and its success/failure.",
-      structField = true)
-  String getMessage();
-
-  /** Provider class for {@link AnalysisTestResultInfoApi} objects. */
-  @StarlarkBuiltin(name = "Provider", documented = false, doc = "")
-  interface AnalysisTestResultInfoProviderApi extends ProviderApi {
-
-    @StarlarkMethod(
-        name = "AnalysisTestResultInfo",
-        doc = "The <code>AnalysisTestResultInfo</code> constructor.",
-        parameters = {
-          @Param(
-              name = "success",
-              named = true,
-              doc =
-                  "If true, then the analysis-phase test represented by this target should "
-                      + "pass. If false, the test should fail."),
-          @Param(
-              name = "message",
-              named = true,
-              doc =
-                  "A descriptive message containing information about the test and its "
-                      + "success/failure.")
-        },
-        selfCall = true)
-    @StarlarkConstructor
-    AnalysisTestResultInfoApi testResultInfo(Boolean success, String message);
-  }
+    /** Provider class for [AnalysisTestResultInfoApi] objects.  */
+    @StarlarkBuiltin(name = "Provider", documented = false, doc = "")
+    interface AnalysisTestResultInfoProviderApi : ProviderApi {
+        @StarlarkMethod(
+            name = "AnalysisTestResultInfo",
+            doc = "The <code>AnalysisTestResultInfo</code> constructor.",
+            parameters = [Param(
+                name = "success",
+                named = true,
+                doc = "If true, then the analysis-phase test represented by this target should "
+                        + "pass. If false, the test should fail."
+            ), Param(
+                name = "message",
+                named = true,
+                doc = "A descriptive message containing information about the test and its "
+                        + "success/failure."
+            )],
+            selfCall = true
+        )
+        @StarlarkConstructor
+        fun testResultInfo(success: Boolean?, message: String?): AnalysisTestResultInfoApi?
+    }
 }

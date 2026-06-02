@@ -11,61 +11,52 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.collect.Interner;
-import com.google.devtools.build.lib.concurrent.BlazeInterners;
+import com.google.devtools.build.lib.concurrent.BlazeInterners
 
-/** Versioning scheme based on integers. */
-public final class IntVersion implements Version {
-
-  private static final Interner<IntVersion> interner = BlazeInterners.newWeakInterner();
-
-  public static IntVersion of(long val) {
-    return interner.intern(new IntVersion(val));
-  }
-
-  private final long val;
-
-  private IntVersion(long val) {
-    this.val = val;
-  }
-
-  /** Returns the integer value as a long. */
-  public long getVal() {
-    return val;
-  }
-
-  public IntVersion next() {
-    return of(val + 1);
-  }
-
-  @Override
-  public boolean atMost(Version other) {
-    if (!(other instanceof IntVersion)) {
-      return false;
+/** Versioning scheme based on integers.  */
+class IntVersion private constructor(private val `val`: Long) : com.google.devtools.build.skyframe.Version {
+    /** Returns the integer value as a long.  */
+    fun getVal(): Long {
+        return `val`
     }
-    return val <= ((IntVersion) other).val;
-  }
 
-  @Override
-  public int hashCode() {
-    return Long.hashCode(val);
-  }
-
-  @Override
-  public boolean equals(Object obj) {
-    if (this == obj) {
-      return true;
+    fun next(): IntVersion {
+        return of(`val` + 1)
     }
-    if (!(obj instanceof IntVersion other)) {
-      return false;
-    }
-    return other.val == val;
-  }
 
-  @Override
-  public String toString() {
-    return "IntVersion: " + val;
-  }
+    override fun atMost(other: com.google.devtools.build.skyframe.Version?): Boolean {
+        if (other !is IntVersion) {
+            return false
+        }
+        return `val` <= other.`val`
+    }
+
+    override fun hashCode(): Int {
+        return java.lang.Long.hashCode(`val`)
+    }
+
+    override fun equals(obj: Any?): Boolean {
+        if (this === obj) {
+            return true
+        }
+        if (obj !is IntVersion) {
+            return false
+        }
+        return obj.`val` == `val`
+    }
+
+    override fun toString(): String {
+        return "IntVersion: " + `val`
+    }
+
+    companion object {
+        private val interner: com.google.common.collect.Interner<IntVersion> = BlazeInterners.newWeakInterner()
+
+        @kotlin.jvm.JvmStatic
+        fun of(`val`: Long): IntVersion {
+            return interner.intern(IntVersion(`val`))
+        }
+    }
 }

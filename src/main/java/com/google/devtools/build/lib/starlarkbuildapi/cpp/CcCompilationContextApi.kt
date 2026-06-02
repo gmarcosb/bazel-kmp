@@ -11,17 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.cpp
 
-package com.google.devtools.build.lib.starlarkbuildapi.cpp;
-
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.starlarkbuildapi.FileApi;
-import javax.annotation.Nullable;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkList;
-import net.starlark.java.eval.StarlarkValue;
+import com.google.devtools.build.docgen.annot.DocCategory
+import com.google.devtools.build.lib.collect.nestedset.Depset
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
+import net.starlark.java.eval.StarlarkValue
 
 /**
  * Interface for a store of information needed for C++ compilation aggregated across dependencies.
@@ -29,150 +25,167 @@ import net.starlark.java.eval.StarlarkValue;
 @StarlarkBuiltin(
     name = "CompilationContext",
     category = DocCategory.BUILTIN,
-    doc =
-        "Immutable store of information needed for C++ compilation that is aggregated across "
+    doc = ("Immutable store of information needed for C++ compilation that is aggregated across "
             + "dependencies.")
-public interface CcCompilationContextApi<FileT extends FileApi> extends StarlarkValue {
-  @StarlarkMethod(
-      name = "defines",
-      doc =
-          "Returns the set of defines needed to compile this target. Each define is a string."
-              + " These values are propagated to the target's transitive dependents, that is, "
-              + "any rules that depend on this target.",
-      structField = true)
-  Depset getStarlarkDefines();
+)
+interface CcCompilationContextApi<FileT : FileApi?> : StarlarkValue {
+    @get:StarlarkMethod(
+        name = "defines", doc = ("Returns the set of defines needed to compile this target. Each define is a string."
+                + " These values are propagated to the target's transitive dependents, that is, "
+                + "any rules that depend on this target."), structField = true
+    )
+    val starlarkDefines: Depset?
 
-  @StarlarkMethod(
-      name = "local_defines",
-      doc =
-          "Returns the set of defines needed to compile this target. Each define is a string."
-              + " These values are not propagated to the target's transitive dependents.",
-      structField = true)
-  Depset getStarlarkNonTransitiveDefines();
+    @get:StarlarkMethod(
+        name = "local_defines",
+        doc = ("Returns the set of defines needed to compile this target. Each define is a string."
+                + " These values are not propagated to the target's transitive dependents."),
+        structField = true
+    )
+    val starlarkNonTransitiveDefines: Depset?
 
-  @StarlarkMethod(
-      name = "headers",
-      doc = "Returns the set of headers needed to compile this target.",
-      structField = true)
-  Depset getStarlarkHeaders();
+    @get:StarlarkMethod(
+        name = "headers",
+        doc = "Returns the set of headers needed to compile this target.",
+        structField = true
+    )
+    val starlarkHeaders: Depset?
 
-  @StarlarkMethod(
-      name = "system_includes",
-      doc =
-          "Returns the set of search paths (as strings) for header files referenced by angle"
-              + " brackets, e.g. #include &lt;foo/bar/header.h&gt;. They can be either relative to"
-              + " the exec root or absolute. Usually passed with -isystem.",
-      structField = true)
-  Depset getStarlarkSystemIncludeDirs();
+    @get:StarlarkMethod(
+        name = "system_includes",
+        doc = ("Returns the set of search paths (as strings) for header files referenced by angle"
+                + " brackets, e.g. #include &lt;foo/bar/header.h&gt;. They can be either relative to"
+                + " the exec root or absolute. Usually passed with -isystem."),
+        structField = true
+    )
+    val starlarkSystemIncludeDirs: Depset?
 
-  @StarlarkMethod(
-      name = "framework_includes",
-      doc =
-          "Returns the set of search paths (as strings) for framework header files. Usually passed"
-              + " with -F.",
-      structField = true)
-  Depset getStarlarkFrameworkIncludeDirs();
+    @get:StarlarkMethod(
+        name = "framework_includes",
+        doc = ("Returns the set of search paths (as strings) for framework header files. Usually passed"
+                + " with -F."),
+        structField = true
+    )
+    val starlarkFrameworkIncludeDirs: Depset?
 
-  @StarlarkMethod(
-      name = "includes",
-      doc =
-          "Returns the set of search paths (as strings) for header files referenced both by angle"
-              + " bracket and quotes. Usually passed with -I.",
-      structField = true)
-  Depset getStarlarkIncludeDirs();
+    @get:StarlarkMethod(
+        name = "includes",
+        doc = ("Returns the set of search paths (as strings) for header files referenced both by angle"
+                + " bracket and quotes. Usually passed with -I."),
+        structField = true
+    )
+    val starlarkIncludeDirs: Depset?
 
-  @StarlarkMethod(
-      name = "external_includes",
-      doc =
-          "Returns the set of search paths (as strings) for external header files referenced by"
-              + " angle bracket. Usually passed with -isystem.",
-      structField = true)
-  Depset getStarlarkExternalIncludeDirs();
+    @get:StarlarkMethod(
+        name = "external_includes",
+        doc = ("Returns the set of search paths (as strings) for external header files referenced by"
+                + " angle bracket. Usually passed with -isystem."),
+        structField = true
+    )
+    val starlarkExternalIncludeDirs: Depset?
 
-  @StarlarkMethod(
-      name = "quote_includes",
-      doc =
-          "Returns the set of search paths (as strings) for header files referenced by quotes,"
-              + " e.g. #include \"foo/bar/header.h\". They can be either relative to the exec root"
-              + " or absolute. Usually passed with -iquote.",
-      structField = true)
-  Depset getStarlarkQuoteIncludeDirs();
+    @get:StarlarkMethod(
+        name = "quote_includes",
+        doc = ("Returns the set of search paths (as strings) for header files referenced by quotes,"
+                + " e.g. #include \"foo/bar/header.h\". They can be either relative to the exec root"
+                + " or absolute. Usually passed with -iquote."),
+        structField = true
+    )
+    val starlarkQuoteIncludeDirs: Depset?
 
-  @StarlarkMethod(
-      name = "direct_headers",
-      doc =
-          "Returns the list of modular headers that are declared by this target. This includes both"
-              + " public headers (such as those listed in \"hdrs\") and private headers (such as"
-              + " those listed in \"srcs\").",
-      structField = true)
-  StarlarkList<FileT> getStarlarkDirectModularHeaders();
+    @get:StarlarkMethod(
+        name = "direct_headers",
+        doc = ("Returns the list of modular headers that are declared by this target. This includes both"
+                + " public headers (such as those listed in \"hdrs\") and private headers (such as"
+                + " those listed in \"srcs\")."),
+        structField = true
+    )
+    val starlarkDirectModularHeaders: StarlarkList<FileT?>?
 
-  @StarlarkMethod(
-      name = "direct_public_headers",
-      doc =
-          "Returns the list of modular public headers (those listed in \"hdrs\") that are declared"
-              + " by this target.",
-      structField = true)
-  StarlarkList<FileT> getStarlarkDirectPublicHeaders();
+    @get:StarlarkMethod(
+        name = "direct_public_headers",
+        doc = ("Returns the list of modular public headers (those listed in \"hdrs\") that are declared"
+                + " by this target."),
+        structField = true
+    )
+    val starlarkDirectPublicHeaders: StarlarkList<FileT?>?
 
-  @StarlarkMethod(
-      name = "direct_private_headers",
-      doc =
-          "Returns the list of modular private headers (those listed in \"srcs\") that are"
-              + " declared by this target.",
-      structField = true)
-  StarlarkList<FileT> getStarlarkDirectPrivateHeaders();
+    @get:StarlarkMethod(
+        name = "direct_private_headers",
+        doc = ("Returns the list of modular private headers (those listed in \"srcs\") that are"
+                + " declared by this target."),
+        structField = true
+    )
+    val starlarkDirectPrivateHeaders: StarlarkList<FileT?>?
 
-  @StarlarkMethod(
-      name = "direct_textual_headers",
-      doc = "Returns the list of textual headers that are declared by this target.",
-      structField = true)
-  StarlarkList<FileT> getStarlarkDirectTextualHeaders();
+    @get:StarlarkMethod(
+        name = "direct_textual_headers",
+        doc = "Returns the list of textual headers that are declared by this target.",
+        structField = true
+    )
+    val starlarkDirectTextualHeaders: StarlarkList<FileT?>?
 
-  @StarlarkMethod(
-      name = "validation_artifacts",
-      doc = "Returns the set of validation artifacts.",
-      structField = true)
-  Depset getStarlarkValidationArtifacts();
+    @get:StarlarkMethod(
+        name = "validation_artifacts",
+        doc = "Returns the set of validation artifacts.",
+        structField = true
+    )
+    val starlarkValidationArtifacts: Depset?
 
-  @StarlarkMethod(name = "_modules_info_files", structField = true, documented = false)
-  Depset getStarlarkModulesInfoFiles();
+    @get:StarlarkMethod(name = "_modules_info_files", structField = true, documented = false)
+    val starlarkModulesInfoFiles: Depset?
 
-  @StarlarkMethod(name = "_pic_modules_info_files", structField = true, documented = false)
-  Depset getStarlarkPicModulesInfoFiles();
+    @get:StarlarkMethod(
+        name = "_pic_modules_info_files",
+        structField = true,
+        documented = false
+    )
+    val starlarkPicModulesInfoFiles: Depset?
 
-  @StarlarkMethod(name = "_module_files", structField = true, documented = false)
-  Depset getStarlarkModuleFiles();
+    @get:StarlarkMethod(name = "_module_files", structField = true, documented = false)
+    val starlarkModuleFiles: Depset?
 
-  @StarlarkMethod(name = "_pic_module_files", structField = true, documented = false)
-  Depset getStarlarkPicModuleFiles();
+    @get:StarlarkMethod(name = "_pic_module_files", structField = true, documented = false)
+    val starlarkPicModuleFiles: Depset?
 
-  @StarlarkMethod(name = "_transitive_modules", structField = true, documented = false)
-  Depset getStarlarkTransitiveModules();
+    @get:StarlarkMethod(name = "_transitive_modules", structField = true, documented = false)
+    val starlarkTransitiveModules: Depset?
 
-  @StarlarkMethod(name = "_transitive_pic_modules", structField = true, documented = false)
-  Depset getStarlarkTransitivePicModules();
+    @get:StarlarkMethod(
+        name = "_transitive_pic_modules",
+        structField = true,
+        documented = false
+    )
+    val starlarkTransitivePicModules: Depset?
 
-  @StarlarkMethod(name = "_virtual_to_original_headers", structField = true, documented = false)
-  Depset getStarlarkVirtualToOriginalHeaders();
+    @get:StarlarkMethod(
+        name = "_virtual_to_original_headers",
+        structField = true,
+        documented = false
+    )
+    val starlarkVirtualToOriginalHeaders: Depset?
 
-  @StarlarkMethod(
-      name = "_module_map",
-      structField = true,
-      documented = false,
-      allowReturnNones = true)
-  @Nullable
-  CppModuleMapApi<FileT> getStarlarkModuleMap();
+    @get:StarlarkMethod(
+        name = "_module_map",
+        structField = true,
+        documented = false,
+        allowReturnNones = true
+    )
+    val starlarkModuleMap: CppModuleMapApi<FileT?>?
 
-  @StarlarkMethod(name = "_direct_module_maps", structField = true, documented = false)
-  public Depset getDirectModuleMapsForStarlark();
+    @get:StarlarkMethod(name = "_direct_module_maps", structField = true, documented = false)
+    val directModuleMapsForStarlark: Depset?
 
-  @StarlarkMethod(name = "_exporting_module_maps", structField = true, documented = false)
-  StarlarkList<CppModuleMapApi<FileT>> getStarlarkExportingModuleMaps();
+    @get:StarlarkMethod(
+        name = "_exporting_module_maps",
+        structField = true,
+        documented = false
+    )
+    val starlarkExportingModuleMaps: StarlarkList<CppModuleMapApi<FileT?>?>?
 
-  @StarlarkMethod(name = "_non_code_inputs", structField = true, documented = false)
-  Depset getNonCodeInputsForStarlark();
+    @get:StarlarkMethod(name = "_non_code_inputs", structField = true, documented = false)
+    val nonCodeInputsForStarlark: Depset?
 
-  @StarlarkMethod(name = "_header_info", structField = true, documented = false)
-  StarlarkValue getHeaderInfo();
+    @get:StarlarkMethod(name = "_header_info", structField = true, documented = false)
+    val headerInfo: StarlarkValue?
 }

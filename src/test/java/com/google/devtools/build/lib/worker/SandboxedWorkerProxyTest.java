@@ -63,7 +63,7 @@ public class SandboxedWorkerProxyTest {
   @Test
   public void prepareExecution_createsFilesInSandbox() throws IOException, InterruptedException {
     SandboxedWorkerProxy proxy = createSandboxedWorkerProxies("Mnem", 1).get(0);
-    int multiplexerId = proxy.workerMultiplexer.getMultiplexerId();
+    int multiplexerId = proxy.workerMultiplexer.multiplexerId;
     Path workDir =
         workerBaseDir
             .getChild("Mnem-multiplex-worker-" + multiplexerId + "-workdir")
@@ -71,7 +71,7 @@ public class SandboxedWorkerProxyTest {
     Path sandboxDir =
         workDir
             .getChild("__sandbox")
-            .getChild(Integer.toString(proxy.getWorkerId()))
+            .getChild(Integer.toString(proxy.workerId))
             .getChild("execroot");
     SandboxHelper sandboxHelper =
         new SandboxHelper(globalExecRoot, workDir)
@@ -103,7 +103,7 @@ public class SandboxedWorkerProxyTest {
   @Test
   public void putRequest_setsSandboxDir() throws IOException, InterruptedException {
     SandboxedWorkerProxy worker = createFakedSandboxedWorkerProxy();
-    int multiplexerId = worker.workerMultiplexer.getMultiplexerId();
+    int multiplexerId = worker.workerMultiplexer.multiplexerId;
     Path workDir =
         workerBaseDir
             .getChild("Mnem-multiplex-worker-" + multiplexerId + "-workdir")
@@ -123,13 +123,13 @@ public class SandboxedWorkerProxyTest {
     WorkRequest actualRequest = worker.workerMultiplexer.pendingRequests.take();
     assertThat(actualRequest.getRequestId()).isEqualTo(2);
     assertThat(actualRequest.getSandboxDir())
-        .isEqualTo("__sandbox/" + worker.getWorkerId() + "/execroot");
+        .isEqualTo("__sandbox/" + worker.workerId + "/execroot");
   }
 
   @Test
   public void finishExecution_copiesOutputs() throws IOException, InterruptedException {
     SandboxedWorkerProxy worker = createFakedSandboxedWorkerProxy();
-    int multiplexerId = worker.workerMultiplexer.getMultiplexerId();
+    int multiplexerId = worker.workerMultiplexer.multiplexerId;
     Path workDir =
         workerBaseDir
             .getChild("Mnem-multiplex-worker-" + multiplexerId + "-workdir")
@@ -176,13 +176,13 @@ public class SandboxedWorkerProxyTest {
     SandboxedWorkerProxy proxyOne = proxies.get(0);
     SandboxedWorkerProxy proxyTwo = proxies.get(1);
 
-    int multiplexerIdProxyOne = proxyOne.workerMultiplexer.getMultiplexerId();
+    int multiplexerIdProxyOne = proxyOne.workerMultiplexer.multiplexerId;
     Path expectedWorkDirProxyOne =
         workerBaseDir
             .getChild("Mnem-multiplex-worker-" + multiplexerIdProxyOne + "-workdir")
             .getChild("execroot");
 
-    int multiplexerIdProxyTwo = proxyTwo.workerMultiplexer.getMultiplexerId();
+    int multiplexerIdProxyTwo = proxyTwo.workerMultiplexer.multiplexerId;
     Path expectedWorkDirProxyTwo =
         workerBaseDir
             .getChild("Mnem-multiplex-worker-" + multiplexerIdProxyTwo + "-workdir")
@@ -205,8 +205,8 @@ public class SandboxedWorkerProxyTest {
     Spawn spawn = WorkerTestUtils.createSpawn(req.buildOrThrow());
 
     WorkerOptions options = Options.getDefaults(WorkerOptions.class);
-    options.setWorkerMultiplex(true);
-    options.setMultiplexSandboxing(true);
+    options.workerMultiplex = true;
+    options.multiplexSandboxing = true;
 
     WorkerKey key =
         WorkerTestUtils.createWorkerKeyFromOptions(
@@ -214,7 +214,7 @@ public class SandboxedWorkerProxyTest {
     WorkerFactory factory = new WorkerFactory(workerBaseDir, options);
 
     SandboxedWorkerProxy proxyOneMultiplexerOne = (SandboxedWorkerProxy) factory.create(key);
-    int multiplexerIdOne = proxyOneMultiplexerOne.workerMultiplexer.getMultiplexerId();
+    int multiplexerIdOne = proxyOneMultiplexerOne.workerMultiplexer.multiplexerId;
     Path expectedWorkDirOne =
         workerBaseDir
             .getChild(sharedMnemonic + "-multiplex-worker-" + multiplexerIdOne + "-workdir")
@@ -225,7 +225,7 @@ public class SandboxedWorkerProxyTest {
 
     // Create a proxy on the second multiplexer
     SandboxedWorkerProxy proxyOneMultiplexerTwo = (SandboxedWorkerProxy) factory.create(key);
-    int multiplexerIdTwo = proxyOneMultiplexerTwo.workerMultiplexer.getMultiplexerId();
+    int multiplexerIdTwo = proxyOneMultiplexerTwo.workerMultiplexer.multiplexerId;
     Path expectedWorkDirTwo =
         workerBaseDir
             .getChild(sharedMnemonic + "-multiplex-worker-" + multiplexerIdTwo + "-workdir")
@@ -243,8 +243,8 @@ public class SandboxedWorkerProxyTest {
     Spawn spawn = WorkerTestUtils.createSpawn(req.buildOrThrow());
 
     WorkerOptions options = Options.getDefaults(WorkerOptions.class);
-    options.setWorkerMultiplex(true);
-    options.setMultiplexSandboxing(true);
+    options.workerMultiplex = true;
+    options.multiplexSandboxing = true;
 
     WorkerKey key =
         WorkerTestUtils.createWorkerKeyFromOptions(
@@ -265,8 +265,8 @@ public class SandboxedWorkerProxyTest {
     Spawn spawn = WorkerTestUtils.createSpawn(req.buildOrThrow());
 
     WorkerOptions options = Options.getDefaults(WorkerOptions.class);
-    options.setWorkerMultiplex(true);
-    options.setMultiplexSandboxing(true);
+    options.workerMultiplex = true;
+    options.multiplexSandboxing = true;
 
     WorkerKey key =
         WorkerTestUtils.createWorkerKeyFromOptions(

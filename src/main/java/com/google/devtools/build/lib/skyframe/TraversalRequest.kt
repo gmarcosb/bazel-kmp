@@ -11,188 +11,180 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.auto.value.AutoValue;
-import com.google.auto.value.extension.memoized.Memoized;
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.MoreObjects;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec.Instantiator;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.skyframe.ExecutionPhaseSkyKey;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.errorprone.annotations.ForOverride;
-import java.util.Objects;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.Artifact
 
-/** A request for {@link RecursiveFilesystemTraversalFunction}. */
-public abstract class TraversalRequest implements ExecutionPhaseSkyKey {
-
-  // TODO(cmita): This class is only implemented outside of tests by
-  // DirectoryArtifactTraversalRequest. These should probably be consolidated and simplified.
-
-  /** The path to start the traversal from; may be a file, a directory or a symlink. */
-  @VisibleForTesting
-  public abstract DirectTraversalRoot root();
-
-  /**
-   * Whether the path is in the output tree.
-   *
-   * <p>Such paths and all their subdirectories are assumed not to define packages, so package
-   * lookup for them is skipped.
-   */
-  protected abstract boolean isRootGenerated();
-
-  /** Whether Fileset assumes that output artifacts are regular files. */
-  protected abstract boolean strictOutputFiles();
-
-  /**
-   * Whether to skip checking if the root (if it's a directory) contains a BUILD file.
-   *
-   * <p>Such directories are not considered to be packages when this flag is true. This needs to be
-   * true in order to traverse directories of packages, but should be false for <i>their</i>
-   * subdirectories.
-   */
-  protected abstract boolean skipTestingForSubpackage();
-
-  /**
-   * Whether to emit nodes for empty directories.
-   *
-   * <p>If this returns false, empty directories will not be represented in the result of the
-   * traversal.
-   */
-  protected abstract boolean emitEmptyDirectoryNodes();
-
-  /**
-   * Returns information to be attached to any error messages that may be reported.
-   *
-   * <p>This is purely informational and is not considered in equality.
-   */
-  protected abstract String errorInfo();
-
-  /**
-   * Creates a new traversal request identical to this one except with the given new values for
-   * {@link #root} and {@link #skipTestingForSubpackage}.
-   */
-  @ForOverride
-  protected abstract TraversalRequest duplicateWithOverrides(
-      DirectTraversalRoot root, boolean skipTestingForSubpackage);
-
-  /** Creates a new request to traverse a child element in the current directory (the root). */
-  final TraversalRequest forChildEntry(String child) {
-    DirectTraversalRoot newTraversalRoot =
-        DirectTraversalRoot.forRootAndPath(
-            root().getRootPart(), root().getRelativePart().getRelative(child));
-    return duplicateWithOverrides(newTraversalRoot, /*skipTestingForSubpackage=*/ false);
-  }
-
-  /**
-   * Creates a new request for a changed root.
-   *
-   * <p>This method can be used when a package is found out to be under a different root path than
-   * originally assumed.
-   */
-  final TraversalRequest forChangedRootPath(Root newRoot) {
-    DirectTraversalRoot newTraversalRoot =
-        DirectTraversalRoot.forRootAndPath(newRoot, root().getRelativePart());
-    return duplicateWithOverrides(newTraversalRoot, skipTestingForSubpackage());
-  }
-
-  @Override
-  public final SkyFunctionName functionName() {
-    return SkyFunctions.RECURSIVE_FILESYSTEM_TRAVERSAL;
-  }
-
-  @Override
-  public final String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("root", root())
-        .add("isRootGenerated", isRootGenerated())
-        .add("strictOutputFiles", strictOutputFiles())
-        .add("skipTestingForSubpackage", skipTestingForSubpackage())
-        .add("errorInfo", errorInfo())
-        .toString();
-  }
-
-  /** The root directory of a {@link TraversalRequest}. */
-  @AutoValue
-  abstract static class DirectTraversalRoot {
+/** A request for [RecursiveFilesystemTraversalFunction].  */
+abstract class TraversalRequest : ExecutionPhaseSkyKey {
+    // TODO(cmita): This class is only implemented outside of tests by
+    // DirectoryArtifactTraversalRequest. These should probably be consolidated and simplified.
+    /** The path to start the traversal from; may be a file, a directory or a symlink.  */
+    @com.google.common.annotations.VisibleForTesting
+    abstract fun root(): DirectTraversalRoot?
 
     /**
-     * Returns the output Artifact corresponding to this traversal, if present. Only present when
-     * traversing a generated output.
+     * Whether the path is in the output tree.
+     * 
+     * 
+     * Such paths and all their subdirectories are assumed not to define packages, so package
+     * lookup for them is skipped.
      */
-    @Nullable
-    public abstract Artifact getOutputArtifact();
+    @kotlin.jvm.JvmField
+    abstract val isRootGenerated: Boolean
+
+    /** Whether Fileset assumes that output artifacts are regular files.  */
+    abstract fun strictOutputFiles(): Boolean
 
     /**
-     * Returns the root part of the full path.
-     *
-     * <p>This is typically the workspace root or some output tree's root (e.g. genfiles, binfiles).
+     * Whether to skip checking if the root (if it's a directory) contains a BUILD file.
+     * 
+     * 
+     * Such directories are not considered to be packages when this flag is true. This needs to be
+     * true in order to traverse directories of packages, but should be false for *their*
+     * subdirectories.
      */
-    public abstract Root getRootPart();
+    abstract fun skipTestingForSubpackage(): Boolean
 
     /**
-     * Returns the {@link #getRootPart() root}-relative part of the path.
-     *
-     * <p>This is typically the source directory under the workspace or the output file under an
-     * output directory.
+     * Whether to emit nodes for empty directories.
+     * 
+     * 
+     * If this returns false, empty directories will not be represented in the result of the
+     * traversal.
      */
-    public abstract PathFragment getRelativePart();
+    abstract fun emitEmptyDirectoryNodes(): Boolean
 
-    /** Returns a {@link Path} composed of the root and relative parts. */
-    public final Path asPath() {
-      return getRootPart().getRelative(getRelativePart());
+    /**
+     * Returns information to be attached to any error messages that may be reported.
+     * 
+     * 
+     * This is purely informational and is not considered in equality.
+     */
+    abstract fun errorInfo(): String?
+
+    /**
+     * Creates a new traversal request identical to this one except with the given new values for
+     * [.root] and [.skipTestingForSubpackage].
+     */
+    @com.google.errorprone.annotations.ForOverride
+    protected abstract fun duplicateWithOverrides(
+        root: DirectTraversalRoot?, skipTestingForSubpackage: Boolean
+    ): TraversalRequest?
+
+    /** Creates a new request to traverse a child element in the current directory (the root).  */
+    fun forChildEntry(child: String?): TraversalRequest? {
+        val newTraversalRoot =
+            DirectTraversalRoot.Companion.forRootAndPath(
+                root()!!.rootPart, root()!!.relativePart.getRelative(child)
+            )
+        return duplicateWithOverrides(newTraversalRoot,  /*skipTestingForSubpackage=*/false)
     }
 
-    /** Returns a {@link RootedPath} composed of the root and relative parts. */
-    public final RootedPath asRootedPath() {
-      return RootedPath.toRootedPath(getRootPart(), getRelativePart());
+    /**
+     * Creates a new request for a changed root.
+     * 
+     * 
+     * This method can be used when a package is found out to be under a different root path than
+     * originally assumed.
+     */
+    fun forChangedRootPath(newRoot: Root?): TraversalRequest? {
+        val newTraversalRoot =
+            DirectTraversalRoot.Companion.forRootAndPath(newRoot, root()!!.relativePart)
+        return duplicateWithOverrides(newTraversalRoot, skipTestingForSubpackage())
     }
 
-    @Override
-    public final boolean equals(Object o) {
-      if (o == this) {
-        return true;
-      }
-      if (o instanceof DirectTraversalRoot that) {
-        return Objects.equals(this.getOutputArtifact(), that.getOutputArtifact())
-            && this.getRootPart().equals(that.getRootPart())
-            && this.getRelativePart().equals(that.getRelativePart());
-      }
-      return false;
+    override fun functionName(): SkyFunctionName {
+        return SkyFunctions.RECURSIVE_FILESYSTEM_TRAVERSAL
     }
 
-    @Memoized
-    @Override
-    public abstract int hashCode();
-
-    public static DirectTraversalRoot forFileOrDirectory(Artifact fileOrDirectory) {
-      return create(
-          fileOrDirectory.isSourceArtifact() ? null : fileOrDirectory,
-          fileOrDirectory.getRoot().getRoot(),
-          fileOrDirectory.getRootRelativePath());
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("root", root())
+            .add("isRootGenerated", this.isRootGenerated)
+            .add("strictOutputFiles", strictOutputFiles())
+            .add("skipTestingForSubpackage", skipTestingForSubpackage())
+            .add("errorInfo", errorInfo())
+            .toString()
     }
 
-    public static DirectTraversalRoot forRootedPath(RootedPath rootedPath) {
-      return forRootAndPath(rootedPath.getRoot(), rootedPath.getRootRelativePath());
-    }
+    /** The root directory of a [TraversalRequest].  */
+    @AutoValue
+    internal abstract class DirectTraversalRoot {
+        /**
+         * Returns the output Artifact corresponding to this traversal, if present. Only present when
+         * traversing a generated output.
+         */
+        abstract val outputArtifact: Artifact?
 
-    public static DirectTraversalRoot forRootAndPath(Root rootPart, PathFragment relativePart) {
-      return create(/* outputArtifact= */ null, rootPart, relativePart);
-    }
+        /**
+         * Returns the root part of the full path.
+         * 
+         * 
+         * This is typically the workspace root or some output tree's root (e.g. genfiles, binfiles).
+         */
+        abstract val rootPart: Root?
 
-    @Instantiator
-    @VisibleForSerialization
-    static DirectTraversalRoot create(
-        @Nullable Artifact outputArtifact, Root rootPart, PathFragment relativePart) {
-      return new AutoValue_TraversalRequest_DirectTraversalRoot(
-          outputArtifact, rootPart, relativePart);
+        /**
+         * Returns the [root][.getRootPart]-relative part of the path.
+         * 
+         * 
+         * This is typically the source directory under the workspace or the output file under an
+         * output directory.
+         */
+        abstract val relativePart: PathFragment?
+
+        /** Returns a [Path] composed of the root and relative parts.  */
+        fun asPath(): com.google.devtools.build.lib.vfs.Path? {
+            return this.rootPart.getRelative(this.relativePart)
+        }
+
+        /** Returns a [RootedPath] composed of the root and relative parts.  */
+        fun asRootedPath(): RootedPath? {
+            return RootedPath.toRootedPath(this.rootPart, this.relativePart)
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (o === this) {
+                return true
+            }
+            if (o is DirectTraversalRoot) {
+                return this.outputArtifact == o.outputArtifact
+                        && this.rootPart == o.rootPart
+                        && this.relativePart == o.relativePart
+            }
+            return false
+        }
+
+        @Memoized
+        abstract override fun hashCode(): Int
+
+        companion object {
+            fun forFileOrDirectory(fileOrDirectory: Artifact): DirectTraversalRoot {
+                return create(
+                    if (fileOrDirectory.isSourceArtifact()) null else fileOrDirectory,
+                    fileOrDirectory.getRoot().getRoot(),
+                    fileOrDirectory.getRootRelativePath()
+                )
+            }
+
+            fun forRootedPath(rootedPath: RootedPath): DirectTraversalRoot {
+                return forRootAndPath(rootedPath.getRoot(), rootedPath.getRootRelativePath())
+            }
+
+            fun forRootAndPath(rootPart: Root?, relativePart: PathFragment?): DirectTraversalRoot {
+                return create( /* outputArtifact= */null, rootPart, relativePart)
+            }
+
+            @AutoCodec.Instantiator
+            @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+            fun create(
+                outputArtifact: Artifact?, rootPart: Root?, relativePart: PathFragment?
+            ): DirectTraversalRoot {
+                return AutoValue_TraversalRequest_DirectTraversalRoot(
+                    outputArtifact, rootPart, relativePart
+                )
+            }
+        }
     }
-  }
 }

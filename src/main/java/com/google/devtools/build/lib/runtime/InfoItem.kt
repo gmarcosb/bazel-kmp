@@ -11,74 +11,53 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
 
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue
 
-import com.google.common.base.Supplier;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.unsafe.StringUnsafe;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import java.util.Arrays;
-
-/** An item that is returned by <code>blaze info</code>. */
-public abstract class InfoItem {
-  protected final String name;
-  protected final String description;
-  protected final boolean hidden;
-
-  protected InfoItem(String name, String description, boolean hidden) {
-    this.name = name;
-    this.description = description;
-    this.hidden = hidden;
-  }
-
-  protected InfoItem(String name, String description) {
-    this(name, description, false);
-  }
-
-  /** The name of the info key. */
-  public String getName() {
-    return name;
-  }
-
-  /** The help description of the info key. */
-  public String getDescription() {
-    return description;
-  }
-
-  /**
-   * Returns true if this info item requires CommandEnvironment.syncPackageLoading to be called,
-   * e.g. in order to initialize the skyframe executor.
-   *
-   * <p>Virtually all info items do not need it.
-   */
-  public boolean needsSyncPackageLoading() {
-    return false;
-  }
-
-  /**
-   * Whether the key is printed when "blaze info" is invoked without arguments.
-   *
-   * <p>This is usually true for info keys that take multiple lines, thus, cannot really be included
-   * in the output of argumentless "blaze info".
-   */
-  public boolean isHidden() {
-    return hidden;
-  }
-
-  /** Returns the value of the info key. The return value is directly printed to stdout. */
-  public abstract byte[] get(
-      Supplier<BuildConfigurationValue> configurationSupplier, CommandEnvironment env)
-      throws AbruptExitException, InterruptedException;
-
-  protected static byte[] print(Object value) {
-    if (value instanceof byte[] bytes) {
-      return bytes;
+/** An item that is returned by `blaze info`.  */
+abstract class InfoItem protected constructor(
+    /** The name of the info key.  */
+    @kotlin.jvm.JvmField val name: String?,
+    /** The help description of the info key.  */
+    @kotlin.jvm.JvmField val description: String?,
+    /**
+     * Whether the key is printed when "blaze info" is invoked without arguments.
+     * 
+     * 
+     * This is usually true for info keys that take multiple lines, thus, cannot really be included
+     * in the output of argumentless "blaze info".
+     */
+    val isHidden: Boolean = false
+) {
+    /**
+     * Returns true if this info item requires CommandEnvironment.syncPackageLoading to be called,
+     * e.g. in order to initialize the skyframe executor.
+     * 
+     * 
+     * Virtually all info items do not need it.
+     */
+    open fun needsSyncPackageLoading(): Boolean {
+        return false
     }
-    byte[] unsafeBytes = StringUnsafe.getInternalStringBytes(String.valueOf(value));
-    byte[] bytes = Arrays.copyOf(unsafeBytes, unsafeBytes.length + 1);
-    bytes[bytes.length - 1] = '\n';
-    return bytes;
-  }
+
+    /** Returns the value of the info key. The return value is directly printed to stdout.  */
+    @Throws(AbruptExitException::class, java.lang.InterruptedException::class)
+    abstract fun get(
+        configurationSupplier: com.google.common.base.Supplier<BuildConfigurationValue?>?, env: CommandEnvironment?
+    ): ByteArray?
+
+    companion object {
+        @kotlin.jvm.JvmStatic
+        protected fun print(value: Any?): ByteArray? {
+            if (value is ByteArray) {
+                return value
+            }
+            val unsafeBytes: ByteArray = StringUnsafe.getInternalStringBytes(java.lang.String.valueOf(value))
+            val bytes: ByteArray = java.util.Arrays.copyOf(unsafeBytes, unsafeBytes.size + 1)
+            bytes[bytes.size - 1] = '\n'.code.toByte()
+            return bytes
+        }
+    }
 }

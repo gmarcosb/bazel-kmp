@@ -11,22 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-
-/** An exception that indicates that a glob pattern is syntactically invalid. */
-@ThreadSafe
-public final class InvalidGlobPatternException extends Exception {
-  private final String pattern;
-
-  InvalidGlobPatternException(String pattern, String error) {
-    super(error);
-    this.pattern = pattern;
-  }
-
-  @Override
-  public String getMessage() {
-    return String.format("invalid glob pattern '%s': %s", pattern, super.getMessage());
-  }
+/** An exception that indicates that a glob pattern is syntactically invalid.  */
+@com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+class InvalidGlobPatternException internal constructor(private val pattern: String?, error: String?) :
+    java.lang.Exception(error) {
+    val message: String?
+        get() = String.format("invalid glob pattern '%s': %s", pattern, super.message)
 }

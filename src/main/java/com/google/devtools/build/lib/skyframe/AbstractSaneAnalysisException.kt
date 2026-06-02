@@ -11,16 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-/** The abstract class that the sane analysis exceptions should extend. */
-public abstract class AbstractSaneAnalysisException extends Exception
-    implements SaneAnalysisException {
-  protected AbstractSaneAnalysisException(String message) {
-    super(message);
-  }
+import com.google.devtools.build.lib.skyframe.SaneAnalysisException
 
-  protected AbstractSaneAnalysisException(String message, Throwable cause) {
-    super(message, cause);
-  }
+/** The abstract class that the sane analysis exceptions should extend.  */
+abstract class AbstractSaneAnalysisException : java.lang.Exception, SaneAnalysisException {
+    protected constructor(message: String?) : super(message)
+
+    protected constructor(message: String?, cause: Throwable?) : super(message, cause)
 }

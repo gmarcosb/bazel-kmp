@@ -11,28 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.cmdline.BatchCallback.SafeBatchCallback;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
+import com.google.devtools.build.lib.cmdline.BatchCallback.SafeBatchCallback
 
 /**
- * A callback for {@link
- * com.google.devtools.build.lib.pkgcache.RecursivePackageProvider#streamPackagesUnderDirectory}
- * that buffers the {@link PackageIdentifier} instances it receives into bounded-size batches that
+ * A callback for [ ][com.google.devtools.build.lib.pkgcache.RecursivePackageProvider.streamPackagesUnderDirectory]
+ * that buffers the [PackageIdentifier] instances it receives into bounded-size batches that
  * it delivers to a supplied callback.
- *
- * <p>This callback must be {@link #close() closed} to deliver this final batch.
+ * 
+ * 
+ * This callback must be [closed][.close] to deliver this final batch.
  */
 @ThreadSafe
-public interface PackageIdentifierBatchingCallback
-    extends SafeBatchCallback<PackageIdentifier>, AutoCloseable {
-  void close() throws InterruptedException;
+interface PackageIdentifierBatchingCallback
 
-  /** Factory for {@link PackageIdentifierBatchingCallback}. */
-  interface Factory {
-    PackageIdentifierBatchingCallback create(
-        SafeBatchCallback<PackageIdentifier> batchResults, int maxBatchSize);
-  }
+    : SafeBatchCallback<PackageIdentifier?>, java.lang.AutoCloseable {
+    @Throws(java.lang.InterruptedException::class)
+    override fun close()
+
+    /** Factory for [PackageIdentifierBatchingCallback].  */
+    interface Factory {
+        fun create(
+            batchResults: SafeBatchCallback<PackageIdentifier?>?, maxBatchSize: Int
+        ): PackageIdentifierBatchingCallback?
+    }
 }

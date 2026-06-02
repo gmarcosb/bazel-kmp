@@ -11,84 +11,77 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.actions.ActionConflictException;
-import com.google.devtools.build.lib.analysis.InconsistentNullConfigException;
-import com.google.devtools.build.lib.packages.NoSuchThingException;
-import com.google.devtools.build.skyframe.SkyFunctionException;
+import com.google.devtools.build.lib.actions.ActionConflictException
 
-/** Exceptions thrown by {@link ConfiguredTargetFunction}. */
-public final class ConfiguredTargetEvaluationExceptions {
-  /**
-   * {@link ConfiguredTargetFunction#compute} exception that has already had its error reported to
-   * the user. Callers (like {@link com.google.devtools.build.lib.buildtool.BuildTool}) won't also
-   * report the error.
-   */
-  public static class ReportedException extends SkyFunctionException {
-    ReportedException(ConfiguredValueCreationException e) {
-      super(withoutMessage(e), Transience.PERSISTENT);
+/** Exceptions thrown by [ConfiguredTargetFunction].  */
+class ConfiguredTargetEvaluationExceptions private constructor() {
+    /**
+     * [ConfiguredTargetFunction.compute] exception that has already had its error reported to
+     * the user. Callers (like [com.google.devtools.build.lib.buildtool.BuildTool]) won't also
+     * report the error.
+     */
+    class ReportedException internal constructor(e: ConfiguredValueCreationException) : SkyFunctionException(
+        withoutMessage(e), Transience.PERSISTENT
+    ) {
+        companion object {
+            /** Clones a [ConfiguredValueCreationException] with its `message` field removed.  */
+            private fun withoutMessage(
+                orig: ConfiguredValueCreationException
+            ): ConfiguredValueCreationException {
+                return ConfiguredValueCreationException(
+                    orig.getLocation(),
+                    "",  /* label= */
+                    null,
+                    orig.getConfiguration(),
+                    orig.getRootCauses(),
+                    orig.getDetailedExitCode()
+                )
+            }
+        }
     }
 
-    /** Clones a {@link ConfiguredValueCreationException} with its {@code message} field removed. */
-    private static ConfiguredValueCreationException withoutMessage(
-        ConfiguredValueCreationException orig) {
-      return new ConfiguredValueCreationException(
-          orig.getLocation(),
-          "",
-          /* label= */ null,
-          orig.getConfiguration(),
-          orig.getRootCauses(),
-          orig.getDetailedExitCode());
-    }
-  }
+    /**
+     * [ConfiguredTargetFunction.compute] exception that has not had its error reported to the
+     * user. Callers (like [com.google.devtools.build.lib.buildtool.BuildTool]) are responsible
+     * for reporting the error.
+     */
+    class UnreportedException : SkyFunctionException {
+        internal constructor(e: ConfiguredValueCreationException?) : super(e, Transience.PERSISTENT)
 
-  /**
-   * {@link ConfiguredTargetFunction#compute} exception that has not had its error reported to the
-   * user. Callers (like {@link com.google.devtools.build.lib.buildtool.BuildTool}) are responsible
-   * for reporting the error.
-   */
-  public static class UnreportedException extends SkyFunctionException {
-    UnreportedException(ConfiguredValueCreationException e) {
-      super(e, Transience.PERSISTENT);
+        internal constructor(e: ActionConflictException?) : super(e, Transience.PERSISTENT)
     }
 
-    UnreportedException(ActionConflictException e) {
-      super(e, Transience.PERSISTENT);
+    /** A dependency error that should be caught and rethrown by the parent with more context.  */
+    internal class DependencyException : SkyFunctionException {
+        internal enum class Kind {
+            INCONSISTENT_NULL_CONFIG,
+            NO_SUCH_THING
+        }
+
+        private val kind: Kind
+
+        fun kind(): Kind {
+            return kind
+        }
+
+        fun inconsistentNullConfig(): InconsistentNullConfigException? {
+            return getCause() as InconsistentNullConfigException?
+        }
+
+        fun noSuchThing(): NoSuchThingException? {
+            return getCause() as NoSuchThingException?
+        }
+
+        constructor(e: InconsistentNullConfigException?) : super(e, Transience.PERSISTENT) {
+            this.kind =
+                com.google.devtools.build.lib.skyframe.ConfiguredTargetEvaluationExceptions.DependencyException.Kind.INCONSISTENT_NULL_CONFIG
+        }
+
+        constructor(e: NoSuchThingException?) : super(e, Transience.PERSISTENT) {
+            this.kind =
+                com.google.devtools.build.lib.skyframe.ConfiguredTargetEvaluationExceptions.DependencyException.Kind.NO_SUCH_THING
+        }
     }
-  }
-
-  /** A dependency error that should be caught and rethrown by the parent with more context. */
-  static class DependencyException extends SkyFunctionException {
-    enum Kind {
-      INCONSISTENT_NULL_CONFIG,
-      NO_SUCH_THING
-    }
-
-    private final Kind kind;
-
-    Kind kind() {
-      return kind;
-    }
-
-    InconsistentNullConfigException inconsistentNullConfig() {
-      return (InconsistentNullConfigException) getCause();
-    }
-
-    NoSuchThingException noSuchThing() {
-      return (NoSuchThingException) getCause();
-    }
-
-    DependencyException(InconsistentNullConfigException e) {
-      super(e, Transience.PERSISTENT);
-      this.kind = Kind.INCONSISTENT_NULL_CONFIG;
-    }
-
-    DependencyException(NoSuchThingException e) {
-      super(e, Transience.PERSISTENT);
-      this.kind = Kind.NO_SUCH_THING;
-    }
-  }
-
-  private ConfiguredTargetEvaluationExceptions() {}
 }

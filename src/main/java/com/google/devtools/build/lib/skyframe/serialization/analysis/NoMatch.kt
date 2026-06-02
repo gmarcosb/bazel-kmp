@@ -11,22 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileOpMatchResultTypes.FileOpMatchResult;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.NestedMatchResultTypes.NestedMatchResult;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.FileOpMatchResultTypes.FileOpMatchResult
+import com.google.devtools.build.lib.skyframe.serialization.analysis.MatchIndicator
+import com.google.devtools.build.lib.skyframe.serialization.analysis.NestedMatchResultTypes.NestedMatchResult
+import com.google.devtools.build.lib.skyframe.serialization.analysis.VersionedChanges
 
-/** The delta didn't match the set of dependencies, meaning a <b>cache hit</b>. */
-enum NoMatch implements FileOpMatchResult, NestedMatchResult, MatchIndicator {
-  NO_MATCH_RESULT;
+/** The delta didn't match the set of dependencies, meaning a **cache hit**.  */
+internal enum class NoMatch : FileOpMatchResult, NestedMatchResult, MatchIndicator {
+    NO_MATCH_RESULT;
 
-  @Override
-  public boolean isMatch() {
-    return false;
-  }
+    val isMatch: Boolean
+        get() = false
 
-  @Override
-  public final int version() {
-    return VersionedChanges.NO_MATCH;
-  }
+    override fun version(): Int {
+        return VersionedChanges.Companion.NO_MATCH
+    }
 }

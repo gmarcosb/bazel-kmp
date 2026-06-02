@@ -11,46 +11,42 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.worker;
+package com.google.devtools.build.lib.worker
 
-import com.google.devtools.build.lib.worker.WorkerProtocol.WorkRequest;
-import com.google.devtools.build.lib.worker.WorkerProtocol.WorkResponse;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import com.google.devtools.build.lib.worker.WorkerProtocol.WorkRequest
 
-/** An implementation of a Bazel worker using Proto to communicate with the worker process. */
-final class ProtoWorkerProtocol implements WorkerProtocolImpl {
+/** An implementation of a Bazel worker using Proto to communicate with the worker process.  */
+internal class ProtoWorkerProtocol(workersStdin: java.io.OutputStream, workersStdout: java.io.InputStream?) :
+    WorkerProtocolImpl {
+    /** The worker process's stdin, which we send requests to.  */
+    private val workersStdin: java.io.OutputStream
 
-  /** The worker process's stdin, which we send requests to. */
-  private final OutputStream workersStdin;
+    /** The worker process's stdout, which we read responses from.  */
+    private val workersStdout: java.io.InputStream?
 
-  /** The worker process's stdout, which we read responses from. */
-  private final InputStream workersStdout;
-
-  public ProtoWorkerProtocol(OutputStream workersStdin, InputStream workersStdout) {
-    this.workersStdin = workersStdin;
-    this.workersStdout = workersStdout;
-  }
-
-  @Override
-  public void putRequest(WorkRequest request) throws IOException {
-    request.writeDelimitedTo(workersStdin);
-    workersStdin.flush();
-  }
-
-  @Override
-  public WorkResponse getResponse() throws IOException {
-    boolean interrupted = Thread.interrupted();
-    try {
-      return WorkResponse.parseDelimitedFrom(workersStdout);
-    } finally {
-      if (interrupted) {
-        Thread.currentThread().interrupt();
-      }
+    init {
+        this.workersStdin = workersStdin
+        this.workersStdout = workersStdout
     }
-  }
 
-  @Override
-  public void close() {}
+    @Throws(IOException::class)
+    override fun putRequest(request: WorkRequest) {
+        request.writeDelimitedTo(workersStdin)
+        workersStdin.flush()
+    }
+
+    @get:Throws(IOException::class)
+    val response: WorkResponse
+        get() {
+            val interrupted: Boolean = java.lang.Thread.interrupted()
+            try {
+                return WorkResponse.parseDelimitedFrom(workersStdout)
+            } finally {
+                if (interrupted) {
+                    java.lang.Thread.currentThread().interrupt()
+                }
+            }
+        }
+
+    override fun close() {}
 }

@@ -11,238 +11,253 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization.testutils
 
-package com.google.devtools.build.lib.skyframe.serialization.testutils;
+import com.google.devtools.build.lib.skyframe.serialization.AutoRegistry
+import com.google.devtools.build.lib.skyframe.serialization.DeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueService
+import com.google.devtools.build.lib.skyframe.serialization.ObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecRegistry
+import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecs
+import com.google.devtools.build.lib.skyframe.serialization.SerializationContext
+import com.google.devtools.build.lib.skyframe.serialization.SerializationResult
+import com.google.devtools.build.lib.skyframe.serialization.SkyframeDependencyException
+import com.google.devtools.build.lib.skyframe.serialization.SkyframeLookupContinuation
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.state.EnvironmentForUtilities
+import com.google.devtools.build.skyframe.state.EnvironmentForUtilities.ResultProvider
+import com.google.protobuf.ByteString
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
+import java.util.concurrent.ExecutionException
 
-import static com.google.common.util.concurrent.Uninterruptibles.getUninterruptibly;
-
-import com.google.common.collect.ImmutableClassToInstanceMap;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.skyframe.serialization.AutoRegistry;
-import com.google.devtools.build.lib.skyframe.serialization.DeserializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueService;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodec;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecRegistry;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecs;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationResult;
-import com.google.devtools.build.lib.skyframe.serialization.SkyframeDependencyException;
-import com.google.devtools.build.lib.skyframe.serialization.SkyframeLookupContinuation;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.state.EnvironmentForUtilities;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.concurrent.ExecutionException;
-import javax.annotation.Nullable;
-
-/** Helpers for round tripping in serialization tests. */
-public class RoundTripping {
-
-  private RoundTripping() {}
-
-  /** Serialize a value to a new byte array. */
-  public static <T> byte[] toBytes(SerializationContext context, ObjectCodec<T> codec, T value)
-      throws IOException, SerializationException {
-    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-    CodedOutputStream codedOut = CodedOutputStream.newInstance(bytes);
-    codec.serialize(context, value, codedOut);
-    codedOut.flush();
-    return bytes.toByteArray();
-  }
-
-  public static <T> ByteString toBytes(SerializationContext serializationContext, T value)
-      throws IOException, SerializationException {
-    ByteString.Output output = ByteString.newOutput();
-    CodedOutputStream codedOut = CodedOutputStream.newInstance(output);
-    serializationContext.serialize(value, codedOut);
-    codedOut.flush();
-    return output.toByteString();
-  }
-
-  public static Object fromBytes(DeserializationContext deserializationContext, ByteString bytes)
-      throws IOException, SerializationException {
-    return deserializationContext.deserialize(bytes.newCodedInput());
-  }
-
-  /** Deserialize a value from a byte array. */
-  public static <T> T fromBytes(DeserializationContext context, ObjectCodec<T> codec, byte[] bytes)
-      throws SerializationException, IOException {
-    return codec.deserialize(context, CodedInputStream.newInstance(bytes));
-  }
-
-  public static <T> T roundTrip(T value, ObjectCodecRegistry registry)
-      throws IOException, SerializationException {
-    return roundTrip(value, new ObjectCodecs(registry));
-  }
-
-  public static <T> T roundTrip(T value, ImmutableClassToInstanceMap<Object> dependencies)
-      throws IOException, SerializationException {
-    return roundTrip(value, new ObjectCodecs(dependencies));
-  }
-
-  public static <T> T roundTrip(T value) throws IOException, SerializationException {
-    return roundTrip(value, new ObjectCodecs());
-  }
-
-  private static <T> T roundTrip(T value, ObjectCodecs codecs) throws SerializationException {
-    @SuppressWarnings("unchecked")
-    T result = (T) codecs.deserialize(codecs.serialize(value));
-    return result;
-  }
-
-  public static ByteString toBytesMemoized(Object original, ObjectCodecRegistry registry)
-      throws IOException, SerializationException {
-    return new ObjectCodecs(registry).serializeMemoized(original);
-  }
-
-  public static Object fromBytesMemoized(ByteString bytes, ObjectCodecRegistry registry)
-      throws SerializationException {
-    return new ObjectCodecs(registry).deserializeMemoized(bytes);
-  }
-
-  public static ByteString toBytesMemoizedAndBlocking(
-      ObjectCodecs codecs, FingerprintValueService fingerprintValueService, Object subject)
-      throws SerializationException {
-    SerializationResult<ByteString> result =
-        codecs.serializeMemoizedAndBlocking(fingerprintValueService, subject);
-    ListenableFuture<?> futureToBlockWritesOn = result.getFutureToBlockWritesOn();
-    if (futureToBlockWritesOn != null) {
-      try {
-        var unused = getUninterruptibly(futureToBlockWritesOn);
-      } catch (ExecutionException e) {
-        throw new SerializationException("waiting for futureToBlockWritesOn", e.getCause());
-      }
-    }
-    return result.getObject();
-  }
-
-  public static Object fromBytesWithSkyframe(
-      ObjectCodecs codecs,
-      FingerprintValueService fingerprintValueService,
-      EnvironmentForUtilities.ResultProvider resultProvider,
-      ByteString data)
-      throws SerializationException, SkyframeDependencyException, MissingResultException {
-    Object result = codecs.deserializeWithSkyframe(fingerprintValueService, data);
-    if (result instanceof ListenableFuture<?> futureContinuation) {
-      SkyframeLookupContinuation continuation;
-      try {
-        continuation = (SkyframeLookupContinuation) getUninterruptibly(futureContinuation);
-      } catch (ExecutionException e) {
-        throw new SerializationException("waiting for remote values", e.getCause());
-      }
-      var recordingResultProvider = new KeyRecordingResultProvider(resultProvider);
-      ListenableFuture<?> futureValue;
-      try {
-        futureValue = continuation.process(new EnvironmentForUtilities(recordingResultProvider));
-      } catch (InterruptedException e) {
-        // Formally, an InterruptedException may occur when interacting with a LookupEnvironment,
-        // but the EnvironmentForUtilities never throws it.
-        throw new AssertionError("unexpected InterruptedException", e);
-      }
-      if (futureValue == null) {
-        throw new MissingResultException(recordingResultProvider.formatRecordedSkyKeys());
-      }
-      try {
-        return getUninterruptibly(futureValue);
-      } catch (ExecutionException e) {
-        throw new SerializationException("waiting for bookkeeping and shared values", e.getCause());
-      }
-    }
-    return result;
-  }
-
-  /**
-   * Thrown if the {@code resultProvider} passed to {@link #fromBytesWithSkyframe} is missing
-   * values.
-   */
-  public static class MissingResultException extends Exception {
-    private MissingResultException(String message) {
-      super(message);
-    }
-  }
-
-  @SuppressWarnings("unchecked")
-  public static <T> T roundTripMemoized(T original, ObjectCodecRegistry registry)
-      throws IOException, SerializationException {
-    ObjectCodecs codecs = new ObjectCodecs(registry);
-    return (T) codecs.deserializeMemoized(codecs.serializeMemoized(original));
-  }
-
-  public static <T> T roundTripMemoized(T original, ObjectCodec<?>... codecs)
-      throws IOException, SerializationException {
-    ObjectCodecRegistry.Builder builder = AutoRegistry.get().getBuilder();
-    for (ObjectCodec<?> codec : codecs) {
-      builder.add(codec);
-    }
-    return roundTripMemoized(original, builder.build());
-  }
-
-  public static Object roundTripWithSkyframe(
-      ObjectCodecs codecs,
-      FingerprintValueService fingerprintValueService,
-      EnvironmentForUtilities.ResultProvider resultProvider,
-      Object subject)
-      throws SerializationException, SkyframeDependencyException, MissingResultException {
-    ByteString bytes = toBytesMemoizedAndBlocking(codecs, fingerprintValueService, subject);
-    return fromBytesWithSkyframe(codecs, fingerprintValueService, resultProvider, bytes);
-  }
-
-  public static Object roundTripWithSkyframe(
-      EnvironmentForUtilities.ResultProvider resultProvider, Object subject)
-      throws SerializationException, SkyframeDependencyException, MissingResultException {
-    return roundTripWithSkyframe(
-        new ObjectCodecs(), FingerprintValueService.createForTesting(), resultProvider, subject);
-  }
-
-  private static class KeyRecordingResultProvider
-      implements EnvironmentForUtilities.ResultProvider {
-    private final EnvironmentForUtilities.ResultProvider delegate;
-    private final ArrayList<SkyKey> presentKeys = new ArrayList<>();
-    private final ArrayList<SkyKey> missingKeys = new ArrayList<>();
-
-    private KeyRecordingResultProvider(EnvironmentForUtilities.ResultProvider delegate) {
-      this.delegate = delegate;
+/** Helpers for round tripping in serialization tests.  */
+object RoundTripping {
+    /** Serialize a value to a new byte array.  */
+    @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    fun <T> toBytes(context: SerializationContext?, codec: ObjectCodec<T?>, value: T?): ByteArray? {
+        val bytes: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val codedOut: CodedOutputStream = CodedOutputStream.newInstance(bytes)
+        codec.serialize(context, value, codedOut)
+        codedOut.flush()
+        return bytes.toByteArray()
     }
 
-    @Override
-    @Nullable
-    public Object getValueOrException(SkyKey key) {
-      Object result = delegate.getValueOrException(key);
-      if (result == null) {
-        missingKeys.add(key);
-      } else {
-        presentKeys.add(key);
-      }
-      return result;
+    @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    fun <T> toBytes(serializationContext: SerializationContext, value: T?): ByteString? {
+        val output: ByteString.Output = ByteString.newOutput()
+        val codedOut: CodedOutputStream = CodedOutputStream.newInstance(output)
+        serializationContext.serialize(value, codedOut)
+        codedOut.flush()
+        return output.toByteString()
     }
 
-    public String formatRecordedSkyKeys() {
-      StringBuilder builder = new StringBuilder("successfully looked up=");
-      formatSkyKeys(presentKeys, builder);
-      builder.append(", missing=");
-      formatSkyKeys(missingKeys, builder);
-      return builder.toString();
+    @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    fun fromBytes(deserializationContext: DeserializationContext, bytes: ByteString): Any? {
+        return deserializationContext.deserialize<Any?>(bytes.newCodedInput())
     }
 
-    private static void formatSkyKeys(Iterable<SkyKey> keys, StringBuilder builder) {
-      builder.append('[');
-      boolean isFirst = true;
-      for (SkyKey key : keys) {
-        if (isFirst) {
-          isFirst = false;
-        } else {
-          builder.append(", ");
+    /** Deserialize a value from a byte array.  */
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    fun <T> fromBytes(context: DeserializationContext?, codec: ObjectCodec<T?>, bytes: ByteArray): T? {
+        return codec.deserialize(context, CodedInputStream.newInstance(bytes))
+    }
+
+    @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    fun <T> roundTrip(value: T?, registry: ObjectCodecRegistry?): T? {
+        return RoundTripping.roundTrip<T?>(value, ObjectCodecs(registry))
+    }
+
+    @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    fun <T> roundTrip(value: T?, dependencies: com.google.common.collect.ImmutableClassToInstanceMap<Any?>?): T? {
+        return RoundTripping.roundTrip<T?>(value, ObjectCodecs(dependencies))
+    }
+
+    @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    fun <T> roundTrip(value: T?): T? {
+        return RoundTripping.roundTrip<T?>(value, ObjectCodecs())
+    }
+
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    private fun <T> roundTrip(value: T?, codecs: ObjectCodecs): T? {
+        val result = codecs.deserialize(codecs.serialize(value)) as T?
+        return result
+    }
+
+    @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    fun toBytesMemoized(original: Any?, registry: ObjectCodecRegistry?): ByteString? {
+        return ObjectCodecs(registry).serializeMemoized(original)
+    }
+
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    fun fromBytesMemoized(bytes: ByteString?, registry: ObjectCodecRegistry?): Any? {
+        return ObjectCodecs(registry).deserializeMemoized(bytes)
+    }
+
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    fun toBytesMemoizedAndBlocking(
+        codecs: ObjectCodecs, fingerprintValueService: FingerprintValueService?, subject: Any?
+    ): ByteString {
+        val result: SerializationResult<ByteString> =
+            codecs.serializeMemoizedAndBlocking(fingerprintValueService, subject)
+        val futureToBlockWritesOn: com.google.common.util.concurrent.ListenableFuture<*>? =
+            result.getFutureToBlockWritesOn()
+        if (futureToBlockWritesOn != null) {
+            try {
+                val unused: Any? =
+                    com.google.common.util.concurrent.Uninterruptibles.getUninterruptibly(futureToBlockWritesOn)
+            } catch (e: ExecutionException) {
+                throw com.google.devtools.build.lib.skyframe.serialization.SerializationException(
+                    "waiting for futureToBlockWritesOn",
+                    e.getCause()
+                )
+            }
         }
-        // Explicitly includes the type because many SkyKey types have String representations where
-        // this is unclear.
-        builder.append(key).append('<').append(key.getClass().getName()).append('>');
-      }
-      builder.append(']');
+        return result.getObject()
     }
-  }
+
+    @Throws(
+        com.google.devtools.build.lib.skyframe.serialization.SerializationException::class,
+        SkyframeDependencyException::class,
+        MissingResultException::class
+    )
+    fun fromBytesWithSkyframe(
+        codecs: ObjectCodecs,
+        fingerprintValueService: FingerprintValueService?,
+        resultProvider: ResultProvider,
+        data: ByteString
+    ): Any? {
+        val result: Any? = codecs.deserializeWithSkyframe(fingerprintValueService, data)
+        if (result is com.google.common.util.concurrent.ListenableFuture<*>) {
+            val continuation: SkyframeLookupContinuation?
+            try {
+                continuation =
+                    com.google.common.util.concurrent.Uninterruptibles.getUninterruptibly(result) as SkyframeLookupContinuation?
+            } catch (e: ExecutionException) {
+                throw com.google.devtools.build.lib.skyframe.serialization.SerializationException(
+                    "waiting for remote values",
+                    e.getCause()
+                )
+            }
+            val recordingResultProvider = KeyRecordingResultProvider(resultProvider)
+            val futureValue: com.google.common.util.concurrent.ListenableFuture<*>?
+            try {
+                futureValue = continuation.process(EnvironmentForUtilities(recordingResultProvider))
+            } catch (e: java.lang.InterruptedException) {
+                // Formally, an InterruptedException may occur when interacting with a LookupEnvironment,
+                // but the EnvironmentForUtilities never throws it.
+                throw java.lang.AssertionError("unexpected InterruptedException", e)
+            }
+            if (futureValue == null) {
+                throw MissingResultException(recordingResultProvider.formatRecordedSkyKeys())
+            }
+            try {
+                return com.google.common.util.concurrent.Uninterruptibles.getUninterruptibly(futureValue)
+            } catch (e: ExecutionException) {
+                throw com.google.devtools.build.lib.skyframe.serialization.SerializationException(
+                    "waiting for bookkeeping and shared values",
+                    e.getCause()
+                )
+            }
+        }
+        return result
+    }
+
+    @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    fun <T> roundTripMemoized(original: T?, registry: ObjectCodecRegistry?): T? {
+        val codecs: ObjectCodecs = ObjectCodecs(registry)
+        return codecs.deserializeMemoized(codecs.serializeMemoized(original)) as T?
+    }
+
+    @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    fun <T> roundTripMemoized(original: T?, vararg codecs: ObjectCodec<*>?): T? {
+        val builder: com.google.devtools.build.lib.skyframe.serialization.ObjectCodecRegistry.Builder =
+            AutoRegistry.get().getBuilder()
+        for (codec in codecs) {
+            builder.add(codec)
+        }
+        return RoundTripping.roundTripMemoized<T?>(original, builder.build())
+    }
+
+    @Throws(
+        com.google.devtools.build.lib.skyframe.serialization.SerializationException::class,
+        SkyframeDependencyException::class,
+        MissingResultException::class
+    )
+    fun roundTripWithSkyframe(
+        codecs: ObjectCodecs,
+        fingerprintValueService: FingerprintValueService?,
+        resultProvider: ResultProvider,
+        subject: Any?
+    ): Any? {
+        val bytes: ByteString = toBytesMemoizedAndBlocking(codecs, fingerprintValueService, subject)
+        return fromBytesWithSkyframe(codecs, fingerprintValueService, resultProvider, bytes)
+    }
+
+    @Throws(
+        com.google.devtools.build.lib.skyframe.serialization.SerializationException::class,
+        SkyframeDependencyException::class,
+        MissingResultException::class
+    )
+    fun roundTripWithSkyframe(
+        resultProvider: ResultProvider, subject: Any?
+    ): Any? {
+        return roundTripWithSkyframe(
+            ObjectCodecs(), FingerprintValueService.Companion.createForTesting(), resultProvider, subject
+        )
+    }
+
+    /**
+     * Thrown if the `resultProvider` passed to [.fromBytesWithSkyframe] is missing
+     * values.
+     */
+    class MissingResultException private constructor(message: String?) : java.lang.Exception(message)
+
+    private class KeyRecordingResultProvider
+        (delegate: ResultProvider) : ResultProvider {
+        private val delegate: ResultProvider
+        private val presentKeys: java.util.ArrayList<SkyKey> = java.util.ArrayList<SkyKey>()
+        private val missingKeys: java.util.ArrayList<SkyKey> = java.util.ArrayList<SkyKey>()
+
+        init {
+            this.delegate = delegate
+        }
+
+        override fun getValueOrException(key: SkyKey?): Any? {
+            val result: Any? = delegate.getValueOrException(key)
+            if (result == null) {
+                missingKeys.add(key)
+            } else {
+                presentKeys.add(key)
+            }
+            return result
+        }
+
+        fun formatRecordedSkyKeys(): String {
+            val builder: java.lang.StringBuilder = java.lang.StringBuilder("successfully looked up=")
+            formatSkyKeys(presentKeys, builder)
+            builder.append(", missing=")
+            formatSkyKeys(missingKeys, builder)
+            return builder.toString()
+        }
+
+        companion object {
+            private fun formatSkyKeys(keys: Iterable<SkyKey>, builder: java.lang.StringBuilder) {
+                builder.append('[')
+                var isFirst = true
+                for (key in keys) {
+                    if (isFirst) {
+                        isFirst = false
+                    } else {
+                        builder.append(", ")
+                    }
+                    // Explicitly includes the type because many SkyKey types have String representations where
+                    // this is unclear.
+                    builder.append(key).append('<').append(key.getClass().getName()).append('>')
+                }
+                builder.append(']')
+            }
+        }
+    }
 }

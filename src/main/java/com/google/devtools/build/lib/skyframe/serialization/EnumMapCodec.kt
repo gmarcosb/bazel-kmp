@@ -11,119 +11,111 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
-
-import static com.google.devtools.build.lib.skyframe.serialization.ClassCodec.classCodec;
-import static com.google.devtools.build.lib.unsafe.UnsafeProvider.unsafe;
-import static sun.misc.Unsafe.ARRAY_OBJECT_BASE_OFFSET;
-import static sun.misc.Unsafe.ARRAY_OBJECT_INDEX_SCALE;
-
-
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import java.util.EnumMap;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
+import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.AsyncObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.ClassCodec
+import com.google.devtools.build.lib.skyframe.serialization.SerializationContext
+import com.google.devtools.build.lib.unsafe.UnsafeProvider
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Serialize {@link EnumMap}. Subclasses of {@link EnumMap} will crash at runtime because currently
- * there are no "benign" subclasses of {@link EnumMap} in the Bazel codebase that can be used where
- * an {@link EnumMap} was expected.
+ * Serialize [EnumMap]. Subclasses of [EnumMap] will crash at runtime because currently
+ * there are no "benign" subclasses of [EnumMap] in the Bazel codebase that can be used where
+ * an [EnumMap] was expected.
  */
 // TODO: b/386384684 - remove Unsafe usage
-@SuppressWarnings({"rawtypes", "unchecked"})
-class EnumMapCodec extends AsyncObjectCodec<EnumMap> {
-  /** Used to retrieve the hidden {@link EnumMap#keyType} field. */
-  private static final long KEY_TYPE_OFFSET;
-
-  static {
-    try {
-      KEY_TYPE_OFFSET = unsafe().objectFieldOffset(EnumMap.class.getDeclaredField("keyType"));
-    } catch (NoSuchFieldException e) {
-      throw new ExceptionInInitializerError(e);
-    }
-  }
-
-  @Override
-  public Class<EnumMap> getEncodedClass() {
-    return EnumMap.class;
-  }
-
-  // TODO: b/386384684 - remove Unsafe usage
-  @Override
-  public void serialize(SerializationContext context, EnumMap obj, CodedOutputStream codedOut)
-      throws SerializationException, IOException {
-    if (!obj.getClass().equals(EnumMap.class)) {
-      throw new SerializationException(
-          "Cannot serialize subclasses of EnumMap: " + obj.getClass() + " (" + obj + ")");
-    }
-    classCodec()
-        .serialize(context, ((Class<?>) unsafe().getObject(obj, KEY_TYPE_OFFSET)), codedOut);
-
-    codedOut.writeInt32NoTag(obj.size());
-    if (obj.isEmpty()) {
-      return;
+internal class EnumMapCodec : AsyncObjectCodec<java.util.EnumMap<*, *>?>() {
+    override fun getEncodedClass(): java.lang.Class<java.util.EnumMap<*, *>?> {
+        return java.util.EnumMap::class.java
     }
 
-    for (Object next : obj.entrySet()) {
-      Map.Entry entry = (Map.Entry) next;
-      codedOut.writeInt32NoTag(((Enum) entry.getKey()).ordinal());
-      context.serialize(entry.getValue(), codedOut);
-    }
-  }
-
-  // TODO: b/386384684 - remove Unsafe usage
-  @Override
-  public EnumMap deserializeAsync(AsyncDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    Class clazz = classCodec().deserialize(context, codedIn);
-    int size = codedIn.readInt32();
-    EnumMap result = new EnumMap(clazz);
-    context.registerInitialValue(result);
-
-    MapBuffer buffer = new MapBuffer(result, size);
-
-    Enum[] enums = (Enum[]) clazz.getEnumConstants();
-    for (int i = 0; i < size; i++) {
-      int ordinal = codedIn.readInt32();
-      buffer.setEnum(i, enums[ordinal]);
-      context.deserialize(
-          codedIn,
-          buffer.values,
-          ARRAY_OBJECT_BASE_OFFSET + ARRAY_OBJECT_INDEX_SCALE * i,
-          /* done= */ (Runnable) buffer);
-    }
-    return result;
-  }
-
-  /** Buffers the entry elements and populates the map once all values are done. */
-  private static class MapBuffer implements Runnable {
-    private final EnumMap result;
-    private final Enum[] enums;
-    private final Object[] values;
-
-    private final AtomicInteger remaining;
-
-    private MapBuffer(EnumMap result, int size) {
-      this.result = result;
-      this.enums = new Enum[size];
-      this.values = new Object[size];
-      this.remaining = new AtomicInteger(size);
-    }
-
-    @Override
-    public void run() {
-      if (remaining.decrementAndGet() == 0) {
-        for (int i = 0; i < enums.length; i++) {
-          result.put(enums[i], values[i]);
+    // TODO: b/386384684 - remove Unsafe usage
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun serialize(context: SerializationContext, obj: java.util.EnumMap<*, *>, codedOut: CodedOutputStream) {
+        if (obj.getClass() != java.util.EnumMap::class.java) {
+            throw com.google.devtools.build.lib.skyframe.serialization.SerializationException(
+                "Cannot serialize subclasses of EnumMap: " + obj.getClass() + " (" + obj + ")"
+            )
         }
-      }
+        ClassCodec.Companion.classCodec()
+            .serialize(
+                context,
+                (UnsafeProvider.unsafe().getObject(obj, KEY_TYPE_OFFSET) as java.lang.Class<*>?),
+                codedOut
+            )
+
+        codedOut.writeInt32NoTag(obj.size())
+        if (obj.isEmpty()) {
+            return
+        }
+
+        for (next in obj.entrySet()) {
+            val entry = next as MutableMap.MutableEntry<*, *>
+            codedOut.writeInt32NoTag((entry.getKey() as Enum<*>).ordinal())
+            context.serialize(entry.getValue(), codedOut)
+        }
     }
 
-    private void setEnum(int index, Enum enumKey) {
-      enums[index] = enumKey;
+    // TODO: b/386384684 - remove Unsafe usage
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun deserializeAsync(
+        context: AsyncDeserializationContext,
+        codedIn: CodedInputStream
+    ): java.util.EnumMap<*, *> {
+        val clazz: java.lang.Class<*> = ClassCodec.Companion.classCodec().deserialize(context, codedIn)
+        val size: Int = codedIn.readInt32()
+        val result: java.util.EnumMap<*, *> = java.util.EnumMap<Any?, Any?>(clazz)
+        context.registerInitialValue(result)
+
+        val buffer = MapBuffer(result, size)
+
+        val enums = clazz.getEnumConstants() as Array<Enum<*>?>
+        /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
+        return result
     }
-  }
+
+    /** Buffers the entry elements and populates the map once all values are done.  */
+    private class MapBuffer(result: java.util.EnumMap<*, *>, size: Int) : java.lang.Runnable {
+        private val result: java.util.EnumMap<*, *>
+        private val enums: Array<Enum<*>?>
+        private val values: Array<Any?>
+
+        private val remaining: AtomicInteger
+
+        init {
+            this.result = result
+            this.enums = arrayOfNulls<Enum<*>>(size)
+            this.values = arrayOfNulls<Any>(size)
+            this.remaining = AtomicInteger(size)
+        }
+
+        override fun run() {
+            if (remaining.decrementAndGet() == 0) {
+                /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
+            }
+        }
+
+        fun setEnum(index: Int, enumKey: Enum<*>?) {
+            enums[index] = enumKey
+        }
+    }
+
+    companion object {
+        /** Used to retrieve the hidden [EnumMap.keyType] field.  */
+        private val KEY_TYPE_OFFSET: Long
+
+        init {
+            try {
+                KEY_TYPE_OFFSET =
+                    UnsafeProvider.unsafe().objectFieldOffset(java.util.EnumMap::class.java.getDeclaredField("keyType"))
+            } catch (e: java.lang.NoSuchFieldException) {
+                throw java.lang.ExceptionInInitializerError(e)
+            }
+        }
+    }
 }

@@ -11,198 +11,188 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Splitter;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.windows.WindowsPathOperations;
-import java.io.IOException;
+import com.google.devtools.build.lib.vfs.OsPathPolicy
+import com.google.devtools.build.lib.windows.WindowsPathOperations
+import java.io.IOException
 
-@VisibleForTesting
-class WindowsOsPathPolicy implements OsPathPolicy {
-
-  static final WindowsOsPathPolicy INSTANCE =
-      new WindowsOsPathPolicy(new DefaultShortPathResolver());
-
-  static final WindowsOsPathPolicy CROSS_PLATFORM_INSTANCE =
-      new WindowsOsPathPolicy(new CrossPlatformShortPathResolver());
-
-  static final int NEEDS_SHORT_PATH_NORMALIZATION = NEEDS_NORMALIZE + 1;
-
-  private static final Splitter WINDOWS_PATH_SPLITTER =
-      Splitter.onPattern("[\\\\/]+").omitEmptyStrings();
-
-  private final ShortPathResolver shortPathResolver;
-
-  interface ShortPathResolver {
-    String resolveShortPath(String path);
-  }
-
-  static class DefaultShortPathResolver implements ShortPathResolver {
-    @Override
-    public String resolveShortPath(String path) {
-      if (!OS.getCurrent().equals(OS.WINDOWS)) {
-        // Short path resolution only makes sense on a Windows host.
-        return path;
-      }
-      try {
-        return WindowsPathOperations.getLongPath(path);
-      } catch (IOException e) {
-        return path;
-      }
+@com.google.common.annotations.VisibleForTesting
+internal class WindowsOsPathPolicy @com.google.common.annotations.VisibleForTesting constructor(private val shortPathResolver: ShortPathResolver) :
+    OsPathPolicy {
+    internal interface ShortPathResolver {
+        fun resolveShortPath(path: String?): String?
     }
-  }
 
-  static class CrossPlatformShortPathResolver implements ShortPathResolver {
-    @Override
-    public String resolveShortPath(String path) {
-      // Short paths can only be resolved on a Windows host.
-      // Skipping short path resolution when running on a non-Windows host can
-      // result in paths considered different that are actually the same.
-      // TODO: Consider failing when a short path is detected on a non-Windows
-      //  host. Since short path segments can arise from most operations on
-      //  PathFragment, this would however require exception handling in many
-      //  places.
-      return path;
+    internal class DefaultShortPathResolver : ShortPathResolver {
+        override fun resolveShortPath(path: String?): String? {
+            if (com.google.devtools.build.lib.util.OS.Companion.getCurrent() != com.google.devtools.build.lib.util.OS.WINDOWS) {
+                // Short path resolution only makes sense on a Windows host.
+                return path
+            }
+            try {
+                return WindowsPathOperations.getLongPath(path)
+            } catch (e: IOException) {
+                return path
+            }
+        }
     }
-  }
 
-  @VisibleForTesting
-  WindowsOsPathPolicy(ShortPathResolver shortPathResolver) {
-    this.shortPathResolver = shortPathResolver;
-  }
+    internal class CrossPlatformShortPathResolver : ShortPathResolver {
+        override fun resolveShortPath(path: String?): String? {
+            // Short paths can only be resolved on a Windows host.
+            // Skipping short path resolution when running on a non-Windows host can
+            // result in paths considered different that are actually the same.
+            // TODO: Consider failing when a short path is detected on a non-Windows
+            //  host. Since short path segments can arise from most operations on
+            //  PathFragment, this would however require exception handling in many
+            //  places.
+            return path
+        }
+    }
 
-  @Override
-  public int needsToNormalize(String path) {
-    int n = path.length();
-    int normalizationLevel = NORMALIZED;
-    int dotCount = 0;
-    char prevChar = 0;
-    int segmentBeginIndex = 0; // The start index of the current path index
-    boolean segmentHasShortPathChar = false; // Triggers more expensive short path regex test
-    for (int i = 0; i < n; i++) {
-      char c = path.charAt(i);
-      if (isSeparator(c)) {
-        if (c == '\\') {
-          normalizationLevel = Math.max(normalizationLevel, NEEDS_NORMALIZE);
-        }
-        // No need to check for '\\' here because that already causes normalization
-        if (prevChar == '/') {
-          normalizationLevel = Math.max(normalizationLevel, NEEDS_NORMALIZE);
-        }
-        if (dotCount == 1 || dotCount == 2) {
-          normalizationLevel = Math.max(normalizationLevel, NEEDS_NORMALIZE);
+    override fun needsToNormalize(path: String): Int {
+        val n: Int = path.length()
+        var normalizationLevel: Int = OsPathPolicy.Companion.NORMALIZED
+        var dotCount = 0
+        var prevChar = 0.toChar()
+        var segmentBeginIndex = 0 // The start index of the current path index
+        var segmentHasShortPathChar = false // Triggers more expensive short path regex test
+        for (i in 0..<n) {
+            val c: Char = path.charAt(i)
+            if (isSeparator(c)) {
+                if (c == '\\') {
+                    normalizationLevel = java.lang.Math.max(normalizationLevel, OsPathPolicy.Companion.NEEDS_NORMALIZE)
+                }
+                // No need to check for '\\' here because that already causes normalization
+                if (prevChar == '/') {
+                    normalizationLevel = java.lang.Math.max(normalizationLevel, OsPathPolicy.Companion.NEEDS_NORMALIZE)
+                }
+                if (dotCount == 1 || dotCount == 2) {
+                    normalizationLevel = java.lang.Math.max(normalizationLevel, OsPathPolicy.Companion.NEEDS_NORMALIZE)
+                }
+                if (segmentHasShortPathChar) {
+                    if (WindowsPathOperations.isShortPath(path.substring(segmentBeginIndex, i))) {
+                        normalizationLevel = java.lang.Math.max(normalizationLevel, NEEDS_SHORT_PATH_NORMALIZATION)
+                    }
+                }
+                segmentBeginIndex = i + 1
+                segmentHasShortPathChar = false
+            } else if (c == '~') {
+                // This path segment might be a Windows short path segment
+                segmentHasShortPathChar = true
+            }
+            dotCount = if (c == '.') dotCount + 1 else 0
+            prevChar = c
         }
         if (segmentHasShortPathChar) {
-          if (WindowsPathOperations.isShortPath(path.substring(segmentBeginIndex, i))) {
-            normalizationLevel = Math.max(normalizationLevel, NEEDS_SHORT_PATH_NORMALIZATION);
-          }
+            if (WindowsPathOperations.isShortPath(path.substring(segmentBeginIndex))) {
+                normalizationLevel = java.lang.Math.max(normalizationLevel, NEEDS_SHORT_PATH_NORMALIZATION)
+            }
         }
-        segmentBeginIndex = i + 1;
-        segmentHasShortPathChar = false;
-      } else if (c == '~') {
-        // This path segment might be a Windows short path segment
-        segmentHasShortPathChar = true;
-      }
-      dotCount = c == '.' ? dotCount + 1 : 0;
-      prevChar = c;
+        if ((n > 1 && isSeparator(prevChar)) || dotCount == 1 || dotCount == 2) {
+            normalizationLevel = java.lang.Math.max(normalizationLevel, OsPathPolicy.Companion.NEEDS_NORMALIZE)
+        }
+        return normalizationLevel
     }
-    if (segmentHasShortPathChar) {
-      if (WindowsPathOperations.isShortPath(path.substring(segmentBeginIndex))) {
-        normalizationLevel = Math.max(normalizationLevel, NEEDS_SHORT_PATH_NORMALIZATION);
-      }
-    }
-    if ((n > 1 && isSeparator(prevChar)) || dotCount == 1 || dotCount == 2) {
-      normalizationLevel = Math.max(normalizationLevel, NEEDS_NORMALIZE);
-    }
-    return normalizationLevel;
-  }
 
-  @Override
-  public int needsToNormalizeSuffix(String normalizedSuffix) {
-    // On Windows, all bets are off because of short paths, so we have to check the entire string
-    return needsToNormalize(normalizedSuffix);
-  }
+    override fun needsToNormalizeSuffix(normalizedSuffix: String): Int {
+        // On Windows, all bets are off because of short paths, so we have to check the entire string
+        return needsToNormalize(normalizedSuffix)
+    }
 
-  @Override
-  public String normalize(String path, int normalizationLevel) {
-    if (normalizationLevel == NORMALIZED) {
-      return path;
-    }
-    if (normalizationLevel == NEEDS_SHORT_PATH_NORMALIZATION) {
-      String resolvedPath = shortPathResolver.resolveShortPath(path);
-      if (resolvedPath != null) {
-        path = resolvedPath;
-      }
-    }
-    String[] segments = Iterables.toArray(WINDOWS_PATH_SPLITTER.splitToList(path), String.class);
-    int driveStrLength = getDriveStrLength(path);
-    boolean isAbsolute = driveStrLength > 0;
-    int segmentSkipCount = isAbsolute && driveStrLength > 1 ? 1 : 0;
+    override fun normalize(path: String, normalizationLevel: Int): String? {
+        var path = path
+        if (normalizationLevel == OsPathPolicy.Companion.NORMALIZED) {
+            return path
+        }
+        if (normalizationLevel == NEEDS_SHORT_PATH_NORMALIZATION) {
+            val resolvedPath = shortPathResolver.resolveShortPath(path)
+            if (resolvedPath != null) {
+                path = resolvedPath
+            }
+        }
+        val segments: Array<String?> = com.google.common.collect.Iterables.toArray<String?>(
+            WINDOWS_PATH_SPLITTER.splitToList(path),
+            String::class.java
+        )
+        val driveStrLength = getDriveStrLength(path)
+        val isAbsolute = driveStrLength > 0
+        val segmentSkipCount = if (isAbsolute && driveStrLength > 1) 1 else 0
 
-    StringBuilder sb = new StringBuilder(path.length());
-    if (isAbsolute) {
-      char c = path.charAt(0);
-      if (isSeparator(c)) {
-        sb.append('/');
-      } else {
-        sb.append(Character.toUpperCase(c));
-        sb.append(":/");
-      }
+        val sb: java.lang.StringBuilder = java.lang.StringBuilder(path.length())
+        if (isAbsolute) {
+            val c: Char = path.charAt(0)
+            if (isSeparator(c)) {
+                sb.append('/')
+            } else {
+                sb.append(java.lang.Character.toUpperCase(c))
+                sb.append(":/")
+            }
+        }
+        val segmentCount: Int = com.google.devtools.build.lib.vfs.OsPathPolicy.Utils.removeRelativePaths(
+            segments,
+            segmentSkipCount,
+            isAbsolute
+        )
+        for (i in 0..<segmentCount) {
+            sb.append(segments[i])
+            sb.append('/')
+        }
+        if (segmentCount > 0) {
+            sb.deleteCharAt(sb.length() - 1)
+        }
+        return sb.toString()
     }
-    int segmentCount = Utils.removeRelativePaths(segments, segmentSkipCount, isAbsolute);
-    for (int i = 0; i < segmentCount; ++i) {
-      sb.append(segments[i]);
-      sb.append('/');
-    }
-    if (segmentCount > 0) {
-      sb.deleteCharAt(sb.length() - 1);
-    }
-    return sb.toString();
-  }
 
-  @Override
-  public int getDriveStrLength(String path) {
-    int n = path.length();
-    if (n == 0) {
-      return 0;
+    override fun getDriveStrLength(path: String): Int {
+        val n: Int = path.length()
+        if (n == 0) {
+            return 0
+        }
+        val c0: Char = path.charAt(0)
+        if (isSeparator(c0)) {
+            return 1
+        }
+        if (n < 3) {
+            return 0
+        }
+        val c1: Char = path.charAt(1)
+        val c2: Char = path.charAt(2)
+        if (isDriveLetter(c0) && c1 == ':' && isSeparator(c2)) {
+            return 3
+        }
+        return 0
     }
-    char c0 = path.charAt(0);
-    if (isSeparator(c0)) {
-      return 1;
+
+    override fun isSeparator(c: Char): Boolean {
+        return c == '/' || c == '\\'
     }
-    if (n < 3) {
-      return 0;
+
+    override fun additionalSeparator(): Char {
+        return '\\'
     }
-    char c1 = path.charAt(1);
-    char c2 = path.charAt(2);
-    if (isDriveLetter(c0) && c1 == ':' && isSeparator(c2)) {
-      return 3;
+
+    override fun postProcessPathStringForExecution(callablePathString: String): String? {
+        // On Windows, .bat scripts (and possibly others) cannot be executed with forward slashes in
+        // the path. Since backslashes are the standard path separator on Windows, we replace all
+        // forward slashes with backslashes instead of trying to enumerate these special cases.
+        return callablePathString.replace('/', '\\')
     }
-    return 0;
-  }
 
-  private static boolean isDriveLetter(char c) {
-    return ((c >= 'a') && (c <= 'z')) || ((c >= 'A') && (c <= 'Z'));
-  }
+    companion object {
+        val INSTANCE: WindowsOsPathPolicy = WindowsOsPathPolicy(DefaultShortPathResolver())
 
-  @Override
-  public boolean isSeparator(char c) {
-    return c == '/' || c == '\\';
-  }
+        val CROSS_PLATFORM_INSTANCE: WindowsOsPathPolicy = WindowsOsPathPolicy(CrossPlatformShortPathResolver())
 
-  @Override
-  public char additionalSeparator() {
-    return '\\';
-  }
+        @kotlin.jvm.JvmField
+        val NEEDS_SHORT_PATH_NORMALIZATION: Int = OsPathPolicy.Companion.NEEDS_NORMALIZE + 1
 
-  @Override
-  public String postProcessPathStringForExecution(String callablePathString) {
-    // On Windows, .bat scripts (and possibly others) cannot be executed with forward slashes in
-    // the path. Since backslashes are the standard path separator on Windows, we replace all
-    // forward slashes with backslashes instead of trying to enumerate these special cases.
-    return callablePathString.replace('/', '\\');
-  }
+        private val WINDOWS_PATH_SPLITTER: com.google.common.base.Splitter =
+            com.google.common.base.Splitter.onPattern("[\\\\/]+").omitEmptyStrings()
+
+        private fun isDriveLetter(c: Char): Boolean {
+            return ((c >= 'a') && (c <= 'z')) || ((c >= 'A') && (c <= 'Z'))
+        }
+    }
 }

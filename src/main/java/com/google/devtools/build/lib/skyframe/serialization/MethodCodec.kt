@@ -11,58 +11,61 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.ClassCodec
+import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext
+import com.google.devtools.build.lib.skyframe.serialization.strings.UnsafeStringCodec
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
-import static com.google.devtools.build.lib.skyframe.serialization.ClassCodec.classCodec;
-import static com.google.devtools.build.lib.skyframe.serialization.strings.UnsafeStringCodec.stringCodec;
-
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import java.lang.reflect.Method;
-import java.util.Arrays;
-
-/** {@link ObjectCodec} for {@link Method}. */
-class MethodCodec extends LeafObjectCodec<Method> {
-  @Override
-  public Class<Method> getEncodedClass() {
-    return Method.class;
-  }
-
-  @Override
-  public void serialize(LeafSerializationContext context, Method obj, CodedOutputStream codedOut)
-      throws SerializationException, IOException {
-    context.serializeLeaf(obj.getDeclaringClass(), classCodec(), codedOut);
-    context.serializeLeaf(obj.getName(), stringCodec(), codedOut);
-    Class<?>[] parameterTypes = obj.getParameterTypes();
-    codedOut.writeInt32NoTag(parameterTypes.length);
-    for (Class<?> parameter : parameterTypes) {
-      context.serializeLeaf(parameter, classCodec(), codedOut);
+/** [ObjectCodec] for [Method].  */
+internal class MethodCodec : LeafObjectCodec<java.lang.reflect.Method?>() {
+    override fun getEncodedClass(): java.lang.Class<java.lang.reflect.Method?> {
+        return java.lang.reflect.Method::class.java
     }
-  }
 
-  @Override
-  public Method deserialize(LeafDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    Class<?> clazz = context.deserializeLeaf(codedIn, classCodec());
-    String name = context.deserializeLeaf(codedIn, stringCodec());
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun serialize(
+        context: LeafSerializationContext,
+        obj: java.lang.reflect.Method,
+        codedOut: CodedOutputStream
+    ) {
+        context.serializeLeaf<java.lang.Class<*>?>(obj.getDeclaringClass(), ClassCodec.Companion.classCodec(), codedOut)
+        context.serializeLeaf<String?>(obj.getName(), UnsafeStringCodec.Companion.stringCodec(), codedOut)
+        val parameterTypes: Array<java.lang.Class<*>?> = obj.getParameterTypes()
+        codedOut.writeInt32NoTag(parameterTypes.size)
+        for (parameter in parameterTypes) {
+            context.serializeLeaf<java.lang.Class<*>?>(parameter, ClassCodec.Companion.classCodec(), codedOut)
+        }
+    }
 
-    Class<?>[] parameters = new Class<?>[codedIn.readInt32()];
-    for (int i = 0; i < parameters.length; i++) {
-      parameters[i] = context.deserializeLeaf(codedIn, classCodec());
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun deserialize(
+        context: LeafDeserializationContext,
+        codedIn: CodedInputStream
+    ): java.lang.reflect.Method? {
+        val clazz: java.lang.Class<*> =
+            context.deserializeLeaf<java.lang.Class<*>?>(codedIn, ClassCodec.Companion.classCodec())
+        val name: String = context.deserializeLeaf<String>(codedIn, UnsafeStringCodec.Companion.stringCodec())
+
+        val parameters: Array<java.lang.Class<*>?> = arrayOfNulls<java.lang.Class<*>>(codedIn.readInt32())
+        /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
+        try {
+            return clazz.getDeclaredMethod(name, *parameters)
+        } catch (e: java.lang.NoSuchMethodException) {
+            throw com.google.devtools.build.lib.skyframe.serialization.SerializationException(
+                ("Couldn't get method "
+                        + name
+                        + " in "
+                        + clazz
+                        + " with parameters "
+                        + java.util.Arrays.toString(parameters)),
+                e
+            )
+        }
     }
-    try {
-      return clazz.getDeclaredMethod(name, parameters);
-    } catch (NoSuchMethodException e) {
-      throw new SerializationException(
-          "Couldn't get method "
-              + name
-              + " in "
-              + clazz
-              + " with parameters "
-              + Arrays.toString(parameters),
-          e);
-    }
-  }
 }

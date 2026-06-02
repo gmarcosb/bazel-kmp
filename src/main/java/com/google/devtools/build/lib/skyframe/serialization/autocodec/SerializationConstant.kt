@@ -11,21 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.skyframe.serialization.autocodec;
-
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Target;
+package com.google.devtools.build.lib.skyframe.serialization.autocodec
 
 /**
  * Applied to a field (which must be static and final). The field is stored as a "reference
- * constant" allowing for trivial serialization of it as an integer tag (see {@code CodecScanner}
- * and {@code ObjectCodecRegistry}). In order to do that, a trivial associated "RegisteredSingleton"
+ * constant" allowing for trivial serialization of it as an integer tag (see `CodecScanner`
+ * and `ObjectCodecRegistry`). In order to do that, a trivial associated "RegisteredSingleton"
  * class is generated. Tagging such a field is harmless, and can be done conservatively.
- *
- * <p>Should only be applied to instances that are guaranteed to be canonical. Otherwise, a
+ * 
+ * 
+ * Should only be applied to instances that are guaranteed to be canonical. Otherwise, a
  * value-equal but not reference-equal instance will serialize differently, potentially causing
  * nondeterminism bugs like b/515386220.
  */
-@Target(ElementType.FIELD)
-public @interface SerializationConstant {}
+@Target(AnnotationTarget.FIELD)
+annotation class SerializationConstant 

@@ -11,16 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.common.options;
+package com.google.devtools.common.options
 
 /**
- * Opaque options data type, returned by {@link OptionsParser#getOptionsData} and consumed by {@link
- * OptionsParser.Builder#optionsData(OpaqueOptionsData)}.
+ * Opaque options data type, returned by [OptionsParser.getOptionsData] and consumed by [ ][OptionsParser.Builder.optionsData].
  */
-public abstract class OpaqueOptionsData {
-  // Package-protected so the existence of subclasses is under our control.
-  OpaqueOptionsData() {
-  }
-}
+abstract class OpaqueOptionsData  // Package-protected so the existence of subclasses is under our control.
+internal constructor()
 

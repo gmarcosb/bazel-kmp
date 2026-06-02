@@ -11,55 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.platform
 
-package com.google.devtools.build.lib.rules.platform;
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.devtools.build.lib.packages.Attribute.attr
 
-import static com.google.devtools.build.lib.packages.Attribute.attr;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.BaseRuleClasses;
-import com.google.devtools.build.lib.analysis.RuleDefinition;
-import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment;
-import com.google.devtools.build.lib.analysis.platform.ConstraintValueInfo;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.packages.BuildType;
-import com.google.devtools.build.lib.packages.RuleClass;
-import com.google.devtools.build.lib.packages.RuleClass.ToolchainResolutionMode;
-import com.google.devtools.build.lib.packages.Type;
-import com.google.devtools.build.lib.packages.Types;
-import com.google.devtools.build.lib.util.FileTypeSet;
-
-/** Rule definition for {@link Platform}. */
-public class PlatformRule implements RuleDefinition {
-  public static final String DEFAULT_MISSING_TOOLCHAIN_ERROR =
-      "For more information on platforms or toolchains see"
-          + " https://bazel.build/concepts/platforms-intro.";
-
-  public static final String RULE_NAME = "platform";
-  public static final String CONSTRAINT_VALUES_ATTR = "constraint_values";
-  public static final String PARENTS_PLATFORM_ATTR = "parents";
-  public static final String EXEC_PROPS_ATTR = "exec_properties";
-  public static final String FLAGS_ATTR = "flags";
-  public static final String REQUIRED_SETTINGS_ATTR = "required_settings";
-  public static final String MISSING_TOOLCHAIN_ERROR_ATTR = "missing_toolchain_error";
-
-  @Override
-  public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment env) {
-    /* <!-- #BLAZE_RULE(platform).NAME -->
+/** Rule definition for [Platform].  */
+class PlatformRule : RuleDefinition {
+    public override fun build(builder: RuleClass.Builder, env: RuleDefinitionEnvironment?): RuleClass {
+        /* <!-- #BLAZE_RULE(platform).NAME -->
     <!-- #END_BLAZE_RULE.NAME --> */
-    return builder
-        .advertiseStarlarkProvider(PlatformInfo.PROVIDER.id())
-        .exemptFromConstraintChecking("this rule helps *define* a constraint")
-        .toolchainResolutionMode(ToolchainResolutionMode.DISABLED)
-        .removeAttribute(":action_listener")
-        .removeAttribute(RuleClass.APPLICABLE_METADATA_ATTR)
-        .override(
-            attr("tags", Types.STRING_LIST)
-                // No need to show up in ":all", etc. target patterns.
-                .value(ImmutableList.of("manual"))
-                .nonconfigurable("low-level attribute, used in platform configuration"))
-        /* <!-- #BLAZE_RULE(platform).ATTRIBUTE(constraint_values) -->
+        return builder
+            .advertiseStarlarkProvider(PlatformInfo.PROVIDER.id())
+            .exemptFromConstraintChecking("this rule helps *define* a constraint")
+            .toolchainResolutionMode(ToolchainResolutionMode.DISABLED)
+            .removeAttribute(":action_listener")
+            .removeAttribute(RuleClass.APPLICABLE_METADATA_ATTR)
+            .override(
+                attr("tags", Types.STRING_LIST) // No need to show up in ":all", etc. target patterns.
+                    .value(ImmutableList.of<E?>("manual"))
+                    .nonconfigurable("low-level attribute, used in platform configuration")
+            ) /* <!-- #BLAZE_RULE(platform).ATTRIBUTE(constraint_values) -->
         The combination of constraint choices that this platform comprises. In order for a platform
         to apply to a given environment, the environment must have at least the values in this list.
 
@@ -68,25 +41,24 @@ public class PlatformRule implements RuleDefinition {
         cpu architecture to be both <code>@platforms//cpu:x86_64</code> and
         <code>@platforms//cpu:arm</code>.
         <!-- #END_BLAZE_RULE.ATTRIBUTE --> */
-        .add(
-            attr(CONSTRAINT_VALUES_ATTR, BuildType.LABEL_LIST)
-                .allowedFileTypes(FileTypeSet.NO_FILE)
-                .mandatoryProviders(ConstraintValueInfo.PROVIDER.id())
-                .nonconfigurable("Part of the configuration"))
-
-        /* <!-- #BLAZE_RULE(platform).ATTRIBUTE(parents) -->
+            .add(
+                attr(CONSTRAINT_VALUES_ATTR, BuildType.LABEL_LIST)
+                    .allowedFileTypes(FileTypeSet.NO_FILE)
+                    .mandatoryProviders(ConstraintValueInfo.PROVIDER.id())
+                    .nonconfigurable("Part of the configuration")
+            ) /* <!-- #BLAZE_RULE(platform).ATTRIBUTE(parents) -->
         The label of a <code>platform</code> target that this platform should inherit from. Although
         the attribute takes a list, there should be no more than one platform present. Any
         constraint_settings not set directly on this platform will be found in the parent platform.
         See the section on <a href="#platform_inheritance">Platform Inheritance</a> for details.
         <!-- #END_BLAZE_RULE.ATTRIBUTE --> */
-        .add(
-            attr(PARENTS_PLATFORM_ATTR, BuildType.LABEL_LIST)
-                .allowedFileTypes(FileTypeSet.NO_FILE)
-                .mandatoryProviders(PlatformInfo.PROVIDER.id())
-                .nonconfigurable("Part of the configuration"))
 
-        /* <!-- #BLAZE_RULE(platform).ATTRIBUTE(exec_properties) -->
+            .add(
+                attr(PARENTS_PLATFORM_ATTR, BuildType.LABEL_LIST)
+                    .allowedFileTypes(FileTypeSet.NO_FILE)
+                    .mandatoryProviders(PlatformInfo.PROVIDER.id())
+                    .nonconfigurable("Part of the configuration")
+            ) /* <!-- #BLAZE_RULE(platform).ATTRIBUTE(exec_properties) -->
         A map of strings that affect the way actions are executed remotely. Bazel makes no attempt
         to interpret this, it is treated as opaque data that's forwarded via the Platform field of
         the  <a href="https://github.com/bazelbuild/remote-apis">remote execution protocol</a>.
@@ -95,55 +67,66 @@ public class PlatformRule implements RuleDefinition {
         If the child and parent platform define the same keys, the child's values are kept. Any
         keys associated with a value that is an empty string are removed from the dictionary.
         <!-- #END_BLAZE_RULE.ATTRIBUTE --> */
-        .add(
-            attr(EXEC_PROPS_ATTR, Types.STRING_DICT)
-                .value(ImmutableMap.of())
-                .nonconfigurable("Part of the configuration"))
 
-        /* <!-- #BLAZE_RULE(platform).ATTRIBUTE(flags) -->
+            .add(
+                attr(EXEC_PROPS_ATTR, Types.STRING_DICT)
+                    .value(ImmutableMap.of<K?, V?>())
+                    .nonconfigurable("Part of the configuration")
+            ) /* <!-- #BLAZE_RULE(platform).ATTRIBUTE(flags) -->
         A list of flags that will be enabled when this platform is used as the target platform in
         a configuration. Only flags that are part of the configuration can be set, such as those
         that can be used in transitions, or the <code>--define</code> flag.
         <!-- #END_BLAZE_RULE.ATTRIBUTE --> */
-        .add(
-            attr(FLAGS_ATTR, Types.STRING_LIST)
-                .value(ImmutableList.of())
-                .nonconfigurable("Part of the configuration"))
-        /* <!-- #BLAZE_RULE(platform).ATTRIBUTE(required_settings) -->
+
+            .add(
+                attr(FLAGS_ATTR, Types.STRING_LIST)
+                    .value(ImmutableList.of<E?>())
+                    .nonconfigurable("Part of the configuration")
+            ) /* <!-- #BLAZE_RULE(platform).ATTRIBUTE(required_settings) -->
         A list of <code>config_setting</code>s that must be satisfied by the target configuration
         in order for this platform to be used as an execution platform during toolchain resolution.
 
         Required settings are not inherited from parent platforms.
         <!-- #END_BLAZE_RULE.ATTRIBUTE --> */
-        .add(
-            attr(REQUIRED_SETTINGS_ATTR, BuildType.LABEL_LIST)
-                .allowedRuleClasses("config_setting")
-                .allowedFileTypes(FileTypeSet.NO_FILE))
-        /* <!-- #BLAZE_RULE(platform).ATTRIBUTE(missing_toolchain_error) -->
+            .add(
+                attr(REQUIRED_SETTINGS_ATTR, BuildType.LABEL_LIST)
+                    .allowedRuleClasses("config_setting")
+                    .allowedFileTypes(FileTypeSet.NO_FILE)
+            ) /* <!-- #BLAZE_RULE(platform).ATTRIBUTE(missing_toolchain_error) -->
         A custom error message that is displayed when a mandatory toolchain requirement cannot be satisfied for this target platform. Intended to point to relevant documentation users can read to understand why their toolchains are misconfigured.
 
         Not inherited from parent platforms.
         <!-- #END_BLAZE_RULE.ATTRIBUTE --> */
-        .add(
-            attr(MISSING_TOOLCHAIN_ERROR_ATTR, Type.STRING)
-                .value(DEFAULT_MISSING_TOOLCHAIN_ERROR)
-                .nonconfigurable("Part of the configuration"))
-        // Undocumented, used for exec platform migrations.
-        .add(attr("check_toolchain_types", Type.BOOLEAN).value(false))
-        .add(attr("allowed_toolchain_types", BuildType.NODEP_LABEL_LIST))
-        .build();
-  }
+            .add(
+                attr(MISSING_TOOLCHAIN_ERROR_ATTR, Type.STRING)
+                    .value(DEFAULT_MISSING_TOOLCHAIN_ERROR)
+                    .nonconfigurable("Part of the configuration")
+            ) // Undocumented, used for exec platform migrations.
+            .add(attr("check_toolchain_types", Type.BOOLEAN).value(false))
+            .add(attr("allowed_toolchain_types", BuildType.NODEP_LABEL_LIST))
+            .build()
+    }
 
-  @Override
-  public Metadata getMetadata() {
-    return Metadata.builder()
-        .name(RULE_NAME)
-        .ancestors(BaseRuleClasses.NativeBuildRule.class)
-        .factoryClass(Platform.class)
-        .build();
-  }
-}
-/*<!-- #FAMILY_SUMMARY -->
+    val metadata: Metadata
+        get() = Metadata.builder()
+            .name(RULE_NAME)
+            .ancestors(BaseRuleClasses.NativeBuildRule::class.java)
+            .factoryClass(Platform::class.java)
+            .build()
+
+    companion object {
+        val DEFAULT_MISSING_TOOLCHAIN_ERROR: String = ("For more information on platforms or toolchains see"
+                + " https://bazel.build/concepts/platforms-intro.")
+
+        const val RULE_NAME: String = "platform"
+        const val CONSTRAINT_VALUES_ATTR: String = "constraint_values"
+        const val PARENTS_PLATFORM_ATTR: String = "parents"
+        const val EXEC_PROPS_ATTR: String = "exec_properties"
+        const val FLAGS_ATTR: String = "flags"
+        const val REQUIRED_SETTINGS_ATTR: String = "required_settings"
+        const val MISSING_TOOLCHAIN_ERROR_ATTR: String = "missing_toolchain_error"
+    }
+} /*<!-- #FAMILY_SUMMARY -->
 
 <p>
 This set of rules exists to allow you to model specific hardware platforms you are
@@ -152,7 +135,6 @@ The user should be familiar with the concepts explained <a href="/extending/plat
 </p>
 
 <!-- #END_FAMILY_SUMMARY -->*/
-
 /*<!-- #BLAZE_RULE (NAME = platform, FAMILY = Platforms and Toolchains)[GENERIC_RULE] -->
 
 <p>This rule defines a new platform -- a named collection of constraint choices
@@ -361,3 +343,4 @@ platform(
 </p>
 
 <!-- #END_BLAZE_RULE -->*/
+

@@ -11,32 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext
+import com.google.devtools.build.lib.skyframe.serialization.LongArrayCodec
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
+import java.util.BitSet
 
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import java.util.BitSet;
+internal class BitSetCodec : LeafObjectCodec<BitSet?>() {
+    val encodedClass: java.lang.Class<out BitSet?>
+        get() = BitSet::class.java
 
-class BitSetCodec extends LeafObjectCodec<BitSet> {
-  private static final LongArrayCodec DELEGATE = new LongArrayCodec();
+    @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    override fun serialize(context: LeafSerializationContext, obj: BitSet, codedOut: CodedOutputStream?) {
+        val data: LongArray? = obj.toLongArray()
+        context.serializeLeaf<LongArray?>(data, DELEGATE, codedOut)
+    }
 
-  @Override
-  public Class<? extends BitSet> getEncodedClass() {
-    return BitSet.class;
-  }
+    @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    override fun deserialize(context: LeafDeserializationContext, codedIn: CodedInputStream?): BitSet {
+        return BitSet.valueOf(context.deserializeLeaf<LongArray?>(codedIn, DELEGATE))
+    }
 
-  @Override
-  public void serialize(LeafSerializationContext context, BitSet obj, CodedOutputStream codedOut)
-      throws IOException, SerializationException {
-    long[] data = obj.toLongArray();
-    context.serializeLeaf(data, DELEGATE, codedOut);
-  }
-
-  @Override
-  public BitSet deserialize(LeafDeserializationContext context, CodedInputStream codedIn)
-      throws IOException, SerializationException {
-    return BitSet.valueOf(context.deserializeLeaf(codedIn, DELEGATE));
-  }
+    companion object {
+        private val DELEGATE: LongArrayCodec = LongArrayCodec()
+    }
 }

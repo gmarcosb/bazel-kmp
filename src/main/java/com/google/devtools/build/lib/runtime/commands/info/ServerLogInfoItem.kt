@@ -11,43 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime.commands.info
 
-package com.google.devtools.build.lib.runtime.commands.info;
+import com.google.common.base.Preconditions
+import com.google.common.base.Supplier
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.base.Supplier;
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.InfoItem;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import com.google.devtools.build.lib.util.ServerLogPathService;
-import java.io.IOException;
-
-/** Info item for server_log path. */
-public class ServerLogInfoItem extends InfoItem {
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
-
-  /**
-   * Constructs an info item for the server log path.
-   *
-   * @param productName name of the tool whose server log path will be queried
-   */
-  public ServerLogInfoItem(String productName) {
-    super("server_log", productName + " server log path", false);
-  }
-
-  @Override
-  public byte[] get(Supplier<BuildConfigurationValue> configurationSupplier, CommandEnvironment env)
-      throws AbruptExitException {
-    ServerLogPathService serverLogPathService =
-        checkNotNull(env.getRuntime().getBlazeService(ServerLogPathService.class));
-    try {
-      return print(serverLogPathService.getServerLogPath().orElse(""));
-    } catch (IOException e) {
-      logger.atWarning().withCause(e).log("Failed to determine server log location");
-      return print("UNKNOWN LOG LOCATION");
+/** Info item for server_log path.  */
+class ServerLogInfoItem
+/**
+ * Constructs an info item for the server log path.
+ * 
+ * @param productName name of the tool whose server log path will be queried
+ */
+    (productName: String?) : InfoItem("server_log", productName + " server log path", false) {
+    @Throws(AbruptExitException::class)
+    public override fun get(
+        configurationSupplier: Supplier<BuildConfigurationValue?>?,
+        env: CommandEnvironment
+    ): ByteArray {
+        val serverLogPathService: ServerLogPathService =
+            Preconditions.checkNotNull<T>(env.getRuntime().getBlazeService(ServerLogPathService::class.java))
+        try {
+            return print(serverLogPathService.getServerLogPath().orElse(""))
+        } catch (e: IOException) {
+            logger.atWarning().withCause(e).log("Failed to determine server log location")
+            return print("UNKNOWN LOG LOCATION")
+        }
     }
-  }
+
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+    }
 }

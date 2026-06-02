@@ -11,20 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.platform
 
-package com.google.devtools.build.lib.starlarkbuildapi.platform;
+import com.google.devtools.build.docgen.annot.DocCategory
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.eval.StarlarkValue
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.eval.StarlarkValue;
-
-/** Targets that are incompatible with the target platform. */
+/** Targets that are incompatible with the target platform.  */
 @StarlarkBuiltin(
     name = "IncompatiblePlatformProvider",
-    doc =
-        "A provider for targets that are incompatible with the target platform. See "
-            + "<a href='${link platforms#detecting-incompatible-targets-using-bazel-cquery}'>"
+    doc = ("A provider for targets that are incompatible with the target platform. See "
+            + "<a href='\${link platforms#detecting-incompatible-targets-using-bazel-cquery}'>"
             + "Detecting incompatible targets using <code>bazel cquery</code></a> for more "
-            + "information.",
-    category = DocCategory.PROVIDER)
-public interface IncompatiblePlatformProviderApi extends StarlarkValue {}
+            + "information."),
+    category = DocCategory.PROVIDER
+)
+interface IncompatiblePlatformProviderApi : StarlarkValue

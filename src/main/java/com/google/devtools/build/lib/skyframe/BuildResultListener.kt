@@ -11,102 +11,89 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Maps;
-import com.google.common.eventbus.AllowConcurrentEvents;
-import com.google.common.eventbus.Subscribe;
-import com.google.devtools.build.lib.analysis.ConfiguredAspect;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.concurrent.ThreadSafety;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator.AspectKey;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.AspectAnalyzedEvent;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.AspectBuiltEvent;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.TestAnalyzedEvent;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.TopLevelTargetAnalyzedEvent;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.TopLevelTargetBuiltEvent;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.TopLevelTargetSkippedEvent;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import com.google.devtools.build.lib.analysis.ConfiguredAspect
 
 /**
  * Listens to the various status events of the top level targets/aspects.
- *
- * <p>WARNING: For consistency, the getter methods should only be used after the execution phase is
+ * 
+ * 
+ * WARNING: For consistency, the getter methods should only be used after the execution phase is
  * finished.
  */
-@ThreadSafety.ThreadSafe
-public class BuildResultListener {
-  // Also includes test targets.
-  private final Set<ConfiguredTarget> analyzedTargets = ConcurrentHashMap.newKeySet();
-  private final Set<ConfiguredTarget> analyzedTests = ConcurrentHashMap.newKeySet();
-  private final Map<AspectKey, ConfiguredAspect> analyzedAspects = Maps.newConcurrentMap();
-  // Also includes test targets.
-  private final Set<ConfiguredTarget> skippedTargets = ConcurrentHashMap.newKeySet();
-  // Also includes test targets.
-  private final Set<ConfiguredTargetKey> builtTargets = ConcurrentHashMap.newKeySet();
-  private final Set<AspectKey> builtAspects = ConcurrentHashMap.newKeySet();
+@com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+class BuildResultListener {
+    // Also includes test targets.
+    private val analyzedTargets: MutableSet<ConfiguredTarget?> = ConcurrentHashMap.newKeySet<ConfiguredTarget?>()
+    private val analyzedTests: MutableSet<ConfiguredTarget?> = ConcurrentHashMap.newKeySet<ConfiguredTarget?>()
+    private val analyzedAspects: MutableMap<AspectKey?, ConfiguredAspect?> =
+        com.google.common.collect.Maps.newConcurrentMap<AspectKey?, ConfiguredAspect?>()
 
-  @Subscribe
-  @AllowConcurrentEvents
-  public void addAnalyzedTarget(TopLevelTargetAnalyzedEvent event) {
-    analyzedTargets.add(event.configuredTarget());
-  }
+    // Also includes test targets.
+    private val skippedTargets: MutableSet<ConfiguredTarget?> = ConcurrentHashMap.newKeySet<ConfiguredTarget?>()
 
-  @Subscribe
-  @AllowConcurrentEvents
-  public void addAnalyzedTest(TestAnalyzedEvent event) {
-    analyzedTests.add(event.configuredTarget());
-  }
+    // Also includes test targets.
+    private val builtTargets: MutableSet<ConfiguredTargetKey?> = ConcurrentHashMap.newKeySet<ConfiguredTargetKey?>()
+    private val builtAspects: MutableSet<AspectKey?> = ConcurrentHashMap.newKeySet<AspectKey?>()
 
-  @Subscribe
-  @AllowConcurrentEvents
-  public void addAnalyzedAspect(AspectAnalyzedEvent event) {
-    analyzedAspects.put(event.aspectKey(), event.configuredAspect());
-  }
+    @com.google.common.eventbus.Subscribe
+    @com.google.common.eventbus.AllowConcurrentEvents
+    fun addAnalyzedTarget(event: TopLevelTargetAnalyzedEvent) {
+        analyzedTargets.add(event.configuredTarget)
+    }
 
-  @Subscribe
-  @AllowConcurrentEvents
-  public void addSkippedTarget(TopLevelTargetSkippedEvent event) {
-    skippedTargets.add(event.configuredTarget());
-  }
+    @com.google.common.eventbus.Subscribe
+    @com.google.common.eventbus.AllowConcurrentEvents
+    fun addAnalyzedTest(event: TestAnalyzedEvent) {
+        analyzedTests.add(event.configuredTarget)
+    }
 
-  @Subscribe
-  @AllowConcurrentEvents
-  public void addBuiltTarget(TopLevelTargetBuiltEvent event) {
-    builtTargets.add(event.configuredTargetKey());
-  }
+    @com.google.common.eventbus.Subscribe
+    @com.google.common.eventbus.AllowConcurrentEvents
+    fun addAnalyzedAspect(event: AspectAnalyzedEvent) {
+        analyzedAspects.put(event.aspectKey(), event.configuredAspect())
+    }
 
-  @Subscribe
-  @AllowConcurrentEvents
-  public void addBuiltAspect(AspectBuiltEvent event) {
-    builtAspects.add(event.aspectKey());
-  }
+    @com.google.common.eventbus.Subscribe
+    @com.google.common.eventbus.AllowConcurrentEvents
+    fun addSkippedTarget(event: TopLevelTargetSkippedEvent) {
+        skippedTargets.add(event.configuredTarget)
+    }
 
-  public ImmutableSet<ConfiguredTarget> getAnalyzedTargets() {
-    return ImmutableSet.copyOf(analyzedTargets);
-  }
+    @com.google.common.eventbus.Subscribe
+    @com.google.common.eventbus.AllowConcurrentEvents
+    fun addBuiltTarget(event: TopLevelTargetBuiltEvent) {
+        builtTargets.add(event.configuredTargetKey())
+    }
 
-  public ImmutableSet<ConfiguredTarget> getAnalyzedTests() {
-    return ImmutableSet.copyOf(analyzedTests);
-  }
+    @com.google.common.eventbus.Subscribe
+    @com.google.common.eventbus.AllowConcurrentEvents
+    fun addBuiltAspect(event: AspectBuiltEvent) {
+        builtAspects.add(event.aspectKey())
+    }
 
-  public ImmutableMap<AspectKey, ConfiguredAspect> getAnalyzedAspects() {
-    return ImmutableMap.copyOf(analyzedAspects);
-  }
+    fun getAnalyzedTargets(): com.google.common.collect.ImmutableSet<ConfiguredTarget?> {
+        return com.google.common.collect.ImmutableSet.copyOf<ConfiguredTarget?>(analyzedTargets)
+    }
 
-  public ImmutableSet<ConfiguredTarget> getSkippedTargets() {
-    return ImmutableSet.copyOf(skippedTargets);
-  }
+    fun getAnalyzedTests(): com.google.common.collect.ImmutableSet<ConfiguredTarget?> {
+        return com.google.common.collect.ImmutableSet.copyOf<ConfiguredTarget?>(analyzedTests)
+    }
 
-  public ImmutableSet<ConfiguredTargetKey> getBuiltTargets() {
-    return ImmutableSet.copyOf(builtTargets);
-  }
+    fun getAnalyzedAspects(): com.google.common.collect.ImmutableMap<AspectKey?, ConfiguredAspect?> {
+        return com.google.common.collect.ImmutableMap.copyOf<AspectKey?, ConfiguredAspect?>(analyzedAspects)
+    }
 
-  public ImmutableSet<AspectKey> getBuiltAspects() {
-    return ImmutableSet.copyOf(builtAspects);
-  }
+    fun getSkippedTargets(): com.google.common.collect.ImmutableSet<ConfiguredTarget?> {
+        return com.google.common.collect.ImmutableSet.copyOf<ConfiguredTarget?>(skippedTargets)
+    }
+
+    fun getBuiltTargets(): com.google.common.collect.ImmutableSet<ConfiguredTargetKey?> {
+        return com.google.common.collect.ImmutableSet.copyOf<ConfiguredTargetKey?>(builtTargets)
+    }
+
+    fun getBuiltAspects(): com.google.common.collect.ImmutableSet<AspectKey?> {
+        return com.google.common.collect.ImmutableSet.copyOf<AspectKey?>(builtAspects)
+    }
 }

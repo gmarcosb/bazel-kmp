@@ -11,13 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options;
+package com.google.devtools.common.options
 
-import com.google.devtools.common.options.OptionsParser.ArgAndFallbackData;
-import java.util.List;
-
-/** Defines a preprocessing service for the "args" string list that is executed before parsing. */
-@FunctionalInterface
-interface ArgsPreProcessor {
-  List<ArgAndFallbackData> preProcess(List<ArgAndFallbackData> args) throws OptionsParsingException;
+/** Defines a preprocessing service for the "args" string list that is executed before parsing.  */
+internal fun interface ArgsPreProcessor {
+    @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+    fun preProcess(args: MutableList<com.google.devtools.common.options.OptionsParser.ArgAndFallbackData?>?): MutableList<com.google.devtools.common.options.OptionsParser.ArgAndFallbackData?>?
 }

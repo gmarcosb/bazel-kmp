@@ -12,325 +12,305 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.errorprone.annotations.ForOverride;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.channels.SeekableByteChannel;
-import java.util.Collection;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.vfs.DigestHashFunction
+import com.google.devtools.build.lib.vfs.FileStatus
+import com.google.devtools.build.lib.vfs.PathFragment
+import com.google.devtools.build.lib.vfs.SymlinkTargetType
+import java.io.IOException
+import java.nio.channels.SeekableByteChannel
 
 /**
  * FileSystem implementation which delegates all operations to a provided instance with a
  * transformed path.
- *
- * <p>Please consider using {@link DelegateFileSystem} if you don't need to transform the paths.
+ * 
+ * 
+ * Please consider using [DelegateFileSystem] if you don't need to transform the paths.
  */
-public abstract class PathTransformingDelegateFileSystem extends FileSystem {
+abstract class PathTransformingDelegateFileSystem
+/**
+ * Constructs an instance with no initial delegate [FileSystem].
+ * 
+ * 
+ * [.setDelegateFs] must be called prior to any [FileSystem] operations.
+ */
+protected constructor(hashFunction: DigestHashFunction?) : com.google.devtools.build.lib.vfs.FileSystem(hashFunction) {
+    private var delegateFs: com.google.devtools.build.lib.vfs.FileSystem? = null
 
-  private FileSystem delegateFs;
+    /** Constructs an instance with an initial delegate [FileSystem].  */
+    protected constructor(delegateFs: com.google.devtools.build.lib.vfs.FileSystem) : this(delegateFs.getDigestFunction()) {
+        setDelegateFs(delegateFs)
+    }
 
-  /**
-   * Constructs an instance with no initial delegate {@link FileSystem}.
-   *
-   * <p>{@link #setDelegateFs} must be called prior to any {@link FileSystem} operations.
-   */
-  protected PathTransformingDelegateFileSystem(DigestHashFunction hashFunction) {
-    super(hashFunction);
-  }
+    fun getDelegateFs(): com.google.devtools.build.lib.vfs.FileSystem {
+        return com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.lib.vfs.FileSystem>(
+            delegateFs
+        )
+    }
 
-  /** Constructs an instance with an initial delegate {@link FileSystem}. */
-  protected PathTransformingDelegateFileSystem(FileSystem delegateFs) {
-    this(delegateFs.getDigestFunction());
-    setDelegateFs(delegateFs);
-  }
+    fun setDelegateFs(delegateFs: com.google.devtools.build.lib.vfs.FileSystem) {
+        com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.lib.vfs.FileSystem?>(delegateFs)
+        com.google.common.base.Preconditions.checkArgument(
+            delegateFs.getDigestFunction() == getDigestFunction(),
+            "Digest function mismatch: initialized with %s, but delegate %s has %s",
+            getDigestFunction(),
+            delegateFs,
+            delegateFs.getDigestFunction()
+        )
+        this.delegateFs = delegateFs
+        onDelegateFsChange(delegateFs)
+    }
 
-  public final FileSystem getDelegateFs() {
-    return checkNotNull(delegateFs);
-  }
+    @com.google.errorprone.annotations.ForOverride
+    protected fun onDelegateFsChange(delegateFs: com.google.devtools.build.lib.vfs.FileSystem?) {
+    }
 
-  public final void setDelegateFs(FileSystem delegateFs) {
-    checkNotNull(delegateFs);
-    checkArgument(
-        delegateFs.getDigestFunction().equals(getDigestFunction()),
-        "Digest function mismatch: initialized with %s, but delegate %s has %s",
-        getDigestFunction(),
-        delegateFs,
-        delegateFs.getDigestFunction());
-    this.delegateFs = delegateFs;
-    onDelegateFsChange(delegateFs);
-  }
+    override fun supportsModifications(path: PathFragment?): Boolean {
+        return delegateFs.supportsModifications(toDelegatePath(path))
+    }
 
-  @ForOverride
-  protected void onDelegateFsChange(FileSystem delegateFs) {}
+    override fun supportsSymbolicLinksNatively(path: PathFragment?): Boolean {
+        return delegateFs.supportsSymbolicLinksNatively(toDelegatePath(path))
+    }
 
-  @Override
-  public boolean supportsModifications(PathFragment path) {
-    return delegateFs.supportsModifications(toDelegatePath(path));
-  }
+    override fun supportsHardLinksNatively(path: PathFragment?): Boolean {
+        return delegateFs.supportsHardLinksNatively(toDelegatePath(path))
+    }
 
-  @Override
-  public boolean supportsSymbolicLinksNatively(PathFragment path) {
-    return delegateFs.supportsSymbolicLinksNatively(toDelegatePath(path));
-  }
+    override fun mayBeCaseOrNormalizationInsensitive(): Boolean {
+        return delegateFs.mayBeCaseOrNormalizationInsensitive()
+    }
 
-  @Override
-  public boolean supportsHardLinksNatively(PathFragment path) {
-    return delegateFs.supportsHardLinksNatively(toDelegatePath(path));
-  }
+    @Throws(IOException::class)
+    override fun createDirectory(path: PathFragment?): Boolean {
+        return delegateFs.createDirectory(toDelegatePath(path))
+    }
 
-  @Override
-  public boolean mayBeCaseOrNormalizationInsensitive() {
-    return delegateFs.mayBeCaseOrNormalizationInsensitive();
-  }
+    @Throws(IOException::class)
+    override fun createDirectoryAndParents(path: PathFragment?) {
+        delegateFs.createDirectoryAndParents(toDelegatePath(path))
+    }
 
-  @Override
-  public boolean createDirectory(PathFragment path) throws IOException {
-    return delegateFs.createDirectory(toDelegatePath(path));
-  }
+    @Throws(IOException::class)
+    override fun getFileSize(path: PathFragment?, followSymlinks: Boolean): Long {
+        return delegateFs.getFileSize(toDelegatePath(path), followSymlinks)
+    }
 
-  @Override
-  public void createDirectoryAndParents(PathFragment path) throws IOException {
-    delegateFs.createDirectoryAndParents(toDelegatePath(path));
-  }
+    @Throws(IOException::class)
+    override fun delete(path: PathFragment?): Boolean {
+        return delegateFs.delete(toDelegatePath(path))
+    }
 
-  @Override
-  public long getFileSize(PathFragment path, boolean followSymlinks) throws IOException {
-    return delegateFs.getFileSize(toDelegatePath(path), followSymlinks);
-  }
+    @Throws(IOException::class)
+    override fun getLastModifiedTime(path: PathFragment?, followSymlinks: Boolean): Long {
+        return delegateFs.getLastModifiedTime(toDelegatePath(path), followSymlinks)
+    }
 
-  @Override
-  public boolean delete(PathFragment path) throws IOException {
-    return delegateFs.delete(toDelegatePath(path));
-  }
+    @Throws(IOException::class)
+    override fun setLastModifiedTime(path: PathFragment?, newTime: Long) {
+        delegateFs.setLastModifiedTime(toDelegatePath(path), newTime)
+    }
 
-  @Override
-  public long getLastModifiedTime(PathFragment path, boolean followSymlinks) throws IOException {
-    return delegateFs.getLastModifiedTime(toDelegatePath(path), followSymlinks);
-  }
+    override fun isSymbolicLink(path: PathFragment?): Boolean {
+        return delegateFs.isSymbolicLink(toDelegatePath(path))
+    }
 
-  @Override
-  public void setLastModifiedTime(PathFragment path, long newTime) throws IOException {
-    delegateFs.setLastModifiedTime(toDelegatePath(path), newTime);
-  }
+    override fun isDirectory(path: PathFragment?, followSymlinks: Boolean): Boolean {
+        return delegateFs.isDirectory(toDelegatePath(path), followSymlinks)
+    }
 
-  @Override
-  public boolean isSymbolicLink(PathFragment path) {
-    return delegateFs.isSymbolicLink(toDelegatePath(path));
-  }
+    override fun isFile(path: PathFragment?, followSymlinks: Boolean): Boolean {
+        return delegateFs.isFile(toDelegatePath(path), followSymlinks)
+    }
 
-  @Override
-  public boolean isDirectory(PathFragment path, boolean followSymlinks) {
-    return delegateFs.isDirectory(toDelegatePath(path), followSymlinks);
-  }
+    override fun isSpecialFile(path: PathFragment?, followSymlinks: Boolean): Boolean {
+        return delegateFs.isSpecialFile(toDelegatePath(path), followSymlinks)
+    }
 
-  @Override
-  public boolean isFile(PathFragment path, boolean followSymlinks) {
-    return delegateFs.isFile(toDelegatePath(path), followSymlinks);
-  }
+    @Throws(IOException::class)
+    override fun createSymbolicLink(
+        linkPath: PathFragment?, targetFragment: PathFragment?, type: SymlinkTargetType?
+    ) {
+        delegateFs.createSymbolicLink(toDelegatePath(linkPath), targetFragment, type)
+    }
 
-  @Override
-  public boolean isSpecialFile(PathFragment path, boolean followSymlinks) {
-    return delegateFs.isSpecialFile(toDelegatePath(path), followSymlinks);
-  }
+    @Throws(IOException::class)
+    override fun readSymbolicLink(path: PathFragment?): PathFragment? {
+        return fromDelegatePath(delegateFs.readSymbolicLink(toDelegatePath(path)))
+    }
 
-  @Override
-  public void createSymbolicLink(
-      PathFragment linkPath, PathFragment targetFragment, SymlinkTargetType type)
-      throws IOException {
-    delegateFs.createSymbolicLink(toDelegatePath(linkPath), targetFragment, type);
-  }
+    override fun exists(path: PathFragment?, followSymlinks: Boolean): Boolean {
+        return delegateFs.exists(toDelegatePath(path), followSymlinks)
+    }
 
-  @Override
-  public PathFragment readSymbolicLink(PathFragment path) throws IOException {
-    return fromDelegatePath(delegateFs.readSymbolicLink(toDelegatePath(path)));
-  }
+    override fun exists(path: PathFragment?): Boolean {
+        return delegateFs.exists(toDelegatePath(path))
+    }
 
-  @Override
-  public boolean exists(PathFragment path, boolean followSymlinks) {
-    return delegateFs.exists(toDelegatePath(path), followSymlinks);
-  }
+    @Throws(IOException::class)
+    override fun getDirectoryEntries(path: PathFragment?): MutableCollection<String?>? {
+        return delegateFs.getDirectoryEntries(toDelegatePath(path))
+    }
 
-  @Override
-  public boolean exists(PathFragment path) {
-    return delegateFs.exists(toDelegatePath(path));
-  }
+    @Throws(IOException::class)
+    override fun isReadable(path: PathFragment?): Boolean {
+        return delegateFs.isReadable(toDelegatePath(path))
+    }
 
-  @Override
-  public Collection<String> getDirectoryEntries(PathFragment path) throws IOException {
-    return delegateFs.getDirectoryEntries(toDelegatePath(path));
-  }
+    @Throws(IOException::class)
+    override fun setReadable(path: PathFragment?, readable: Boolean) {
+        delegateFs.setReadable(toDelegatePath(path), readable)
+    }
 
-  @Override
-  public boolean isReadable(PathFragment path) throws IOException {
-    return delegateFs.isReadable(toDelegatePath(path));
-  }
+    @Throws(IOException::class)
+    override fun isWritable(path: PathFragment?): Boolean {
+        return delegateFs.isWritable(toDelegatePath(path))
+    }
 
-  @Override
-  public void setReadable(PathFragment path, boolean readable) throws IOException {
-    delegateFs.setReadable(toDelegatePath(path), readable);
-  }
+    @Throws(IOException::class)
+    override fun setWritable(path: PathFragment?, writable: Boolean) {
+        delegateFs.setWritable(toDelegatePath(path), writable)
+    }
 
-  @Override
-  public boolean isWritable(PathFragment path) throws IOException {
-    return delegateFs.isWritable(toDelegatePath(path));
-  }
+    @Throws(IOException::class)
+    override fun isExecutable(path: PathFragment?): Boolean {
+        return delegateFs.isExecutable(toDelegatePath(path))
+    }
 
-  @Override
-  public void setWritable(PathFragment path, boolean writable) throws IOException {
-    delegateFs.setWritable(toDelegatePath(path), writable);
-  }
+    @Throws(IOException::class)
+    override fun setExecutable(path: PathFragment?, executable: Boolean) {
+        delegateFs.setExecutable(toDelegatePath(path), executable)
+    }
 
-  @Override
-  public boolean isExecutable(PathFragment path) throws IOException {
-    return delegateFs.isExecutable(toDelegatePath(path));
-  }
+    @Throws(IOException::class)
+    override fun getInputStream(path: PathFragment?): java.io.InputStream? {
+        return delegateFs.getInputStream(toDelegatePath(path))
+    }
 
-  @Override
-  public void setExecutable(PathFragment path, boolean executable) throws IOException {
-    delegateFs.setExecutable(toDelegatePath(path), executable);
-  }
+    @Throws(IOException::class)
+    override fun createReadWriteByteChannel(path: PathFragment?): SeekableByteChannel? {
+        return delegateFs.createReadWriteByteChannel(toDelegatePath(path))
+    }
 
-  @Override
-  public InputStream getInputStream(PathFragment path) throws IOException {
-    return delegateFs.getInputStream(toDelegatePath(path));
-  }
+    @Throws(IOException::class)
+    override fun getOutputStream(path: PathFragment?, append: Boolean, internal: Boolean): java.io.OutputStream? {
+        return delegateFs.getOutputStream(toDelegatePath(path), append, internal)
+    }
 
-  @Override
-  public SeekableByteChannel createReadWriteByteChannel(PathFragment path) throws IOException {
-    return delegateFs.createReadWriteByteChannel(toDelegatePath(path));
-  }
+    @Throws(IOException::class)
+    override fun renameTo(sourcePath: PathFragment?, targetPath: PathFragment?) {
+        delegateFs.renameTo(toDelegatePath(sourcePath), toDelegatePath(targetPath))
+    }
 
-  @Override
-  public OutputStream getOutputStream(PathFragment path, boolean append, boolean internal)
-      throws IOException {
-    return delegateFs.getOutputStream(toDelegatePath(path), append, internal);
-  }
+    @Throws(IOException::class)
+    override fun createFSDependentHardLink(linkPath: PathFragment?, originalPath: PathFragment?) {
+        delegateFs.createFSDependentHardLink(toDelegatePath(linkPath), toDelegatePath(originalPath))
+    }
 
-  @Override
-  public void renameTo(PathFragment sourcePath, PathFragment targetPath) throws IOException {
-    delegateFs.renameTo(toDelegatePath(sourcePath), toDelegatePath(targetPath));
-  }
+    override fun getFileSystemType(path: PathFragment?): String? {
+        return delegateFs.getFileSystemType(toDelegatePath(path))
+    }
 
-  @Override
-  public void createFSDependentHardLink(PathFragment linkPath, PathFragment originalPath)
-      throws IOException {
-    delegateFs.createFSDependentHardLink(toDelegatePath(linkPath), toDelegatePath(originalPath));
-  }
+    @Throws(IOException::class)
+    override fun deleteTree(path: PathFragment?) {
+        delegateFs.deleteTree(toDelegatePath(path))
+    }
 
-  @Override
-  public String getFileSystemType(PathFragment path) {
-    return delegateFs.getFileSystemType(toDelegatePath(path));
-  }
+    @Throws(IOException::class)
+    override fun deleteTreesBelow(dir: PathFragment?) {
+        delegateFs.deleteTreesBelow(toDelegatePath(dir))
+    }
 
-  @Override
-  public void deleteTree(PathFragment path) throws IOException {
-    delegateFs.deleteTree(toDelegatePath(path));
-  }
+    @Throws(IOException::class)
+    override fun getxattr(path: PathFragment?, name: String?, followSymlinks: Boolean): ByteArray? {
+        return delegateFs.getxattr(toDelegatePath(path), name, followSymlinks)
+    }
 
-  @Override
-  public void deleteTreesBelow(PathFragment dir) throws IOException {
-    delegateFs.deleteTreesBelow(toDelegatePath(dir));
-  }
+    @Throws(IOException::class)
+    override fun getFastDigest(path: PathFragment?): ByteArray? {
+        return delegateFs.getFastDigest(toDelegatePath(path))
+    }
 
-  @Override
-  public byte[] getxattr(PathFragment path, String name, boolean followSymlinks)
-      throws IOException {
-    return delegateFs.getxattr(toDelegatePath(path), name, followSymlinks);
-  }
+    @Throws(IOException::class)
+    override fun getDigest(path: PathFragment?): ByteArray? {
+        return delegateFs.getDigest(toDelegatePath(path))
+    }
 
-  @Override
-  public byte[] getFastDigest(PathFragment path) throws IOException {
-    return delegateFs.getFastDigest(toDelegatePath(path));
-  }
+    @Throws(IOException::class)
+    override fun resolveOneLink(path: PathFragment?): PathFragment? {
+        return delegateFs.resolveOneLink(toDelegatePath(path))
+    }
 
-  @Override
-  public byte[] getDigest(PathFragment path) throws IOException {
-    return delegateFs.getDigest(toDelegatePath(path));
-  }
+    @Throws(IOException::class)
+    override fun resolveSymbolicLinks(path: PathFragment?): com.google.devtools.build.lib.vfs.Path? {
+        return getPath(
+            fromDelegatePath(delegateFs.resolveSymbolicLinks(toDelegatePath(path)).asFragment())
+        )
+    }
 
-  @Override
-  public PathFragment resolveOneLink(PathFragment path) throws IOException {
-    return delegateFs.resolveOneLink(toDelegatePath(path));
-  }
+    @Throws(IOException::class)
+    override fun stat(path: PathFragment?, followSymlinks: Boolean): FileStatus? {
+        return delegateFs.stat(toDelegatePath(path), followSymlinks)
+    }
 
-  @Override
-  public Path resolveSymbolicLinks(PathFragment path) throws IOException {
-    return getPath(
-        fromDelegatePath(delegateFs.resolveSymbolicLinks(toDelegatePath(path)).asFragment()));
-  }
+    override fun statNullable(path: PathFragment?, followSymlinks: Boolean): FileStatus? {
+        return delegateFs.statNullable(toDelegatePath(path), followSymlinks)
+    }
 
-  @Override
-  public FileStatus stat(PathFragment path, boolean followSymlinks) throws IOException {
-    return delegateFs.stat(toDelegatePath(path), followSymlinks);
-  }
+    @Throws(IOException::class)
+    override fun statIfFound(path: PathFragment?, followSymlinks: Boolean): FileStatus? {
+        return delegateFs.statIfFound(toDelegatePath(path), followSymlinks)
+    }
 
-  @Override
-  public FileStatus statNullable(PathFragment path, boolean followSymlinks) {
-    return delegateFs.statNullable(toDelegatePath(path), followSymlinks);
-  }
+    @Throws(IOException::class)
+    override fun readSymbolicLinkUnchecked(path: PathFragment?): PathFragment? {
+        return delegateFs.readSymbolicLinkUnchecked(toDelegatePath(path))
+    }
 
-  @Override
-  public FileStatus statIfFound(PathFragment path, boolean followSymlinks) throws IOException {
-    return delegateFs.statIfFound(toDelegatePath(path), followSymlinks);
-  }
+    @Throws(IOException::class)
+    override fun readdir(
+        path: PathFragment?,
+        followSymlinks: Boolean
+    ): MutableCollection<com.google.devtools.build.lib.vfs.Dirent?>? {
+        return delegateFs.readdir(toDelegatePath(path), followSymlinks)
+    }
 
-  @Override
-  public PathFragment readSymbolicLinkUnchecked(PathFragment path) throws IOException {
-    return delegateFs.readSymbolicLinkUnchecked(toDelegatePath(path));
-  }
+    @Throws(IOException::class)
+    override fun chmod(path: PathFragment?, mode: Int) {
+        delegateFs.chmod(toDelegatePath(path), mode)
+    }
 
-  @Override
-  public Collection<Dirent> readdir(PathFragment path, boolean followSymlinks) throws IOException {
-    return delegateFs.readdir(toDelegatePath(path), followSymlinks);
-  }
+    @Throws(IOException::class)
+    override fun createHardLink(linkPath: PathFragment?, originalPath: PathFragment?) {
+        delegateFs.createHardLink(toDelegatePath(linkPath), toDelegatePath(originalPath))
+    }
 
-  @Override
-  public void chmod(PathFragment path, int mode) throws IOException {
-    delegateFs.chmod(toDelegatePath(path), mode);
-  }
+    override fun prefetchPackageAsync(path: PathFragment?, maxDirs: Int) {
+        delegateFs.prefetchPackageAsync(toDelegatePath(path), maxDirs)
+    }
 
-  @Override
-  public void createHardLink(PathFragment linkPath, PathFragment originalPath) throws IOException {
-    delegateFs.createHardLink(toDelegatePath(linkPath), toDelegatePath(originalPath));
-  }
+    override fun getIoFile(path: PathFragment?): java.io.File? {
+        return delegateFs.getIoFile(toDelegatePath(path))
+    }
 
-  @Override
-  public void prefetchPackageAsync(PathFragment path, int maxDirs) {
-    delegateFs.prefetchPackageAsync(toDelegatePath(path), maxDirs);
-  }
+    override fun getNioPath(path: PathFragment?): java.nio.file.Path? {
+        return delegateFs.getNioPath(toDelegatePath(path))
+    }
 
-  @Nullable
-  @Override
-  public File getIoFile(PathFragment path) {
-    return delegateFs.getIoFile(toDelegatePath(path));
-  }
+    @Throws(IOException::class)
+    override fun createTempDirectory(parent: PathFragment?, prefix: String?): PathFragment? {
+        return delegateFs.createTempDirectory(toDelegatePath(parent), prefix)
+    }
 
-  @Nullable
-  @Override
-  public java.nio.file.Path getNioPath(PathFragment path) {
-    return delegateFs.getNioPath(toDelegatePath(path));
-  }
+    /** Transform original path to a different one to be used with the `delegateFs`.  */
+    protected abstract fun toDelegatePath(path: PathFragment?): PathFragment?
 
-  @Override
-  public PathFragment createTempDirectory(PathFragment parent, String prefix) throws IOException {
-    return delegateFs.createTempDirectory(toDelegatePath(parent), prefix);
-  }
-
-  /** Transform original path to a different one to be used with the {@code delegateFs}. */
-  protected abstract PathFragment toDelegatePath(PathFragment path);
-
-  /**
-   * Transform a path from one to be used with {@code delegateFs} to original one.
-   *
-   * <p>We expect that for each {@code path}: {@code
-   * fromDelegatePath(toDelegatePath(path)).equals(path)}.
-   */
-  protected abstract PathFragment fromDelegatePath(PathFragment delegatePath);
+    /**
+     * Transform a path from one to be used with `delegateFs` to original one.
+     * 
+     * 
+     * We expect that for each `path`: `fromDelegatePath(toDelegatePath(path)).equals(path)`.
+     */
+    protected abstract fun fromDelegatePath(delegatePath: PathFragment?): PathFragment?
 }

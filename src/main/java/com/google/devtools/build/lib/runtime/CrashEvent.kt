@@ -11,12 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
 /**
- * Posted during {@link BlazeRuntime#cleanUpForCrash} just prior to {@link CommandCompleteEvent}.
+ * Posted during [BlazeRuntime.cleanUpForCrash] just prior to [CommandCompleteEvent].
  */
-public final class CrashEvent {
-
-  CrashEvent() {}
-}
+class CrashEvent internal constructor()

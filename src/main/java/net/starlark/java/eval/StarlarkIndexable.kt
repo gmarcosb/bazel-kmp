@@ -11,44 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package net.starlark.java.eval;
+package net.starlark.java.eval
 
 /**
- * A Starlark value that support indexed access ({@code object[key]}) and membership tests ({@code
- * key in object}).
- *
- * <p>Implementations of this interface come in three flavors: map-like, sequence-like, and
+ * A Starlark value that support indexed access (`object[key]`) and membership tests (`key in object`).
+ * 
+ * 
+ * Implementations of this interface come in three flavors: map-like, sequence-like, and
  * string-like.
- *
- * <ul>
- *   <li>For map-like objects, 'x in y' should return True when 'y[x]' is valid; otherwise, it
- *       should either be False or a failure. Examples: dict.
- *   <li>For sequence-like objects, 'x in y' should return True when 'x == y[i]' for some integer
- *       'i'; otherwise, it should either be False or a failure. Examples: list, tuple, and string
- *       (which, notably, is not a {@link Sequence}).
- *   <li>For string-like objects, 'x in y' should return True when 'x' is a substring of 'y', i.e.
- *       'x[i] == y[i + n]' for some 'n' and all i in [0, len(x)). Examples: string.
- * </ul>
+ * 
+ * 
+ *  * For map-like objects, 'x in y' should return True when 'y[x]' is valid; otherwise, it
+ * should either be False or a failure. Examples: dict.
+ *  * For sequence-like objects, 'x in y' should return True when 'x == y[i]' for some integer
+ * 'i'; otherwise, it should either be False or a failure. Examples: list, tuple, and string
+ * (which, notably, is not a [Sequence]).
+ *  * For string-like objects, 'x in y' should return True when 'x' is a substring of 'y', i.e.
+ * 'x[i] == y[i + n]' for some 'n' and all i in [0, len(x)). Examples: string.
+ * 
  */
-public interface StarlarkIndexable extends StarlarkMembershipTestable {
+interface StarlarkIndexable : net.starlark.java.eval.StarlarkMembershipTestable {
+    /** Returns the value associated with the given key.  */
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun getIndex(semantics: net.starlark.java.eval.StarlarkSemantics?, key: Any?): Any?
 
-  /** Returns the value associated with the given key. */
-  Object getIndex(StarlarkSemantics semantics, Object key) throws EvalException;
+    /**
+     * A variant of [StarlarkIndexable] that also provides a StarlarkThread instance on method
+     * calls.
+     */
+    // TODO(brandjon): Consider replacing this subinterface by changing StarlarkIndexable's methods'
+    // signatures to take StarlarkThread in place of StarlarkSemantics.
+    interface Threaded {
+        /** {@see StarlarkIndexable.getIndex}  */
+        @Throws(net.starlark.java.eval.EvalException::class)
+        fun getIndex(
+            starlarkThread: net.starlark.java.eval.StarlarkThread?,
+            semantics: net.starlark.java.eval.StarlarkSemantics?,
+            key: Any?
+        ): Any?
 
-  /**
-   * A variant of {@link StarlarkIndexable} that also provides a StarlarkThread instance on method
-   * calls.
-   */
-  // TODO(brandjon): Consider replacing this subinterface by changing StarlarkIndexable's methods'
-  // signatures to take StarlarkThread in place of StarlarkSemantics.
-  interface Threaded {
-    /** {@see StarlarkIndexable.getIndex} */
-    Object getIndex(StarlarkThread starlarkThread, StarlarkSemantics semantics, Object key)
-        throws EvalException;
-
-    /** {@see StarlarkIndexable.containsKey} */
-    boolean containsKey(StarlarkThread starlarkThread, StarlarkSemantics semantics, Object key)
-        throws EvalException;
-  }
+        /** {@see StarlarkIndexable.containsKey}  */
+        @Throws(net.starlark.java.eval.EvalException::class)
+        fun containsKey(
+            starlarkThread: net.starlark.java.eval.StarlarkThread?,
+            semantics: net.starlark.java.eval.StarlarkSemantics?,
+            key: Any?
+        ): Boolean
+    }
 }

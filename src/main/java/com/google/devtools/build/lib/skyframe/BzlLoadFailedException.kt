@@ -11,62 +11,67 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.StarlarkLoading;
-import com.google.devtools.build.lib.server.FailureDetails.StarlarkLoading.Code;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.skyframe.SkyFunctionException.Transience;
+import com.google.devtools.build.lib.server.FailureDetails.FailureDetail
 
-/** Exceptions from {@link BzlLoadFunction}. */
-public final class BzlLoadFailedException extends AbstractSaneAnalysisException {
-  private final Transience transience;
-  private final DetailedExitCode detailedExitCode;
+/** Exceptions from [BzlLoadFunction].  */
+class BzlLoadFailedException : AbstractSaneAnalysisException {
+    private val transience: Transience?
+    private val detailedExitCode: DetailedExitCode?
 
-  private BzlLoadFailedException(
-      String errorMessage, DetailedExitCode detailedExitCode, Transience transience) {
-    super(errorMessage);
-    this.transience = transience;
-    this.detailedExitCode = detailedExitCode;
-  }
+    private constructor(errorMessage: String?, detailedExitCode: DetailedExitCode?, transience: Transience?) : super(
+        errorMessage
+    ) {
+        this.transience = transience
+        this.detailedExitCode = detailedExitCode
+    }
 
-  BzlLoadFailedException(String errorMessage, DetailedExitCode detailedExitCode) {
-    this(errorMessage, detailedExitCode, Transience.PERSISTENT);
-  }
+    internal constructor(errorMessage: String?, detailedExitCode: DetailedExitCode?) : this(
+        errorMessage,
+        detailedExitCode,
+        Transience.PERSISTENT
+    )
 
-  BzlLoadFailedException(
-      String errorMessage,
-      DetailedExitCode detailedExitCode,
-      Exception cause,
-      Transience transience) {
-    super(errorMessage, cause);
-    this.transience = transience;
-    this.detailedExitCode = detailedExitCode;
-  }
+    internal constructor(
+        errorMessage: String?,
+        detailedExitCode: DetailedExitCode?,
+        cause: java.lang.Exception?,
+        transience: Transience?
+    ) : super(errorMessage, cause) {
+        this.transience = transience
+        this.detailedExitCode = detailedExitCode
+    }
 
-  BzlLoadFailedException(String errorMessage, Code code) {
-    this(errorMessage, createDetailedExitCode(errorMessage, code), Transience.PERSISTENT);
-  }
+    internal constructor(errorMessage: String?, code: Code?) : this(
+        errorMessage,
+        createDetailedExitCode(errorMessage, code),
+        Transience.PERSISTENT
+    )
 
-  BzlLoadFailedException(String errorMessage, Code code, Exception cause, Transience transience) {
-    this(errorMessage, createDetailedExitCode(errorMessage, code), cause, transience);
-  }
+    internal constructor(
+        errorMessage: String?,
+        code: Code?,
+        cause: java.lang.Exception?,
+        transience: Transience?
+    ) : this(errorMessage, createDetailedExitCode(errorMessage, code), cause, transience)
 
-  Transience getTransience() {
-    return transience;
-  }
+    fun getTransience(): Transience? {
+        return transience
+    }
 
-  @Override
-  public DetailedExitCode getDetailedExitCode() {
-    return detailedExitCode;
-  }
+    override fun getDetailedExitCode(): DetailedExitCode? {
+        return detailedExitCode
+    }
 
-  static DetailedExitCode createDetailedExitCode(String message, Code code) {
-    return DetailedExitCode.of(
-        FailureDetail.newBuilder()
-            .setMessage(message)
-            .setStarlarkLoading(StarlarkLoading.newBuilder().setCode(code))
-            .build());
-  }
+    companion object {
+        fun createDetailedExitCode(message: String?, code: Code?): DetailedExitCode {
+            return DetailedExitCode.of(
+                FailureDetail.newBuilder()
+                    .setMessage(message)
+                    .setStarlarkLoading(StarlarkLoading.newBuilder().setCode(code))
+                    .build()
+            )
+        }
+    }
 }

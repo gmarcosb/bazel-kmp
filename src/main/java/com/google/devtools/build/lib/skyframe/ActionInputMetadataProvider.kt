@@ -11,147 +11,114 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Suppliers;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.ActionInputMap;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.FilesetOutputSymlink;
-import com.google.devtools.build.lib.actions.FilesetOutputTree;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.RunfilesArtifactValue;
-import com.google.devtools.build.lib.actions.RunfilesTree;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionInput
 
 /**
  * This class stores the metadata for the inputs of an action.
- *
- * <p>It is constructed during the preparation for the execution of the action and garbage collected
+ * 
+ * 
+ * It is constructed during the preparation for the execution of the action and garbage collected
  * once the action finishes executing.
  */
-public final class ActionInputMetadataProvider implements InputMetadataProvider {
+class ActionInputMetadataProvider(inputArtifactData: ActionInputMap) : InputMetadataProvider {
+    private val inputArtifactData: ActionInputMap
 
-  private final ActionInputMap inputArtifactData;
+    /**
+     * Supports looking up a [FilesetOutputSymlink] by the target's exec path.
+     * 
+     * 
+     * Initialized lazily because it can consume significant memory and may never be needed, for
+     * example if there is an action cache hit.
+     */
+    private val filesetMapping: java.util.function.Supplier<com.google.common.collect.ImmutableMap<String?, FilesetOutputSymlink?>?>
 
-  /**
-   * Supports looking up a {@link FilesetOutputSymlink} by the target's exec path.
-   *
-   * <p>Initialized lazily because it can consume significant memory and may never be needed, for
-   * example if there is an action cache hit.
-   */
-  private final Supplier<ImmutableMap<String, FilesetOutputSymlink>> filesetMapping;
-
-  public ActionInputMetadataProvider(ActionInputMap inputArtifactData) {
-    this.inputArtifactData = inputArtifactData;
-    this.filesetMapping =
-        Suppliers.memoize(() -> createFilesetMapping(inputArtifactData.getFilesets()));
-  }
-
-  private static ImmutableMap<String, FilesetOutputSymlink> createFilesetMapping(
-      Map<Artifact, FilesetOutputTree> filesets) {
-    Map<String, FilesetOutputSymlink> filesetMap = new HashMap<>();
-    for (FilesetOutputTree filesetOutput : filesets.values()) {
-      for (FilesetOutputSymlink link : filesetOutput.symlinks()) {
-        filesetMap.put(link.target().getExecPathString(), link);
-      }
+    init {
+        this.inputArtifactData = inputArtifactData
+        this.filesetMapping =
+            com.google.common.base.Suppliers.memoize<com.google.common.collect.ImmutableMap<String?, FilesetOutputSymlink?>?>(
+                com.google.common.base.Supplier { createFilesetMapping(inputArtifactData.getFilesets()) })
     }
-    return ImmutableMap.copyOf(filesetMap);
-  }
 
-  @Nullable
-  @Override
-  public FileArtifactValue getInputMetadataChecked(ActionInput actionInput) throws IOException {
-    if (!(actionInput instanceof Artifact artifact)) {
-      return null;
+    @Throws(IOException::class)
+    public override fun getInputMetadataChecked(actionInput: ActionInput?): FileArtifactValue? {
+        if (actionInput !is Artifact) {
+            return null
+        }
+        val value: FileArtifactValue? = inputArtifactData.getInputMetadataChecked(actionInput)
+        if (value != null) {
+            return checkExists(value, actionInput)
+        }
+        val filesetLink: FilesetOutputSymlink? = filesetMapping.get().get(actionInput.getExecPathString())
+        if (filesetLink != null) {
+            return filesetLink.metadata()
+        }
+        return null
     }
-    FileArtifactValue value = inputArtifactData.getInputMetadataChecked(artifact);
-    if (value != null) {
-      return checkExists(value, artifact);
+
+    public override fun getTreeMetadata(actionInput: ActionInput?): TreeArtifactValue? {
+        return inputArtifactData.getTreeMetadata(actionInput)
     }
-    FilesetOutputSymlink filesetLink = filesetMapping.get().get(artifact.getExecPathString());
-    if (filesetLink != null) {
-      return filesetLink.metadata();
+
+    public override fun getEnclosingTreeMetadata(execPath: PathFragment?): TreeArtifactValue? {
+        return inputArtifactData.getEnclosingTreeMetadata(execPath)
     }
-    return null;
-  }
 
-  @Nullable
-  @Override
-  public TreeArtifactValue getTreeMetadata(ActionInput actionInput) {
-    return inputArtifactData.getTreeMetadata(actionInput);
-  }
-
-  @Nullable
-  @Override
-  public TreeArtifactValue getEnclosingTreeMetadata(PathFragment execPath) {
-    return inputArtifactData.getEnclosingTreeMetadata(execPath);
-  }
-
-  @Nullable
-  @Override
-  public FilesetOutputTree getFileset(ActionInput input) {
-    return inputArtifactData.getFileset(input);
-  }
-
-  @Override
-  public Map<Artifact, FilesetOutputTree> getFilesets() {
-    return inputArtifactData.getFilesets();
-  }
-
-  @Nullable
-  @Override
-  public RunfilesArtifactValue getRunfilesMetadata(ActionInput input) {
-    return inputArtifactData.getRunfilesMetadata(input);
-  }
-
-  @Override
-  public ImmutableList<RunfilesTree> getRunfilesTrees() {
-    return inputArtifactData.getRunfilesTrees();
-  }
-
-  @Nullable
-  @Override
-  public ActionInput getInput(PathFragment execPath) {
-    ActionInput input = inputArtifactData.getInput(execPath);
-    if (input != null) {
-      return input;
+    public override fun getFileset(input: ActionInput?): FilesetOutputTree? {
+        return inputArtifactData.getFileset(input)
     }
-    FilesetOutputSymlink filesetLink = filesetMapping.get().get(execPath.getPathString());
-    if (filesetLink != null) {
-      return filesetLink.target();
-    }
-    return null;
-  }
 
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("inputArtifactDataSize", inputArtifactData.sizeForDebugging())
-        .toString();
-  }
+    val filesets: MutableMap<Artifact, FilesetOutputTree>
+        get() = inputArtifactData.getFilesets()
 
-  /**
-   * If {@code value} represents an existing file, returns it as is, otherwise throws {@link
-   * FileNotFoundException}.
-   */
-  private static FileArtifactValue checkExists(FileArtifactValue value, Artifact artifact)
-      throws FileNotFoundException {
-    if (FileArtifactValue.MISSING_FILE_MARKER.equals(value)) {
-      throw new FileNotFoundException(artifact + " does not exist");
+    public override fun getRunfilesMetadata(input: ActionInput?): RunfilesArtifactValue? {
+        return inputArtifactData.getRunfilesMetadata(input)
     }
-    return checkNotNull(value, artifact);
-  }
+
+    val runfilesTrees: com.google.common.collect.ImmutableList<RunfilesTree?>
+        get() = inputArtifactData.getRunfilesTrees()
+
+    public override fun getInput(execPath: PathFragment): ActionInput? {
+        val input: ActionInput? = inputArtifactData.getInput(execPath)
+        if (input != null) {
+            return input
+        }
+        val filesetLink: FilesetOutputSymlink? = filesetMapping.get().get(execPath.getPathString())
+        if (filesetLink != null) {
+            return filesetLink.target()
+        }
+        return null
+    }
+
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("inputArtifactDataSize", inputArtifactData.sizeForDebugging())
+            .toString()
+    }
+
+    companion object {
+        private fun createFilesetMapping(
+            filesets: MutableMap<Artifact?, FilesetOutputTree>
+        ): com.google.common.collect.ImmutableMap<String?, FilesetOutputSymlink?> {
+            val filesetMap: MutableMap<String?, FilesetOutputSymlink?> = HashMap<String?, FilesetOutputSymlink?>()
+            for (filesetOutput in filesets.values()) {
+                for (link in filesetOutput.symlinks()) {
+                    filesetMap.put(link.target().getExecPathString(), link)
+                }
+            }
+            return com.google.common.collect.ImmutableMap.copyOf<String?, FilesetOutputSymlink?>(filesetMap)
+        }
+
+        /**
+         * If `value` represents an existing file, returns it as is, otherwise throws [ ].
+         */
+        @Throws(FileNotFoundException::class)
+        private fun checkExists(value: FileArtifactValue?, artifact: Artifact?): FileArtifactValue? {
+            if (FileArtifactValue.MISSING_FILE_MARKER.equals(value)) {
+                throw FileNotFoundException(artifact.toString() + " does not exist")
+            }
+            return com.google.common.base.Preconditions.checkNotNull<FileArtifactValue?>(value, artifact)
+        }
+    }
 }

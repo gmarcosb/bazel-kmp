@@ -11,156 +11,139 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.analysis.TopLevelArtifactContext;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.util.Objects;
+import com.google.devtools.build.lib.actions.ActionLookupKey
 
 /**
- * Wraps an {@link ActionLookupKey}. The evaluation of this SkyKey is the entry point of analyzing
- * the {@link ActionLookupKey} and executing the associated actions.
+ * Wraps an [ActionLookupKey]. The evaluation of this SkyKey is the entry point of analyzing
+ * the [ActionLookupKey] and executing the associated actions.
  */
-public final class BuildDriverKey implements SkyKey {
-  private final ActionLookupKey actionLookupKey;
-  private final TopLevelArtifactContext topLevelArtifactContext;
-  private final boolean explicitlyRequested;
-  private final boolean skipIncompatibleExplicitTargets;
-  private final boolean isTopLevelAspectDriver;
+class BuildDriverKey private constructor(
+    actionLookupKey: ActionLookupKey,
+    topLevelArtifactContext: TopLevelArtifactContext,
+    explicitlyRequested: Boolean,
+    skipIncompatibleExplicitTargets: Boolean,
+    extraActionTopLevelOnly: Boolean,
+    keepGoing: Boolean,
+    isTopLevelAspectDriver: Boolean
+) : SkyKey {
+    private val actionLookupKey: ActionLookupKey
+    private val topLevelArtifactContext: TopLevelArtifactContext
+    val isExplicitlyRequested: Boolean
+    private val skipIncompatibleExplicitTargets: Boolean
+    val isTopLevelAspectDriver: Boolean
 
-  private final boolean extraActionTopLevelOnly;
+    val isExtraActionTopLevelOnly: Boolean
 
-  // This key is created anew each build, so it's fine to carry this information here.
-  private final boolean keepGoing;
+    // This key is created anew each build, so it's fine to carry this information here.
+    private val keepGoing: Boolean
 
-  private BuildDriverKey(
-      ActionLookupKey actionLookupKey,
-      TopLevelArtifactContext topLevelArtifactContext,
-      boolean explicitlyRequested,
-      boolean skipIncompatibleExplicitTargets,
-      boolean extraActionTopLevelOnly,
-      boolean keepGoing,
-      boolean isTopLevelAspectDriver) {
-    this.actionLookupKey = actionLookupKey;
-    this.topLevelArtifactContext = topLevelArtifactContext;
-    this.explicitlyRequested = explicitlyRequested;
-    this.skipIncompatibleExplicitTargets = skipIncompatibleExplicitTargets;
-    this.isTopLevelAspectDriver = isTopLevelAspectDriver;
-    this.extraActionTopLevelOnly = extraActionTopLevelOnly;
-    this.keepGoing = keepGoing;
-  }
-
-  public static BuildDriverKey ofTopLevelAspect(
-      ActionLookupKey actionLookupKey,
-      TopLevelArtifactContext topLevelArtifactContext,
-      boolean explicitlyRequested,
-      boolean skipIncompatibleExplicitTargets,
-      boolean extraActionTopLevelOnly,
-      boolean keepGoing) {
-    return new BuildDriverKey(
-        actionLookupKey,
-        topLevelArtifactContext,
-        explicitlyRequested,
-        skipIncompatibleExplicitTargets,
-        extraActionTopLevelOnly,
-        keepGoing,
-        /* isTopLevelAspectDriver= */ true);
-  }
-
-  public static BuildDriverKey ofConfiguredTarget(
-      ActionLookupKey actionLookupKey,
-      TopLevelArtifactContext topLevelArtifactContext,
-      boolean explicitlyRequested,
-      boolean skipIncompatibleExplicitTargets,
-      boolean extraActionTopLevelOnly,
-      boolean keepGoing) {
-    return new BuildDriverKey(
-        actionLookupKey,
-        topLevelArtifactContext,
-        explicitlyRequested,
-        skipIncompatibleExplicitTargets,
-        extraActionTopLevelOnly,
-        keepGoing,
-        /* isTopLevelAspectDriver= */ false);
-  }
-
-  public TopLevelArtifactContext getTopLevelArtifactContext() {
-    return topLevelArtifactContext;
-  }
-
-  public ActionLookupKey getActionLookupKey() {
-    return actionLookupKey;
-  }
-
-  public boolean isExplicitlyRequested() {
-    return explicitlyRequested;
-  }
-
-  public boolean shouldSkipIncompatibleExplicitTargets() {
-    return skipIncompatibleExplicitTargets;
-  }
-
-  public boolean isTopLevelAspectDriver() {
-    return isTopLevelAspectDriver;
-  }
-
-  public boolean isExtraActionTopLevelOnly() {
-    return extraActionTopLevelOnly;
-  }
-
-  public boolean keepGoing() {
-    return keepGoing;
-  }
-
-  @Override
-  public SkyFunctionName functionName() {
-    return SkyFunctions.BUILD_DRIVER;
-  }
-
-  @Override
-  public boolean equals(Object other) {
-    if (other instanceof BuildDriverKey otherBuildDriverKey) {
-      return actionLookupKey.equals(otherBuildDriverKey.actionLookupKey)
-          && topLevelArtifactContext.equals(otherBuildDriverKey.topLevelArtifactContext)
-          && explicitlyRequested == otherBuildDriverKey.explicitlyRequested;
-    }
-    return false;
-  }
-
-  @Override
-  public int hashCode() {
-    return Objects.hash(actionLookupKey, topLevelArtifactContext, explicitlyRequested);
-  }
-
-  @Override
-  public String toString() {
-    return String.format("BuildDriverKey of ActionLookupKey: %s", actionLookupKey);
-  }
-
-  @Override
-  public boolean valueIsShareable() {
-    // BuildDriverValue is just a wrapper value that signals that the building of a top level target
-    // was concluded. It's meant to be created anew each build, since BuildDriverFunction must be
-    // run every build.
-    return false;
-  }
-
-  enum TestType {
-    NOT_TEST("not-test"),
-    PARALLEL("parallel"),
-    EXCLUSIVE("exclusive"),
-    EXCLUSIVE_IF_LOCAL("exclusive-if-local");
-
-    private final String msg;
-
-    TestType(String msg) {
-      this.msg = msg;
+    init {
+        this.actionLookupKey = actionLookupKey
+        this.topLevelArtifactContext = topLevelArtifactContext
+        this.isExplicitlyRequested = explicitlyRequested
+        this.skipIncompatibleExplicitTargets = skipIncompatibleExplicitTargets
+        this.isTopLevelAspectDriver = isTopLevelAspectDriver
+        this.isExtraActionTopLevelOnly = extraActionTopLevelOnly
+        this.keepGoing = keepGoing
     }
 
-    public String getMsg() {
-      return msg;
+    fun getTopLevelArtifactContext(): TopLevelArtifactContext {
+        return topLevelArtifactContext
     }
-  }
+
+    fun getActionLookupKey(): ActionLookupKey {
+        return actionLookupKey
+    }
+
+    fun shouldSkipIncompatibleExplicitTargets(): Boolean {
+        return skipIncompatibleExplicitTargets
+    }
+
+    fun keepGoing(): Boolean {
+        return keepGoing
+    }
+
+    override fun functionName(): SkyFunctionName {
+        return SkyFunctions.BUILD_DRIVER
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (other is BuildDriverKey) {
+            return actionLookupKey.equals(other.actionLookupKey)
+                    && topLevelArtifactContext.equals(other.topLevelArtifactContext)
+                    && this.isExplicitlyRequested == other.isExplicitlyRequested
+        }
+        return false
+    }
+
+    override fun hashCode(): Int {
+        return java.util.Objects.hash(actionLookupKey, topLevelArtifactContext, this.isExplicitlyRequested)
+    }
+
+    override fun toString(): String {
+        return java.lang.String.format("BuildDriverKey of ActionLookupKey: %s", actionLookupKey)
+    }
+
+    override fun valueIsShareable(): Boolean {
+        // BuildDriverValue is just a wrapper value that signals that the building of a top level target
+        // was concluded. It's meant to be created anew each build, since BuildDriverFunction must be
+        // run every build.
+        return false
+    }
+
+    internal enum class TestType(msg: String) {
+        NOT_TEST("not-test"),
+        PARALLEL("parallel"),
+        EXCLUSIVE("exclusive"),
+        EXCLUSIVE_IF_LOCAL("exclusive-if-local");
+
+        @kotlin.jvm.JvmField
+        val msg: String?
+
+        init {
+            this.msg = msg
+        }
+    }
+
+    companion object {
+        fun ofTopLevelAspect(
+            actionLookupKey: ActionLookupKey,
+            topLevelArtifactContext: TopLevelArtifactContext,
+            explicitlyRequested: Boolean,
+            skipIncompatibleExplicitTargets: Boolean,
+            extraActionTopLevelOnly: Boolean,
+            keepGoing: Boolean
+        ): BuildDriverKey {
+            return BuildDriverKey(
+                actionLookupKey,
+                topLevelArtifactContext,
+                explicitlyRequested,
+                skipIncompatibleExplicitTargets,
+                extraActionTopLevelOnly,
+                keepGoing,  /* isTopLevelAspectDriver= */
+                true
+            )
+        }
+
+        fun ofConfiguredTarget(
+            actionLookupKey: ActionLookupKey,
+            topLevelArtifactContext: TopLevelArtifactContext,
+            explicitlyRequested: Boolean,
+            skipIncompatibleExplicitTargets: Boolean,
+            extraActionTopLevelOnly: Boolean,
+            keepGoing: Boolean
+        ): BuildDriverKey {
+            return BuildDriverKey(
+                actionLookupKey,
+                topLevelArtifactContext,
+                explicitlyRequested,
+                skipIncompatibleExplicitTargets,
+                extraActionTopLevelOnly,
+                keepGoing,  /* isTopLevelAspectDriver= */
+                false
+            )
+        }
+    }
 }

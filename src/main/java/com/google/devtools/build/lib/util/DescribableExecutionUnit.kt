@@ -11,43 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.cmdline.Label;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
- * Something executable that can be described by {@link CommandFailureUtils#describeCommandFailure}.
+ * Something executable that can be described by [CommandFailureUtils.describeCommandFailure].
  */
-public interface DescribableExecutionUnit {
+interface DescribableExecutionUnit {
+    val targetDescription: String?
+        get() = null
 
-  @Nullable
-  default String getTargetDescription() {
-    return null;
-  }
+    /** Returns the command (the first element) and its arguments.  */
+    val arguments: com.google.common.collect.ImmutableList<String?>?
 
-  /** Returns the command (the first element) and its arguments. */
-  ImmutableList<String> getArguments();
+    /**
+     * Returns the initial environment of the process. If null, the environment is inherited from the
+     * parent process.
+     */
+    val environment: com.google.common.collect.ImmutableMap<String?, String?>?
 
-  /**
-   * Returns the initial environment of the process. If null, the environment is inherited from the
-   * parent process.
-   */
-  ImmutableMap<String, String> getEnvironment();
+    val executionPlatformLabel: Label?
+        /** Returns the Label of the execution platform for the command, if any, as a String.  */
+        get() = null
 
-  /** Returns the Label of the execution platform for the command, if any, as a String. */
-  @Nullable
-  default Label getExecutionPlatformLabel() {
-    return null;
-  }
+    val configurationChecksum: String?
+        /** Returns the configuration hash for this command, if any.  */
+        get() = null
 
-  /** Returns the configuration hash for this command, if any. */
-  @Nullable
-  default String getConfigurationChecksum() {
-    return null;
-  }
-
-  String getMnemonic();
+    val mnemonic: String?
 }

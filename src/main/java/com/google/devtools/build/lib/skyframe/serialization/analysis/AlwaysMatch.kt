@@ -11,27 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileOpMatchResultTypes.FileOpMatchResult;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.NestedMatchResultTypes.NestedMatchResult;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.FileOpMatchResultTypes.FileOpMatchResult
+import com.google.devtools.build.lib.skyframe.serialization.analysis.MatchIndicator
+import com.google.devtools.build.lib.skyframe.serialization.analysis.NestedMatchResultTypes.NestedMatchResult
+import com.google.devtools.build.lib.skyframe.serialization.analysis.VersionedChanges
 
 /**
- * The delta matches any set of dependencies, meaning a <b>cache miss</b>.
- *
- * <p>This occurs when there is missing data, and thus no guarantee can be made about the cache
+ * The delta matches any set of dependencies, meaning a **cache miss**.
+ * 
+ * 
+ * This occurs when there is missing data, and thus no guarantee can be made about the cache
  * entry's validity.
  */
-enum AlwaysMatch implements FileOpMatchResult, NestedMatchResult, MatchIndicator {
-  ALWAYS_MATCH_RESULT;
+internal enum class AlwaysMatch : FileOpMatchResult, NestedMatchResult, MatchIndicator {
+    ALWAYS_MATCH_RESULT;
 
-  @Override
-  public boolean isMatch() {
-    return true;
-  }
+    val isMatch: Boolean
+        get() = true
 
-  @Override
-  public final int version() {
-    return VersionedChanges.ALWAYS_MATCH;
-  }
+    override fun version(): Int {
+        return VersionedChanges.Companion.ALWAYS_MATCH
+    }
 }

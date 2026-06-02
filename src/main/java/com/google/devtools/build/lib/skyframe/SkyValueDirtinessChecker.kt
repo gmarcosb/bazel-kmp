@@ -11,177 +11,175 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.util.io.TimestampGranularityMonitor;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.Version;
-import java.io.IOException;
-import java.util.Objects;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.util.io.TimestampGranularityMonitor
+import com.google.devtools.build.lib.vfs.SyscallCache
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
+import java.io.IOException
 
 /**
- * Given a {@link SkyKey} and the previous {@link SkyValue} it had, returns whether this value is
+ * Given a [SkyKey] and the previous [SkyValue] it had, returns whether this value is
  * up to date.
  */
-public abstract class SkyValueDirtinessChecker {
-  /**
-   * Returns {@code true} iff the checker can handle {@code key}. Can only be true if {@code
-   * key.functionName().getHermeticity() == FunctionHermeticity.NONHERMETIC}.
-   */
-  public abstract boolean applies(SkyKey key);
+abstract class SkyValueDirtinessChecker {
+    /**
+     * Returns `true` iff the checker can handle `key`. Can only be true if `key.functionName().getHermeticity() == FunctionHermeticity.NONHERMETIC`.
+     */
+    abstract fun applies(key: SkyKey?): Boolean
 
-  /** If {@code applies(key)}, returns the new value for {@code key}. */
-  public abstract SkyValue createNewValue(
-      SkyKey key, SyscallCache syscallCache, @Nullable TimestampGranularityMonitor tsgm)
-      throws IOException;
-
-  /**
-   * Returns whether directory listings should be invalidated even if file types do not change.
-   *
-   * <p>Handles MTSV changes on directory listings when files are modified without changing type.
-   */
-  public boolean invalidateListingsOnFileModification() {
-    return false;
-  }
-
-  /**
-   * Returns the max transitive source version (mtsv) of a {@link SkyKey} for its new {@link
-   * SkyValue}.
-   */
-  @Nullable
-  public Version getMaxTransitiveSourceVersionForNewValue(SkyKey key, SkyValue value)
-      throws IOException {
-    return null;
-  }
-
-  /**
-   * If {@code applies(key)}, returns the result of checking whether this key's value is up to date.
-   */
-  public DirtyResult check(
-      SkyKey key,
-      @Nullable SkyValue oldValue,
-      @Nullable Version oldMtsv,
-      SyscallCache syscallCache,
-      @Nullable TimestampGranularityMonitor tsgm)
-      throws IOException {
-    SkyValue newValue = createNewValue(key, syscallCache, tsgm);
-    return newValue.equals(oldValue)
-        ? DirtyResult.notDirty()
-        : DirtyResult.dirtyWithNewValue(newValue);
-  }
-
-  /** An encapsulation of the result of checking to see if a value is up to date. */
-  // TODO(b/228090733) - support old source versions for dirtiness checking
-  public static final class DirtyResult {
-    private static final DirtyResult NOT_DIRTY =
-        new DirtyResult(
-            /* isDirty= */ false, /* newValue= */ null, /* newMaxTransitiveSourceVersion= */ null);
-    private static final DirtyResult DIRTY =
-        new DirtyResult(
-            /* isDirty= */ true, /* newValue= */ null, /* newMaxTransitiveSourceVersion= */ null);
+    /** If `applies(key)`, returns the new value for `key`.  */
+    @Throws(IOException::class)
+    abstract fun createNewValue(
+        key: SkyKey?, syscallCache: SyscallCache?, tsgm: TimestampGranularityMonitor?
+    ): SkyValue?
 
     /**
-     * Creates a DirtyResult indicating that the external value is the same as the value in the
-     * graph.
+     * Returns whether directory listings should be invalidated even if file types do not change.
+     * 
+     * 
+     * Handles MTSV changes on directory listings when files are modified without changing type.
      */
-    public static DirtyResult notDirty() {
-      return NOT_DIRTY;
+    fun invalidateListingsOnFileModification(): Boolean {
+        return false
     }
 
     /**
-     * Creates a DirtyResult indicating that external value is different from the value in the
-     * graph, but this new value is not known.
+     * Returns the max transitive source version (mtsv) of a [SkyKey] for its new [ ].
      */
-    public static DirtyResult dirty() {
-      return DIRTY;
+    @Throws(IOException::class)
+    open fun getMaxTransitiveSourceVersionForNewValue(
+        key: SkyKey?,
+        value: SkyValue?
+    ): com.google.devtools.build.skyframe.Version? {
+        return null
     }
 
     /**
-     * Creates a DirtyResult indicating that the external value is {@code newValue}, which is
-     * different from the value in the graph,
+     * If `applies(key)`, returns the result of checking whether this key's value is up to date.
      */
-    public static DirtyResult dirtyWithNewValue(SkyValue newValue) {
-      return new DirtyResult(
-          /* isDirty= */ true, newValue, /* newMaxTransitiveSourceVersion= */ null);
+    @Throws(IOException::class)
+    open fun check(
+        key: SkyKey?,
+        oldValue: SkyValue?,
+        oldMtsv: com.google.devtools.build.skyframe.Version?,
+        syscallCache: SyscallCache?,
+        tsgm: TimestampGranularityMonitor?
+    ): DirtyResult? {
+        val newValue: SkyValue? = createNewValue(key, syscallCache, tsgm)
+        return if (newValue == oldValue)
+            DirtyResult.Companion.notDirty()
+        else
+            DirtyResult.Companion.dirtyWithNewValue(newValue)
     }
 
-    public static DirtyResult dirtyWithNewValueAndMaxTransitiveSourceVersion(
-        SkyValue newValue, Version newMaxTransitiveSourceVersion) {
-      return new DirtyResult(/* isDirty= */ true, newValue, newMaxTransitiveSourceVersion);
-    }
+    /** An encapsulation of the result of checking to see if a value is up to date.  */ // TODO(b/228090733) - support old source versions for dirtiness checking
+    class DirtyResult private constructor(
+        private val isDirty: Boolean,
+        newValue: SkyValue?,
+        newMaxTransitiveSourceVersion: com.google.devtools.build.skyframe.Version?
+    ) {
+        private val newValue: SkyValue?
+        private val newMaxTransitiveSourceVersion: com.google.devtools.build.skyframe.Version?
 
-    private final boolean isDirty;
-    @Nullable private final SkyValue newValue;
-    @Nullable private final Version newMaxTransitiveSourceVersion;
+        init {
+            this.newValue = newValue
+            this.newMaxTransitiveSourceVersion = newMaxTransitiveSourceVersion
+        }
 
-    private DirtyResult(
-        boolean isDirty,
-        @Nullable SkyValue newValue,
-        @Nullable Version newMaxTransitiveSourceVersion) {
-      this.isDirty = isDirty;
-      this.newValue = newValue;
-      this.newMaxTransitiveSourceVersion = newMaxTransitiveSourceVersion;
-    }
+        fun isDirty(): Boolean {
+            return isDirty
+        }
 
-    public boolean isDirty() {
-      return isDirty;
-    }
+        /**
+         * If `isDirty()`, then either returns the new value for the value or `null` if
+         * the new value wasn't computed. In the case where the value is dirty and a new value is
+         * available, then the new value can be injected into the skyframe graph. Otherwise, the value
+         * should simply be invalidated.
+         */
+        fun getNewValue(): SkyValue? {
+            com.google.common.base.Preconditions.checkState(isDirty, newValue)
+            return newValue
+        }
 
-    /**
-     * If {@code isDirty()}, then either returns the new value for the value or {@code null} if
-     * the new value wasn't computed. In the case where the value is dirty and a new value is
-     * available, then the new value can be injected into the skyframe graph. Otherwise, the value
-     * should simply be invalidated.
-     */
-    @Nullable
-    SkyValue getNewValue() {
-      Preconditions.checkState(isDirty, newValue);
-      return newValue;
-    }
+        /**
+         * Returns the max transitive source version for the new value or `null`.
+         * 
+         * 
+         * Can only be called if the result `isDirty()`.
+         */
+        fun getNewMaxTransitiveSourceVersion(): com.google.devtools.build.skyframe.Version? {
+            com.google.common.base.Preconditions.checkState(isDirty, newValue)
+            return newMaxTransitiveSourceVersion
+        }
 
-    /**
-     * Returns the max transitive source version for the new value or {@code null}.
-     *
-     * <p>Can only be called if the result {@code isDirty()}.
-     */
-    @Nullable
-    Version getNewMaxTransitiveSourceVersion() {
-      Preconditions.checkState(isDirty, newValue);
-      return newMaxTransitiveSourceVersion;
-    }
+        override fun hashCode(): Int {
+            return (java.util.Objects.hashCode(newValue)
+                    + (if (isDirty) 13 else 0)
+                    + java.util.Objects.hashCode(newMaxTransitiveSourceVersion))
+        }
 
-    @Override
-    public int hashCode() {
-      return Objects.hashCode(newValue)
-          + (isDirty ? 13 : 0)
-          + Objects.hashCode(newMaxTransitiveSourceVersion);
-    }
+        override fun equals(obj: Any?): Boolean {
+            if (this === obj) {
+                return true
+            }
+            if (obj !is DirtyResult) {
+                return false
+            }
+            return this.isDirty == obj.isDirty && this.newValue == obj.newValue
+                    && this.newMaxTransitiveSourceVersion == obj.newMaxTransitiveSourceVersion
+        }
 
-    @Override
-    public boolean equals(Object obj) {
-      if (this == obj) {
-        return true;
-      }
-      if (!(obj instanceof DirtyResult that)) {
-        return false;
-      }
-      return this.isDirty == that.isDirty
-          && Objects.equals(this.newValue, that.newValue)
-          && Objects.equals(this.newMaxTransitiveSourceVersion, that.newMaxTransitiveSourceVersion);
-    }
+        override fun toString(): String {
+            return com.google.common.base.MoreObjects.toStringHelper(this)
+                .add("isDirty", isDirty)
+                .add("newValue", newValue)
+                .add("newMaxTransitiveSourceVersion", newMaxTransitiveSourceVersion)
+                .toString()
+        }
 
-    @Override
-    public String toString() {
-      return MoreObjects.toStringHelper(this)
-          .add("isDirty", isDirty)
-          .add("newValue", newValue)
-          .add("newMaxTransitiveSourceVersion", newMaxTransitiveSourceVersion)
-          .toString();
+        companion object {
+            private val NOT_DIRTY = DirtyResult( /* isDirty= */
+                false,  /* newValue= */null,  /* newMaxTransitiveSourceVersion= */null
+            )
+            private val DIRTY = DirtyResult( /* isDirty= */
+                true,  /* newValue= */null,  /* newMaxTransitiveSourceVersion= */null
+            )
+
+            /**
+             * Creates a DirtyResult indicating that the external value is the same as the value in the
+             * graph.
+             */
+            @kotlin.jvm.JvmStatic
+            fun notDirty(): DirtyResult {
+                return NOT_DIRTY
+            }
+
+            /**
+             * Creates a DirtyResult indicating that external value is different from the value in the
+             * graph, but this new value is not known.
+             */
+            @kotlin.jvm.JvmStatic
+            fun dirty(): DirtyResult {
+                return DIRTY
+            }
+
+            /**
+             * Creates a DirtyResult indicating that the external value is `newValue`, which is
+             * different from the value in the graph,
+             */
+            fun dirtyWithNewValue(newValue: SkyValue?): DirtyResult {
+                return DirtyResult( /* isDirty= */
+                    true, newValue,  /* newMaxTransitiveSourceVersion= */null
+                )
+            }
+
+            fun dirtyWithNewValueAndMaxTransitiveSourceVersion(
+                newValue: SkyValue?, newMaxTransitiveSourceVersion: com.google.devtools.build.skyframe.Version?
+            ): DirtyResult {
+                return DirtyResult( /* isDirty= */true, newValue, newMaxTransitiveSourceVersion)
+            }
+        }
     }
-  }
 }

@@ -11,12 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi
 
-package com.google.devtools.build.lib.starlarkbuildapi;
-
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.eval.StarlarkValue;
-
-/** A value object used to represent an entry inside a "Fileset" BUILD rule. */
-@StarlarkBuiltin(name = "FilesetEntry", doc = "", documented = false)
-public interface FilesetEntryApi extends StarlarkValue {}
+/** A value object used to represent an entry inside a "Fileset" BUILD rule.  */
+@net.starlark.java.annot.StarlarkBuiltin(name = "FilesetEntry", doc = "", documented = false)
+interface FilesetEntryApi : net.starlark.java.eval.StarlarkValue

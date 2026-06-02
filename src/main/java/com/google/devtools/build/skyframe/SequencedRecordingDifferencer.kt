@@ -11,51 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.concurrent.ThreadSafety;
-import com.google.devtools.build.skyframe.Differencer.DiffWithDelta.Delta;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+/** A simple Differencer which just records the invalidated values it's been given.  */
+@ThreadCompatible
+class SequencedRecordingDifferencer : RecordingDifferencer {
+    private var valuesToInvalidate: MutableList<SkyKey?>? = null
+    private var valuesToInject: MutableMap<SkyKey?, Delta?>? = null
 
-/** A simple Differencer which just records the invalidated values it's been given. */
-@ThreadSafety.ThreadCompatible
-public class SequencedRecordingDifferencer implements RecordingDifferencer {
+    init {
+        clear()
+    }
 
-  private List<SkyKey> valuesToInvalidate;
-  private Map<SkyKey, Delta> valuesToInject;
+    private fun clear() {
+        valuesToInvalidate = java.util.ArrayList<SkyKey?>()
+        valuesToInject = HashMap<SkyKey?, Delta?>()
+    }
 
-  public SequencedRecordingDifferencer() {
-    clear();
-  }
+    override fun getDiff(
+        fromGraph: WalkableGraph?,
+        fromVersion: com.google.devtools.build.skyframe.Version?,
+        toVersion: com.google.devtools.build.skyframe.Version?
+    ): com.google.devtools.build.skyframe.Differencer.Diff {
+        val diff: com.google.devtools.build.skyframe.Differencer.Diff =
+            ImmutableDiff(valuesToInvalidate, valuesToInject)
+        clear()
+        return diff
+    }
 
-  private void clear() {
-    valuesToInvalidate = new ArrayList<>();
-    valuesToInject = new HashMap<>();
-  }
+    override fun invalidate(values: Iterable<SkyKey?>) {
+        com.google.common.collect.Iterables.addAll<SkyKey?>(valuesToInvalidate, values)
+    }
 
-  @Override
-  public Diff getDiff(WalkableGraph fromGraph, Version fromVersion, Version toVersion) {
-    Diff diff = new ImmutableDiff(valuesToInvalidate, valuesToInject);
-    clear();
-    return diff;
-  }
+    override fun inject(deltas: MutableMap<SkyKey?, Delta?>?) {
+        valuesToInject!!.putAll(deltas)
+    }
 
-  @Override
-  public void invalidate(Iterable<SkyKey> values) {
-    Iterables.addAll(valuesToInvalidate, values);
-  }
-
-  @Override
-  public void inject(Map<SkyKey, Delta> deltas) {
-    valuesToInject.putAll(deltas);
-  }
-
-  @Override
-  public void inject(SkyKey key, Delta delta) {
-    valuesToInject.put(key, delta);
-  }
+    override fun inject(key: SkyKey?, delta: Delta?) {
+        valuesToInject!!.put(key, delta)
+    }
 }

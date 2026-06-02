@@ -11,13 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.vfs.PathFragment;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.skyframe.WorkspaceInfoFromDiff
+import com.google.devtools.build.lib.vfs.PathFragment
 
-/** Callback interface to receive {@link WorkspaceInfoFromDiff} when synchronizing the workspace. */
-public interface WorkspaceInfoFromDiffReceiver {
-  void syncWorkspaceInfoFromDiff(
-      PathFragment packagePath, @Nullable WorkspaceInfoFromDiff workspaceInfoFromDiff);
+/** Callback interface to receive [WorkspaceInfoFromDiff] when synchronizing the workspace.  */
+interface WorkspaceInfoFromDiffReceiver {
+    fun syncWorkspaceInfoFromDiff(
+        packagePath: PathFragment?, workspaceInfoFromDiff: WorkspaceInfoFromDiff?
+    )
 }

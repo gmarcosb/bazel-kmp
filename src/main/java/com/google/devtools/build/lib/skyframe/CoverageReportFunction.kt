@@ -11,54 +11,48 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.ActionConflictException;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.Actions;
-import com.google.devtools.build.lib.skyframe.PrecomputedValue.Precomputed;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionAnalysisMetadata
 
 /**
  * A Skyframe function to calculate the coverage report Action and Artifacts.
  */
-public class CoverageReportFunction implements SkyFunction {
+class CoverageReportFunction internal constructor(actionKeyContext: ActionKeyContext?) : SkyFunction {
+    private val actionKeyContext: ActionKeyContext?
 
-  static final Precomputed<ImmutableList<ActionAnalysisMetadata>> COVERAGE_REPORT_KEY =
-      new Precomputed<>("coverage_report_actions");
-  private final ActionKeyContext actionKeyContext;
-
-  CoverageReportFunction(ActionKeyContext actionKeyContext) {
-    this.actionKeyContext = actionKeyContext;
-  }
-
-  @Override
-  @Nullable
-  public SkyValue compute(SkyKey skyKey, Environment env) throws InterruptedException {
-    Preconditions.checkState(
-        CoverageReportValue.COVERAGE_REPORT_KEY.equals(skyKey),
-        "Expected %s for SkyKey but got %s instead",
-        CoverageReportValue.COVERAGE_REPORT_KEY,
-        skyKey);
-
-    ImmutableList<ActionAnalysisMetadata> actions = COVERAGE_REPORT_KEY.get(env);
-    if (actions == null) {
-      return null;
+    init {
+        this.actionKeyContext = actionKeyContext
     }
 
-    try {
-      Actions.assignOwnersAndThrowIfConflictToleratingSharedActions(
-          actionKeyContext, actions, CoverageReportValue.COVERAGE_REPORT_KEY);
-    } catch (ActionConflictException | Actions.ArtifactGeneratedByOtherRuleException e) {
-      throw new IllegalStateException("Issues not expected in coverage: " + skyKey, e);
+    @Throws(java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey?, env: SkyFunction.Environment?): SkyValue? {
+        com.google.common.base.Preconditions.checkState(
+            CoverageReportValue.COVERAGE_REPORT_KEY.equals(skyKey),
+            "Expected %s for SkyKey but got %s instead",
+            CoverageReportValue.COVERAGE_REPORT_KEY,
+            skyKey
+        )
+
+        val actions: com.google.common.collect.ImmutableList<ActionAnalysisMetadata?>? = COVERAGE_REPORT_KEY.get(env)
+        if (actions == null) {
+            return null
+        }
+
+        try {
+            Actions.assignOwnersAndThrowIfConflictToleratingSharedActions(
+                actionKeyContext, actions, CoverageReportValue.COVERAGE_REPORT_KEY
+            )
+        } catch (e: ActionConflictException) {
+            throw java.lang.IllegalStateException("Issues not expected in coverage: " + skyKey, e)
+        } catch (e: Actions.ArtifactGeneratedByOtherRuleException) {
+            throw java.lang.IllegalStateException("Issues not expected in coverage: " + skyKey, e)
+        }
+        return CoverageReportValue(actions)
     }
-    return new CoverageReportValue(actions);
-  }
+
+    companion object {
+        val COVERAGE_REPORT_KEY: Precomputed<com.google.common.collect.ImmutableList<ActionAnalysisMetadata?>?> =
+            Precomputed("coverage_report_actions")
+    }
 }

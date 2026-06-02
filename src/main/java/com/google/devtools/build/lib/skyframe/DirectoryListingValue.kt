@@ -11,130 +11,126 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.actions.FileValue;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Objects;
+import com.google.devtools.build.lib.actions.FileValue
 
 /**
  * A value that represents the dirents (name and type of child entries) in a given directory under a
  * given package path root, fully accounting for symlinks in the directory's path. Anything in
  * Skyframe that cares about the contents of a directory should have a dependency on the
- * corresponding {@link DirectoryListingValue}.
- *
- * <p>Note that dirents that are themselves symlinks are <b>not</b> resolved. Consumers of such a
- * dirent are responsible for resolving the symlink entry via an appropriate {@link FileValue}.
+ * corresponding [DirectoryListingValue].
+ * 
+ * 
+ * Note that dirents that are themselves symlinks are **not** resolved. Consumers of such a
+ * dirent are responsible for resolving the symlink entry via an appropriate [FileValue].
  * This is a little onerous, but correct: we do not need to reread the directory when a symlink
  * inside it changes (or, more generally, when the *contents* of a dirent changes), therefore the
- * {@link DirectoryListingValue} value should not be invalidated in that case.
+ * [DirectoryListingValue] value should not be invalidated in that case.
  */
 @Immutable
 @ThreadSafe
-public abstract class DirectoryListingValue implements SkyValue {
+abstract class DirectoryListingValue : SkyValue {
+    val dirents: Dirents?
+        /**
+         * Returns the directory entries for this directory, in a stable order.
+         * 
+         * 
+         * Symlinks are not expanded.
+         */
+        get() = this.directoryListingStateValue.getDirents()
 
-  /**
-   * Returns the directory entries for this directory, in a stable order.
-   *
-   * <p>Symlinks are not expanded.
-   */
-  public Dirents getDirents() {
-    return getDirectoryListingStateValue().getDirents();
-  }
+    abstract val directoryListingStateValue: DirectoryListingStateValue?
 
-  public abstract DirectoryListingStateValue getDirectoryListingStateValue();
+    /** Normal [DirectoryListingValue].  */
+    @ThreadSafe
+    class RegularDirectoryListingValue(directoryListingStateValue: DirectoryListingStateValue) :
+        DirectoryListingValue() {
+        private val directoryListingStateValue: DirectoryListingStateValue
 
-  /**
-   * Returns a {@link Key} for getting the directory entries of the given directory. The given path
-   * is assumed to be an existing directory (e.g. via {@link FileValue#isDirectory} or from a
-   * directory listing on its parent directory).
-   */
-  @ThreadSafe
-  public static DirectoryListingKey key(RootedPath directoryUnderRoot) {
-    return DirectoryListingKey.create(directoryUnderRoot);
-  }
+        init {
+            this.directoryListingStateValue = directoryListingStateValue
+        }
 
-  static DirectoryListingValue value(RootedPath dirRootedPath, FileValue dirFileValue,
-      DirectoryListingStateValue realDirectoryListingStateValue) {
-    RootedPath realRootedPath = dirFileValue.realRootedPath(dirRootedPath);
-    return realRootedPath.equals(dirRootedPath)
-        ? new RegularDirectoryListingValue(realDirectoryListingStateValue)
-        : new DifferentRealPathDirectoryListingValue(
-            realRootedPath, realDirectoryListingStateValue);
-  }
+        override fun getDirectoryListingStateValue(): DirectoryListingStateValue {
+            return directoryListingStateValue
+        }
 
-  /** Normal {@link DirectoryListingValue}. */
-  @ThreadSafe
-  public static final class RegularDirectoryListingValue extends DirectoryListingValue {
+        override fun equals(obj: Any?): Boolean {
+            if (this === obj) {
+                return true
+            }
+            if (obj !is RegularDirectoryListingValue) {
+                return false
+            }
+            return directoryListingStateValue == obj.directoryListingStateValue
+        }
 
-    private final DirectoryListingStateValue directoryListingStateValue;
-
-    public RegularDirectoryListingValue(DirectoryListingStateValue directoryListingStateValue) {
-      this.directoryListingStateValue = directoryListingStateValue;
+        override fun hashCode(): Int {
+            return directoryListingStateValue.hashCode()
+        }
     }
 
-    @Override
-    public DirectoryListingStateValue getDirectoryListingStateValue() {
-      return directoryListingStateValue;
+    /** A [DirectoryListingValue] with a different root.  */
+    @ThreadSafe
+    class DifferentRealPathDirectoryListingValue(
+        realDirRootedPath: RootedPath,
+        directoryListingStateValue: DirectoryListingStateValue
+    ) : DirectoryListingValue() {
+        private val realDirRootedPath: RootedPath
+        private val directoryListingStateValue: DirectoryListingStateValue
+
+        init {
+            this.realDirRootedPath = realDirRootedPath
+            this.directoryListingStateValue = directoryListingStateValue
+        }
+
+        fun getRealDirRootedPath(): RootedPath {
+            return realDirRootedPath
+        }
+
+        override fun getDirectoryListingStateValue(): DirectoryListingStateValue {
+            return directoryListingStateValue
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            if (this === obj) {
+                return true
+            }
+            if (obj !is DifferentRealPathDirectoryListingValue) {
+                return false
+            }
+            return realDirRootedPath == obj.realDirRootedPath
+                    && directoryListingStateValue == obj.directoryListingStateValue
+        }
+
+        override fun hashCode(): Int {
+            return java.util.Objects.hash(realDirRootedPath, directoryListingStateValue)
+        }
     }
 
-    @Override
-    public boolean equals(Object obj) {
-      if (this == obj) {
-        return true;
-      }
-      if (!(obj instanceof RegularDirectoryListingValue other)) {
-        return false;
-      }
-      return directoryListingStateValue.equals(other.directoryListingStateValue);
+    companion object {
+        /**
+         * Returns a [Key] for getting the directory entries of the given directory. The given path
+         * is assumed to be an existing directory (e.g. via [FileValue.isDirectory] or from a
+         * directory listing on its parent directory).
+         */
+        @ThreadSafe
+        fun key(directoryUnderRoot: RootedPath?): DirectoryListingKey? {
+            return DirectoryListingKey.Companion.create(directoryUnderRoot)
+        }
+
+        fun value(
+            dirRootedPath: RootedPath?, dirFileValue: FileValue,
+            realDirectoryListingStateValue: DirectoryListingStateValue
+        ): DirectoryListingValue {
+            val realRootedPath: RootedPath = dirFileValue.realRootedPath(dirRootedPath)
+            return if (realRootedPath == dirRootedPath)
+                RegularDirectoryListingValue(realDirectoryListingStateValue)
+            else
+                DifferentRealPathDirectoryListingValue(
+                    realRootedPath, realDirectoryListingStateValue
+                )
+        }
     }
-
-    @Override
-    public int hashCode() {
-      return directoryListingStateValue.hashCode();
-    }
-  }
-
-  /** A {@link DirectoryListingValue} with a different root. */
-  @ThreadSafe
-  public static final class DifferentRealPathDirectoryListingValue extends DirectoryListingValue {
-
-    private final RootedPath realDirRootedPath;
-    private final DirectoryListingStateValue directoryListingStateValue;
-
-    public DifferentRealPathDirectoryListingValue(RootedPath realDirRootedPath,
-        DirectoryListingStateValue directoryListingStateValue) {
-      this.realDirRootedPath = realDirRootedPath;
-      this.directoryListingStateValue = directoryListingStateValue;
-    }
-
-    public RootedPath getRealDirRootedPath() {
-      return realDirRootedPath;
-    }
-
-    @Override
-    public DirectoryListingStateValue getDirectoryListingStateValue() {
-      return directoryListingStateValue;
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      if (this == obj) {
-        return true;
-      }
-      if (!(obj instanceof DifferentRealPathDirectoryListingValue other)) {
-        return false;
-      }
-      return realDirRootedPath.equals(other.realDirRootedPath)
-          && directoryListingStateValue.equals(other.directoryListingStateValue);
-    }
-
-    @Override
-    public int hashCode() {
-      return Objects.hash(realDirRootedPath, directoryListingStateValue);
-    }
-  }
 }

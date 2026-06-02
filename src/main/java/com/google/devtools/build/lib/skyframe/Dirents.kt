@@ -11,18 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
-
-import com.google.devtools.build.lib.vfs.Dirent;
-import java.util.Collection;
-import javax.annotation.Nullable;
+package com.google.devtools.build.lib.skyframe
 
 /**
  * Interface for both iterating over the entries in a directory and getting the entry, if any, for a
  * given basename.
  */
-public interface Dirents extends Collection<Dirent> {
-
-  @Nullable
-  Dirent maybeGetDirent(String baseName);
+interface Dirents : MutableCollection<com.google.devtools.build.lib.vfs.Dirent?> {
+    fun maybeGetDirent(baseName: String?): com.google.devtools.build.lib.vfs.Dirent?
 }

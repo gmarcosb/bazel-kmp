@@ -11,86 +11,88 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.common.options
 
-package com.google.devtools.common.options;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import java.util.Collection;
-import java.util.Map;
-import javax.annotation.concurrent.Immutable;
+import com.google.devtools.build.lib.supplier.InterruptibleSupplier.get
 
 /**
- * This extends IsolatedOptionsData with information that can only be determined once all the {@link
- * OptionsBase} subclasses for a parser are known. In particular, this includes expansion
+ * This extends IsolatedOptionsData with information that can only be determined once all the [ ] subclasses for a parser are known. In particular, this includes expansion
  * information.
  */
-@Immutable
-final class OptionsData extends IsolatedOptionsData {
+@javax.annotation.concurrent.Immutable
+internal class OptionsData private constructor(
+    base: com.google.devtools.common.options.IsolatedOptionsData,
+    evaluatedExpansions: MutableMap<com.google.devtools.common.options.OptionDefinition?, com.google.common.collect.ImmutableList<String?>?>,
+    /**
+     * Whether this options data has been created with duplicate options definitions allowed as long
+     * as those options are parsed (but not necessarily evaluated) equivalently.
+     */
+    private val allowDuplicatesParsingEquivalently: Boolean
+) : com.google.devtools.common.options.IsolatedOptionsData(base) {
+    /** Mapping from each option to the (unparsed) options it expands to, if any.  */
+    private val evaluatedExpansions: com.google.common.collect.ImmutableMap<com.google.devtools.common.options.OptionDefinition?, com.google.common.collect.ImmutableList<String?>?>
 
-  /** Mapping from each option to the (unparsed) options it expands to, if any. */
-  private final ImmutableMap<OptionDefinition, ImmutableList<String>> evaluatedExpansions;
-
-  /**
-   * Whether this options data has been created with duplicate options definitions allowed as long
-   * as those options are parsed (but not necessarily evaluated) equivalently.
-   */
-  private final boolean allowDuplicatesParsingEquivalently;
-
-  /** Construct {@link OptionsData} by extending an {@link IsolatedOptionsData} with new info. */
-  private OptionsData(
-      IsolatedOptionsData base,
-      Map<OptionDefinition, ImmutableList<String>> evaluatedExpansions,
-      boolean allowDuplicatesParsingEquivalently) {
-    super(base);
-    this.evaluatedExpansions = ImmutableMap.copyOf(evaluatedExpansions);
-    this.allowDuplicatesParsingEquivalently = allowDuplicatesParsingEquivalently;
-  }
-
-  private static final ImmutableList<String> EMPTY_EXPANSION = ImmutableList.<String>of();
-
-  /**
-   * Returns the expansion of an options field. If the field is not an expansion option returns an
-   * empty array.
-   */
-  public ImmutableList<String> getEvaluatedExpansion(OptionDefinition optionDefinition) {
-    ImmutableList<String> result = evaluatedExpansions.get(optionDefinition);
-    return result != null ? result : EMPTY_EXPANSION;
-  }
-
-  /**
-   * Returns whether this options data has been created with duplicate options definitions allowed
-   * as long as those options are parsed (but not necessarily evaluated) equivalently.
-   */
-  public boolean createdWithAllowDuplicatesParsingEquivalently() {
-    return allowDuplicatesParsingEquivalently;
-  }
-
-  /**
-   * Constructs an {@link OptionsData} object for a parser that knows about the given {@link
-   * OptionsBase} classes. In addition to the work done to construct the {@link
-   * IsolatedOptionsData}, this also computes expansion information. If an option has an expansion,
-   * try to precalculate its here.
-   */
-  static OptionsData from(
-      Collection<Class<? extends OptionsBase>> classes,
-      boolean allowDuplicatesParsingEquivalently) {
-    IsolatedOptionsData isolatedData =
-        IsolatedOptionsData.from(classes, allowDuplicatesParsingEquivalently);
-
-    // All that's left is to compute expansions.
-    ImmutableMap.Builder<OptionDefinition, ImmutableList<String>> evaluatedExpansionsBuilder =
-        ImmutableMap.builder();
-    for (Map.Entry<String, OptionDefinition> entry : isolatedData.getAllOptionDefinitions()) {
-      OptionDefinition optionDefinition = entry.getValue();
-      String[] constExpansion = optionDefinition.getOptionExpansion();
-      if (constExpansion.length > 0) {
-        evaluatedExpansionsBuilder.put(optionDefinition, ImmutableList.copyOf(constExpansion));
-      }
+    /** Construct [OptionsData] by extending an [IsolatedOptionsData] with new info.  */
+    init {
+        this.evaluatedExpansions =
+            com.google.common.collect.ImmutableMap.copyOf<com.google.devtools.common.options.OptionDefinition?, com.google.common.collect.ImmutableList<String?>?>(
+                evaluatedExpansions
+            )
     }
-    return new OptionsData(
-        isolatedData,
-        evaluatedExpansionsBuilder.buildOrThrow(),
-        allowDuplicatesParsingEquivalently);
-  }
+
+    /**
+     * Returns the expansion of an options field. If the field is not an expansion option returns an
+     * empty array.
+     */
+    fun getEvaluatedExpansion(optionDefinition: com.google.devtools.common.options.OptionDefinition?): com.google.common.collect.ImmutableList<String?>? {
+        val result: com.google.common.collect.ImmutableList<String?>? = evaluatedExpansions.get(optionDefinition)
+        return if (result != null) result else com.google.devtools.common.options.OptionsData.Companion.EMPTY_EXPANSION
+    }
+
+    /**
+     * Returns whether this options data has been created with duplicate options definitions allowed
+     * as long as those options are parsed (but not necessarily evaluated) equivalently.
+     */
+    fun createdWithAllowDuplicatesParsingEquivalently(): Boolean {
+        return allowDuplicatesParsingEquivalently
+    }
+
+    companion object {
+        private val EMPTY_EXPANSION: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>()
+
+        /**
+         * Constructs an [OptionsData] object for a parser that knows about the given [ ] classes. In addition to the work done to construct the [ ], this also computes expansion information. If an option has an expansion,
+         * try to precalculate its here.
+         */
+        fun from(
+            classes: MutableCollection<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?>,
+            allowDuplicatesParsingEquivalently: Boolean
+        ): OptionsData {
+            val isolatedData: com.google.devtools.common.options.IsolatedOptionsData =
+                com.google.devtools.common.options.IsolatedOptionsData.Companion.from(
+                    classes,
+                    allowDuplicatesParsingEquivalently
+                )
+
+            // All that's left is to compute expansions.
+            val evaluatedExpansionsBuilder: com.google.common.collect.ImmutableMap.Builder<com.google.devtools.common.options.OptionDefinition?, com.google.common.collect.ImmutableList<String?>?> =
+                com.google.common.collect.ImmutableMap.builder<com.google.devtools.common.options.OptionDefinition?, com.google.common.collect.ImmutableList<String?>?>()
+            for (entry in isolatedData.getAllOptionDefinitions()) {
+                val optionDefinition: com.google.devtools.common.options.OptionDefinition = entry.getValue()
+                val constExpansion: Array<String?> = optionDefinition.getOptionExpansion()
+                if (constExpansion.size > 0) {
+                    evaluatedExpansionsBuilder.put(
+                        optionDefinition,
+                        com.google.common.collect.ImmutableList.copyOf<String?>(constExpansion)
+                    )
+                }
+            }
+            return com.google.devtools.common.options.OptionsData(
+                isolatedData,
+                evaluatedExpansionsBuilder.buildOrThrow(),
+                allowDuplicatesParsingEquivalently
+            )
+        }
+    }
 }

@@ -87,7 +87,7 @@ public final class MemoizingInterruptibleSupplierTest {
     MemoizingInterruptibleSupplier<String> supplier =
         MemoizingInterruptibleSupplier.of(callCounter::call);
 
-    boolean initialized = supplier.isInitialized();
+    boolean initialized = supplier.isInitialized;
 
     assertThat(initialized).isFalse();
   }
@@ -98,7 +98,7 @@ public final class MemoizingInterruptibleSupplierTest {
         MemoizingInterruptibleSupplier.of(callCounter::call);
 
     supplier.get();
-    boolean initialized = supplier.isInitialized();
+    boolean initialized = supplier.isInitialized;
 
     assertThat(initialized).isTrue();
   }
@@ -110,7 +110,7 @@ public final class MemoizingInterruptibleSupplierTest {
 
     supplier.get();
     supplier.get();
-    boolean initialized = supplier.isInitialized();
+    boolean initialized = supplier.isInitialized;
 
     assertThat(initialized).isTrue();
   }

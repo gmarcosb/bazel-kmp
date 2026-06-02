@@ -11,52 +11,47 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.auto.value.AutoValue;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.analysis.TopLevelArtifactContext;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator.AspectKey;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.StallableSkykey;
-import java.util.Collection;
+import com.google.devtools.build.lib.analysis.TopLevelArtifactContext
 
 /**
  * The value of an AspectCompletion. Currently this just stores an Aspect.
  */
-public class AspectCompletionValue implements SkyValue {
-  @SerializationConstant static final AspectCompletionValue INSTANCE = new AspectCompletionValue();
+object AspectCompletionValue : SkyValue {
+    @kotlin.jvm.JvmField
+    @SerializationConstant
+    val INSTANCE: AspectCompletionValue = AspectCompletionValue()
 
-  private AspectCompletionValue() {}
-
-  public static Iterable<SkyKey> keys(Collection<AspectKey> keys, TopLevelArtifactContext ctx) {
-    return Iterables.transform(keys, k -> AspectCompletionKey.create(k, ctx));
-  }
-
-  /** The key of an AspectCompletionValue. */
-  @AutoValue
-  public abstract static class AspectCompletionKey
-      implements TopLevelActionLookupKeyWrapper, StallableSkykey {
-    public static AspectCompletionKey create(
-        AspectKey aspectKey, TopLevelArtifactContext topLevelArtifactContext) {
-      return new AutoValue_AspectCompletionValue_AspectCompletionKey(
-          topLevelArtifactContext, aspectKey);
+    fun keys(keys: MutableCollection<AspectKey?>, ctx: TopLevelArtifactContext?): Iterable<SkyKey?> {
+        return com.google.common.collect.Iterables.transform<AspectKey?, SkyKey?>(
+            keys,
+            com.google.common.base.Function { k: AspectKey? -> AspectCompletionKey.Companion.create(k, ctx) })
     }
 
-    @Override
-    public abstract AspectKey actionLookupKey();
+    /** The key of an AspectCompletionValue.  */
+    @AutoValue
+    abstract class AspectCompletionKey
 
-    @Override
-    public final SkyFunctionName functionName() {
-      return SkyFunctions.ASPECT_COMPLETION;
-    }
+        : TopLevelActionLookupKeyWrapper, StallableSkykey {
+        abstract override fun actionLookupKey(): AspectKey?
 
-    @Override
-    public final boolean valueIsShareable() {
-      return false;
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.ASPECT_COMPLETION
+        }
+
+        override fun valueIsShareable(): Boolean {
+            return false
+        }
+
+        companion object {
+            fun create(
+                aspectKey: AspectKey?, topLevelArtifactContext: TopLevelArtifactContext?
+            ): AspectCompletionKey {
+                return AutoValue_AspectCompletionValue_AspectCompletionKey(
+                    topLevelArtifactContext, aspectKey
+                )
+            }
+        }
     }
-  }
 }

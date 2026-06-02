@@ -11,67 +11,67 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe.state;
+package com.google.devtools.build.skyframe.state
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunction.LookupEnvironment;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.SkyFunction.LookupEnvironment
+import com.google.devtools.build.skyframe.state.StateMachine
 
 /**
  * A state machine that outputs a value or exception.
- *
- * <p>This class serves as a bridge between a {@link StateMachine} and a {@link SkyFunction}.
- *
- * <p>Subclasses should call {@link #setValue} or {@link #setException} to emit results.
- *
- * <p>The parameter {@code V} must not be an exception type.
+ * 
+ * 
+ * This class serves as a bridge between a [StateMachine] and a [SkyFunction].
+ * 
+ * 
+ * Subclasses should call [.setValue] or [.setException] to emit results.
+ * 
+ * 
+ * The parameter `V` must not be an exception type.
  */
-public abstract class ValueOrExceptionProducer<V, E extends Exception> implements StateMachine {
-  private final Driver driver = new Driver(this);
+abstract class ValueOrExceptionProducer<V, E : java.lang.Exception?> : StateMachine {
+    private val driver: com.google.devtools.build.skyframe.state.Driver =
+        com.google.devtools.build.skyframe.state.Driver(this)
 
-  /** Will be of type {@code V} or {@code E}. */
-  private Object result;
+    /** Will be of type `V` or `E`.  */
+    private var result: Any? = null
 
-  /**
-   * Tries to produce the result of the underlying state machine.
-   *
-   * <p>Note that during error bubbling, the machine may discover and process an input error, even
-   * with missing inputs, meaning that exceptions may be thrown before the machine considers itself
-   * complete.
-   *
-   * <p>If both an error and value are set, the exception will take priority.
-   *
-   * @return null if the underlying state machine did not complete (due to missing inputs).
-   */
-  @Nullable
-  @SuppressWarnings("unchecked")
-  public final V tryProduceValue(LookupEnvironment env) throws InterruptedException, E {
-    boolean done = driver.drive(env);
-    if (result instanceof Exception) {
-      throw (E) result;
+    /**
+     * Tries to produce the result of the underlying state machine.
+     * 
+     * 
+     * Note that during error bubbling, the machine may discover and process an input error, even
+     * with missing inputs, meaning that exceptions may be thrown before the machine considers itself
+     * complete.
+     * 
+     * 
+     * If both an error and value are set, the exception will take priority.
+     * 
+     * @return null if the underlying state machine did not complete (due to missing inputs).
+     */
+    @Throws(java.lang.InterruptedException::class, E::class)
+    fun tryProduceValue(env: LookupEnvironment?): V? {
+        val done: Boolean = driver.drive(env)
+        if (result is java.lang.Exception) {
+            throw result as E
+        }
+        if (done) {
+            return com.google.common.base.Preconditions.checkNotNull<V?>(result as V?)
+        }
+        return null
     }
-    if (done) {
-      return checkNotNull((V) result);
+
+    protected fun setValue(value: V?) {
+        this.result = value
     }
-    return null;
-  }
 
-  protected final void setValue(V value) {
-    this.result = value;
-  }
-
-  protected final void setException(E exception) {
-    this.result = exception;
-  }
-
-  @Nullable
-  @SuppressWarnings("unchecked")
-  protected final E getException() {
-    if (result instanceof Exception) {
-      return (E) result;
+    protected fun setException(exception: E?) {
+        this.result = exception
     }
-    return null;
-  }
+
+    protected fun getException(): E? {
+        if (result is java.lang.Exception) {
+            return result as E
+        }
+        return null
+    }
 }

@@ -11,27 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi
 
-package com.google.devtools.build.lib.starlarkbuildapi;
+import com.google.devtools.build.lib.starlarkbuildapi.FileApi
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkValue;
-
-/** Interface for a single runfiles symlink represented by a link name and target. */
-@StarlarkBuiltin(
+/** Interface for a single runfiles symlink represented by a link name and target.  */
+@net.starlark.java.annot.StarlarkBuiltin(
     name = "SymlinkEntry",
-    category = DocCategory.BUILTIN,
-    doc = "A single runfiles symlink represented by a link name and target.")
-public interface SymlinkEntryApi extends StarlarkValue {
+    category = com.google.devtools.build.docgen.annot.DocCategory.BUILTIN,
+    doc = "A single runfiles symlink represented by a link name and target."
+)
+interface SymlinkEntryApi : net.starlark.java.eval.StarlarkValue {
+    @get:net.starlark.java.annot.StarlarkMethod(
+        name = "path",
+        doc = "The path of the symlink in the runfiles tree",
+        structField = true
+    )
+    val pathString: String?
 
-  @StarlarkMethod(
-      name = "path",
-      doc = "The path of the symlink in the runfiles tree",
-      structField = true)
-  String getPathString();
-
-  @StarlarkMethod(name = "target_file", doc = "Target file of the symlink", structField = true)
-  FileApi getArtifact();
+    @get:net.starlark.java.annot.StarlarkMethod(
+        name = "target_file",
+        doc = "Target file of the symlink",
+        structField = true
+    )
+    val artifact: FileApi?
 }

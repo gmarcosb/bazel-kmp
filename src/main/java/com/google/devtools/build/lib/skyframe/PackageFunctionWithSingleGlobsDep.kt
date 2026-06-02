@@ -11,209 +11,191 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Sets;
-import com.google.devtools.build.lib.actions.ThreadStateReceiver;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.io.FileSymlinkException;
-import com.google.devtools.build.lib.io.InconsistentFilesystemException;
-import com.google.devtools.build.lib.packages.BuildFileNotFoundException;
-import com.google.devtools.build.lib.packages.CachingPackageLocator;
-import com.google.devtools.build.lib.packages.Globber;
-import com.google.devtools.build.lib.packages.GlobberUtils;
-import com.google.devtools.build.lib.packages.NonSkyframeGlobber;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.PackageFactory;
-import com.google.devtools.build.lib.packages.PackageLoadingListener.Metrics;
-import com.google.devtools.build.lib.skyframe.GlobsValue.GlobRequest;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ThreadStateReceiver
 
 /**
- * Computes the {@link PackageValue} which depends on a single GLOBS node.
- *
- * <p>{@link PackageFunctionWithSingleGlobsDep} subclass is created when the globbing strategy is
- * {@link
- * com.google.devtools.build.lib.skyframe.PackageFunction.GlobbingStrategy#SINGLE_GLOBS_HYBRID}. All
- * globs defined in the package's {@code BUILD} file are combined into a single GLOBS node.
- *
- * <p>For an overview of the problem space and our approach, see the https://youtu.be/ZrevTeuU-gQ
+ * Computes the [PackageValue] which depends on a single GLOBS node.
+ * 
+ * 
+ * [PackageFunctionWithSingleGlobsDep] subclass is created when the globbing strategy is
+ * [ ][com.google.devtools.build.lib.skyframe.PackageFunction.GlobbingStrategy.SINGLE_GLOBS_HYBRID]. All
+ * globs defined in the package's `BUILD` file are combined into a single GLOBS node.
+ * 
+ * 
+ * For an overview of the problem space and our approach, see the https://youtu.be/ZrevTeuU-gQ
  * talk from BazelCon 2024 (slides:
  * https://docs.google.com/presentation/d/e/2PACX-1vSjmiGyHDiCDowgc5ar7f7MLAPCzYAAoH1APmnTjqdTpcWv12ysFvgT_aVwj82vLa7JJA8esnp2jtMJ/pub).
  */
-final class PackageFunctionWithSingleGlobsDep extends PackageFunction {
+internal class PackageFunctionWithSingleGlobsDep(
+    packageFactory: PackageFactory?,
+    pkgLocator: CachingPackageLocator?,
+    showLoadingProgress: AtomicBoolean?,
+    numPackagesSuccessfullyLoaded: AtomicInteger?,
+    bzlLoadFunctionForInlining: BzlLoadFunction?,
+    packageProgress: PackageProgressReceiver?,
+    actionOnIoExceptionReadingBuildFile: ActionOnIOExceptionReadingBuildFile?,
+    actionOnFilesystemErrorCodeLoadingBzlFile: ActionOnFilesystemErrorCodeLoadingBzlFile?,
+    shouldUseRepoDotBazel: Boolean,
+    threadStateReceiverFactoryForMetrics: java.util.function.Function<SkyKey?, ThreadStateReceiver?>?,
+    cpuBoundSemaphore: AtomicReference<Semaphore?>?
+) : PackageFunction(
+    packageFactory,
+    pkgLocator,
+    showLoadingProgress,
+    numPackagesSuccessfullyLoaded,
+    bzlLoadFunctionForInlining,
+    packageProgress,
+    actionOnIoExceptionReadingBuildFile,
+    actionOnFilesystemErrorCodeLoadingBzlFile,
+    shouldUseRepoDotBazel,
+    threadStateReceiverFactoryForMetrics,
+    cpuBoundSemaphore
+) {
+    private class LoadedPackageWithGlobRequests(
+        builder: Package.AbstractBuilder?,
+        metrics: Metrics?,
+        globRequests: com.google.common.collect.ImmutableSet<GlobRequest?>
+    ) : LoadedPackage(builder, metrics) {
+        private val globRequests: com.google.common.collect.ImmutableSet<GlobRequest?>
 
-  PackageFunctionWithSingleGlobsDep(
-      PackageFactory packageFactory,
-      CachingPackageLocator pkgLocator,
-      AtomicBoolean showLoadingProgress,
-      AtomicInteger numPackagesSuccessfullyLoaded,
-      @Nullable BzlLoadFunction bzlLoadFunctionForInlining,
-      @Nullable PackageProgressReceiver packageProgress,
-      ActionOnIOExceptionReadingBuildFile actionOnIoExceptionReadingBuildFile,
-      ActionOnFilesystemErrorCodeLoadingBzlFile actionOnFilesystemErrorCodeLoadingBzlFile,
-      boolean shouldUseRepoDotBazel,
-      Function<SkyKey, ThreadStateReceiver> threadStateReceiverFactoryForMetrics,
-      AtomicReference<Semaphore> cpuBoundSemaphore) {
-    super(
-        packageFactory,
-        pkgLocator,
-        showLoadingProgress,
-        numPackagesSuccessfullyLoaded,
-        bzlLoadFunctionForInlining,
-        packageProgress,
-        actionOnIoExceptionReadingBuildFile,
-        actionOnFilesystemErrorCodeLoadingBzlFile,
-        shouldUseRepoDotBazel,
-        threadStateReceiverFactoryForMetrics,
-        cpuBoundSemaphore);
-  }
-
-  private static final class LoadedPackageWithGlobRequests extends LoadedPackage {
-    private final ImmutableSet<GlobRequest> globRequests;
-
-    private LoadedPackageWithGlobRequests(
-        Package.AbstractBuilder builder, Metrics metrics, ImmutableSet<GlobRequest> globRequests) {
-      super(builder, metrics);
-      this.globRequests = globRequests;
-    }
-  }
-
-  /**
-   * Performs non-Skyframe globbing operations and prepares the {@link GlobRequest}s set for
-   * subsequent Skyframe-based globbing.
-   */
-  private static final class GlobsGlobber implements Globber {
-    private final NonSkyframeGlobber nonSkyframeGlobber;
-    private final Set<GlobRequest> globRequests = Sets.newConcurrentHashSet();
-
-    private GlobsGlobber(NonSkyframeGlobber nonSkyframeGlobber) {
-      this.nonSkyframeGlobber = nonSkyframeGlobber;
-    }
-
-    @Override
-    public Token runAsync(
-        List<String> includes, List<String> excludes, Operation operation, boolean allowEmpty)
-        throws BadGlobException {
-      for (String pattern : includes) {
-        try {
-          globRequests.add(GlobRequest.create(pattern, operation));
-        } catch (InvalidGlobPatternException e) {
-          throw new BadGlobException(e.getMessage());
+        init {
+            this.globRequests = globRequests
         }
-      }
-
-      NonSkyframeGlobber.Token nonSkyframeGlobToken =
-          nonSkyframeGlobber.runAsync(includes, excludes, operation, allowEmpty);
-      return new GlobsToken(nonSkyframeGlobToken, operation, allowEmpty);
-    }
-
-    @Override
-    public List<String> fetchUnsorted(Token token)
-        throws BadGlobException, IOException, InterruptedException {
-      Set<String> matches = Sets.newHashSet();
-      matches.addAll(
-          nonSkyframeGlobber.fetchUnsorted(((GlobsToken) token).nonSkyframeGlobberIncludesToken));
-
-      List<String> result = new ArrayList<>(matches);
-      if (!((GlobsToken) token).allowEmpty && result.isEmpty()) {
-        GlobberUtils.throwBadGlobExceptionAllExcluded(((GlobsToken) token).globberOperation);
-      }
-      return result;
-    }
-
-    @Override
-    public void onInterrupt() {
-      nonSkyframeGlobber.onInterrupt();
-    }
-
-    @Override
-    public void onCompletion() {
-      nonSkyframeGlobber.onCompletion();
     }
 
     /**
-     * Returns an {@link ImmutableSet} of all package's globs, which will be used to construct
-     * {@link GlobsValue.Key} to be requested in Skyframe downstream.
-     *
-     * <p>An empty {@link ImmutableSet} is returned if there is no glob is defined in the package's
-     * BUILD file. Hence, requesting GLOBS in Skyframe is skipped downstream.
+     * Performs non-Skyframe globbing operations and prepares the [GlobRequest]s set for
+     * subsequent Skyframe-based globbing.
      */
-    public ImmutableSet<GlobRequest> getGlobRequests() {
-      return ImmutableSet.copyOf(globRequests);
+    private class GlobsGlobber(nonSkyframeGlobber: NonSkyframeGlobber) : Globber {
+        private val nonSkyframeGlobber: NonSkyframeGlobber
+        private val globRequests: MutableSet<GlobRequest?> =
+            com.google.common.collect.Sets.newConcurrentHashSet<GlobRequest?>()
+
+        init {
+            this.nonSkyframeGlobber = nonSkyframeGlobber
+        }
+
+        @Throws(BadGlobException::class)
+        public override fun runAsync(
+            includes: MutableList<String?>, excludes: MutableList<String?>?, operation: Operation?, allowEmpty: Boolean
+        ): Token {
+            for (pattern in includes) {
+                try {
+                    globRequests.add(GlobRequest.create(pattern, operation))
+                } catch (e: InvalidGlobPatternException) {
+                    throw BadGlobException(e.getMessage())
+                }
+            }
+
+            val nonSkyframeGlobToken: NonSkyframeGlobber.Token? =
+                nonSkyframeGlobber.runAsync(includes, excludes, operation, allowEmpty)
+            return GlobsToken(nonSkyframeGlobToken, operation, allowEmpty)
+        }
+
+        @Throws(BadGlobException::class, IOException::class, java.lang.InterruptedException::class)
+        public override fun fetchUnsorted(token: Token): MutableList<String?> {
+            val matches: MutableSet<String?> = com.google.common.collect.Sets.newHashSet<String?>()
+            matches.addAll(
+                nonSkyframeGlobber.fetchUnsorted((token as GlobsToken).nonSkyframeGlobberIncludesToken)
+            )
+
+            val result: MutableList<String?> = java.util.ArrayList<String?>(matches)
+            if (!token.allowEmpty && result.isEmpty()) {
+                GlobberUtils.throwBadGlobExceptionAllExcluded(token.globberOperation)
+            }
+            return result
+        }
+
+        public override fun onInterrupt() {
+            nonSkyframeGlobber.onInterrupt()
+        }
+
+        public override fun onCompletion() {
+            nonSkyframeGlobber.onCompletion()
+        }
+
+        /**
+         * Returns an [ImmutableSet] of all package's globs, which will be used to construct
+         * [GlobsValue.Key] to be requested in Skyframe downstream.
+         * 
+         * 
+         * An empty [ImmutableSet] is returned if there is no glob is defined in the package's
+         * BUILD file. Hence, requesting GLOBS in Skyframe is skipped downstream.
+         */
+        fun getGlobRequests(): com.google.common.collect.ImmutableSet<GlobRequest?> {
+            return com.google.common.collect.ImmutableSet.copyOf<GlobRequest?>(globRequests)
+        }
+
+        private class GlobsToken(
+            nonSkyframeGlobberIncludesToken: NonSkyframeGlobber.Token?,
+            globberOperation: Globber.Operation?,
+            allowEmpty: Boolean
+        ) : Globber.Token() {
+            private val nonSkyframeGlobberIncludesToken: NonSkyframeGlobber.Token?
+            private val globberOperation: Globber.Operation?
+            private val allowEmpty: Boolean
+
+            init {
+                this.nonSkyframeGlobberIncludesToken = nonSkyframeGlobberIncludesToken
+                this.globberOperation = globberOperation
+                this.allowEmpty = allowEmpty
+            }
+        }
     }
 
-    private static class GlobsToken extends Globber.Token {
-      private final NonSkyframeGlobber.Token nonSkyframeGlobberIncludesToken;
-      private final Globber.Operation globberOperation;
-      private final boolean allowEmpty;
+    @Throws(
+        java.lang.InterruptedException::class,
+        InternalInconsistentFilesystemException::class,
+        FileSymlinkException::class
+    )
+    override fun handleGlobDepsAndPropagateFilesystemExceptions(
+        packageIdentifier: PackageIdentifier?,
+        packageRoot: Root?,
+        loadedPackage: LoadedPackage,
+        env: SkyFunction.Environment,
+        packageWasInError: Boolean
+    ) {
+        val globRequests: com.google.common.collect.ImmutableSet<GlobRequest?> =
+            (loadedPackage as LoadedPackageWithGlobRequests).globRequests
+        if (globRequests.isEmpty()) {
+            return
+        }
 
-      private GlobsToken(
-          NonSkyframeGlobber.Token nonSkyframeGlobberIncludesToken,
-          Globber.Operation globberOperation,
-          boolean allowEmpty) {
-        this.nonSkyframeGlobberIncludesToken = nonSkyframeGlobberIncludesToken;
-        this.globberOperation = globberOperation;
-        this.allowEmpty = allowEmpty;
-      }
+        val globsKey: GlobsValue.Key? = GlobsValue.key(packageIdentifier, packageRoot, globRequests)
+        try {
+            env.getValueOrThrow<E1?, E2?>(globsKey, IOException::class.java, BuildFileNotFoundException::class.java)
+        } catch (e: InconsistentFilesystemException) {
+            throw InternalInconsistentFilesystemException(packageIdentifier, e)
+        } catch (e: FileSymlinkException) {
+            // Please note that GlobsFunction or its deps FileFunction throws the first
+            // `FileSymlinkException` discovered, which is consistent with how
+            // PackageFunctionWithMultipleGlobDeps#handleGlobDepsAndPropagateFilesystemExceptions handles
+            // FileSymlinkException caught.
+            throw e
+        } catch (e: IOException) {
+            PackageFunction.Companion.maybeThrowFilesystemInconsistency(packageIdentifier, e, packageWasInError)
+        } catch (e: BuildFileNotFoundException) {
+            PackageFunction.Companion.maybeThrowFilesystemInconsistency(packageIdentifier, e, packageWasInError)
+        }
     }
-  }
 
-  @Override
-  protected void handleGlobDepsAndPropagateFilesystemExceptions(
-      PackageIdentifier packageIdentifier,
-      Root packageRoot,
-      LoadedPackage loadedPackage,
-      Environment env,
-      boolean packageWasInError)
-      throws InterruptedException, InternalInconsistentFilesystemException, FileSymlinkException {
-    ImmutableSet<GlobRequest> globRequests =
-        ((LoadedPackageWithGlobRequests) loadedPackage).globRequests;
-    if (globRequests.isEmpty()) {
-      return;
+    override fun makeGlobber(
+        nonSkyframeGlobber: NonSkyframeGlobber,
+        packageId: PackageIdentifier?,
+        packageRoot: Root?,
+        env: SkyFunction.Environment?
+    ): GlobsGlobber {
+        return GlobsGlobber(nonSkyframeGlobber)
     }
 
-    GlobsValue.Key globsKey = GlobsValue.key(packageIdentifier, packageRoot, globRequests);
-    try {
-      env.getValueOrThrow(globsKey, IOException.class, BuildFileNotFoundException.class);
-    } catch (InconsistentFilesystemException e) {
-      throw new InternalInconsistentFilesystemException(packageIdentifier, e);
-    } catch (FileSymlinkException e) {
-      // Please note that GlobsFunction or its deps FileFunction throws the first
-      // `FileSymlinkException` discovered, which is consistent with how
-      // PackageFunctionWithMultipleGlobDeps#handleGlobDepsAndPropagateFilesystemExceptions handles
-      // FileSymlinkException caught.
-      throw e;
-    } catch (IOException | BuildFileNotFoundException e) {
-      maybeThrowFilesystemInconsistency(packageIdentifier, e, packageWasInError);
+    override fun newLoadedPackage(
+        packageBuilder: Package.AbstractBuilder?, globber: Globber?, metrics: Metrics?
+    ): LoadedPackage {
+        return LoadedPackageWithGlobRequests(
+            packageBuilder, metrics, (globber as GlobsGlobber).getGlobRequests()
+        )
     }
-  }
-
-  @Override
-  protected GlobsGlobber makeGlobber(
-      NonSkyframeGlobber nonSkyframeGlobber,
-      PackageIdentifier packageId,
-      Root packageRoot,
-      Environment env) {
-    return new GlobsGlobber(nonSkyframeGlobber);
-  }
-
-  @Override
-  protected LoadedPackage newLoadedPackage(
-      Package.AbstractBuilder packageBuilder, @Nullable Globber globber, Metrics metrics) {
-    return new LoadedPackageWithGlobRequests(
-        packageBuilder, metrics, ((GlobsGlobber) globber).getGlobRequests());
-  }
 }

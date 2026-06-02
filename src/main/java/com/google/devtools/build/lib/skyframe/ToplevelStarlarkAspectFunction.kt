@@ -11,489 +11,466 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
-
-import static com.google.devtools.build.lib.analysis.producers.TargetAndConfigurationProducer.configurationIdMessage;
-import static com.google.devtools.build.lib.analysis.producers.TargetAndConfigurationProducer.createDetailedExitCode;
-import static com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil.configurationId;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionConflictException;
-import com.google.devtools.build.lib.analysis.AliasProvider;
-import com.google.devtools.build.lib.analysis.AspectCollection;
-import com.google.devtools.build.lib.analysis.AspectResolutionHelpers;
-import com.google.devtools.build.lib.analysis.AspectValue;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.ConfiguredTargetValue;
-import com.google.devtools.build.lib.analysis.InconsistentAspectOrderException;
-import com.google.devtools.build.lib.analysis.TransitiveDependencyState;
-import com.google.devtools.build.lib.analysis.config.StarlarkTransitionCache;
-import com.google.devtools.build.lib.analysis.config.transitions.PatchTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.TransitionFactory;
-import com.google.devtools.build.lib.analysis.producers.RuleTransitionApplier;
-import com.google.devtools.build.lib.analysis.producers.RuleTransitionApplier.IdempotencyState;
-import com.google.devtools.build.lib.analysis.producers.TargetAndConfigurationData;
-import com.google.devtools.build.lib.causes.AnalysisFailedCause;
-import com.google.devtools.build.lib.causes.Cause;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.StoredEventHandler;
-import com.google.devtools.build.lib.packages.Aspect;
-import com.google.devtools.build.lib.packages.NoSuchTargetException;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.RuleClassProvider;
-import com.google.devtools.build.lib.packages.RuleTransitionData;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.server.FailureDetails.Analysis.Code;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator.AspectKey;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator.TopLevelAspectsKey;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetEvaluationExceptions.DependencyException;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetEvaluationExceptions.ReportedException;
-import com.google.devtools.build.lib.skyframe.SkyframeExecutor.BuildViewProvider;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunction.Environment.SkyKeyComputeState;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionException.Transience;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.SkyframeLookupResult;
-import com.google.devtools.build.skyframe.state.Driver;
-import com.google.devtools.build.skyframe.state.StateMachine;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.syntax.Location;
+import com.google.devtools.build.lib.analysis.producers.TargetAndConfigurationProducer.configurationIdMessage
 
 /**
  * SkyFunction to run the aspects path obtained from top-level aspects on the list of top-level
  * targets.
- *
- * <p>Used for loading top-level aspects, filtering them based on their required providers, and
+ * 
+ * 
+ * Used for loading top-level aspects, filtering them based on their required providers, and
  * computing the relationship between top-level aspects.
- *
- * <p>At top level, in {@link com.google.devtools.build.lib.analysis.BuildView}, we cannot invoke
+ * 
+ * 
+ * At top level, in [com.google.devtools.build.lib.analysis.BuildView], we cannot invoke
  * two SkyFunctions one after another, so BuildView calls this function to do the work.
  */
-final class ToplevelStarlarkAspectFunction implements SkyFunction {
-  private final BuildViewProvider buildViewProvider;
-  private final RuleClassProvider ruleClassProvider;
-  private final boolean storeTransitivePackages;
-  // Do not use this field for package retrieval of the base configured target since it will cause
-  // incrementality errors because an essential dependency edge would not be registered.
-  private final PrerequisitePackageFunction prerequisitePackages;
+internal class ToplevelStarlarkAspectFunction(
+    buildViewProvider: BuildViewProvider,
+    ruleClassProvider: RuleClassProvider?,
+    storeTransitivePackages: Boolean,
+    prerequisitePackages: PrerequisitePackageFunction?
+) : SkyFunction {
+    private val buildViewProvider: BuildViewProvider
+    private val ruleClassProvider: RuleClassProvider?
+    private val storeTransitivePackages: Boolean
 
-  ToplevelStarlarkAspectFunction(
-      BuildViewProvider buildViewProvider,
-      RuleClassProvider ruleClassProvider,
-      boolean storeTransitivePackages,
-      PrerequisitePackageFunction prerequisitePackages) {
-    this.buildViewProvider = buildViewProvider;
-    this.ruleClassProvider = ruleClassProvider;
-    this.storeTransitivePackages = storeTransitivePackages;
-    this.prerequisitePackages = prerequisitePackages;
-  }
+    // Do not use this field for package retrieval of the base configured target since it will cause
+    // incrementality errors because an essential dependency edge would not be registered.
+    private val prerequisitePackages: PrerequisitePackageFunction?
 
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws InterruptedException,
-          TopLevelStarlarkAspectFunctionException,
-          DependencyException,
-          ReportedException {
-    TopLevelAspectsKey topLevelAspectsKey = (TopLevelAspectsKey) skyKey.argument();
-
-    LoadAspectsKey loadAspectsKey =
-        LoadAspectsKey.create(
-            topLevelAspectsKey.getTopLevelAspectsClasses(),
-            topLevelAspectsKey.getTopLevelAspectsParameters());
-    PackageIdentifier packageIdentifier =
-        topLevelAspectsKey.getBaseConfiguredTargetKey().getLabel().getPackageIdentifier();
-
-    SkyframeLookupResult initialLookupResult =
-        env.getValuesAndExceptions(ImmutableList.of(loadAspectsKey, packageIdentifier));
-
-    var loadAspectsValue = (LoadAspectsValue) initialLookupResult.get(loadAspectsKey);
-    if (loadAspectsValue == null) {
-      return null; // aspects are not ready
+    init {
+        this.buildViewProvider = buildViewProvider
+        this.ruleClassProvider = ruleClassProvider
+        this.storeTransitivePackages = storeTransitivePackages
+        this.prerequisitePackages = prerequisitePackages
     }
 
-    var packageValue = (PackageValue) initialLookupResult.get(packageIdentifier);
-    if (packageValue == null) {
-      return null; // package is not ready
-    }
-    Target target =
-        getTarget(packageValue, topLevelAspectsKey.getBaseConfiguredTargetKey().getLabel());
+    @Throws(
+        java.lang.InterruptedException::class,
+        TopLevelStarlarkAspectFunctionException::class,
+        DependencyException::class,
+        ReportedException::class
+    )
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment): SkyValue? {
+        val topLevelAspectsKey: TopLevelAspectsKey = skyKey.argument() as TopLevelAspectsKey
 
-    State state = env.getState(() -> new State(storeTransitivePackages, prerequisitePackages));
+        val loadAspectsKey: LoadAspectsKey? =
+            LoadAspectsKey.create(
+                topLevelAspectsKey.getTopLevelAspectsClasses(),
+                topLevelAspectsKey.getTopLevelAspectsParameters()
+            )
+        val packageIdentifier: PackageIdentifier? =
+            topLevelAspectsKey.getBaseConfiguredTargetKey().getLabel().getPackageIdentifier()
 
-    // Configuration of top level target could change during the analysis phase with rule
-    // transitions. In order not to wait for the complete configuration of the assigned target,
-    // {@link RuleTransitionApplier} is used to apply potentially requested rule transitions
-    // upfront. Configuration can be `null` if the target is not configurable, in which case the
-    // Skyframe restart is needed.
-    ConfiguredTargetKey baseConfiguredTargetKey =
-        getConfiguredTargetKey(state, topLevelAspectsKey.getBaseConfiguredTargetKey(), target, env);
-    if (baseConfiguredTargetKey == null) {
-      return null;
-    }
+        val initialLookupResult: SkyframeLookupResult =
+            env.getValuesAndExceptions(
+                com.google.common.collect.ImmutableList.of<SkyKey?>(
+                    loadAspectsKey,
+                    packageIdentifier
+                )
+            )
 
-    ImmutableList<AspectKey> aspectsKeys =
-        createAspectsKeys(
-            state, target, loadAspectsValue.getAspects(), baseConfiguredTargetKey, env);
-    if (aspectsKeys == null) {
-      return null; // alias target needs to be resolved
-    }
-
-    SkyframeLookupResult result = env.getValuesAndExceptions(aspectsKeys);
-    if (env.valuesMissing()) {
-      return null; // some aspects keys are not evaluated
-    }
-    ImmutableMap.Builder<AspectKey, AspectValue> valuesMap =
-        ImmutableMap.builderWithExpectedSize(aspectsKeys.size());
-    for (AspectKey aspectKey : aspectsKeys) {
-      try {
-        AspectValue value =
-            (AspectValue) result.getOrThrow(aspectKey, ActionConflictException.class);
-        if (value == null) {
-          return null;
+        val loadAspectsValue: LoadAspectsValue? = initialLookupResult.get(loadAspectsKey) as LoadAspectsValue?
+        if (loadAspectsValue == null) {
+            return null // aspects are not ready
         }
-        valuesMap.put(aspectKey, value);
-      } catch (ActionConflictException e) {
-        // Required in case of skymeld: the AspectKey isn't accessible from the BuildDriverKey.
-        throw new TopLevelStarlarkAspectFunctionException(
-            ActionConflictException.withAspectKeyInfo(e, aspectKey));
-      }
-    }
-    return new TopLevelAspectsValue(valuesMap.buildOrThrow());
-  }
 
-  private static Target getTarget(PackageValue packageValue, Label targetLabel)
-      throws DependencyException {
-    Package pkg = packageValue.getPackage();
-    try {
-      return pkg.getTarget(targetLabel.name);
-    } catch (NoSuchTargetException e) {
-      throw new DependencyException(e);
-    }
-  }
+        val packageValue: PackageValue? = initialLookupResult.get(packageIdentifier) as PackageValue?
+        if (packageValue == null) {
+            return null // package is not ready
+        }
+        val target =
+            getTarget(packageValue, topLevelAspectsKey.getBaseConfiguredTargetKey().getLabel())
 
-  @Nullable
-  private static ImmutableList<AspectKey> createAspectsKeys(
-      State state,
-      Target target,
-      ImmutableList<Aspect> aspects,
-      ConfiguredTargetKey baseConfiguredTargetKey,
-      Environment env)
-      throws InterruptedException, DependencyException, TopLevelStarlarkAspectFunctionException {
+        val state: State = env.getState<State>(java.util.function.Supplier {
+            com.google.devtools.build.lib.skyframe.ToplevelStarlarkAspectFunction.State(
+                storeTransitivePackages,
+                prerequisitePackages
+            )
+        })
 
-    if (state.aspectKeys != null) {
-      return state.aspectKeys;
-    }
+        // Configuration of top level target could change during the analysis phase with rule
+        // transitions. In order not to wait for the complete configuration of the assigned target,
+        // {@link RuleTransitionApplier} is used to apply potentially requested rule transitions
+        // upfront. Configuration can be `null` if the target is not configurable, in which case the
+        // Skyframe restart is needed.
+        val baseConfiguredTargetKey: ConfiguredTargetKey? =
+            getConfiguredTargetKey(state, topLevelAspectsKey.getBaseConfiguredTargetKey(), target, env)
+        if (baseConfiguredTargetKey == null) {
+            return null
+        }
 
-    // In case the target is an alias, we need to resolve its actual target.
-    if (AliasProvider.mayBeAlias(target)) {
+        val aspectsKeys: com.google.common.collect.ImmutableList<AspectKey?>? =
+            createAspectsKeys(
+                state, target, loadAspectsValue.getAspects(), baseConfiguredTargetKey, env
+            )
+        if (aspectsKeys == null) {
+            return null // alias target needs to be resolved
+        }
 
-      var aliasConfiguredValue = (ConfiguredTargetValue) env.getValue(baseConfiguredTargetKey);
-      if (env.valuesMissing()) {
-        return null;
-      }
-
-      Label actualLabel = aliasConfiguredValue.getConfiguredTarget().getActual().getLabel();
-      var packageValue = (PackageValue) env.getValue(actualLabel.getPackageIdentifier());
-      if (env.valuesMissing()) {
-        return null;
-      }
-      target = getTarget(packageValue, actualLabel);
-    }
-
-    AspectCollection aspectCollection;
-    try {
-      // TODO(bazel-team): Filter aspects more based on rule type. For example, aspect key should
-      // not be created for a file target if the aspect does not apply to files or their generating
-      // rules. Currently, some tests depend on such keys being created, so they need to be modified
-      // first.
-      if (target.isRule()) {
-        Rule ruleTarget = (Rule) target;
-        aspectCollection =
-            AspectResolutionHelpers.computeAspectCollection(
-                aspects,
-                ruleTarget.getAdvertisedProviders(),
-                ruleTarget.getLabel(),
-                ruleTarget.getRuleDefinitionEnvironmentLabel(),
-                ruleTarget.getRuleClass(),
-                ruleTarget.getOnlyTagsAttribute(),
-                ruleTarget.getLocation(),
-                env.getListener());
-      } else {
-        aspectCollection =
-            AspectResolutionHelpers.computeAspectCollectionNoAspectsFiltering(
-                aspects, target.getLabel(), target.getLocation());
-      }
-    } catch (InconsistentAspectOrderException e) {
-      // This is very unlikely, because AspectCollection should have deduplicated top level aspects.
-      env.getListener().handle(Event.error(e.getMessage()));
-      throw new TopLevelStarlarkAspectFunctionException(
-          new TopLevelAspectsDetailsBuildFailedException(
-              e.getMessage(), Code.ASPECT_CREATION_FAILED));
-    } catch (EvalException e) {
-      env.getListener().handle(Event.error(e.getMessageWithStack()));
-      throw new TopLevelStarlarkAspectFunctionException(
-          new TopLevelAspectsDetailsBuildFailedException(
-              e.getMessage(), Code.ASPECT_CREATION_FAILED));
-    }
-
-    state.aspectKeys = aspectCollection.createAspectKeys(baseConfiguredTargetKey);
-    return state.aspectKeys;
-  }
-
-  /**
-   * Returns {@code `baseConfiguredTargetKey`} if the configuration didn't change with potential
-   * transitions ({@link IdempotencyState#IDENTITY}). Otherwise, returns a new {@link
-   * ConfiguredTargetKey} with the new configuration ({@code `buildConfigurationKey`}).
-   */
-  @Nullable
-  private ConfiguredTargetKey createConfiguredTargetKey(
-      BuildConfigurationKey buildConfigurationKey,
-      ConfiguredTargetKey baseConfiguredTargetKey,
-      IdempotencyState idempotencyState) {
-    if (idempotencyState == IdempotencyState.IDENTITY) {
-      return baseConfiguredTargetKey;
-    }
-    ConfiguredTargetKey.Builder keyBuilder =
-        ConfiguredTargetKey.builder()
-            .setLabel(baseConfiguredTargetKey.getLabel())
-            .setConfigurationKey(buildConfigurationKey);
-
-    if (idempotencyState == IdempotencyState.NON_IDEMPOTENT) {
-      // The transition was not idempotent. Explicitly informs the delegate to avoid applying a
-      // rule transition.
-      keyBuilder.setShouldApplyRuleTransition(false);
-    }
-    return keyBuilder.build();
-  }
-
-  /**
-   * Computes configuration of the target by driving the state machine of {@link
-   * RuleTransitionApplier}.
-   */
-  public void computeConfiguration(
-      Environment env,
-      State state,
-      ConfiguredTargetKey baseConfiguredTargetKey,
-      Target target,
-      ConfiguredRuleClassProvider ruleClassProvider,
-      BuildViewProvider buildViewProvider)
-      throws InterruptedException {
-    if (state.myProducer == null) {
-      state.myProducer =
-          new Driver(
-              new TransitionedBaseConfigurationProducer(
-                  baseConfiguredTargetKey,
-                  ruleClassProvider.getTrimmingTransitionFactory(),
-                  ruleClassProvider.getToolchainTaggedTrimmingTransition(),
-                  buildViewProvider.getSkyframeBuildView().getStarlarkTransitionCache(),
-                  target,
-                  state));
-    }
-    if (state.myProducer.drive(env)) {
-      state.myProducer = null;
-    }
-  }
-
-  // Computes {@link BuildConfigurationKey} by driving the state machine of {@link
-  // RuleTransitionApplier} and returns the new {@link ConfiguredTargetKey} with the obtained build
-  // configuration. In case configuration key is still not ready, returns `null` since Skyframe
-  // restart is needed.
-  @Nullable
-  private ConfiguredTargetKey getConfiguredTargetKey(
-      State state, ConfiguredTargetKey baseConfiguredTargetKey, Target target, Environment env)
-      throws InterruptedException, ReportedException {
-    if (!target.isConfigurable()) {
-      return baseConfiguredTargetKey.toBuilder().setConfigurationKey(null).build();
-    }
-
-    computeConfiguration(
-        env,
-        state,
-        baseConfiguredTargetKey,
-        target,
-        (ConfiguredRuleClassProvider) ruleClassProvider,
-        buildViewProvider);
-
-    if (state.hasError()) {
-      ConfiguredValueCreationException exception =
-          state.createException(baseConfiguredTargetKey, target);
-      if (!exception.getMessage().isEmpty()) {
-        // Report the error to the user.
-        env.getListener().handle(Event.error(exception.getLocation(), exception.getMessage()));
-      }
-      throw new ReportedException(exception);
-    }
-
-    if (state.configurationKey == null) {
-      // Skyframe restart is needed since configuration is still not ready.
-      return null;
-    }
-    return createConfiguredTargetKey(
-        state.configurationKey, baseConfiguredTargetKey, state.idempotencyState);
-  }
-
-  private static class TopLevelStarlarkAspectFunctionException extends SkyFunctionException {
-    protected TopLevelStarlarkAspectFunctionException(ActionConflictException cause) {
-      super(cause, Transience.PERSISTENT);
-    }
-
-    protected TopLevelStarlarkAspectFunctionException(
-        TopLevelAspectsDetailsBuildFailedException cause) {
-      super(cause, Transience.PERSISTENT);
-    }
-  }
-
-  /**
-   * {@link StateMachine} which drives {@link RuleTransitionApplier} to apply potentially requested
-   * rule transitions and accepts the configuration key in {@link State}.
-   */
-  private static class TransitionedBaseConfigurationProducer
-      implements StateMachine, TargetAndConfigurationData {
-    ConfiguredTargetKey preRuleTransitionKey;
-    TransitionFactory<RuleTransitionData> trimmingTransitionFactory;
-    PatchTransition toolchainTaggedTrimmingTransition;
-    StarlarkTransitionCache transitionCache;
-    Target target;
-    State state;
-
-    TransitionedBaseConfigurationProducer(
-        ConfiguredTargetKey preRuleTransitionKey,
-        TransitionFactory<RuleTransitionData> trimmingTransitionFactory,
-        PatchTransition toolchainTaggedTrimmingTransition,
-        StarlarkTransitionCache transitionCache,
-        Target target,
-        State state) {
-      this.preRuleTransitionKey = preRuleTransitionKey;
-      this.trimmingTransitionFactory = trimmingTransitionFactory;
-      this.toolchainTaggedTrimmingTransition = toolchainTaggedTrimmingTransition;
-      this.transitionCache = transitionCache;
-      this.target = target;
-      this.state = state;
-    }
-
-    @Override
-    public StateMachine step(Tasks tasks) {
-      return new RuleTransitionApplier(
-          target,
-          (TargetAndConfigurationData) this,
-          (RuleTransitionApplier.ResultSink) state,
-          state.storedEvents,
-          /* runAfter= */ DONE);
-    }
-
-    @Override
-    public ConfiguredTargetKey getPreRuleTransitionKey() {
-      return preRuleTransitionKey;
-    }
-
-    @Override
-    public TransitionFactory<RuleTransitionData> getTrimmingTransitionFactory() {
-      return trimmingTransitionFactory;
-    }
-
-    @Override
-    public PatchTransition getToolchainTaggedTrimmingTransition() {
-      return toolchainTaggedTrimmingTransition;
-    }
-
-    @Override
-    public StarlarkTransitionCache getTransitionCache() {
-      return transitionCache;
-    }
-
-    @Override
-    public TransitiveDependencyState getTransitiveState() {
-      return state.transitiveState;
-    }
-  }
-
-  /**
-   * State which drives a {@link TransitionedBaseConfigurationProducer} and accepts the
-   * configuration when complete.
-   */
-  public static class State implements SkyKeyComputeState, RuleTransitionApplier.ResultSink {
-    @Nullable // Non-null while in-flight.
-    private Driver myProducer;
-    private final TransitiveDependencyState transitiveState;
-    private final StoredEventHandler storedEvents;
-
-    // --------------- Configuration fields ------------------
-    private BuildConfigurationKey configurationKey;
-    private IdempotencyState idempotencyState;
-
-    // --------------- Aspect fields ------------------
-    @Nullable private ImmutableList<AspectKey> aspectKeys;
-
-    // --------------- Error handling fields ------------------
-    @Nullable private String message = null;
-    @Nullable private Location location = null;
-    @Nullable private DetailedExitCode exitCode = null;
-
-    State(boolean storeTransitivePackages, PrerequisitePackageFunction prerequisitePackages) {
-      this.transitiveState =
-          new TransitiveDependencyState(storeTransitivePackages, prerequisitePackages);
-      this.storedEvents = new StoredEventHandler();
+        val result: SkyframeLookupResult = env.getValuesAndExceptions(aspectsKeys)
+        if (env.valuesMissing()) {
+            return null // some aspects keys are not evaluated
+        }
+        val valuesMap: com.google.common.collect.ImmutableMap.Builder<AspectKey?, AspectValue?> =
+            com.google.common.collect.ImmutableMap.builderWithExpectedSize<AspectKey?, AspectValue?>(aspectsKeys.size())
+        for (aspectKey in aspectsKeys) {
+            try {
+                val value: AspectValue? =
+                    result.getOrThrow<E?>(aspectKey, ActionConflictException::class.java) as AspectValue?
+                if (value == null) {
+                    return null
+                }
+                valuesMap.put(aspectKey, value)
+            } catch (e: ActionConflictException) {
+                // Required in case of skymeld: the AspectKey isn't accessible from the BuildDriverKey.
+                throw TopLevelStarlarkAspectFunctionException(
+                    ActionConflictException.withAspectKeyInfo(e, aspectKey)
+                )
+            }
+        }
+        return TopLevelAspectsValue(valuesMap.buildOrThrow())
     }
 
     /**
-     * Implementation of {@link RuleTransitionApplier.ResultSink}, where accepting the configuration
-     * and idempotency state is needed to compute {@link ConfiguredTargetKey}.
+     * Returns `` `baseConfiguredTargetKey` `` if the configuration didn't change with potential
+     * transitions ([IdempotencyState.IDENTITY]). Otherwise, returns a new [ ] with the new configuration (`` `buildConfigurationKey` ``).
      */
-    @Override
-    public void acceptConfiguration(
-        BuildConfigurationKey configurationKey, IdempotencyState idempotencyState) {
-      this.configurationKey = configurationKey;
-      this.idempotencyState = idempotencyState;
+    private fun createConfiguredTargetKey(
+        buildConfigurationKey: BuildConfigurationKey?,
+        baseConfiguredTargetKey: ConfiguredTargetKey,
+        idempotencyState: IdempotencyState?
+    ): ConfiguredTargetKey? {
+        if (idempotencyState === IdempotencyState.IDENTITY) {
+            return baseConfiguredTargetKey
+        }
+        val keyBuilder: ConfiguredTargetKey.Builder =
+            ConfiguredTargetKey.builder()
+                .setLabel(baseConfiguredTargetKey.getLabel())
+                .setConfigurationKey(buildConfigurationKey)
+
+        if (idempotencyState === IdempotencyState.NON_IDEMPOTENT) {
+            // The transition was not idempotent. Explicitly informs the delegate to avoid applying a
+            // rule transition.
+            keyBuilder.setShouldApplyRuleTransition(false)
+        }
+        return keyBuilder.build()
     }
 
     /**
-     * Implementation of {@link RuleTransitionApplier.ResultSink}, where accepting the error message
-     * is needed to throw {@link ReportedException}.
+     * Computes configuration of the target by driving the state machine of [ ].
      */
-    @Override
-    public void acceptErrorMessage(
-        String message, @Nullable Location location, @Nullable DetailedExitCode exitCode) {
-      this.message = message;
-      this.location = location;
-      this.exitCode = exitCode;
+    @Throws(java.lang.InterruptedException::class)
+    fun computeConfiguration(
+        env: SkyFunction.Environment?,
+        state: State,
+        baseConfiguredTargetKey: ConfiguredTargetKey?,
+        target: Target?,
+        ruleClassProvider: ConfiguredRuleClassProvider,
+        buildViewProvider: BuildViewProvider
+    ) {
+        if (state.myProducer == null) {
+            state.myProducer =
+                com.google.devtools.build.skyframe.state.Driver(
+                    TransitionedBaseConfigurationProducer(
+                        baseConfiguredTargetKey,
+                        ruleClassProvider.getTrimmingTransitionFactory(),
+                        ruleClassProvider.getToolchainTaggedTrimmingTransition(),
+                        buildViewProvider.getSkyframeBuildView().getStarlarkTransitionCache(),
+                        target,
+                        state
+                    )
+                )
+        }
+        if (state.myProducer.drive(env)) {
+            state.myProducer = null
+        }
     }
 
-    public boolean hasError() {
-      return this.message != null || this.location != null || this.exitCode != null;
+    // Computes {@link BuildConfigurationKey} by driving the state machine of {@link
+    // RuleTransitionApplier} and returns the new {@link ConfiguredTargetKey} with the obtained build
+    // configuration. In case configuration key is still not ready, returns `null` since Skyframe
+    // restart is needed.
+    @Throws(java.lang.InterruptedException::class, ReportedException::class)
+    private fun getConfiguredTargetKey(
+        state: State, baseConfiguredTargetKey: ConfiguredTargetKey, target: Target, env: SkyFunction.Environment
+    ): ConfiguredTargetKey? {
+        if (!target.isConfigurable()) {
+            return baseConfiguredTargetKey.toBuilder().setConfigurationKey(null).build()
+        }
+
+        computeConfiguration(
+            env,
+            state,
+            baseConfiguredTargetKey,
+            target,
+            ruleClassProvider as ConfiguredRuleClassProvider?,
+            buildViewProvider
+        )
+
+        if (state.hasError()) {
+            val exception: ConfiguredValueCreationException =
+                state.createException(baseConfiguredTargetKey, target)
+            if (!exception.getMessage().isEmpty()) {
+                // Report the error to the user.
+                env.getListener().handle(
+                    com.google.devtools.build.lib.events.Event.error(
+                        exception.getLocation(),
+                        exception.getMessage()
+                    )
+                )
+            }
+            throw ReportedException(exception)
+        }
+
+        if (state.configurationKey == null) {
+            // Skyframe restart is needed since configuration is still not ready.
+            return null
+        }
+        return createConfiguredTargetKey(
+            state.configurationKey, baseConfiguredTargetKey, state.idempotencyState
+        )
+    }
+
+    private class TopLevelStarlarkAspectFunctionException : SkyFunctionException {
+        protected constructor(cause: ActionConflictException?) : super(cause, Transience.PERSISTENT)
+
+        constructor(cause: TopLevelAspectsDetailsBuildFailedException?) : super(cause, Transience.PERSISTENT)
     }
 
     /**
-     * Handles an exception thrown during the rule transition application in {@link
-     * RuleTransitionApplier}
+     * [StateMachine] which drives [RuleTransitionApplier] to apply potentially requested
+     * rule transitions and accepts the configuration key in [State].
      */
-    public ConfiguredValueCreationException createException(
-        ConfiguredTargetKey baseConfiguredTargetKey, Target target) {
-      Cause cause =
-          new AnalysisFailedCause(
-              baseConfiguredTargetKey.getLabel(),
-              configurationIdMessage(
-                  baseConfiguredTargetKey.getConfigurationKey().getOptionsChecksum()),
-              exitCode != null ? exitCode : createDetailedExitCode(message));
-      return new ConfiguredValueCreationException(
-          location,
-          message,
-          target.getLabel(),
-          configurationId(baseConfiguredTargetKey.getConfigurationKey()),
-          NestedSetBuilder.create(Order.STABLE_ORDER, cause),
-          exitCode != null ? exitCode : createDetailedExitCode(message));
+    private class TransitionedBaseConfigurationProducer
+        (
+        preRuleTransitionKey: ConfiguredTargetKey?,
+        trimmingTransitionFactory: TransitionFactory<RuleTransitionData?>?,
+        toolchainTaggedTrimmingTransition: PatchTransition?,
+        transitionCache: StarlarkTransitionCache?,
+        target: Target?,
+        state: State
+    ) : StateMachine, TargetAndConfigurationData {
+        var preRuleTransitionKey: ConfiguredTargetKey?
+        var trimmingTransitionFactory: TransitionFactory<RuleTransitionData?>?
+        var toolchainTaggedTrimmingTransition: PatchTransition?
+        var transitionCache: StarlarkTransitionCache?
+        var target: Target?
+        var state: State
+
+        init {
+            this.preRuleTransitionKey = preRuleTransitionKey
+            this.trimmingTransitionFactory = trimmingTransitionFactory
+            this.toolchainTaggedTrimmingTransition = toolchainTaggedTrimmingTransition
+            this.transitionCache = transitionCache
+            this.target = target
+            this.state = state
+        }
+
+        override fun step(tasks: com.google.devtools.build.skyframe.state.StateMachine.Tasks?): StateMachine {
+            return RuleTransitionApplier(
+                target,
+                this as TargetAndConfigurationData,
+                state as RuleTransitionApplier.ResultSink?,
+                state.storedEvents,  /* runAfter= */
+                StateMachine.DONE
+            )
+        }
+
+        public override fun getPreRuleTransitionKey(): ConfiguredTargetKey? {
+            return preRuleTransitionKey
+        }
+
+        public override fun getTrimmingTransitionFactory(): TransitionFactory<RuleTransitionData?>? {
+            return trimmingTransitionFactory
+        }
+
+        public override fun getToolchainTaggedTrimmingTransition(): PatchTransition? {
+            return toolchainTaggedTrimmingTransition
+        }
+
+        public override fun getTransitionCache(): StarlarkTransitionCache? {
+            return transitionCache
+        }
+
+        val transitiveState: TransitiveDependencyState
+            get() = state.transitiveState
     }
-  }
+
+    /**
+     * State which drives a [TransitionedBaseConfigurationProducer] and accepts the
+     * configuration when complete.
+     */
+    class State internal constructor(
+        storeTransitivePackages: Boolean,
+        prerequisitePackages: PrerequisitePackageFunction?
+    ) : SkyKeyComputeState, RuleTransitionApplier.ResultSink {
+        // Non-null while in-flight.
+        private var myProducer: com.google.devtools.build.skyframe.state.Driver? = null
+        private val transitiveState: TransitiveDependencyState
+        private val storedEvents: StoredEventHandler
+
+        // --------------- Configuration fields ------------------
+        private var configurationKey: BuildConfigurationKey? = null
+        private var idempotencyState: IdempotencyState? = null
+
+        // --------------- Aspect fields ------------------
+        private var aspectKeys: com.google.common.collect.ImmutableList<AspectKey?>? = null
+
+        // --------------- Error handling fields ------------------
+        private var message: String? = null
+        private var location: net.starlark.java.syntax.Location? = null
+        private var exitCode: DetailedExitCode? = null
+
+        init {
+            this.transitiveState =
+                TransitiveDependencyState(storeTransitivePackages, prerequisitePackages)
+            this.storedEvents = StoredEventHandler()
+        }
+
+        /**
+         * Implementation of [RuleTransitionApplier.ResultSink], where accepting the configuration
+         * and idempotency state is needed to compute [ConfiguredTargetKey].
+         */
+        public override fun acceptConfiguration(
+            configurationKey: BuildConfigurationKey?, idempotencyState: IdempotencyState?
+        ) {
+            this.configurationKey = configurationKey
+            this.idempotencyState = idempotencyState
+        }
+
+        /**
+         * Implementation of [RuleTransitionApplier.ResultSink], where accepting the error message
+         * is needed to throw [ReportedException].
+         */
+        public override fun acceptErrorMessage(
+            message: String?, location: net.starlark.java.syntax.Location?, exitCode: DetailedExitCode?
+        ) {
+            this.message = message
+            this.location = location
+            this.exitCode = exitCode
+        }
+
+        fun hasError(): Boolean {
+            return this.message != null || this.location != null || this.exitCode != null
+        }
+
+        /**
+         * Handles an exception thrown during the rule transition application in [ ]
+         */
+        fun createException(
+            baseConfiguredTargetKey: ConfiguredTargetKey, target: Target
+        ): ConfiguredValueCreationException {
+            val cause: com.google.devtools.build.lib.causes.Cause =
+                AnalysisFailedCause(
+                    baseConfiguredTargetKey.getLabel(),
+                    configurationIdMessage(
+                        baseConfiguredTargetKey.getConfigurationKey().getOptionsChecksum()
+                    ),
+                    if (exitCode != null) exitCode else createDetailedExitCode(message)
+                )
+            return ConfiguredValueCreationException(
+                location,
+                message,
+                target.getLabel(),
+                configurationId(baseConfiguredTargetKey.getConfigurationKey()),
+                NestedSetBuilder.create(Order.STABLE_ORDER, cause),
+                if (exitCode != null) exitCode else createDetailedExitCode(message)
+            )
+        }
+    }
+
+    companion object {
+        @Throws(DependencyException::class)
+        private fun getTarget(packageValue: PackageValue, targetLabel: Label): Target {
+            val pkg: Package = packageValue.getPackage()
+            try {
+                return pkg.getTarget(targetLabel.name)
+            } catch (e: NoSuchTargetException) {
+                throw DependencyException(e)
+            }
+        }
+
+        @Throws(
+            java.lang.InterruptedException::class,
+            DependencyException::class,
+            TopLevelStarlarkAspectFunctionException::class
+        )
+        private fun createAspectsKeys(
+            state: State,
+            target: Target,
+            aspects: com.google.common.collect.ImmutableList<Aspect?>?,
+            baseConfiguredTargetKey: ConfiguredTargetKey?,
+            env: SkyFunction.Environment
+        ): com.google.common.collect.ImmutableList<AspectKey?>? {
+            var target = target
+            if (state.aspectKeys != null) {
+                return state.aspectKeys
+            }
+
+            // In case the target is an alias, we need to resolve its actual target.
+            if (AliasProvider.mayBeAlias(target)) {
+                val aliasConfiguredValue: ConfiguredTargetValue? =
+                    env.getValue(baseConfiguredTargetKey) as ConfiguredTargetValue?
+                if (env.valuesMissing()) {
+                    return null
+                }
+
+                val actualLabel: Label = aliasConfiguredValue.getConfiguredTarget().getActual().getLabel()
+                val packageValue: PackageValue? = env.getValue(actualLabel.getPackageIdentifier()) as PackageValue?
+                if (env.valuesMissing()) {
+                    return null
+                }
+                target = getTarget(packageValue, actualLabel)
+            }
+
+            val aspectCollection: AspectCollection
+            try {
+                // TODO(bazel-team): Filter aspects more based on rule type. For example, aspect key should
+                // not be created for a file target if the aspect does not apply to files or their generating
+                // rules. Currently, some tests depend on such keys being created, so they need to be modified
+                // first.
+                if (target.isRule()) {
+                    val ruleTarget: Rule = target as Rule
+                    aspectCollection =
+                        AspectResolutionHelpers.computeAspectCollection(
+                            aspects,
+                            ruleTarget.getAdvertisedProviders(),
+                            ruleTarget.getLabel(),
+                            ruleTarget.getRuleDefinitionEnvironmentLabel(),
+                            ruleTarget.getRuleClass(),
+                            ruleTarget.getOnlyTagsAttribute(),
+                            ruleTarget.getLocation(),
+                            env.getListener()
+                        )
+                } else {
+                    aspectCollection =
+                        AspectResolutionHelpers.computeAspectCollectionNoAspectsFiltering(
+                            aspects, target.getLabel(), target.getLocation()
+                        )
+                }
+            } catch (e: InconsistentAspectOrderException) {
+                // This is very unlikely, because AspectCollection should have deduplicated top level aspects.
+                env.getListener().handle(com.google.devtools.build.lib.events.Event.error(e.getMessage()))
+                throw TopLevelStarlarkAspectFunctionException(
+                    TopLevelAspectsDetailsBuildFailedException(
+                        e.getMessage(), Code.ASPECT_CREATION_FAILED
+                    )
+                )
+            } catch (e: net.starlark.java.eval.EvalException) {
+                env.getListener().handle(com.google.devtools.build.lib.events.Event.error(e.getMessageWithStack()))
+                throw TopLevelStarlarkAspectFunctionException(
+                    TopLevelAspectsDetailsBuildFailedException(
+                        e.getMessage(), Code.ASPECT_CREATION_FAILED
+                    )
+                )
+            }
+
+            state.aspectKeys = aspectCollection.createAspectKeys(baseConfiguredTargetKey)
+            return state.aspectKeys
+        }
+    }
 }

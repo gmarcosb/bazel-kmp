@@ -11,54 +11,52 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.unix;
+package com.google.devtools.build.lib.unix
 
-import com.google.devtools.build.lib.jni.JniLoader;
-import com.google.devtools.build.lib.runtime.BlazeService;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.common.options.OptionsProvider;
+import com.google.devtools.build.lib.jni.JniLoader.loadJni
+import com.google.devtools.build.lib.runtime.BlazeService
+import com.google.devtools.build.lib.unix.ProcessUtilsService
 
-/** Various utilities related to UNIX processes. */
-public final class ProcessUtilsServiceImpl implements ProcessUtilsService {
-
-  @Override
-  public void globalInit(OptionsProvider startupOptions, Iterable<BlazeService> blazeServices) {
-    ProcessUtilsService.registerJniService(this);
-  }
-
-  static {
-    JniLoader.loadJni();
-  }
-
-  public ProcessUtilsServiceImpl() {}
-
-  @Override
-  public int getgid() {
-    if (OS.getCurrent() == OS.WINDOWS) {
-      throw new UnsupportedOperationException();
+/** Various utilities related to UNIX processes.  */
+class ProcessUtilsServiceImpl : ProcessUtilsService {
+    override fun globalInit(
+        startupOptions: com.google.devtools.common.options.OptionsProvider?,
+        blazeServices: Iterable<BlazeService?>?
+    ) {
+        ProcessUtilsService.Companion.registerJniService(this)
     }
-    return getgidNative();
-  }
 
-  @Override
-  public int getuid() {
-    if (OS.getCurrent() == OS.WINDOWS) {
-      throw new UnsupportedOperationException();
+    override fun getgid(): Int {
+        if (com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.WINDOWS) {
+            throw java.lang.UnsupportedOperationException()
+        }
+        return getgidNative()
     }
-    return getuidNative();
-  }
 
-  /**
-   * Native wrapper around POSIX getgid(2).
-   *
-   * @return the real group ID of the current process.
-   */
-  private native int getgidNative();
+    override fun getuid(): Int {
+        if (com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.WINDOWS) {
+            throw java.lang.UnsupportedOperationException()
+        }
+        return getuidNative()
+    }
 
-  /**
-   * Native wrapper around POSIX getuid(2).
-   *
-   * @return the real user ID of the current process.
-   */
-  private native int getuidNative();
+    /**
+     * Native wrapper around POSIX getgid(2).
+     * 
+     * @return the real group ID of the current process.
+     */
+    private external fun getgidNative(): Int
+
+    /**
+     * Native wrapper around POSIX getuid(2).
+     * 
+     * @return the real user ID of the current process.
+     */
+    private external fun getuidNative(): Int
+
+    companion object {
+        init {
+            com.google.devtools.build.lib.jni.JniLoader.loadJni()
+        }
+    }
 }

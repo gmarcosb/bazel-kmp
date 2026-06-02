@@ -11,55 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.repository
 
-package com.google.devtools.build.lib.rules.repository;
-
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.collect.ImmutableMap.toImmutableMap;
-import static com.google.common.collect.ImmutableSet.toImmutableSet;
-import static java.util.Map.Entry.comparingByKey;
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.base.Splitter;
-import com.google.common.collect.Collections2;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.io.BaseEncoding;
-import com.google.devtools.build.lib.actions.FileValue;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.cmdline.LabelConstants;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.cmdline.LabelValidator;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.skyframe.DirectoryListingValue;
-import com.google.devtools.build.lib.skyframe.DirectoryTreeDigestValue;
-import com.google.devtools.build.lib.skyframe.EnvironmentVariableValue;
-import com.google.devtools.build.lib.skyframe.PrecomputedValue;
-import com.google.devtools.build.lib.skyframe.RepoEnvironmentFunction;
-import com.google.devtools.build.lib.skyframe.RepositoryMappingValue;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.vfs.Dirent;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.skyframe.SkyFunction.Environment;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.io.IOException;
-import java.net.URLDecoder;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.stream.Collectors;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.FileValue
 
 /**
  * Represents a "recorded input" of a repo fetch. We define the "input" of a repo fetch as any
@@ -67,932 +21,950 @@ import javax.annotation.Nullable;
  * input" is thus any input we can record during the fetch and thus know about only after the fetch.
  * This contrasts with "predeclared inputs", which are known before fetching the repo, and
  * "undiscoverable inputs", which are used during the fetch but is not recorded or recordable.
- *
- * <p>Recorded inputs are of particular interest, since in order to determine whether a fetched repo
+ * 
+ * 
+ * Recorded inputs are of particular interest, since in order to determine whether a fetched repo
  * is still up-to-date, the identity of all recorded inputs need to be stored in addition to their
  * values. This contrasts with predeclared inputs; the whole set of predeclared inputs are known
  * before the fetch, so we can simply hash all predeclared input values.
- *
- * <p>Recorded inputs and their values are stored in <i>marker files</i> for repos. Each recorded
+ * 
+ * 
+ * Recorded inputs and their values are stored in *marker files* for repos. Each recorded
  * input is stored as a string, with a prefix denoting its type, followed by a colon, and then the
  * information identifying that specific input.
  */
-public abstract sealed class RepoRecordedInput {
-  /** Represents a parser for a specific type of recorded inputs. */
-  public abstract static class Parser {
-    /**
-     * The prefix that identifies the type of the recorded inputs: for example, the {@code ENV} part
-     * of {@code ENV:MY_ENV_VAR}.
-     */
-    public abstract String getPrefix();
+abstract class RepoRecordedInput {
+    /** Represents a parser for a specific type of recorded inputs.  */
+    abstract class Parser {
+        /**
+         * The prefix that identifies the type of the recorded inputs: for example, the `ENV` part
+         * of `ENV:MY_ENV_VAR`.
+         */
+        abstract val prefix: String?
 
-    /**
-     * Parses a recorded input from the post-colon substring that identifies the specific input: for
-     * example, the {@code MY_ENV_VAR} part of {@code ENV:MY_ENV_VAR}. Returns null if the parsed
-     * part is invalid.
-     */
-    public abstract RepoRecordedInput parse(String s);
-  }
-
-  /**
-   * Parses a recorded input from its string representation.
-   *
-   * @param s the string representation
-   * @return The parsed recorded input object, or {@link
-   *     NeverUpToDateRepoRecordedInput#PARSE_FAILURE} if the string representation is invalid
-   */
-  public static RepoRecordedInput parse(String s) {
-    List<String> parts = Splitter.on(':').limit(2).splitToList(s);
-    if (parts.size() < 2) {
-      return NeverUpToDateRepoRecordedInput.PARSE_FAILURE;
+        /**
+         * Parses a recorded input from the post-colon substring that identifies the specific input: for
+         * example, the `MY_ENV_VAR` part of `ENV:MY_ENV_VAR`. Returns null if the parsed
+         * part is invalid.
+         */
+        abstract fun parse(s: String?): RepoRecordedInput
     }
-    for (Parser parser :
-        new Parser[] {
-          File.PARSER, Dirents.PARSER, DirTree.PARSER, EnvVar.PARSER, RecordedRepoMapping.PARSER
-        }) {
-      if (parts.get(0).equals(parser.getPrefix())) {
-        return parser.parse(parts.get(1));
-      }
-    }
-    return NeverUpToDateRepoRecordedInput.PARSE_FAILURE;
-  }
 
-  /** A recorded input along with its recorded value. */
-  @AutoCodec
-  public record WithValue(RepoRecordedInput input, @Nullable String value) {
-    /** Parses a {@link WithValue} from its string representation. */
-    public static Optional<RepoRecordedInput.WithValue> parse(String s) {
-      int sChar = s.indexOf(' ');
-      if (sChar > 0) {
-        var input = RepoRecordedInput.parse(unescape(s.substring(0, sChar)));
-        if (!input.equals(NeverUpToDateRepoRecordedInput.PARSE_FAILURE)) {
-          return Optional.of(new WithValue(input, unescape(s.substring(sChar + 1))));
+    /** A recorded input along with its recorded value.  */
+    @AutoCodec
+    @kotlin.jvm.JvmRecord
+    data class WithValue(val input: RepoRecordedInput?, val value: String?) {
+        /** Converts this [WithValue] to a string in a format compatible with [.parse].  */
+        override fun toString(): String {
+            return input.toString() + " " + escape(value)
         }
-      }
-      return Optional.empty();
-    }
 
-    /**
-     * Splits the given list of recorded input values into batches such that within each batch, all
-     * recorded inputs's {@link SkyKey}s can be requested together.
-     */
-    public static ImmutableList<ImmutableList<WithValue>> splitIntoBatches(
-        List<WithValue> recordedInputValues) {
-      var batches = ImmutableList.<ImmutableList<WithValue>>builder();
-      var currentBatch = new ArrayList<WithValue>();
-      for (var recordedInputValue : recordedInputValues) {
-        if (!recordedInputValue.input().canBeRequestedUnconditionally()
-            && !currentBatch.isEmpty()) {
-          batches.add(ImmutableList.copyOf(currentBatch));
-          currentBatch.clear();
-        }
-        currentBatch.add(recordedInputValue);
-      }
-      if (!currentBatch.isEmpty()) {
-        batches.add(ImmutableList.copyOf(currentBatch));
-      }
-      return batches.build();
-    }
-
-    /** Converts this {@link WithValue} to a string in a format compatible with {@link #parse}. */
-    @Override
-    public String toString() {
-      return input + " " + escape(value);
-    }
-  }
-
-  /**
-   * Returns whether all values are still up-to-date for each recorded input or a human-readable
-   * reason for why that's not the case. If Skyframe values are missing, the return value should be
-   * ignored; callers are responsible for checking {@code env.valuesMissing()} and triggering a
-   * Skyframe restart if needed.
-   */
-  public static Optional<String> isAnyValueOutdated(
-      Environment env, BlazeDirectories directories, List<WithValue> recordedInputValues)
-      throws InterruptedException {
-    prefetch(env, directories, Collections2.transform(recordedInputValues, WithValue::input));
-    if (env.valuesMissing()) {
-      return UNDECIDED;
-    }
-    for (var recordedInput : recordedInputValues) {
-      Optional<String> reason =
-          recordedInput.input().isOutdated(env, directories, recordedInput.value());
-      if (reason.isPresent()) {
-        return reason;
-      }
-    }
-    return Optional.empty();
-  }
-
-  /**
-   * Requests the information from Skyframe that is required by future calls to {@link
-   * #isAnyValueOutdated} for the given set of inputs.
-   */
-  public static void prefetch(
-      Environment env, BlazeDirectories directories, Collection<RepoRecordedInput> recordedInputs)
-      throws InterruptedException {
-    var keys =
-        recordedInputs.stream().map(rri -> rri.getSkyKey(directories)).collect(toImmutableSet());
-    if (env.valuesMissing()) {
-      return;
-    }
-    var results = env.getValuesAndExceptions(keys);
-    // Per the contract of Environment.getValuesAndExceptions, we need to access the results to
-    // actually find all missing values.
-    for (SkyKey key : keys) {
-      var unused = results.get(key);
-    }
-  }
-
-  /**
-   * Returns a human-readable reason for why the given {@code oldValue} is no longer up-to-date for
-   * this recorded input, or an empty Optional if it is still up-to-date.
-   *
-   * <p>The method can request Skyframe evaluations, and if any values are missing, this method can
-   * return any value (doesn't matter what, although {@link #UNDECIDED} is recommended for clarity)
-   * and will be reinvoked after a Skyframe restart.
-   */
-  private Optional<String> isOutdated(
-      Environment env, BlazeDirectories directories, @Nullable String oldValue)
-      throws InterruptedException {
-    MaybeValue wrappedNewValue = getValue(env, directories);
-    if (env.valuesMissing()) {
-      return UNDECIDED;
-    }
-    return switch (wrappedNewValue) {
-      case MaybeValue.Invalid(String reason) -> Optional.of(reason);
-      case MaybeValue.Valid(String newValue) ->
-          Objects.equals(oldValue, newValue)
-              ? Optional.empty()
-              : Optional.of(describeChange(oldValue, newValue));
-    };
-  }
-
-  @Override
-  public abstract boolean equals(Object obj);
-
-  @Override
-  public abstract int hashCode();
-
-  @VisibleForTesting
-  static String escape(String str) {
-    return str == null ? "\\0" : str.replace("\\", "\\\\").replace("\n", "\\n").replace(" ", "\\s");
-  }
-
-  @VisibleForTesting
-  @Nullable
-  static String unescape(String str) {
-    if (str.equals("\\0")) {
-      return null; // \0 == null string
-    }
-    StringBuilder result = new StringBuilder();
-    boolean escaped = false;
-    for (int i = 0; i < str.length(); i++) {
-      char c = str.charAt(i);
-      if (escaped) {
-        if (c == 'n') { // n means new line
-          result.append("\n");
-        } else if (c == 's') { // s means space
-          result.append(" ");
-        } else { // Any other escaped characters are just un-escaped
-          result.append(c);
-        }
-        escaped = false;
-      } else if (c == '\\') {
-        escaped = true;
-      } else {
-        result.append(c);
-      }
-    }
-    return result.toString();
-  }
-
-  /**
-   * Returns the string representation of this recorded input, in the format suitable for parsing
-   * back via {@link #parse}.
-   *
-   * <p>The returned string never contains spaces or newlines; those characters are escaped.
-   */
-  @Override
-  public final String toString() {
-    return getParser().getPrefix() + ":" + escape(toStringInternal());
-  }
-
-  /**
-   * Represents the possible values returned by {@link #getValue}: either a valid value (which may
-   * be null), or an invalid value with a reason (e.g. due to I/O failure).
-   */
-  public sealed interface MaybeValue {
-    MaybeValue VALUES_MISSING = new MaybeValue.Invalid("values missing");
-
-    /** Represents a valid value, which may be null. */
-    record Valid(@Nullable String value) implements MaybeValue {}
-
-    /** Represents an invalid value with a reason (e.g. due to I/O failure). */
-    record Invalid(String reason) implements MaybeValue {}
-  }
-
-  /**
-   * Returns the current value of this input, which may be null, wrapped in a {@link
-   * MaybeValue.Valid}, or a {@link MaybeValue.Invalid} if the value is known to be invalid.
-   *
-   * <p>The method can request Skyframe evaluations, and if any values are missing, this method can
-   * return any value and will be reinvoked after a Skyframe restart.
-   */
-  public abstract MaybeValue getValue(Environment env, BlazeDirectories directories)
-      throws InterruptedException;
-
-  /**
-   * Returns a human-readable description of the change from {@code oldValue} to {@code newValue}.
-   */
-  protected abstract String describeChange(String oldValue, String newValue);
-
-  /**
-   * Returns the post-colon substring that identifies the specific input: for example, the {@code
-   * MY_ENV_VAR} part of {@code ENV:MY_ENV_VAR}.
-   */
-  protected abstract String toStringInternal();
-
-  /** Returns the parser object for this type of recorded inputs. */
-  protected abstract Parser getParser();
-
-  /** Returns the {@link SkyKey} that is necessary to determine {@link #isOutdated}. */
-  protected abstract SkyKey getSkyKey(BlazeDirectories directories);
-
-  /**
-   * Returns true if the {@link #getValue} can be requested even if previous recorded inputs have
-   * not been verified to be up to date.
-   */
-  protected abstract boolean canBeRequestedUnconditionally();
-
-  private static final Optional<String> UNDECIDED = Optional.of("values missing");
-
-  /**
-   * Represents a filesystem path stored in a way that is repo-cache-friendly. That is, if the path
-   * happens to point inside the current Bazel workspace (in either the main repo or an external
-   * repo), we store the appropriate repo name and the path fragment relative to the repo root,
-   * instead of the entire absolute path.
-   *
-   * <p>This is <em>almost</em> like storing a label, but includes the extra corner case of files
-   * inside a repo but not within any package due to missing BUILD files. For example, the file
-   * {@code @@foo//:abc.bzl} is addressable by a label if the file {@code @@foo//:BUILD} exists. But
-   * if the BUILD file doesn't exist, the {@code abc.bzl} file should still be "watchable"; it's
-   * just that {@code @@foo//:abc.bzl} is technically not a valid label.
-   *
-   * <p>Of course, when the path is outside the current Bazel workspace, we just store the absolute
-   * path.
-   */
-  @AutoCodec
-  public record RepoCacheFriendlyPath(Optional<RepositoryName> repoName, PathFragment path) {
-    public RepoCacheFriendlyPath {
-      requireNonNull(repoName, "repoName");
-      requireNonNull(path, "path");
-    }
-
-    public static RepoCacheFriendlyPath createInsideWorkspace(
-        RepositoryName repoName, PathFragment path) {
-      Preconditions.checkArgument(
-          !path.isAbsolute(), "the provided path should be relative to the repo root: %s", path);
-      return new RepoCacheFriendlyPath(Optional.of(repoName), path);
-    }
-
-    public static RepoCacheFriendlyPath createOutsideWorkspace(PathFragment path) {
-      Preconditions.checkArgument(
-          path.isAbsolute(), "the provided path should be absolute in the filesystem: %s", path);
-      return new RepoCacheFriendlyPath(Optional.empty(), path);
-    }
-
-    @Override
-    public final String toString() {
-      // We store `@@foo//abc/def:ghi.bzl` as just `@@foo//abc/def/ghi.bzl`. See class javadoc for
-      // more context.
-      return repoName().map(repoName -> repoName + "//" + path()).orElse(path().toString());
-    }
-
-    public static RepoCacheFriendlyPath parse(String s) throws LabelSyntaxException {
-      if (LabelValidator.isAbsolute(s)) {
-        int doubleSlash = s.indexOf("//");
-        int skipAts = s.startsWith("@@") ? 2 : s.startsWith("@") ? 1 : 0;
-        return createInsideWorkspace(
-            RepositoryName.create(s.substring(skipAts, doubleSlash)),
-            PathFragment.create(s.substring(doubleSlash + 2)));
-      }
-      return createOutsideWorkspace(PathFragment.create(s));
-    }
-
-    /** Returns the rooted path corresponding to this "repo-friendly path". */
-    public final RootedPath getRootedPath(BlazeDirectories directories) {
-      Root root;
-      if (repoName().isEmpty()) {
-        root = Root.absoluteRoot(directories.getOutputBase().getFileSystem());
-      } else if (repoName().get().isMain()) {
-        root = Root.fromPath(directories.getWorkspace());
-      } else {
-        // This path is from an external repo. We just directly fabricate the path here instead of
-        // requesting the appropriate RepositoryDirectoryValue, since we can rely on the various
-        // other SkyFunctions (such as FileStateFunction and DirectoryListingStateFunction) to do
-        // that for us instead. This also sidesteps an awkward situation when the external repo in
-        // question is not defined.
-        root =
-            Root.fromPath(
-                directories
-                    .getOutputBase()
-                    .getRelative(LabelConstants.EXTERNAL_REPOSITORY_LOCATION)
-                    .getRelative(repoName().get().name));
-      }
-      return RootedPath.toRootedPath(root, path());
-    }
-
-    /** Returns true if the path points into an external repository. */
-    public boolean inExternalRepo() {
-      return repoName().isPresent() && !repoName().get().isMain();
-    }
-  }
-
-  /**
-   * Represents a file input accessed during the repo fetch. Despite being named just "file", this
-   * can represent a file or a directory on the filesystem, and it does not need to exist. The value
-   * of the input contains whether this is a file or a directory or nonexistent, and if it's a file,
-   * the digest of its contents.
-   */
-  public static final class File extends RepoRecordedInput {
-    public static final Parser PARSER =
-        new Parser() {
-          @Override
-          public String getPrefix() {
-            return "FILE";
-          }
-
-          @Override
-          public RepoRecordedInput parse(String s) {
-            try {
-              return new File(RepoCacheFriendlyPath.parse(s));
-            } catch (LabelSyntaxException e) {
-              // malformed inputs cause refetch
-              return NeverUpToDateRepoRecordedInput.PARSE_FAILURE;
+        companion object {
+            /** Parses a [WithValue] from its string representation.  */
+            @kotlin.jvm.JvmStatic
+            fun parse(s: String): java.util.Optional<WithValue?> {
+                val sChar: Int = s.indexOf(' '.code)
+                if (sChar > 0) {
+                    val input = RepoRecordedInput.Companion.parse(unescape(s.substring(0, sChar))!!)
+                    if (input != NeverUpToDateRepoRecordedInput.Companion.PARSE_FAILURE) {
+                        return java.util.Optional.of<WithValue?>(WithValue(input, unescape(s.substring(sChar + 1))))
+                    }
+                }
+                return java.util.Optional.empty<WithValue?>()
             }
-          }
-        };
 
-    private final RepoCacheFriendlyPath path;
-
-    public File(RepoCacheFriendlyPath path) {
-      this.path = path;
-    }
-
-    @Override
-    public Parser getParser() {
-      return PARSER;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (!(o instanceof File that)) {
-        return false;
-      }
-      return Objects.equals(path, that.path);
-    }
-
-    @Override
-    public int hashCode() {
-      return path.hashCode();
-    }
-
-    @Override
-    public String toStringInternal() {
-      return path.toString();
+            /**
+             * Splits the given list of recorded input values into batches such that within each batch, all
+             * recorded inputs's [SkyKey]s can be requested together.
+             */
+            fun splitIntoBatches(
+                recordedInputValues: MutableList<WithValue>
+            ): com.google.common.collect.ImmutableList<com.google.common.collect.ImmutableList<WithValue?>?> {
+                val batches: com.google.common.collect.ImmutableList.Builder<com.google.common.collect.ImmutableList<WithValue?>?> =
+                    com.google.common.collect.ImmutableList.builder<com.google.common.collect.ImmutableList<WithValue?>?>()
+                val currentBatch: java.util.ArrayList<WithValue?> = java.util.ArrayList<WithValue?>()
+                for (recordedInputValue in recordedInputValues) {
+                    if (!recordedInputValue.input!!.canBeRequestedUnconditionally()
+                        && !currentBatch.isEmpty()
+                    ) {
+                        batches.add(com.google.common.collect.ImmutableList.copyOf<WithValue?>(currentBatch))
+                        currentBatch.clear()
+                    }
+                    currentBatch.add(recordedInputValue)
+                }
+                if (!currentBatch.isEmpty()) {
+                    batches.add(com.google.common.collect.ImmutableList.copyOf<WithValue?>(currentBatch))
+                }
+                return batches.build()
+            }
+        }
     }
 
     /**
-     * Convert to a {@link com.google.devtools.build.lib.actions.FileValue} to a String appropriate
-     * for placing in a repository marker file. The file need not exist, and can be a file or a
-     * directory.
+     * Returns a human-readable reason for why the given `oldValue` is no longer up-to-date for
+     * this recorded input, or an empty Optional if it is still up-to-date.
+     * 
+     * 
+     * The method can request Skyframe evaluations, and if any values are missing, this method can
+     * return any value (doesn't matter what, although [.UNDECIDED] is recommended for clarity)
+     * and will be reinvoked after a Skyframe restart.
      */
-    @VisibleForTesting
-    static String fileValueToMarkerValue(RootedPath rootedPath, FileValue fileValue)
-        throws IOException {
-      if (fileValue.isDirectory()) {
-        return "DIR";
-      }
-      if (!fileValue.exists()) {
-        return "ENOENT";
-      }
-      // Return the file content digest in hex. fileValue may or may not have the digest available.
-      byte[] digest = fileValue.realFileStateValue().getDigest();
-      if (digest == null) {
-        // Fast digest not available, or it would have been in the FileValue.
-        digest = fileValue.realRootedPath(rootedPath).asPath().getDigest();
-      }
-      return BaseEncoding.base16().lowerCase().encode(digest);
-    }
-
-    @Override
-    public SkyKey getSkyKey(BlazeDirectories directories) {
-      return FileValue.key(path.getRootedPath(directories));
-    }
-
-    @Override
-    protected boolean canBeRequestedUnconditionally() {
-      // Requesting files in external repositories can result in cycles if the external repo now
-      // transitively depends on the requesting repo.
-      return !path.inExternalRepo();
-    }
-
-    @Override
-    public MaybeValue getValue(Environment env, BlazeDirectories directories)
-        throws InterruptedException {
-      var skyKey = getSkyKey(directories);
-      try {
-        var fileValue = (FileValue) env.getValueOrThrow(skyKey, IOException.class);
-        if (fileValue == null) {
-          return MaybeValue.VALUES_MISSING;
+    @Throws(java.lang.InterruptedException::class)
+    private fun isOutdated(
+        env: SkyFunction.Environment, directories: BlazeDirectories?, oldValue: String?
+    ): java.util.Optional<String?> {
+        val wrappedNewValue = getValue(env, directories)
+        if (env.valuesMissing()) {
+            return UNDECIDED
         }
-        return new MaybeValue.Valid(
-            fileValueToMarkerValue((RootedPath) skyKey.argument(), fileValue));
-      } catch (IOException e) {
-        return new MaybeValue.Invalid("failed to stat %s: %s".formatted(path, e.getMessage()));
-      }
+        return when (wrappedNewValue) {
+            -> java.util.Optional.of<String?>(reason)
+            -> if (oldValue == newValue)
+                java.util.Optional.empty<String?>()
+            else
+                java.util.Optional.of<String?>(describeChange(oldValue, newValue))
+        }
     }
 
-    @Override
-    public String describeChange(String oldValue, String newValue) {
-      return "file info or contents of %s changed".formatted(path);
-    }
-  }
+    abstract override fun equals(obj: Any?): Boolean
 
-  /** Represents the list of entries under a directory accessed during the fetch. */
-  public static final class Dirents extends RepoRecordedInput {
-    public static final Parser PARSER =
-        new Parser() {
-          @Override
-          public String getPrefix() {
-            return "DIRENTS";
-          }
-
-          @Override
-          public RepoRecordedInput parse(String s) {
-            try {
-              return new Dirents(RepoCacheFriendlyPath.parse(s));
-            } catch (LabelSyntaxException e) {
-              // malformed inputs cause refetch
-              return NeverUpToDateRepoRecordedInput.PARSE_FAILURE;
-            }
-          }
-        };
-
-    private final RepoCacheFriendlyPath path;
-
-    public Dirents(RepoCacheFriendlyPath path) {
-      this.path = path;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (!(o instanceof Dirents that)) {
-        return false;
-      }
-      return Objects.equals(path, that.path);
-    }
-
-    @Override
-    public int hashCode() {
-      return path.hashCode();
-    }
-
-    @Override
-    public String toStringInternal() {
-      return path.toString();
-    }
-
-    @Override
-    public Parser getParser() {
-      return PARSER;
-    }
-
-    private String directoryListingValueToMarkerValue(DirectoryListingValue directoryListingValue) {
-      var fp = new Fingerprint();
-      fp.addStrings(
-          directoryListingValue.getDirents().stream()
-              .map(Dirent::getName)
-              .sorted()
-              .collect(toImmutableList()));
-      return fp.hexDigestAndReset();
-    }
-
-    @Override
-    public SkyKey getSkyKey(BlazeDirectories directories) {
-      return DirectoryListingValue.key(path.getRootedPath(directories));
-    }
-
-    @Override
-    protected boolean canBeRequestedUnconditionally() {
-      // Requesting directories in external repositories can result in cycles if the external repo
-      // transitively depends on the requesting repo.
-      return !path.inExternalRepo();
-    }
-
-    @Override
-    public MaybeValue getValue(Environment env, BlazeDirectories directories)
-        throws InterruptedException {
-      var skyKey = getSkyKey(directories);
-      var directoryListingValue = (DirectoryListingValue) env.getValue(skyKey);
-      if (directoryListingValue == null) {
-        return MaybeValue.VALUES_MISSING;
-      }
-      return new MaybeValue.Valid(directoryListingValueToMarkerValue(directoryListingValue));
-    }
-
-    @Override
-    public String describeChange(String oldValue, String newValue) {
-      return "directory entries of %s changed".formatted(path);
-    }
-  }
-
-  /**
-   * Represents an entire directory tree accessed during the fetch. Anything under the tree changing
-   * (including adding/removing/renaming files or directories and changing file contents) will cause
-   * it to go out of date.
-   *
-   * <p>Files can be excluded from the out-of-date check with the given {@code excludes} glob
-   * patterns.
-   */
-  public static final class DirTree extends RepoRecordedInput {
+    abstract override fun hashCode(): Int
 
     /**
-     * A string sequence to delimit extra metadata on a directory path. This borrows web's query
-     * string to represent the extra options, but instead of a '?' to serve as the separator between
-     * the path and the query string, '?/../' is used instead. This takes advantage of the fact that
-     * the underlying path representation is a {@link PathFragment} which is normalized - meaning
-     * that a '/../' could never appear in the valid path.
-     *
-     * <p>Since there is currently only one parameter (excludes), it is hardcoded with the
-     * delimiter.
-     *
-     * <p>For a DirTree with path '/foo/bar' and an exclude list of 'abc/**' and 'file,with,commas',
-     * the serialized form is:
-     *
-     * <p><code>/foo/bar?/../excludes=abc%2F**,file%2Cwith%2Ccommas</code>
+     * Returns the string representation of this recorded input, in the format suitable for parsing
+     * back via [.parse].
+     * 
+     * 
+     * The returned string never contains spaces or newlines; those characters are escaped.
      */
-    public static final String METADATA_DELIMITER = "?/../excludes=";
-
-    public static final Parser PARSER =
-        new Parser() {
-          @Override
-          public String getPrefix() {
-            return "DIRTREE";
-          }
-
-          @Override
-          public RepoRecordedInput parse(String s) {
-            try {
-              int metadataIndex = s.indexOf(METADATA_DELIMITER);
-              if (metadataIndex != -1) {
-                // Parse out the query string.
-                String excludesQueryString =
-                    s.substring(metadataIndex + METADATA_DELIMITER.length());
-                String[] excludesArray = excludesQueryString.split(",");
-                ImmutableList<String> excludesList =
-                    Arrays.stream(excludesArray)
-                        .map(exclude -> URLDecoder.decode(exclude, StandardCharsets.UTF_8))
-                        .collect(ImmutableList.toImmutableList());
-                return new DirTree(
-                    RepoCacheFriendlyPath.parse(s.substring(0, metadataIndex)), excludesList);
-              } else {
-                return new DirTree(RepoCacheFriendlyPath.parse(s), ImmutableList.of());
-              }
-            } catch (LabelSyntaxException e) {
-              // malformed inputs cause refetch
-              return NeverUpToDateRepoRecordedInput.PARSE_FAILURE;
-            }
-          }
-        };
-
-    private final RepoCacheFriendlyPath path;
-
-    /** The glob patterns to exclude from watch/change detection. */
-    private final ImmutableList<String> excludes;
-
-    public DirTree(RepoCacheFriendlyPath path, ImmutableList<String> excludes) {
-      this.path = path;
-      this.excludes = excludes;
+    override fun toString(): String {
+        return this.parser!!.prefix + ":" + escape(toStringInternal())
     }
 
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (!(o instanceof DirTree that)) {
-        return false;
-      }
-      return Objects.equals(path, that.path) && Objects.equals(excludes, that.excludes);
-    }
+    /**
+     * Represents the possible values returned by [.getValue]: either a valid value (which may
+     * be null), or an invalid value with a reason (e.g. due to I/O failure).
+     */
+    interface MaybeValue {
+        /** Represents a valid value, which may be null.  */
+        @kotlin.jvm.JvmRecord
+        data class Valid(val value: String?) : MaybeValue
 
-    @Override
-    public int hashCode() {
-      int hash = path.hashCode();
-      if (!excludes.isEmpty()) {
-        return hash + excludes.hashCode();
-      }
-      return hash;
-    }
-
-    @Override
-    public String toStringInternal() {
-      if (this.excludes.isEmpty()) {
-        return path.toString();
-      } else {
-        // Excludes parameters represented as a query string.
-        StringBuilder sb = new StringBuilder(path.toString());
-        sb.append(METADATA_DELIMITER);
-        sb.append(
-            this.excludes.stream()
-                .map(s -> URLEncoder.encode(s, StandardCharsets.UTF_8))
-                .collect(Collectors.joining(",")));
-        return sb.toString();
-      }
-    }
-
-    @Override
-    public Parser getParser() {
-      return PARSER;
-    }
-
-    @Override
-    public SkyKey getSkyKey(BlazeDirectories directories) {
-      RootedPath rootedPath = path.getRootedPath(directories);
-      return DirectoryTreeDigestValue.key(rootedPath, rootedPath, excludes);
-    }
-
-    @Override
-    protected boolean canBeRequestedUnconditionally() {
-      // Requesting directory trees in external repositories can result in cycles if the external
-      // repo now transitively depends on the requesting repo.
-      return !path.inExternalRepo();
-    }
-
-    @Override
-    public MaybeValue getValue(Environment env, BlazeDirectories directories)
-        throws InterruptedException {
-      var skyKey = getSkyKey(directories);
-      try {
-        var directoryTreeDigestValue =
-            (DirectoryTreeDigestValue) env.getValueOrThrow(skyKey, IOException.class);
-        if (directoryTreeDigestValue == null) {
-          return MaybeValue.VALUES_MISSING;
+        /** Represents an invalid value with a reason (e.g. due to I/O failure).  */
+        @kotlin.jvm.JvmRecord
+        data class Invalid(val reason: String?) : MaybeValue
+        companion object {
+            val VALUES_MISSING: MaybeValue =
+                com.google.devtools.build.lib.rules.repository.RepoRecordedInput.MaybeValue.Invalid("values missing")
         }
-        return new MaybeValue.Valid(directoryTreeDigestValue.hexDigest());
-      } catch (IOException e) {
-        return new MaybeValue.Invalid(
-            "failed to digest directory tree at %s: %s".formatted(path, e.getMessage()));
-      }
     }
 
-    @Override
-    public String describeChange(String oldValue, String newValue) {
-      return "directory tree at %s changed".formatted(path);
-    }
-  }
+    /**
+     * Returns the current value of this input, which may be null, wrapped in a [ ], or a [MaybeValue.Invalid] if the value is known to be invalid.
+     * 
+     * 
+     * The method can request Skyframe evaluations, and if any values are missing, this method can
+     * return any value and will be reinvoked after a Skyframe restart.
+     */
+    @Throws(java.lang.InterruptedException::class)
+    abstract fun getValue(env: SkyFunction.Environment?, directories: BlazeDirectories?): MaybeValue?
 
-  /** Represents an environment variable accessed during the repo fetch. */
-  public static final class EnvVar extends RepoRecordedInput {
-    public static final Parser PARSER =
-        new Parser() {
-          @Override
-          public String getPrefix() {
-            return "ENV";
-          }
+    /**
+     * Returns a human-readable description of the change from `oldValue` to `newValue`.
+     */
+    protected abstract fun describeChange(oldValue: String?, newValue: String?): String?
 
-          @Override
-          public RepoRecordedInput parse(String s) {
-            return new EnvVar(s);
-          }
-        };
+    /**
+     * Returns the post-colon substring that identifies the specific input: for example, the `MY_ENV_VAR` part of `ENV:MY_ENV_VAR`.
+     */
+    protected abstract fun toStringInternal(): String?
 
-    final String name;
+    /** Returns the parser object for this type of recorded inputs.  */
+    protected abstract val parser: Parser?
 
-    public static ImmutableMap<EnvVar, Optional<String>> wrap(
-        Map<String, Optional<String>> envVars) {
-      return envVars.entrySet().stream()
-          .sorted(comparingByKey())
-          .collect(toImmutableMap(e -> new EnvVar(e.getKey()), Map.Entry::getValue));
-    }
+    /** Returns the [SkyKey] that is necessary to determine [.isOutdated].  */
+    protected abstract fun getSkyKey(directories: BlazeDirectories?): SkyKey?
 
-    public EnvVar(String name) {
-      this.name = name;
-    }
+    /**
+     * Returns true if the [.getValue] can be requested even if previous recorded inputs have
+     * not been verified to be up to date.
+     */
+    protected abstract fun canBeRequestedUnconditionally(): Boolean
 
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (!(o instanceof EnvVar envVar)) {
-        return false;
-      }
-      return Objects.equals(name, envVar.name);
-    }
+    /**
+     * Represents a filesystem path stored in a way that is repo-cache-friendly. That is, if the path
+     * happens to point inside the current Bazel workspace (in either the main repo or an external
+     * repo), we store the appropriate repo name and the path fragment relative to the repo root,
+     * instead of the entire absolute path.
+     * 
+     * 
+     * This is *almost* like storing a label, but includes the extra corner case of files
+     * inside a repo but not within any package due to missing BUILD files. For example, the file
+     * `@@foo//:abc.bzl` is addressable by a label if the file `@@foo//:BUILD` exists. But
+     * if the BUILD file doesn't exist, the `abc.bzl` file should still be "watchable"; it's
+     * just that `@@foo//:abc.bzl` is technically not a valid label.
+     * 
+     * 
+     * Of course, when the path is outside the current Bazel workspace, we just store the absolute
+     * path.
+     */
+    @AutoCodec
+    class RepoCacheFriendlyPath(repoName: java.util.Optional<RepositoryName?>?, path: PathFragment?) {
+        override fun toString(): String {
+            // We store `@@foo//abc/def:ghi.bzl` as just `@@foo//abc/def/ghi.bzl`. See class javadoc for
+            // more context.
+            return this.repoName.map<String?>(java.util.function.Function { repoName: RepositoryName? -> repoName.toString() + "//" + this.path })
+                .orElse(this.path.toString())
+        }
 
-    @Override
-    public int hashCode() {
-      return name.hashCode();
-    }
-
-    @Override
-    public Parser getParser() {
-      return PARSER;
-    }
-
-    @Override
-    public String toStringInternal() {
-      return name;
-    }
-
-    @Override
-    public SkyKey getSkyKey(BlazeDirectories directories) {
-      return RepoEnvironmentFunction.key(name);
-    }
-
-    @Override
-    protected boolean canBeRequestedUnconditionally() {
-      // Environment variables are static data injected into Skyframe, so there is no risk of
-      // cycles.
-      return true;
-    }
-
-    @Override
-    public MaybeValue getValue(Environment env, BlazeDirectories directories)
-        throws InterruptedException {
-      var value = (EnvironmentVariableValue) env.getValue(getSkyKey(directories));
-      if (value == null) {
-        return MaybeValue.VALUES_MISSING;
-      }
-      return new MaybeValue.Valid(value.value());
-    }
-
-    @Override
-    public String describeChange(String oldValue, String newValue) {
-      return "environment variable %s changed: %s -> %s"
-          .formatted(
-              name,
-              oldValue == null ? "<unset>" : "'%s'".formatted(oldValue),
-              newValue == null ? "<unset>" : "'%s'".formatted(newValue));
-    }
-  }
-
-  /** Represents a repo mapping entry that was used during the repo fetch. */
-  public static final class RecordedRepoMapping extends RepoRecordedInput {
-    static final Parser PARSER =
-        new Parser() {
-          @Override
-          public String getPrefix() {
-            return "REPO_MAPPING";
-          }
-
-          @Override
-          public RepoRecordedInput parse(String s) {
-            List<String> parts = Splitter.on(',').limit(2).splitToList(s);
-            try {
-              return new RecordedRepoMapping(RepositoryName.create(parts.get(0)), parts.get(1));
-            } catch (LabelSyntaxException | IndexOutOfBoundsException e) {
-              // malformed inputs cause refetch
-              return NeverUpToDateRepoRecordedInput.PARSE_FAILURE;
+        /** Returns the rooted path corresponding to this "repo-friendly path".  */
+        fun getRootedPath(directories: BlazeDirectories): RootedPath? {
+            val root: Root?
+            if (this.repoName.isEmpty()) {
+                root = Root.absoluteRoot(directories.getOutputBase().getFileSystem())
+            } else if (this.repoName.get().isMain()) {
+                root = Root.fromPath(directories.getWorkspace())
+            } else {
+                // This path is from an external repo. We just directly fabricate the path here instead of
+                // requesting the appropriate RepositoryDirectoryValue, since we can rely on the various
+                // other SkyFunctions (such as FileStateFunction and DirectoryListingStateFunction) to do
+                // that for us instead. This also sidesteps an awkward situation when the external repo in
+                // question is not defined.
+                root =
+                    Root.fromPath(
+                        directories
+                            .getOutputBase()
+                            .getRelative(LabelConstants.EXTERNAL_REPOSITORY_LOCATION)
+                            .getRelative(this.repoName.get().name)
+                    )
             }
-          }
-        };
+            return RootedPath.toRootedPath(root, this.path)
+        }
 
-    final RepositoryName sourceRepo;
-    final String apparentName;
+        /** Returns true if the path points into an external repository.  */
+        fun inExternalRepo(): Boolean {
+            return this.repoName.isPresent() && !this.repoName.get().isMain()
+        }
 
-    public RecordedRepoMapping(RepositoryName sourceRepo, String apparentName) {
-      this.sourceRepo = sourceRepo;
-      this.apparentName = apparentName;
+        val repoName: java.util.Optional<RepositoryName?>?
+        val path: PathFragment?
+
+        init {
+            this.path = path
+            this.repoName = repoName
+            java.util.Objects.requireNonNull<java.util.Optional<RepositoryName?>?>(repoName, "repoName")
+            java.util.Objects.requireNonNull<PathFragment?>(path, "path")
+        }
+
+        companion object {
+            fun createInsideWorkspace(
+                repoName: RepositoryName, path: PathFragment
+            ): RepoCacheFriendlyPath {
+                com.google.common.base.Preconditions.checkArgument(
+                    !path.isAbsolute(), "the provided path should be relative to the repo root: %s", path
+                )
+                return RepoCacheFriendlyPath(java.util.Optional.of<RepositoryName?>(repoName), path)
+            }
+
+            fun createOutsideWorkspace(path: PathFragment): RepoCacheFriendlyPath {
+                com.google.common.base.Preconditions.checkArgument(
+                    path.isAbsolute(), "the provided path should be absolute in the filesystem: %s", path
+                )
+                return RepoCacheFriendlyPath(java.util.Optional.empty<RepositoryName?>(), path)
+            }
+
+            @Throws(LabelSyntaxException::class)
+            fun parse(s: String): RepoCacheFriendlyPath {
+                if (LabelValidator.isAbsolute(s)) {
+                    val doubleSlash: Int = s.indexOf("//")
+                    val skipAts = if (s.startsWith("@@")) 2 else if (s.startsWith("@")) 1 else 0
+                    return createInsideWorkspace(
+                        RepositoryName.create(s.substring(skipAts, doubleSlash)),
+                        PathFragment.create(s.substring(doubleSlash + 2))
+                    )
+                }
+                return createOutsideWorkspace(PathFragment.create(s))
+            }
+        }
     }
 
-    public String apparentName() {
-      return apparentName;
+    /**
+     * Represents a file input accessed during the repo fetch. Despite being named just "file", this
+     * can represent a file or a directory on the filesystem, and it does not need to exist. The value
+     * of the input contains whether this is a file or a directory or nonexistent, and if it's a file,
+     * the digest of its contents.
+     */
+    class File(private val path: RepoCacheFriendlyPath) : RepoRecordedInput() {
+        public override fun getParser(): Parser {
+            return com.google.devtools.build.lib.rules.repository.RepoRecordedInput.File.Companion.PARSER
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o !is File) {
+                return false
+            }
+            return path == o.path
+        }
+
+        override fun hashCode(): Int {
+            return path.hashCode()
+        }
+
+        public override fun toStringInternal(): String? {
+            return path.toString()
+        }
+
+        public override fun getSkyKey(directories: BlazeDirectories): SkyKey {
+            return FileValue.key(path.getRootedPath(directories))
+        }
+
+        override fun canBeRequestedUnconditionally(): Boolean {
+            // Requesting files in external repositories can result in cycles if the external repo now
+            // transitively depends on the requesting repo.
+            return !path.inExternalRepo()
+        }
+
+        @Throws(java.lang.InterruptedException::class)
+        override fun getValue(env: SkyFunction.Environment, directories: BlazeDirectories): MaybeValue {
+            val skyKey: SkyKey = getSkyKey(directories)
+            try {
+                val fileValue: FileValue? =
+                    env.getValueOrThrow<IOException?>(skyKey, IOException::class.java) as FileValue?
+                if (fileValue == null) {
+                    return MaybeValue.Companion.VALUES_MISSING
+                }
+                return Valid(
+                    com.google.devtools.build.lib.rules.repository.RepoRecordedInput.File.Companion.fileValueToMarkerValue(
+                        skyKey.argument() as RootedPath?,
+                        fileValue
+                    )
+                )
+            } catch (e: IOException) {
+                return com.google.devtools.build.lib.rules.repository.RepoRecordedInput.MaybeValue.Invalid(
+                    "failed to stat %s: %s".formatted(
+                        path,
+                        e.getMessage()
+                    )
+                )
+            }
+        }
+
+        public override fun describeChange(oldValue: String?, newValue: String?): String? {
+            return "file info or contents of %s changed".formatted(path)
+        }
+
+        companion object {
+            val PARSER: Parser = object : Parser() {
+                override fun getPrefix(): String {
+                    return "FILE"
+                }
+
+                override fun parse(s: String): RepoRecordedInput? {
+                    try {
+                        return com.google.devtools.build.lib.rules.repository.RepoRecordedInput.File(
+                            RepoCacheFriendlyPath.Companion.parse(s)
+                        )
+                    } catch (e: LabelSyntaxException) {
+                        // malformed inputs cause refetch
+                        return NeverUpToDateRepoRecordedInput.Companion.PARSE_FAILURE
+                    }
+                }
+            }
+
+            /**
+             * Convert to a [com.google.devtools.build.lib.actions.FileValue] to a String appropriate
+             * for placing in a repository marker file. The file need not exist, and can be a file or a
+             * directory.
+             */
+            @com.google.common.annotations.VisibleForTesting
+            @Throws(IOException::class)
+            fun fileValueToMarkerValue(rootedPath: RootedPath?, fileValue: FileValue): String {
+                if (fileValue.isDirectory()) {
+                    return "DIR"
+                }
+                if (!fileValue.exists()) {
+                    return "ENOENT"
+                }
+                // Return the file content digest in hex. fileValue may or may not have the digest available.
+                var digest: ByteArray? = fileValue.realFileStateValue().getDigest()
+                if (digest == null) {
+                    // Fast digest not available, or it would have been in the FileValue.
+                    digest = fileValue.realRootedPath(rootedPath).asPath().getDigest()
+                }
+                return com.google.common.io.BaseEncoding.base16().lowerCase().encode(digest)
+            }
+        }
     }
 
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (!(o instanceof RecordedRepoMapping that)) {
-        return false;
-      }
-      return Objects.equals(sourceRepo, that.sourceRepo)
-          && Objects.equals(apparentName, that.apparentName);
+    /** Represents the list of entries under a directory accessed during the fetch.  */
+    class Dirents(private val path: RepoCacheFriendlyPath) : RepoRecordedInput() {
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o !is Dirents) {
+                return false
+            }
+            return path == o.path
+        }
+
+        override fun hashCode(): Int {
+            return path.hashCode()
+        }
+
+        public override fun toStringInternal(): String? {
+            return path.toString()
+        }
+
+        public override fun getParser(): Parser {
+            return com.google.devtools.build.lib.rules.repository.RepoRecordedInput.Dirents.Companion.PARSER
+        }
+
+        private fun directoryListingValueToMarkerValue(directoryListingValue: DirectoryListingValue): String {
+            val fp: Fingerprint = Fingerprint()
+            fp.addStrings(
+                directoryListingValue.getDirents().stream()
+                    .map<String?>(java.util.function.Function { obj: com.google.devtools.build.lib.vfs.Dirent? -> obj.getName() })
+                    .sorted()
+                    .collect(com.google.common.collect.ImmutableList.toImmutableList<String?>())
+            )
+            return fp.hexDigestAndReset()
+        }
+
+        public override fun getSkyKey(directories: BlazeDirectories): SkyKey? {
+            return DirectoryListingValue.key(path.getRootedPath(directories))
+        }
+
+        override fun canBeRequestedUnconditionally(): Boolean {
+            // Requesting directories in external repositories can result in cycles if the external repo
+            // transitively depends on the requesting repo.
+            return !path.inExternalRepo()
+        }
+
+        @Throws(java.lang.InterruptedException::class)
+        override fun getValue(env: SkyFunction.Environment, directories: BlazeDirectories): MaybeValue {
+            val skyKey: SkyKey? = getSkyKey(directories)
+            val directoryListingValue: DirectoryListingValue? = env.getValue(skyKey) as DirectoryListingValue?
+            if (directoryListingValue == null) {
+                return MaybeValue.Companion.VALUES_MISSING
+            }
+            return Valid(directoryListingValueToMarkerValue(directoryListingValue))
+        }
+
+        public override fun describeChange(oldValue: String?, newValue: String?): String? {
+            return "directory entries of %s changed".formatted(path)
+        }
+
+        companion object {
+            val PARSER: Parser = object : Parser() {
+                override fun getPrefix(): String {
+                    return "DIRENTS"
+                }
+
+                override fun parse(s: String): RepoRecordedInput? {
+                    try {
+                        return com.google.devtools.build.lib.rules.repository.RepoRecordedInput.Dirents(
+                            RepoCacheFriendlyPath.Companion.parse(s)
+                        )
+                    } catch (e: LabelSyntaxException) {
+                        // malformed inputs cause refetch
+                        return NeverUpToDateRepoRecordedInput.Companion.PARSE_FAILURE
+                    }
+                }
+            }
+        }
     }
 
-    @Override
-    public int hashCode() {
-      return Objects.hash(sourceRepo, apparentName);
+    /**
+     * Represents an entire directory tree accessed during the fetch. Anything under the tree changing
+     * (including adding/removing/renaming files or directories and changing file contents) will cause
+     * it to go out of date.
+     * 
+     * 
+     * Files can be excluded from the out-of-date check with the given `excludes` glob
+     * patterns.
+     */
+    class DirTree(private val path: RepoCacheFriendlyPath, excludes: com.google.common.collect.ImmutableList<String?>) :
+        RepoRecordedInput() {
+        /** The glob patterns to exclude from watch/change detection.  */
+        private val excludes: com.google.common.collect.ImmutableList<String?>
+
+        init {
+            this.excludes = excludes
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o !is DirTree) {
+                return false
+            }
+            return path == o.path && excludes == o.excludes
+        }
+
+        override fun hashCode(): Int {
+            val hash = path.hashCode()
+            if (!excludes.isEmpty()) {
+                return hash + excludes.hashCode()
+            }
+            return hash
+        }
+
+        public override fun toStringInternal(): String? {
+            if (this.excludes.isEmpty()) {
+                return path.toString()
+            } else {
+                // Excludes parameters represented as a query string.
+                val sb: java.lang.StringBuilder = java.lang.StringBuilder(path.toString())
+                sb.append(METADATA_DELIMITER)
+                sb.append(
+                    this.excludes.stream()
+                        .map<String?>(java.util.function.Function { s: String? ->
+                            URLEncoder.encode(
+                                s,
+                                java.nio.charset.StandardCharsets.UTF_8
+                            )
+                        })
+                        .collect(Collectors.joining(","))
+                )
+                return sb.toString()
+            }
+        }
+
+        public override fun getParser(): Parser {
+            return PARSER
+        }
+
+        public override fun getSkyKey(directories: BlazeDirectories): SkyKey? {
+            val rootedPath: RootedPath? = path.getRootedPath(directories)
+            return DirectoryTreeDigestValue.key(rootedPath, rootedPath, excludes)
+        }
+
+        override fun canBeRequestedUnconditionally(): Boolean {
+            // Requesting directory trees in external repositories can result in cycles if the external
+            // repo now transitively depends on the requesting repo.
+            return !path.inExternalRepo()
+        }
+
+        @Throws(java.lang.InterruptedException::class)
+        override fun getValue(env: SkyFunction.Environment, directories: BlazeDirectories): MaybeValue {
+            val skyKey: SkyKey? = getSkyKey(directories)
+            try {
+                val directoryTreeDigestValue: DirectoryTreeDigestValue? =
+                    env.getValueOrThrow<IOException?>(skyKey, IOException::class.java) as DirectoryTreeDigestValue?
+                if (directoryTreeDigestValue == null) {
+                    return MaybeValue.Companion.VALUES_MISSING
+                }
+                return Valid(directoryTreeDigestValue.hexDigest)
+            } catch (e: IOException) {
+                return com.google.devtools.build.lib.rules.repository.RepoRecordedInput.MaybeValue.Invalid(
+                    "failed to digest directory tree at %s: %s".formatted(path, e.getMessage())
+                )
+            }
+        }
+
+        public override fun describeChange(oldValue: String?, newValue: String?): String? {
+            return "directory tree at %s changed".formatted(path)
+        }
+
+        companion object {
+            /**
+             * A string sequence to delimit extra metadata on a directory path. This borrows web's query
+             * string to represent the extra options, but instead of a '?' to serve as the separator between
+             * the path and the query string, '?/../' is used instead. This takes advantage of the fact that
+             * the underlying path representation is a [PathFragment] which is normalized - meaning
+             * that a '/../' could never appear in the valid path.
+             * 
+             * 
+             * Since there is currently only one parameter (excludes), it is hardcoded with the
+             * delimiter.
+             * 
+             * 
+             * For a DirTree with path '/foo/bar' and an exclude list of 'abc/ **' and 'file,with,commas',
+             * the serialized form is:
+             * 
+             * 
+             * `/foo/bar?/../excludes=abc%2F**,file%2Cwith%2Ccommas`
+             */
+            const val METADATA_DELIMITER: String = "?/../excludes="
+
+            val PARSER: Parser = object : Parser() {
+                override fun getPrefix(): String {
+                    return "DIRTREE"
+                }
+
+                override fun parse(s: String): RepoRecordedInput? {
+                    try {
+                        val metadataIndex: Int = s.indexOf(METADATA_DELIMITER)
+                        if (metadataIndex != -1) {
+                            // Parse out the query string.
+                            val excludesQueryString: String =
+                                s.substring(metadataIndex + METADATA_DELIMITER.length())
+                            val excludesArray: Array<String?> = excludesQueryString.split(",")
+                            val excludesList: com.google.common.collect.ImmutableList<String?> =
+                                java.util.Arrays.stream<String?>(excludesArray)
+                                    .map<String?>(java.util.function.Function { exclude: String? ->
+                                        URLDecoder.decode(
+                                            exclude,
+                                            java.nio.charset.StandardCharsets.UTF_8
+                                        )
+                                    })
+                                    .collect(com.google.common.collect.ImmutableList.toImmutableList<String?>())
+                            return DirTree(
+                                RepoCacheFriendlyPath.Companion.parse(s.substring(0, metadataIndex)), excludesList
+                            )
+                        } else {
+                            return DirTree(
+                                RepoCacheFriendlyPath.Companion.parse(s),
+                                com.google.common.collect.ImmutableList.of<String?>()
+                            )
+                        }
+                    } catch (e: LabelSyntaxException) {
+                        // malformed inputs cause refetch
+                        return NeverUpToDateRepoRecordedInput.Companion.PARSE_FAILURE
+                    }
+                }
+            }
+        }
     }
 
-    @Override
-    public Parser getParser() {
-      return PARSER;
+    /** Represents an environment variable accessed during the repo fetch.  */
+    class EnvVar(val name: String) : RepoRecordedInput() {
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o !is EnvVar) {
+                return false
+            }
+            return name == o.name
+        }
+
+        override fun hashCode(): Int {
+            return name.hashCode()
+        }
+
+        public override fun getParser(): Parser {
+            return com.google.devtools.build.lib.rules.repository.RepoRecordedInput.EnvVar.Companion.PARSER
+        }
+
+        public override fun toStringInternal(): String {
+            return name
+        }
+
+        public override fun getSkyKey(directories: BlazeDirectories?): SkyKey? {
+            return RepoEnvironmentFunction.key(name)
+        }
+
+        override fun canBeRequestedUnconditionally(): Boolean {
+            // Environment variables are static data injected into Skyframe, so there is no risk of
+            // cycles.
+            return true
+        }
+
+        @Throws(java.lang.InterruptedException::class)
+        override fun getValue(env: SkyFunction.Environment, directories: BlazeDirectories?): MaybeValue {
+            val value: EnvironmentVariableValue? = env.getValue(getSkyKey(directories)) as EnvironmentVariableValue?
+            if (value == null) {
+                return MaybeValue.Companion.VALUES_MISSING
+            }
+            return Valid(value.value)
+        }
+
+        public override fun describeChange(oldValue: String?, newValue: String?): String? {
+            return "environment variable %s changed: %s -> %s"
+                .formatted(
+                    name,
+                    if (oldValue == null) "<unset>" else "'%s'".formatted(oldValue),
+                    if (newValue == null) "<unset>" else "'%s'".formatted(newValue)
+                )
+        }
+
+        companion object {
+            val PARSER: Parser = object : Parser() {
+                override fun getPrefix(): String {
+                    return "ENV"
+                }
+
+                override fun parse(s: String): RepoRecordedInput {
+                    return com.google.devtools.build.lib.rules.repository.RepoRecordedInput.EnvVar(s)
+                }
+            }
+
+            fun wrap(
+                envVars: MutableMap<String?, java.util.Optional<String?>?>
+            ): com.google.common.collect.ImmutableMap<EnvVar?, java.util.Optional<String?>?> {
+                return envVars.entrySet().stream()
+                    .sorted(TODO("Cannot convert element")) < String
+                java.util.Map.Entry.comparingByKey<K?, Any?>()
+                TODO(
+                    """
+                    |Cannot convert element
+                    |With text:
+                    |collect(<Map.Entry<String, Optional<String>>, EnvVar, Optional<String>>toImmutableMap(e -> new EnvVar(e.getKey()), Map.Entry::getValue)
+                    """.trimMargin()
+                )
+            }
+        }
     }
 
-    @Override
-    public String toStringInternal() {
-      return sourceRepo.name + ',' + apparentName;
+    /** Represents a repo mapping entry that was used during the repo fetch.  */
+    class RecordedRepoMapping(sourceRepo: RepositoryName, apparentName: String) : RepoRecordedInput() {
+        val sourceRepo: RepositoryName
+        val apparentName: String
+
+        init {
+            this.sourceRepo = sourceRepo
+            this.apparentName = apparentName
+        }
+
+        fun apparentName(): String {
+            return apparentName
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o !is RecordedRepoMapping) {
+                return false
+            }
+            return sourceRepo == o.sourceRepo
+                    && apparentName == o.apparentName
+        }
+
+        override fun hashCode(): Int {
+            return java.util.Objects.hash(sourceRepo, apparentName)
+        }
+
+        public override fun getParser(): Parser {
+            return PARSER
+        }
+
+        public override fun toStringInternal(): String {
+            return (sourceRepo.name + ',').toString() + apparentName
+        }
+
+        public override fun getSkyKey(directories: BlazeDirectories?): SkyKey? {
+            return RepositoryMappingValue.key(sourceRepo)
+        }
+
+        override fun canBeRequestedUnconditionally(): Boolean {
+            // Starlark can only request the mapping of the repo it is currently executing from, which
+            // means that the repo has already been fetched (either to execute the code or to verify the
+            // transitive .bzl hash). Further cycles aren't possible.
+            return true
+        }
+
+        @Throws(java.lang.InterruptedException::class)
+        override fun getValue(env: SkyFunction.Environment, directories: BlazeDirectories?): MaybeValue {
+            val repoMappingValue: RepositoryMappingValue? =
+                env.getValue(getSkyKey(directories)) as RepositoryMappingValue?
+            if (repoMappingValue == RepositoryMappingValue.NOT_FOUND_VALUE) {
+                return com.google.devtools.build.lib.rules.repository.RepoRecordedInput.MaybeValue.Invalid(
+                    "source repo %s doesn't exist anymore".formatted(
+                        sourceRepo
+                    )
+                )
+            }
+            val canonicalName: RepositoryName? = repoMappingValue.repositoryMapping.get(apparentName)
+            return Valid(if (canonicalName != null) canonicalName.name else null)
+        }
+
+        public override fun describeChange(oldValue: String?, newValue: String?): String? {
+            return "canonical name for @%s in %s changed: %s -> %s"
+                .formatted(
+                    apparentName,
+                    sourceRepo,
+                    if (oldValue == null) "<doesn't exist>" else oldValue,
+                    if (newValue == null) "<doesn't exist>" else newValue
+                )
+        }
+
+        companion object {
+            val PARSER: Parser = object : Parser() {
+                override fun getPrefix(): String {
+                    return "REPO_MAPPING"
+                }
+
+                override fun parse(s: String): RepoRecordedInput? {
+                    val parts: MutableList<String?> = com.google.common.base.Splitter.on(',').limit(2).splitToList(s)
+                    try {
+                        return RecordedRepoMapping(RepositoryName.create(parts.get(0)), parts.get(1)!!)
+                    } catch (e: LabelSyntaxException) {
+                        // malformed inputs cause refetch
+                        return NeverUpToDateRepoRecordedInput.Companion.PARSE_FAILURE
+                    } catch (e: java.lang.IndexOutOfBoundsException) {
+                        return NeverUpToDateRepoRecordedInput.Companion.PARSE_FAILURE
+                    }
+                }
+            }
+        }
     }
 
-    @Override
-    public SkyKey getSkyKey(BlazeDirectories directories) {
-      return RepositoryMappingValue.key(sourceRepo);
+    /** A sentinel "input" that's always out-of-date for a given reason.  */
+    class NeverUpToDateRepoRecordedInput(private val reason: String?) : RepoRecordedInput() {
+        override fun equals(obj: Any?): Boolean {
+            return this === obj
+        }
+
+        override fun hashCode(): Int {
+            return 12345678
+        }
+
+        public override fun toStringInternal(): String? {
+            throw java.lang.UnsupportedOperationException("this sentinel input should never be serialized")
+        }
+
+        public override fun getParser(): Parser? {
+            throw java.lang.UnsupportedOperationException("this sentinel input should never be parsed")
+        }
+
+        public override fun getSkyKey(directories: BlazeDirectories?): SkyKey? {
+            // Return a random SkyKey to satisfy the contract.
+            return PrecomputedValue.STARLARK_SEMANTICS.getKey()
+        }
+
+        override fun canBeRequestedUnconditionally(): Boolean {
+            return true
+        }
+
+        override fun getValue(env: SkyFunction.Environment?, directories: BlazeDirectories?): MaybeValue {
+            return com.google.devtools.build.lib.rules.repository.RepoRecordedInput.MaybeValue.Invalid(reason)
+        }
+
+        public override fun describeChange(oldValue: String?, newValue: String?): String? {
+            throw java.lang.UnsupportedOperationException(
+                "the value for this sentinel input is always invalid"
+            )
+        }
+
+        companion object {
+            /** A sentinel "input" that's always out-of-date to signify parse failure.  */
+            val PARSE_FAILURE: RepoRecordedInput =
+                NeverUpToDateRepoRecordedInput("malformed marker file entry encountered")
+        }
     }
 
-    @Override
-    protected boolean canBeRequestedUnconditionally() {
-      // Starlark can only request the mapping of the repo it is currently executing from, which
-      // means that the repo has already been fetched (either to execute the code or to verify the
-      // transitive .bzl hash). Further cycles aren't possible.
-      return true;
+    companion object {
+        /**
+         * Parses a recorded input from its string representation.
+         * 
+         * @param s the string representation
+         * @return The parsed recorded input object, or [     ][NeverUpToDateRepoRecordedInput.PARSE_FAILURE] if the string representation is invalid
+         */
+        fun parse(s: String): RepoRecordedInput {
+            val parts: MutableList<String?> = com.google.common.base.Splitter.on(':').limit(2).splitToList(s)
+            if (parts.size() < 2) {
+                return NeverUpToDateRepoRecordedInput.Companion.PARSE_FAILURE
+            }
+            for (parser in arrayOf<Parser>(
+                com.google.devtools.build.lib.rules.repository.RepoRecordedInput.File.Companion.PARSER,
+                com.google.devtools.build.lib.rules.repository.RepoRecordedInput.Dirents.Companion.PARSER,
+                DirTree.Companion.PARSER,
+                com.google.devtools.build.lib.rules.repository.RepoRecordedInput.EnvVar.Companion.PARSER,
+                RecordedRepoMapping.Companion.PARSER
+            )) {
+                if (parts.get(0) == parser.prefix) {
+                    return parser.parse(parts.get(1))
+                }
+            }
+            return NeverUpToDateRepoRecordedInput.Companion.PARSE_FAILURE
+        }
+
+        /**
+         * Returns whether all values are still up-to-date for each recorded input or a human-readable
+         * reason for why that's not the case. If Skyframe values are missing, the return value should be
+         * ignored; callers are responsible for checking `env.valuesMissing()` and triggering a
+         * Skyframe restart if needed.
+         */
+        @Throws(java.lang.InterruptedException::class)
+        fun isAnyValueOutdated(
+            env: SkyFunction.Environment, directories: BlazeDirectories?, recordedInputValues: MutableList<WithValue>
+        ): java.util.Optional<String?> {
+            prefetch(
+                env,
+                directories,
+                com.google.common.collect.Collections2.transform<WithValue?, RepoRecordedInput?>(
+                    recordedInputValues,
+                    WithValue::input
+                )
+            )
+            if (env.valuesMissing()) {
+                return UNDECIDED
+            }
+            for (recordedInput in recordedInputValues) {
+                val reason: java.util.Optional<String?> =
+                    recordedInput.input!!.isOutdated(env, directories, recordedInput.value)
+                if (reason.isPresent()) {
+                    return reason
+                }
+            }
+            return java.util.Optional.empty<String?>()
+        }
+
+        /**
+         * Requests the information from Skyframe that is required by future calls to [ ][.isAnyValueOutdated] for the given set of inputs.
+         */
+        @Throws(java.lang.InterruptedException::class)
+        fun prefetch(
+            env: SkyFunction.Environment,
+            directories: BlazeDirectories?,
+            recordedInputs: MutableCollection<RepoRecordedInput?>
+        ) {
+            val keys: com.google.common.collect.ImmutableSet<SkyKey?> =
+                recordedInputs.stream()
+                    .map<SkyKey?>(java.util.function.Function { rri: RepoRecordedInput? -> rri!!.getSkyKey(directories) })
+                    .collect(com.google.common.collect.ImmutableSet.toImmutableSet<SkyKey?>())
+            if (env.valuesMissing()) {
+                return
+            }
+            val results: SkyframeLookupResult = env.getValuesAndExceptions(keys)
+            // Per the contract of Environment.getValuesAndExceptions, we need to access the results to
+            // actually find all missing values.
+            for (key in keys) {
+                val unused: SkyValue? = results.get(key)
+            }
+        }
+
+        @kotlin.jvm.JvmStatic
+        @com.google.common.annotations.VisibleForTesting
+        fun escape(str: String?): String? {
+            return if (str == null) "\\0" else str.replace("\\", "\\\\").replace("\n", "\\n").replace(" ", "\\s")
+        }
+
+        @kotlin.jvm.JvmStatic
+        @com.google.common.annotations.VisibleForTesting
+        fun unescape(str: String): String? {
+            if (str == "\\0") {
+                return null // \0 == null string
+            }
+            val result: java.lang.StringBuilder = java.lang.StringBuilder()
+            var escaped = false
+            for (i in 0..<str.length()) {
+                val c: Char = str.charAt(i)
+                if (escaped) {
+                    if (c == 'n') { // n means new line
+                        result.append("\n")
+                    } else if (c == 's') { // s means space
+                        result.append(" ")
+                    } else { // Any other escaped characters are just un-escaped
+                        result.append(c)
+                    }
+                    escaped = false
+                } else if (c == '\\') {
+                    escaped = true
+                } else {
+                    result.append(c)
+                }
+            }
+            return result.toString()
+        }
+
+        private val UNDECIDED: java.util.Optional<String?> = java.util.Optional.of<String?>("values missing")
     }
-
-    @Override
-    public MaybeValue getValue(Environment env, BlazeDirectories directories)
-        throws InterruptedException {
-      var repoMappingValue = (RepositoryMappingValue) env.getValue(getSkyKey(directories));
-      if (Objects.equals(repoMappingValue, RepositoryMappingValue.NOT_FOUND_VALUE)) {
-        return new MaybeValue.Invalid("source repo %s doesn't exist anymore".formatted(sourceRepo));
-      }
-      RepositoryName canonicalName = repoMappingValue.repositoryMapping().get(apparentName);
-      return new MaybeValue.Valid(canonicalName != null ? canonicalName.name : null);
-    }
-
-    @Override
-    public String describeChange(String oldValue, String newValue) {
-      return "canonical name for @%s in %s changed: %s -> %s"
-          .formatted(
-              apparentName,
-              sourceRepo,
-              oldValue == null ? "<doesn't exist>" : oldValue,
-              newValue == null ? "<doesn't exist>" : newValue);
-    }
-  }
-
-  /** A sentinel "input" that's always out-of-date for a given reason. */
-  public static final class NeverUpToDateRepoRecordedInput extends RepoRecordedInput {
-    /** A sentinel "input" that's always out-of-date to signify parse failure. */
-    public static final RepoRecordedInput PARSE_FAILURE =
-        new NeverUpToDateRepoRecordedInput("malformed marker file entry encountered");
-
-    private final String reason;
-
-    public NeverUpToDateRepoRecordedInput(String reason) {
-      this.reason = reason;
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      return this == obj;
-    }
-
-    @Override
-    public int hashCode() {
-      return 12345678;
-    }
-
-    @Override
-    public String toStringInternal() {
-      throw new UnsupportedOperationException("this sentinel input should never be serialized");
-    }
-
-    @Override
-    public Parser getParser() {
-      throw new UnsupportedOperationException("this sentinel input should never be parsed");
-    }
-
-    @Override
-    public SkyKey getSkyKey(BlazeDirectories directories) {
-      // Return a random SkyKey to satisfy the contract.
-      return PrecomputedValue.STARLARK_SEMANTICS.getKey();
-    }
-
-    @Override
-    protected boolean canBeRequestedUnconditionally() {
-      return true;
-    }
-
-    @Override
-    public MaybeValue getValue(Environment env, BlazeDirectories directories) {
-      return new MaybeValue.Invalid(reason);
-    }
-
-    @Override
-    public String describeChange(String oldValue, String newValue) {
-      throw new UnsupportedOperationException(
-          "the value for this sentinel input is always invalid");
-    }
-  }
 }

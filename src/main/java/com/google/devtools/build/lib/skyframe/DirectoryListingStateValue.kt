@@ -11,106 +11,93 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.base.MoreObjects;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.vfs.Dirent;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.skyframe.AbstractSkyKey;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Collection;
+import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
 
 /**
  * Encapsulates the filesystem operations needed to get the directory entries of a directory.
- *
- * <p>This class is an implementation detail of {@link DirectoryListingValue}.
+ * 
+ * 
+ * This class is an implementation detail of [DirectoryListingValue].
  */
-@VisibleForSerialization
-public final class DirectoryListingStateValue implements SkyValue {
+@com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+class DirectoryListingStateValue private constructor(dirents: MutableCollection<com.google.devtools.build.lib.vfs.Dirent?>) :
+    SkyValue {
+    private val compactSortedDirents: CompactSortedDirents
 
-  private final CompactSortedDirents compactSortedDirents;
-
-  private DirectoryListingStateValue(Collection<Dirent> dirents) {
-    this.compactSortedDirents = CompactSortedDirents.create(dirents);
-  }
-
-  @AutoCodec.Instantiator
-  public static DirectoryListingStateValue create(Collection<Dirent> dirents) {
-    return new DirectoryListingStateValue(dirents);
-  }
-
-  @ThreadSafe
-  public static Key key(RootedPath rootedPath) {
-    return Key.create(rootedPath);
-  }
-
-  /** Key type for DirectoryListingStateValue. */
-  @VisibleForSerialization
-  @AutoCodec
-  public static class Key extends AbstractSkyKey<RootedPath> {
-    private static final SkyKeyInterner<Key> interner = SkyKey.newInterner();
-
-    private Key(RootedPath arg) {
-      super(arg);
+    init {
+        this.compactSortedDirents = CompactSortedDirents.Companion.create(dirents)
     }
 
-    private static Key create(RootedPath arg) {
-      return interner.intern(new Key(arg));
+    /** Key type for DirectoryListingStateValue.  */
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    @AutoCodec
+    class Key private constructor(arg: RootedPath?) : AbstractSkyKey<RootedPath?>(arg) {
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.DIRECTORY_LISTING_STATE
+        }
+
+        val skyKeyInterner: SkyKeyInterner<Key?>
+            get() = com.google.devtools.build.lib.skyframe.DirectoryListingStateValue.Key.Companion.interner
+
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
+
+            private fun create(arg: RootedPath?): Key {
+                return com.google.devtools.build.lib.skyframe.DirectoryListingStateValue.Key.Companion.interner.intern(
+                    com.google.devtools.build.lib.skyframe.DirectoryListingStateValue.Key(arg)
+                )
+            }
+
+            @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+            @AutoCodec.Interner
+            fun intern(key: Key?): Key {
+                return com.google.devtools.build.lib.skyframe.DirectoryListingStateValue.Key.Companion.interner.intern(
+                    key
+                )
+            }
+        }
     }
 
-    @VisibleForSerialization
-    @AutoCodec.Interner
-    static Key intern(Key key) {
-      return interner.intern(key);
+    val dirents: Dirents
+        /**
+         * Returns the directory entries for this directory, in a stable order.
+         * 
+         * 
+         * Symlinks are not expanded.
+         */
+        get() = compactSortedDirents
+
+    override fun hashCode(): Int {
+        return compactSortedDirents.hashCode()
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.DIRECTORY_LISTING_STATE;
+    override fun equals(obj: Any?): Boolean {
+        if (this === obj) {
+            return true
+        }
+        if (obj !is DirectoryListingStateValue) {
+            return false
+        }
+        return compactSortedDirents == obj.compactSortedDirents
     }
 
-    @Override
-    public SkyKeyInterner<Key> getSkyKeyInterner() {
-      return interner;
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("dirents", com.google.common.collect.Iterables.toString(this.dirents))
+            .toString()
     }
-  }
 
-  /**
-   * Returns the directory entries for this directory, in a stable order.
-   *
-   * <p>Symlinks are not expanded.
-   */
-  public Dirents getDirents() {
-    return compactSortedDirents;
-  }
+    companion object {
+        @AutoCodec.Instantiator
+        fun create(dirents: MutableCollection<com.google.devtools.build.lib.vfs.Dirent?>): DirectoryListingStateValue {
+            return DirectoryListingStateValue(dirents)
+        }
 
-  @Override
-  public int hashCode() {
-    return compactSortedDirents.hashCode();
-  }
-
-  @Override
-  public boolean equals(Object obj) {
-    if (this == obj) {
-      return true;
+        @ThreadSafe
+        fun key(rootedPath: RootedPath?): Key {
+            return com.google.devtools.build.lib.skyframe.DirectoryListingStateValue.Key.Companion.create(rootedPath)
+        }
     }
-    if (!(obj instanceof DirectoryListingStateValue other)) {
-      return false;
-    }
-    return compactSortedDirents.equals(other.compactSortedDirents);
-  }
-
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("dirents", Iterables.toString(getDirents()))
-        .toString();
-  }
-
 }

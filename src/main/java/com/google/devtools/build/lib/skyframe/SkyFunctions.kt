@@ -11,179 +11,211 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.base.Predicate;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
+import com.google.devtools.build.skyframe.SkyFunctionName
+import com.google.devtools.build.skyframe.SkyKey
 
-/** Value types in Skyframe. */
-public final class SkyFunctions {
-  public static final SkyFunctionName PRECOMPUTED =
-      SkyFunctionName.createNonHermetic("PRECOMPUTED");
-  public static final SkyFunctionName CLIENT_ENVIRONMENT_VARIABLE =
-      SkyFunctionName.createNonHermetic("CLIENT_ENVIRONMENT_VARIABLE");
-  public static final SkyFunctionName ACTION_ENVIRONMENT_VARIABLE =
-      SkyFunctionName.createHermetic("ACTION_ENVIRONMENT_VARIABLE");
-  public static final SkyFunctionName REPOSITORY_ENVIRONMENT_VARIABLE =
-      SkyFunctionName.createHermetic("REPOSITORY_ENVIRONMENT_VARIABLE");
-  public static final SkyFunctionName DIRECTORY_LISTING_STATE =
-      SkyFunctionName.createNonHermetic("DIRECTORY_LISTING_STATE");
-  public static final SkyFunctionName DIRECTORY_LISTING =
-      SkyFunctionName.createHermetic("DIRECTORY_LISTING");
-  public static final SkyFunctionName DIRECTORY_TREE_DIGEST =
-      SkyFunctionName.createHermetic("DIRECTORY_TREE_DIGEST");
-  // Hermetic even though package lookups secretly access the set of deleted packages, because
-  // SequencedSkyframeExecutor deletes any affected PACKAGE_LOOKUP nodes when that set changes.
-  public static final SkyFunctionName PACKAGE_LOOKUP =
-      SkyFunctionName.createHermetic("PACKAGE_LOOKUP");
-  public static final SkyFunctionName CONTAINING_PACKAGE_LOOKUP =
-      SkyFunctionName.createHermetic("CONTAINING_PACKAGE_LOOKUP");
-  public static final SkyFunctionName PROJECT = SkyFunctionName.createHermetic("PROJECT");
-  public static final SkyFunctionName PROJECT_FILES_LOOKUP =
-      SkyFunctionName.createHermetic("PROJECT_FILES_LOOKUP");
-  public static final SkyFunctionName BZL_COMPILE = SkyFunctionName.createHermetic("BZL_COMPILE");
-  public static final SkyFunctionName STARLARK_BUILTINS =
-      SkyFunctionName.createHermetic("STARLARK_BUILTINS");
-  public static final SkyFunctionName BZL_LOAD = SkyFunctionName.createHermetic("BZL_LOAD");
-  // Depends non-hermetically on package path, but that is under the control of a flag, so use
-  // semi-hermetic.
-  public static final SkyFunctionName FILE = SkyFunctionName.createSemiHermetic("FILE");
-  public static final SkyFunctionName GLOB = SkyFunctionName.createHermetic("GLOB");
-  public static final SkyFunctionName GLOBS = SkyFunctionName.createHermetic("GLOBS");
-  public static final SkyFunctionName PACKAGE = SkyFunctionName.createHermetic("PACKAGE");
-  public static final SkyFunctionName PACKAGE_DECLARATIONS =
-      SkyFunctionName.createHermetic("PACKAGE_DECLARATIONS");
-  static final SkyFunctionName PACKAGE_ERROR = SkyFunctionName.createHermetic("PACKAGE_ERROR");
-  public static final SkyFunctionName PACKAGE_ERROR_MESSAGE =
-      SkyFunctionName.createHermetic("PACKAGE_ERROR_MESSAGE");
-  public static final SkyFunctionName EVAL_MACRO = SkyFunctionName.createHermetic("EVAL_MACRO");
-  public static final SkyFunctionName MACRO_INSTANCE =
-      SkyFunctionName.createHermetic("MACRO_INSTANCE");
-  public static final SkyFunctionName NON_FINALIZER_PACKAGE_PIECES =
-      SkyFunctionName.createHermetic("NON_FINALIZER_PACKAGE_PIECES");
-  // Semi-hermetic because accesses package locator
-  public static final SkyFunctionName TARGET_PATTERN =
-      SkyFunctionName.createSemiHermetic("TARGET_PATTERN");
-  static final SkyFunctionName TARGET_PATTERN_ERROR =
-      SkyFunctionName.createHermetic("TARGET_PATTERN_ERROR");
-  public static final SkyFunctionName PREPARE_DEPS_OF_PATTERNS =
-      SkyFunctionName.createHermetic("PREPARE_DEPS_OF_PATTERNS");
-  // Non-hermetic because accesses package locator
-  public static final SkyFunctionName PREPARE_DEPS_OF_PATTERN =
-      SkyFunctionName.createNonHermetic("PREPARE_DEPS_OF_PATTERN");
-  public static final SkyFunctionName PREPARE_DEPS_OF_TARGETS_UNDER_DIRECTORY =
-      SkyFunctionName.createHermetic("PREPARE_DEPS_OF_TARGETS_UNDER_DIRECTORY");
-  public static final SkyFunctionName COLLECT_TARGETS_IN_PACKAGE =
-      SkyFunctionName.createHermetic("COLLECT_TARGETS_IN_PACKAGE");
+/** Value types in Skyframe.  */
+object SkyFunctions {
+    @kotlin.jvm.JvmField
+    val PRECOMPUTED: SkyFunctionName = SkyFunctionName.createNonHermetic("PRECOMPUTED")
+    @kotlin.jvm.JvmField
+    val CLIENT_ENVIRONMENT_VARIABLE: SkyFunctionName = SkyFunctionName.createNonHermetic("CLIENT_ENVIRONMENT_VARIABLE")
+    @kotlin.jvm.JvmField
+    val ACTION_ENVIRONMENT_VARIABLE: SkyFunctionName = SkyFunctionName.createHermetic("ACTION_ENVIRONMENT_VARIABLE")
+    @kotlin.jvm.JvmField
+    val REPOSITORY_ENVIRONMENT_VARIABLE: SkyFunctionName =
+        SkyFunctionName.createHermetic("REPOSITORY_ENVIRONMENT_VARIABLE")
+    @kotlin.jvm.JvmField
+    val DIRECTORY_LISTING_STATE: SkyFunctionName = SkyFunctionName.createNonHermetic("DIRECTORY_LISTING_STATE")
+    @kotlin.jvm.JvmField
+    val DIRECTORY_LISTING: SkyFunctionName = SkyFunctionName.createHermetic("DIRECTORY_LISTING")
+    @kotlin.jvm.JvmField
+    val DIRECTORY_TREE_DIGEST: SkyFunctionName = SkyFunctionName.createHermetic("DIRECTORY_TREE_DIGEST")
 
-  public static final SkyFunctionName COLLECT_PACKAGES_UNDER_DIRECTORY =
-      SkyFunctionName.createHermetic("COLLECT_PACKAGES_UNDER_DIRECTORY");
-  public static final SkyFunctionName IGNORED_SUBDIRECTORIES =
-      SkyFunctionName.createHermetic("IGNORED_SUBDIRECTORIES");
-  static final SkyFunctionName TEST_SUITE_EXPANSION =
-      SkyFunctionName.createHermetic("TEST_SUITE_EXPANSION");
-  static final SkyFunctionName TESTS_IN_SUITE = SkyFunctionName.createHermetic("TESTS_IN_SUITE");
-  // Non-hermetic because accesses package locator
-  public static final SkyFunctionName TARGET_PATTERN_PHASE =
-      SkyFunctionName.createNonHermetic("TARGET_PATTERN_PHASE");
-  static final SkyFunctionName PREPARE_ANALYSIS_PHASE =
-      SkyFunctionName.createNonHermetic("PREPARE_ANALYSIS_PHASE");
-  static final SkyFunctionName RECURSIVE_PKG = SkyFunctionName.createHermetic("RECURSIVE_PKG");
-  public static final SkyFunctionName CONFIGURED_TARGET =
-      SkyFunctionName.createHermetic("CONFIGURED_TARGET");
-  static final SkyFunctionName ACTION_LOOKUP_CONFLICT_FINDING =
-      SkyFunctionName.createHermetic("ACTION_LOOKUP_CONFLICT_DETECTION");
-  static final SkyFunctionName TOP_LEVEL_ACTION_LOOKUP_CONFLICT_FINDING =
-      SkyFunctionName.createHermetic("TOP_LEVEL_ACTION_LOOKUP_CONFLICT_DETECTION");
-  public static final SkyFunctionName ASPECT = SkyFunctionName.createHermetic("ASPECT");
-  static final SkyFunctionName TOP_LEVEL_ASPECTS =
-      SkyFunctionName.createHermetic("TOP_LEVEL_ASPECTS");
-  static final SkyFunctionName LOAD_ASPECTS = SkyFunctionName.createHermetic("LOAD_ASPECTS");
-  public static final SkyFunctionName TARGET_COMPLETION =
-      SkyFunctionName.createHermetic("TARGET_COMPLETION");
-  public static final SkyFunctionName ASPECT_COMPLETION =
-      SkyFunctionName.createHermetic("ASPECT_COMPLETION");
-  static final SkyFunctionName TEST_COMPLETION = SkyFunctionName.createHermetic("TEST_COMPLETION");
-  public static final SkyFunctionName BUILD_CONFIGURATION =
-      SkyFunctionName.createHermetic("BUILD_CONFIGURATION");
-  public static final SkyFunctionName BUILD_CONFIGURATION_KEY =
-      SkyFunctionName.createHermetic("BUILD_CONFIGURATION_KEY");
-  public static final SkyFunctionName PARSED_FLAGS = SkyFunctionName.createHermetic("PARSED_FLAGS");
-  public static final SkyFunctionName BASELINE_OPTIONS =
-      SkyFunctionName.createNonHermetic("BASELINE_OPTIONS");
-  public static final SkyFunctionName STARLARK_BUILD_SETTINGS_DETAILS =
-      SkyFunctionName.createHermetic("STARLARK_BUILD_SETTINGS_DETAILS");
-  // Action execution can be nondeterministic, so semi-hermetic.
-  public static final SkyFunctionName ACTION_EXECUTION =
-      SkyFunctionName.createSemiHermetic("ACTION_EXECUTION");
-  public static final SkyFunctionName ARTIFACT_NESTED_SET =
-      SkyFunctionName.createHermetic("ARTIFACT_NESTED_SET");
-  public static final SkyFunctionName RECURSIVE_FILESYSTEM_TRAVERSAL =
-      SkyFunctionName.createHermetic("RECURSIVE_FILESYSTEM_TRAVERSAL");
-  public static final SkyFunctionName FILESET_ENTRY =
-      SkyFunctionName.createHermetic("FILESET_ENTRY");
-  public static final SkyFunctionName BUILD_INFO = SkyFunctionName.createHermetic("BUILD_INFO");
-  public static final SkyFunctionName PLATFORM = SkyFunctionName.createHermetic("PLATFORM");
-  public static final SkyFunctionName PLATFORM_MAPPING =
-      SkyFunctionName.createHermetic("PLATFORM_MAPPING");
-  static final SkyFunctionName COVERAGE_REPORT = SkyFunctionName.createHermetic("COVERAGE_REPORT");
-  public static final SkyFunctionName REPOSITORY_DIRECTORY =
-      SkyFunctionName.createNonHermetic("REPOSITORY_DIRECTORY");
-  public static final SkyFunctionName ACTION_TEMPLATE_EXPANSION =
-      SkyFunctionName.createHermetic("ACTION_TEMPLATE_EXPANSION");
-  public static final SkyFunctionName LOCAL_REPOSITORY_LOOKUP =
-      SkyFunctionName.createHermetic("LOCAL_REPOSITORY_LOOKUP");
-  public static final SkyFunctionName REGISTERED_EXECUTION_PLATFORMS =
-      SkyFunctionName.createHermetic("REGISTERED_EXECUTION_PLATFORMS");
-  public static final SkyFunctionName REGISTERED_TOOLCHAINS =
-      SkyFunctionName.createHermetic("REGISTERED_TOOLCHAINS");
-  public static final SkyFunctionName SINGLE_TOOLCHAIN_RESOLUTION =
-      SkyFunctionName.createHermetic("SINGLE_TOOLCHAIN_RESOLUTION");
-  public static final SkyFunctionName TOOLCHAIN_RESOLUTION =
-      SkyFunctionName.createHermetic("TOOLCHAIN_RESOLUTION");
-  public static final SkyFunctionName REPOSITORY_MAPPING =
-      SkyFunctionName.createHermetic("REPOSITORY_MAPPING");
-  public static final SkyFunctionName MODULE_FILE =
-      SkyFunctionName.createNonHermetic("MODULE_FILE");
-  public static final SkyFunctionName REPO_PACKAGE_ARGS =
-      SkyFunctionName.createHermetic("REPO_PACKAGE_ARGS");
-  public static final SkyFunctionName REPO_FILE = SkyFunctionName.createHermetic("REPO_FILE");
-  public static final SkyFunctionName BUILD_DRIVER =
-      SkyFunctionName.createNonHermetic("BUILD_DRIVER");
+    // Hermetic even though package lookups secretly access the set of deleted packages, because
+    // SequencedSkyframeExecutor deletes any affected PACKAGE_LOOKUP nodes when that set changes.
+    @kotlin.jvm.JvmField
+    val PACKAGE_LOOKUP: SkyFunctionName = SkyFunctionName.createHermetic("PACKAGE_LOOKUP")
+    @kotlin.jvm.JvmField
+    val CONTAINING_PACKAGE_LOOKUP: SkyFunctionName = SkyFunctionName.createHermetic("CONTAINING_PACKAGE_LOOKUP")
+    @kotlin.jvm.JvmField
+    val PROJECT: SkyFunctionName = SkyFunctionName.createHermetic("PROJECT")
+    @kotlin.jvm.JvmField
+    val PROJECT_FILES_LOOKUP: SkyFunctionName = SkyFunctionName.createHermetic("PROJECT_FILES_LOOKUP")
+    @kotlin.jvm.JvmField
+    val BZL_COMPILE: SkyFunctionName = SkyFunctionName.createHermetic("BZL_COMPILE")
+    @kotlin.jvm.JvmField
+    val STARLARK_BUILTINS: SkyFunctionName = SkyFunctionName.createHermetic("STARLARK_BUILTINS")
+    @kotlin.jvm.JvmField
+    val BZL_LOAD: SkyFunctionName = SkyFunctionName.createHermetic("BZL_LOAD")
 
-  public static final SkyFunctionName BAZEL_MOD_TIDY =
-      SkyFunctionName.createHermetic("BAZEL_MOD_TIDY");
-  public static final SkyFunctionName BAZEL_MODULE_RESOLUTION =
-      SkyFunctionName.createHermetic("BAZEL_MODULE_RESOLUTION");
-  public static final SkyFunctionName BAZEL_MODULE_INSPECTION =
-      SkyFunctionName.createHermetic("BAZEL_MODULE_INSPECTION");
-  public static final SkyFunctionName SINGLE_EXTENSION_USAGES =
-      SkyFunctionName.createHermetic("SINGLE_EXTENSION_USAGES");
-  public static final SkyFunctionName SINGLE_EXTENSION =
-      SkyFunctionName.createHermetic("SINGLE_EXTENSION");
-  public static final SkyFunctionName SINGLE_EXTENSION_EVAL =
-      SkyFunctionName.createNonHermetic("SINGLE_EXTENSION_EVAL");
-  public static final SkyFunctionName BAZEL_DEP_GRAPH =
-      SkyFunctionName.createHermetic("BAZEL_DEP_GRAPH");
-  public static final SkyFunctionName BAZEL_LOCK_FILE =
-      SkyFunctionName.createHermetic("BAZEL_LOCK_FILE");
-  public static final SkyFunctionName BAZEL_FETCH_ALL =
-      SkyFunctionName.createHermetic("BAZEL_FETCH_ALL");
-  public static final SkyFunctionName REGISTRY = SkyFunctionName.createNonHermetic("REGISTRY");
-  public static final SkyFunctionName REPO_SPEC = SkyFunctionName.createNonHermetic("REPO_SPEC");
-  public static final SkyFunctionName YANKED_VERSIONS =
-      SkyFunctionName.createNonHermetic("YANKED_VERSIONS");
+    // Depends non-hermetically on package path, but that is under the control of a flag, so use
+    // semi-hermetic.
+    @kotlin.jvm.JvmField
+    val FILE: SkyFunctionName = SkyFunctionName.createSemiHermetic("FILE")
+    @kotlin.jvm.JvmField
+    val GLOB: SkyFunctionName = SkyFunctionName.createHermetic("GLOB")
+    @kotlin.jvm.JvmField
+    val GLOBS: SkyFunctionName = SkyFunctionName.createHermetic("GLOBS")
+    @kotlin.jvm.JvmField
+    val PACKAGE: SkyFunctionName = SkyFunctionName.createHermetic("PACKAGE")
+    @kotlin.jvm.JvmField
+    val PACKAGE_DECLARATIONS: SkyFunctionName = SkyFunctionName.createHermetic("PACKAGE_DECLARATIONS")
+    @kotlin.jvm.JvmField
+    val PACKAGE_ERROR: SkyFunctionName = SkyFunctionName.createHermetic("PACKAGE_ERROR")
+    @kotlin.jvm.JvmField
+    val PACKAGE_ERROR_MESSAGE: SkyFunctionName = SkyFunctionName.createHermetic("PACKAGE_ERROR_MESSAGE")
+    @kotlin.jvm.JvmField
+    val EVAL_MACRO: SkyFunctionName = SkyFunctionName.createHermetic("EVAL_MACRO")
+    @kotlin.jvm.JvmField
+    val MACRO_INSTANCE: SkyFunctionName = SkyFunctionName.createHermetic("MACRO_INSTANCE")
+    @kotlin.jvm.JvmField
+    val NON_FINALIZER_PACKAGE_PIECES: SkyFunctionName = SkyFunctionName.createHermetic("NON_FINALIZER_PACKAGE_PIECES")
 
-  public static final SkyFunctionName MODULE_EXTENSION_REPO_MAPPING_ENTRIES =
-      SkyFunctionName.createHermetic("MODULE_EXTENSION_REPO_MAPPING_ENTRIES");
-  public static final SkyFunctionName VENDOR_FILE = SkyFunctionName.createHermetic("VENDOR_FILE");
+    // Semi-hermetic because accesses package locator
+    @kotlin.jvm.JvmField
+    val TARGET_PATTERN: SkyFunctionName = SkyFunctionName.createSemiHermetic("TARGET_PATTERN")
+    @kotlin.jvm.JvmField
+    val TARGET_PATTERN_ERROR: SkyFunctionName = SkyFunctionName.createHermetic("TARGET_PATTERN_ERROR")
+    @kotlin.jvm.JvmField
+    val PREPARE_DEPS_OF_PATTERNS: SkyFunctionName = SkyFunctionName.createHermetic("PREPARE_DEPS_OF_PATTERNS")
 
-  public static final SkyFunctionName FLAG_SET = SkyFunctionName.createHermetic("FLAG_SET");
-  public static final SkyFunctionName BUILD_OPTIONS_SCOPE =
-      SkyFunctionName.createHermetic("BUILD_OPTIONS_SCOPE");
+    // Non-hermetic because accesses package locator
+    @kotlin.jvm.JvmField
+    val PREPARE_DEPS_OF_PATTERN: SkyFunctionName = SkyFunctionName.createNonHermetic("PREPARE_DEPS_OF_PATTERN")
+    @kotlin.jvm.JvmField
+    val PREPARE_DEPS_OF_TARGETS_UNDER_DIRECTORY: SkyFunctionName =
+        SkyFunctionName.createHermetic("PREPARE_DEPS_OF_TARGETS_UNDER_DIRECTORY")
+    @kotlin.jvm.JvmField
+    val COLLECT_TARGETS_IN_PACKAGE: SkyFunctionName = SkyFunctionName.createHermetic("COLLECT_TARGETS_IN_PACKAGE")
 
-  public static Predicate<SkyKey> isSkyFunction(SkyFunctionName functionName) {
-    return key -> key.functionName().equals(functionName);
-  }
+    @kotlin.jvm.JvmField
+    val COLLECT_PACKAGES_UNDER_DIRECTORY: SkyFunctionName =
+        SkyFunctionName.createHermetic("COLLECT_PACKAGES_UNDER_DIRECTORY")
+    @kotlin.jvm.JvmField
+    val IGNORED_SUBDIRECTORIES: SkyFunctionName = SkyFunctionName.createHermetic("IGNORED_SUBDIRECTORIES")
+    @kotlin.jvm.JvmField
+    val TEST_SUITE_EXPANSION: SkyFunctionName = SkyFunctionName.createHermetic("TEST_SUITE_EXPANSION")
+    @kotlin.jvm.JvmField
+    val TESTS_IN_SUITE: SkyFunctionName = SkyFunctionName.createHermetic("TESTS_IN_SUITE")
+
+    // Non-hermetic because accesses package locator
+    @kotlin.jvm.JvmField
+    val TARGET_PATTERN_PHASE: SkyFunctionName = SkyFunctionName.createNonHermetic("TARGET_PATTERN_PHASE")
+    @kotlin.jvm.JvmField
+    val PREPARE_ANALYSIS_PHASE: SkyFunctionName = SkyFunctionName.createNonHermetic("PREPARE_ANALYSIS_PHASE")
+    @kotlin.jvm.JvmField
+    val RECURSIVE_PKG: SkyFunctionName = SkyFunctionName.createHermetic("RECURSIVE_PKG")
+    @kotlin.jvm.JvmField
+    val CONFIGURED_TARGET: SkyFunctionName = SkyFunctionName.createHermetic("CONFIGURED_TARGET")
+    @kotlin.jvm.JvmField
+    val ACTION_LOOKUP_CONFLICT_FINDING: SkyFunctionName =
+        SkyFunctionName.createHermetic("ACTION_LOOKUP_CONFLICT_DETECTION")
+    @kotlin.jvm.JvmField
+    val TOP_LEVEL_ACTION_LOOKUP_CONFLICT_FINDING: SkyFunctionName =
+        SkyFunctionName.createHermetic("TOP_LEVEL_ACTION_LOOKUP_CONFLICT_DETECTION")
+    @kotlin.jvm.JvmField
+    val ASPECT: SkyFunctionName = SkyFunctionName.createHermetic("ASPECT")
+    @kotlin.jvm.JvmField
+    val TOP_LEVEL_ASPECTS: SkyFunctionName = SkyFunctionName.createHermetic("TOP_LEVEL_ASPECTS")
+    @kotlin.jvm.JvmField
+    val LOAD_ASPECTS: SkyFunctionName = SkyFunctionName.createHermetic("LOAD_ASPECTS")
+    @kotlin.jvm.JvmField
+    val TARGET_COMPLETION: SkyFunctionName = SkyFunctionName.createHermetic("TARGET_COMPLETION")
+    @kotlin.jvm.JvmField
+    val ASPECT_COMPLETION: SkyFunctionName = SkyFunctionName.createHermetic("ASPECT_COMPLETION")
+    @kotlin.jvm.JvmField
+    val TEST_COMPLETION: SkyFunctionName = SkyFunctionName.createHermetic("TEST_COMPLETION")
+    @kotlin.jvm.JvmField
+    val BUILD_CONFIGURATION: SkyFunctionName = SkyFunctionName.createHermetic("BUILD_CONFIGURATION")
+    @kotlin.jvm.JvmField
+    val BUILD_CONFIGURATION_KEY: SkyFunctionName = SkyFunctionName.createHermetic("BUILD_CONFIGURATION_KEY")
+    @kotlin.jvm.JvmField
+    val PARSED_FLAGS: SkyFunctionName = SkyFunctionName.createHermetic("PARSED_FLAGS")
+    @kotlin.jvm.JvmField
+    val BASELINE_OPTIONS: SkyFunctionName = SkyFunctionName.createNonHermetic("BASELINE_OPTIONS")
+    @kotlin.jvm.JvmField
+    val STARLARK_BUILD_SETTINGS_DETAILS: SkyFunctionName =
+        SkyFunctionName.createHermetic("STARLARK_BUILD_SETTINGS_DETAILS")
+
+    // Action execution can be nondeterministic, so semi-hermetic.
+    @kotlin.jvm.JvmField
+    val ACTION_EXECUTION: SkyFunctionName = SkyFunctionName.createSemiHermetic("ACTION_EXECUTION")
+    @kotlin.jvm.JvmField
+    val ARTIFACT_NESTED_SET: SkyFunctionName = SkyFunctionName.createHermetic("ARTIFACT_NESTED_SET")
+    @kotlin.jvm.JvmField
+    val RECURSIVE_FILESYSTEM_TRAVERSAL: SkyFunctionName =
+        SkyFunctionName.createHermetic("RECURSIVE_FILESYSTEM_TRAVERSAL")
+    val FILESET_ENTRY: SkyFunctionName = SkyFunctionName.createHermetic("FILESET_ENTRY")
+    @kotlin.jvm.JvmField
+    val BUILD_INFO: SkyFunctionName = SkyFunctionName.createHermetic("BUILD_INFO")
+    @kotlin.jvm.JvmField
+    val PLATFORM: SkyFunctionName = SkyFunctionName.createHermetic("PLATFORM")
+    @kotlin.jvm.JvmField
+    val PLATFORM_MAPPING: SkyFunctionName = SkyFunctionName.createHermetic("PLATFORM_MAPPING")
+    @kotlin.jvm.JvmField
+    val COVERAGE_REPORT: SkyFunctionName = SkyFunctionName.createHermetic("COVERAGE_REPORT")
+    @kotlin.jvm.JvmField
+    val REPOSITORY_DIRECTORY: SkyFunctionName = SkyFunctionName.createNonHermetic("REPOSITORY_DIRECTORY")
+    @kotlin.jvm.JvmField
+    val ACTION_TEMPLATE_EXPANSION: SkyFunctionName = SkyFunctionName.createHermetic("ACTION_TEMPLATE_EXPANSION")
+    @kotlin.jvm.JvmField
+    val LOCAL_REPOSITORY_LOOKUP: SkyFunctionName = SkyFunctionName.createHermetic("LOCAL_REPOSITORY_LOOKUP")
+    @kotlin.jvm.JvmField
+    val REGISTERED_EXECUTION_PLATFORMS: SkyFunctionName =
+        SkyFunctionName.createHermetic("REGISTERED_EXECUTION_PLATFORMS")
+    @kotlin.jvm.JvmField
+    val REGISTERED_TOOLCHAINS: SkyFunctionName = SkyFunctionName.createHermetic("REGISTERED_TOOLCHAINS")
+    @kotlin.jvm.JvmField
+    val SINGLE_TOOLCHAIN_RESOLUTION: SkyFunctionName = SkyFunctionName.createHermetic("SINGLE_TOOLCHAIN_RESOLUTION")
+    @kotlin.jvm.JvmField
+    val TOOLCHAIN_RESOLUTION: SkyFunctionName = SkyFunctionName.createHermetic("TOOLCHAIN_RESOLUTION")
+    @kotlin.jvm.JvmField
+    val REPOSITORY_MAPPING: SkyFunctionName = SkyFunctionName.createHermetic("REPOSITORY_MAPPING")
+    @kotlin.jvm.JvmField
+    val MODULE_FILE: SkyFunctionName = SkyFunctionName.createNonHermetic("MODULE_FILE")
+    @kotlin.jvm.JvmField
+    val REPO_PACKAGE_ARGS: SkyFunctionName = SkyFunctionName.createHermetic("REPO_PACKAGE_ARGS")
+    @kotlin.jvm.JvmField
+    val REPO_FILE: SkyFunctionName = SkyFunctionName.createHermetic("REPO_FILE")
+    @kotlin.jvm.JvmField
+    val BUILD_DRIVER: SkyFunctionName = SkyFunctionName.createNonHermetic("BUILD_DRIVER")
+
+    val BAZEL_MOD_TIDY: SkyFunctionName = SkyFunctionName.createHermetic("BAZEL_MOD_TIDY")
+    @kotlin.jvm.JvmField
+    val BAZEL_MODULE_RESOLUTION: SkyFunctionName = SkyFunctionName.createHermetic("BAZEL_MODULE_RESOLUTION")
+    val BAZEL_MODULE_INSPECTION: SkyFunctionName = SkyFunctionName.createHermetic("BAZEL_MODULE_INSPECTION")
+    @kotlin.jvm.JvmField
+    val SINGLE_EXTENSION_USAGES: SkyFunctionName = SkyFunctionName.createHermetic("SINGLE_EXTENSION_USAGES")
+    @kotlin.jvm.JvmField
+    val SINGLE_EXTENSION: SkyFunctionName = SkyFunctionName.createHermetic("SINGLE_EXTENSION")
+    @kotlin.jvm.JvmField
+    val SINGLE_EXTENSION_EVAL: SkyFunctionName = SkyFunctionName.createNonHermetic("SINGLE_EXTENSION_EVAL")
+    @kotlin.jvm.JvmField
+    val BAZEL_DEP_GRAPH: SkyFunctionName = SkyFunctionName.createHermetic("BAZEL_DEP_GRAPH")
+    @kotlin.jvm.JvmField
+    val BAZEL_LOCK_FILE: SkyFunctionName = SkyFunctionName.createHermetic("BAZEL_LOCK_FILE")
+    val BAZEL_FETCH_ALL: SkyFunctionName = SkyFunctionName.createHermetic("BAZEL_FETCH_ALL")
+    @kotlin.jvm.JvmField
+    val REGISTRY: SkyFunctionName = SkyFunctionName.createNonHermetic("REGISTRY")
+    @kotlin.jvm.JvmField
+    val REPO_SPEC: SkyFunctionName = SkyFunctionName.createNonHermetic("REPO_SPEC")
+    @kotlin.jvm.JvmField
+    val YANKED_VERSIONS: SkyFunctionName = SkyFunctionName.createNonHermetic("YANKED_VERSIONS")
+
+    @kotlin.jvm.JvmField
+    val MODULE_EXTENSION_REPO_MAPPING_ENTRIES: SkyFunctionName =
+        SkyFunctionName.createHermetic("MODULE_EXTENSION_REPO_MAPPING_ENTRIES")
+    val VENDOR_FILE: SkyFunctionName = SkyFunctionName.createHermetic("VENDOR_FILE")
+
+    @kotlin.jvm.JvmField
+    val FLAG_SET: SkyFunctionName = SkyFunctionName.createHermetic("FLAG_SET")
+    @kotlin.jvm.JvmField
+    val BUILD_OPTIONS_SCOPE: SkyFunctionName = SkyFunctionName.createHermetic("BUILD_OPTIONS_SCOPE")
+
+    fun isSkyFunction(functionName: SkyFunctionName?): com.google.common.base.Predicate<SkyKey?> {
+        return com.google.common.base.Predicate { key: SkyKey? -> key.functionName() == functionName }
+    }
 }

@@ -11,33 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.pkgcache.PackageProvider;
-import com.google.devtools.build.lib.skyframe.TestExpansionValue.TestExpansionKey;
-import com.google.devtools.build.skyframe.CycleInfo;
-import com.google.devtools.build.skyframe.SkyKey;
+import com.google.devtools.build.lib.cmdline.Label
 
-/** Reports cycles occurring in during the expansion of <code>test_suite</code> rules. */
-class TestExpansionCycleReporter extends AbstractLabelCycleReporter {
+/** Reports cycles occurring in during the expansion of `test_suite` rules.  */
+internal class TestExpansionCycleReporter(packageProvider: PackageProvider?) :
+    AbstractLabelCycleReporter(packageProvider) {
+    protected override fun canReportCycle(topLevelKey: SkyKey?, cycleInfo: CycleInfo): Boolean {
+        return cycleInfo.getCycle().stream()
+            .allMatch(java.util.function.Predicate { obj: SkyKey? -> TestExpansionKey::class.java.isInstance(obj) })
+    }
 
-  public TestExpansionCycleReporter(PackageProvider packageProvider) {
-    super(packageProvider);
-  }
+    protected override fun shouldSkipOnPathToCycle(key: SkyKey?): Boolean {
+        return key !is TestExpansionKey
+    }
 
-  @Override
-  protected boolean canReportCycle(SkyKey topLevelKey, CycleInfo cycleInfo) {
-    return cycleInfo.getCycle().stream().allMatch(TestExpansionKey.class::isInstance);
-  }
-
-  @Override
-  protected boolean shouldSkipOnPathToCycle(SkyKey key) {
-    return !(key instanceof TestExpansionKey);
-  }
-
-  @Override
-  protected Label getLabel(SkyKey key) {
-    return ((TestExpansionKey) key).getLabel();
-  }
+    protected override fun getLabel(key: SkyKey): Label? {
+        return (key as TestExpansionKey).getLabel()
+    }
 }

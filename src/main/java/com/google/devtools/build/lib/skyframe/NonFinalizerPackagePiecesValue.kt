@@ -11,106 +11,88 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
-
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.packages.MacroInstance;
-import com.google.devtools.build.lib.packages.PackagePiece;
-import com.google.devtools.build.lib.packages.PackagePieceIdentifier;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.StarlarkSemantics;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
 /**
  * A Skyframe value representing all package pieces of a package that are not defined by finalizer
  * macros.
- *
- * <p>The corresponding {@link com.google.devtools.build.skyframe.SkyKey} is {@link
- * NonFinalizerPackagePiecesValue.Key}.
+ * 
+ * 
+ * The corresponding [com.google.devtools.build.skyframe.SkyKey] is [ ].
  */
 @AutoCodec
-public record NonFinalizerPackagePiecesValue(
-    /**
-     * The package pieces, ordered by BFS traversal, with siblings ordered by name. The first
-     * element is always the package's {@link PackagePiece.ForBuildFile}. Any package pieces with
-     * errors are not further expanded.
-     */
-    ImmutableMap<PackagePieceIdentifier, PackagePiece> packagePieces,
-    /** Identifiers of package pieces which contain errors. */
-    ImmutableList<PackagePieceIdentifier> errorKeys,
-    /**
-     * An {@link EvalException} indicating a name conflict between targets or macros in different
-     * package pieces.
-     */
-    @Nullable EvalException nameConflictBetweenPackagePiecesException,
-    /**
-     * The targets in the package pieces, ordered by name. May be incomplete if either
-     * nameConflictBetweenPackagePiecesException is non-null or errorKeys is non-empty.
-     */
-    ImmutableSortedMap<String, Target> targets,
-    /**
-     * The macros in the package pieces, keyed (and ordered) by id. May be incomplete if either
-     * nameConflictBetweenPackagePiecesException is non-null or errorKeys is non-empty.
-     */
-    ImmutableSortedMap<String, MacroInstance> macroInstances,
-    /** Starlark semantics, inlined to avoid extra dependency edges. */
-    StarlarkSemantics starlarkSemantics,
-    /** Main repository mapping, inlined to avoid extra dependency edges. */
-    RepositoryMapping mainRepositoryMapping)
-    implements PackagePieces, SkyValue {
-  public NonFinalizerPackagePiecesValue {
-    checkNotNull(packagePieces);
-    checkArgument(!packagePieces.isEmpty());
-    checkArgument(packagePieces.values().iterator().next() instanceof PackagePiece.ForBuildFile);
-    checkNotNull(errorKeys);
-    checkNotNull(targets);
-    checkNotNull(macroInstances);
-    checkNotNull(starlarkSemantics);
-    checkNotNull(mainRepositoryMapping);
-  }
-
-  @Override
-  public ImmutableMap<PackagePieceIdentifier, PackagePiece> getPackagePieces() {
-    return packagePieces;
-  }
-
-  @Override
-  public PackagePiece.ForBuildFile getPackagePieceForBuildFile() {
-    return (PackagePiece.ForBuildFile) packagePieces.values().iterator().next();
-  }
-
-  @Override
-  public ImmutableList<PackagePieceIdentifier> getErrorKeys() {
-    return errorKeys;
-  }
-
-  public boolean containsErrors() {
-    return !errorKeys.isEmpty() || nameConflictBetweenPackagePiecesException() != null;
-  }
-
-  /** A SkyKey for a {@link NonFinalizerPackagePiecesValue}. */
-  @AutoCodec
-  public static record Key(PackageIdentifier pkgId) implements SkyKey {
-    public Key {
-      checkNotNull(pkgId);
+class NonFinalizerPackagePiecesValue(
+    packagePieces: com.google.common.collect.ImmutableMap<PackagePieceIdentifier?, PackagePiece?>?,
+    errorKeys: com.google.common.collect.ImmutableList<PackagePieceIdentifier?>?,
+    nameConflictBetweenPackagePiecesException: net.starlark.java.eval.EvalException?,
+    targets: com.google.common.collect.ImmutableSortedMap<String?, Target?>?,
+    macroInstances: com.google.common.collect.ImmutableSortedMap<String?, MacroInstance?>?,
+    starlarkSemantics: net.starlark.java.eval.StarlarkSemantics?,
+    mainRepositoryMapping: RepositoryMapping?
+) : PackagePieces, SkyValue {
+    override fun getPackagePieces(): com.google.common.collect.ImmutableMap<PackagePieceIdentifier?, PackagePiece?>? {
+        return packagePieces
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.NON_FINALIZER_PACKAGE_PIECES;
+    val packagePieceForBuildFile: ForBuildFile?
+        get() = packagePieces.values().iterator().next() as ForBuildFile
+
+    override fun getErrorKeys(): com.google.common.collect.ImmutableList<PackagePieceIdentifier?>? {
+        return errorKeys
     }
-  }
+
+    fun containsErrors(): Boolean {
+        return !errorKeys.isEmpty() || this.nameConflictBetweenPackagePiecesException != null
+    }
+
+    /** A SkyKey for a [NonFinalizerPackagePiecesValue].  */
+    @AutoCodec
+    class Key(pkgId: PackageIdentifier?) : SkyKey {
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.NON_FINALIZER_PACKAGE_PIECES
+        }
+
+        val pkgId: PackageIdentifier?
+
+        init {
+            this.pkgId = pkgId
+            com.google.common.base.Preconditions.checkNotNull<Any?>(pkgId)
+        }
+    }
+
+    val packagePieces: com.google.common.collect.ImmutableMap<PackagePieceIdentifier?, PackagePiece?>?
+    val errorKeys: com.google.common.collect.ImmutableList<PackagePieceIdentifier?>?
+    val nameConflictBetweenPackagePiecesException: net.starlark.java.eval.EvalException?
+    val targets: com.google.common.collect.ImmutableSortedMap<String?, Target?>?
+    val macroInstances: com.google.common.collect.ImmutableSortedMap<String?, MacroInstance?>?
+    val starlarkSemantics: net.starlark.java.eval.StarlarkSemantics?
+    val mainRepositoryMapping: RepositoryMapping?
+
+    init {
+        this.mainRepositoryMapping = mainRepositoryMapping
+        this.starlarkSemantics = starlarkSemantics
+        this.macroInstances = macroInstances
+        this.targets = targets
+        this.nameConflictBetweenPackagePiecesException = nameConflictBetweenPackagePiecesException
+        this.errorKeys = errorKeys
+        this.packagePieces = packagePieces
+        com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableMap<PackagePieceIdentifier?, PackagePiece?>?>(
+            packagePieces
+        )
+        com.google.common.base.Preconditions.checkArgument(!packagePieces.isEmpty())
+        com.google.common.base.Preconditions.checkArgument(packagePieces.values().iterator().next() is ForBuildFile)
+        com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableList<PackagePieceIdentifier?>?>(
+            errorKeys
+        )
+        com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableSortedMap<String?, Target?>?>(
+            targets
+        )
+        com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableSortedMap<String?, MacroInstance?>?>(
+            macroInstances
+        )
+        com.google.common.base.Preconditions.checkNotNull<net.starlark.java.eval.StarlarkSemantics?>(starlarkSemantics)
+        com.google.common.base.Preconditions.checkNotNull<Any?>(mainRepositoryMapping)
+    }
 }

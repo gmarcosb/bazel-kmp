@@ -111,7 +111,7 @@ public class DirectoryTreeDigestFunctionTest extends FoundationTestCase {
     if (result.hasError()) {
       throw result.getError().getException();
     }
-    return ((DirectoryTreeDigestValue) result.get(key)).hexDigest();
+    return ((DirectoryTreeDigestValue) result.get(key)).hexDigest;
   }
 
   @Test

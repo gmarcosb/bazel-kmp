@@ -994,7 +994,7 @@ public final class SkyfocusIntegrationTest extends BuildIntegrationTestCase {
 
     assertThat(e).hasMessageThat().contains("Package 'hello' contains errors");
 
-    assertThat(getSkyframeExecutor().getSkyfocusState().enabled()).isTrue();
+    assertThat(getSkyframeExecutor().getSkyfocusState().enabled).isTrue();
     assertThat(getSkyframeExecutor().getSkyfocusState().verificationSet()).isEmpty();
   }
 

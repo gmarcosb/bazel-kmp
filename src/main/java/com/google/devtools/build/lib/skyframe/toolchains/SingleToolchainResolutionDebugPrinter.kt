@@ -11,282 +11,288 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.toolchains;
+package com.google.devtools.build.lib.skyframe.toolchains
 
-import static java.util.stream.Collectors.joining;
+import com.google.devtools.build.lib.analysis.platform.ConstraintCollection
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.platform.ConstraintCollection;
-import com.google.devtools.build.lib.analysis.platform.ConstraintSettingInfo;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.errorprone.annotations.FormatMethod;
-import com.google.errorprone.annotations.FormatString;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+/** A helper interface for printing debug messages from single toolchain resolution.  */
+interface SingleToolchainResolutionDebugPrinter {
+    fun finishDebugging()
 
-/** A helper interface for printing debug messages from single toolchain resolution. */
-public sealed interface SingleToolchainResolutionDebugPrinter {
-  static SingleToolchainResolutionDebugPrinter create(
-      boolean debug, ExtendedEventHandler eventHandler) {
-    if (debug) {
-      return new EventHandlerImpl(eventHandler);
-    }
-    return new NoopPrinter();
-  }
+    fun describeRejectedToolchains(rejectedToolchains: com.google.common.collect.ImmutableMap<Label?, String?>?)
 
-  void finishDebugging();
+    fun startToolchainResolution(toolchainType: Label?, targetPlatform: Label?)
 
-  void describeRejectedToolchains(ImmutableMap<Label, String> rejectedToolchains);
+    fun reportCompatibleTargetPlatform(targetLabel: Label?, resolvedToolchainLabel: Label?)
 
-  void startToolchainResolution(Label toolchainType, Label targetPlatform);
+    fun reportSkippedExecutionPlatformSeen(executionPlatform: Label?)
 
-  void reportCompatibleTargetPlatform(Label targetLabel, Label resolvedToolchainLabel);
+    fun reportSkippedExecutionPlatformDisallowed(executionPlatform: Label?, toolchainType: Label?)
 
-  void reportSkippedExecutionPlatformSeen(Label executionPlatform);
+    fun reportCompatibleExecutionPlatform(executionPlatform: Label?)
 
-  void reportSkippedExecutionPlatformDisallowed(Label executionPlatform, Label toolchainType);
+    fun reportResolvedToolchains(
+        resolvedToolchains: com.google.common.collect.ImmutableMap<ConfiguredTargetKey?, Label?>?,
+        targetPlatform: Label?,
+        toolchainType: Label?
+    )
 
-  void reportCompatibleExecutionPlatform(Label executionPlatform);
+    fun reportMismatchedSettings(
+        toolchainConstraints: ConstraintCollection?,
+        isTargetPlatform: Boolean,
+        platform: PlatformInfo?,
+        targetLabel: Label?,
+        resolvedToolchainLabel: Label?,
+        mismatchSettingsWithDefault: com.google.common.collect.ImmutableSet<ConstraintSettingInfo?>?
+    )
 
-  void reportResolvedToolchains(
-      ImmutableMap<ConfiguredTargetKey, Label> resolvedToolchains,
-      Label targetPlatform,
-      Label toolchainType);
+    fun reportDone(toolchainType: Label?)
 
-  void reportMismatchedSettings(
-      ConstraintCollection toolchainConstraints,
-      boolean isTargetPlatform,
-      PlatformInfo platform,
-      Label targetLabel,
-      Label resolvedToolchainLabel,
-      ImmutableSet<ConstraintSettingInfo> mismatchSettingsWithDefault);
+    /** A do-nothing implementation for when debug messages are suppressed.  */
+    class NoopPrinter private constructor() : SingleToolchainResolutionDebugPrinter {
+        override fun finishDebugging() {}
 
-  void reportDone(Label toolchainType);
+        override fun describeRejectedToolchains(rejectedToolchains: com.google.common.collect.ImmutableMap<Label?, String?>?) {}
 
-  /** A do-nothing implementation for when debug messages are suppressed. */
-  final class NoopPrinter implements SingleToolchainResolutionDebugPrinter {
+        override fun startToolchainResolution(toolchainType: Label?, targetPlatform: Label?) {}
 
-    private NoopPrinter() {}
+        override fun reportCompatibleTargetPlatform(targetLabel: Label?, resolvedToolchainLabel: Label?) {}
 
-    @Override
-    public void finishDebugging() {}
+        override fun reportSkippedExecutionPlatformSeen(executionPlatform: Label?) {}
 
-    @Override
-    public void describeRejectedToolchains(ImmutableMap<Label, String> rejectedToolchains) {}
-
-    @Override
-    public void startToolchainResolution(Label toolchainType, Label targetPlatform) {}
-
-    @Override
-    public void reportCompatibleTargetPlatform(Label targetLabel, Label resolvedToolchainLabel) {}
-
-    @Override
-    public void reportSkippedExecutionPlatformSeen(Label executionPlatform) {}
-
-    @Override
-    public void reportSkippedExecutionPlatformDisallowed(
-        Label executionPlatform, Label toolchainType) {}
-
-    @Override
-    public void reportCompatibleExecutionPlatform(Label executionPlatform) {}
-
-    @Override
-    public void reportResolvedToolchains(
-        ImmutableMap<ConfiguredTargetKey, Label> resolvedToolchains,
-        Label targetPlatform,
-        Label toolchainType) {}
-
-    @Override
-    public void reportMismatchedSettings(
-        ConstraintCollection toolchainConstraints,
-        boolean isTargetPlatform,
-        PlatformInfo platform,
-        Label targetLabel,
-        Label resolvedToolchainLabel,
-        ImmutableSet<ConstraintSettingInfo> mismatchSettingsWithDefault) {}
-
-    @Override
-    public void reportDone(Label toolchainType) {}
-  }
-
-  /** Implement debug printing using the {@link ExtendedEventHandler}. */
-  final class EventHandlerImpl implements SingleToolchainResolutionDebugPrinter {
-    /** Helper enum to define the three indentation levels used in {@code debugMessage}. */
-    private enum IndentLevel {
-      TARGET_PLATFORM_LEVEL(""),
-      TOOLCHAIN_LEVEL("  "),
-      EXECUTION_PLATFORM_LEVEL("    ");
-
-      final String value;
-
-      IndentLevel(String value) {
-        this.value = value;
-      }
-
-      public String indent() {
-        return value;
-      }
-    }
-
-    private final ExtendedEventHandler eventHandler;
-    private final List<String> resolutionTrace = new ArrayList<>();
-
-    private EventHandlerImpl(ExtendedEventHandler eventHandler) {
-      this.eventHandler = eventHandler;
-    }
-
-    @FormatMethod
-    private void debugMessage(IndentLevel indent, @FormatString String template, Object... args) {
-      String padding = resolutionTrace.isEmpty() ? "" : " ".repeat("INFO: ".length());
-      resolutionTrace.add(
-          padding + "ToolchainResolution: " + indent.indent() + String.format(template, args));
-    }
-
-    @Override
-    public void finishDebugging() {
-      eventHandler.handle(Event.info(String.join("\n", resolutionTrace)));
-    }
-
-    @Override
-    public void describeRejectedToolchains(ImmutableMap<Label, String> rejectedToolchains) {
-      if (!rejectedToolchains.isEmpty()) {
-        for (Map.Entry<Label, String> entry : rejectedToolchains.entrySet()) {
-          Label toolchainLabel = entry.getKey();
-          String message = entry.getValue();
-          debugMessage(
-              IndentLevel.TOOLCHAIN_LEVEL, "Rejected toolchain %s; %s", toolchainLabel, message);
+        override fun reportSkippedExecutionPlatformDisallowed(
+            executionPlatform: Label?, toolchainType: Label?
+        ) {
         }
-      }
+
+        override fun reportCompatibleExecutionPlatform(executionPlatform: Label?) {}
+
+        override fun reportResolvedToolchains(
+            resolvedToolchains: com.google.common.collect.ImmutableMap<ConfiguredTargetKey?, Label?>?,
+            targetPlatform: Label?,
+            toolchainType: Label?
+        ) {
+        }
+
+        override fun reportMismatchedSettings(
+            toolchainConstraints: ConstraintCollection?,
+            isTargetPlatform: Boolean,
+            platform: PlatformInfo?,
+            targetLabel: Label?,
+            resolvedToolchainLabel: Label?,
+            mismatchSettingsWithDefault: com.google.common.collect.ImmutableSet<ConstraintSettingInfo?>?
+        ) {
+        }
+
+        override fun reportDone(toolchainType: Label?) {}
     }
 
-    @Override
-    public void startToolchainResolution(Label toolchainType, Label targetPlatform) {
-      debugMessage(
-          IndentLevel.TARGET_PLATFORM_LEVEL,
-          "Performing resolution of %s for target platform %s",
-          toolchainType,
-          targetPlatform);
-    }
+    /** Implement debug printing using the [ExtendedEventHandler].  */
+    class EventHandlerImpl private constructor(eventHandler: ExtendedEventHandler) :
+        SingleToolchainResolutionDebugPrinter {
+        /** Helper enum to define the three indentation levels used in `debugMessage`.  */
+        private enum class IndentLevel(value: String) {
+            TARGET_PLATFORM_LEVEL(""),
+            TOOLCHAIN_LEVEL("  "),
+            EXECUTION_PLATFORM_LEVEL("    ");
 
-    @Override
-    public void reportCompatibleTargetPlatform(Label targetLabel, Label resolvedToolchainLabel) {
-      debugMessage(
-          IndentLevel.TOOLCHAIN_LEVEL,
-          "Toolchain %s (resolves to %s) is compatible with target platform, searching for"
-              + " execution platforms:",
-          targetLabel,
-          resolvedToolchainLabel);
-    }
+            val value: String?
 
-    @Override
-    public void reportSkippedExecutionPlatformSeen(Label executionPlatform) {
-      debugMessage(
-          IndentLevel.EXECUTION_PLATFORM_LEVEL,
-          "Skipping execution platform %s; it has already selected a toolchain",
-          executionPlatform);
-    }
+            init {
+                this.value = value
+            }
 
-    @Override
-    public void reportSkippedExecutionPlatformDisallowed(
-        Label executionPlatform, Label toolchainType) {
-      debugMessage(
-          IndentLevel.EXECUTION_PLATFORM_LEVEL,
-          "Skipping execution platform %s; its allowed toolchain types does not contain the"
-              + " current toolchain type %s",
-          executionPlatform,
-          toolchainType);
-    }
+            fun indent(): String? {
+                return value
+            }
+        }
 
-    @Override
-    public void reportCompatibleExecutionPlatform(Label executionPlatform) {
-      debugMessage(
-          IndentLevel.EXECUTION_PLATFORM_LEVEL,
-          "Compatible execution platform %s",
-          executionPlatform);
-    }
+        private val eventHandler: ExtendedEventHandler
+        private val resolutionTrace: MutableList<String?> = java.util.ArrayList<String?>()
 
-    @Override
-    public void reportResolvedToolchains(
-        ImmutableMap<ConfiguredTargetKey, Label> resolvedToolchains,
-        Label targetPlatform,
-        Label toolchainType) {
-      if (resolvedToolchains.isEmpty()) {
-        debugMessage(
-            IndentLevel.TARGET_PLATFORM_LEVEL,
-            "No %s toolchain found for target platform %s.",
-            toolchainType,
-            targetPlatform);
-      } else {
-        debugMessage(
-            IndentLevel.TARGET_PLATFORM_LEVEL,
-            "Recap of selected %s toolchains for target platform %s:",
-            toolchainType,
-            targetPlatform);
-        resolvedToolchains.forEach(
-            (executionPlatformKey, resolvedToolchainLabel) ->
+        init {
+            this.eventHandler = eventHandler
+        }
+
+        @com.google.errorprone.annotations.FormatMethod
+        private fun debugMessage(
+            indent: IndentLevel,
+            @com.google.errorprone.annotations.FormatString template: String,
+            vararg args: Any?
+        ) {
+            val padding = if (resolutionTrace.isEmpty()) "" else " ".repeat("INFO: ".length())
+            resolutionTrace.add(
+                padding + "ToolchainResolution: " + indent.indent() + java.lang.String.format(template, *args)
+            )
+        }
+
+        override fun finishDebugging() {
+            eventHandler.handle(
+                com.google.devtools.build.lib.events.Event.info(
+                    java.lang.String.join(
+                        "\n",
+                        resolutionTrace
+                    )
+                )
+            )
+        }
+
+        override fun describeRejectedToolchains(rejectedToolchains: com.google.common.collect.ImmutableMap<Label?, String?>) {
+            if (!rejectedToolchains.isEmpty()) {
+                for (entry in rejectedToolchains.entrySet()) {
+                    val toolchainLabel: Label? = entry.getKey()
+                    val message: String? = entry.getValue()
+                    debugMessage(
+                        IndentLevel.TOOLCHAIN_LEVEL, "Rejected toolchain %s; %s", toolchainLabel, message
+                    )
+                }
+            }
+        }
+
+        override fun startToolchainResolution(toolchainType: Label?, targetPlatform: Label?) {
+            debugMessage(
+                IndentLevel.TARGET_PLATFORM_LEVEL,
+                "Performing resolution of %s for target platform %s",
+                toolchainType,
+                targetPlatform
+            )
+        }
+
+        override fun reportCompatibleTargetPlatform(targetLabel: Label?, resolvedToolchainLabel: Label?) {
+            debugMessage(
+                IndentLevel.TOOLCHAIN_LEVEL,
+                "Toolchain %s (resolves to %s) is compatible with target platform, searching for"
+                        + " execution platforms:",
+                targetLabel,
+                resolvedToolchainLabel
+            )
+        }
+
+        override fun reportSkippedExecutionPlatformSeen(executionPlatform: Label?) {
+            debugMessage(
+                IndentLevel.EXECUTION_PLATFORM_LEVEL,
+                "Skipping execution platform %s; it has already selected a toolchain",
+                executionPlatform
+            )
+        }
+
+        override fun reportSkippedExecutionPlatformDisallowed(
+            executionPlatform: Label?, toolchainType: Label?
+        ) {
+            debugMessage(
+                IndentLevel.EXECUTION_PLATFORM_LEVEL,
+                "Skipping execution platform %s; its allowed toolchain types does not contain the"
+                        + " current toolchain type %s",
+                executionPlatform,
+                toolchainType
+            )
+        }
+
+        override fun reportCompatibleExecutionPlatform(executionPlatform: Label?) {
+            debugMessage(
+                IndentLevel.EXECUTION_PLATFORM_LEVEL,
+                "Compatible execution platform %s",
+                executionPlatform
+            )
+        }
+
+        override fun reportResolvedToolchains(
+            resolvedToolchains: com.google.common.collect.ImmutableMap<ConfiguredTargetKey?, Label?>,
+            targetPlatform: Label?,
+            toolchainType: Label?
+        ) {
+            if (resolvedToolchains.isEmpty()) {
                 debugMessage(
-                    IndentLevel.TOOLCHAIN_LEVEL,
-                    "Selected %s to run on execution platform %s",
-                    resolvedToolchainLabel,
-                    executionPlatformKey.getLabel()));
-      }
-    }
-
-    @Override
-    public void reportMismatchedSettings(
-        ConstraintCollection toolchainConstraints,
-        boolean isTargetPlatform,
-        PlatformInfo platform,
-        Label targetLabel,
-        Label resolvedToolchainLabel,
-        ImmutableSet<ConstraintSettingInfo> mismatchSettingsWithDefault) {
-      if (!mismatchSettingsWithDefault.isEmpty()) {
-        String mismatchValues =
-            mismatchSettingsWithDefault.stream()
-                .filter(toolchainConstraints::has)
-                .map(s -> toolchainConstraints.get(s).label().getName())
-                .collect(joining(", "));
-        if (!mismatchValues.isEmpty()) {
-          mismatchValues = "; mismatching values: " + mismatchValues;
+                    IndentLevel.TARGET_PLATFORM_LEVEL,
+                    "No %s toolchain found for target platform %s.",
+                    toolchainType,
+                    targetPlatform
+                )
+            } else {
+                debugMessage(
+                    IndentLevel.TARGET_PLATFORM_LEVEL,
+                    "Recap of selected %s toolchains for target platform %s:",
+                    toolchainType,
+                    targetPlatform
+                )
+                resolvedToolchains.forEach(
+                    java.util.function.BiConsumer { executionPlatformKey: ConfiguredTargetKey?, resolvedToolchainLabel: Label? ->
+                        debugMessage(
+                            IndentLevel.TOOLCHAIN_LEVEL,
+                            "Selected %s to run on execution platform %s",
+                            resolvedToolchainLabel,
+                            executionPlatformKey.getLabel()
+                        )
+                    })
+            }
         }
 
-        String missingSettings =
-            mismatchSettingsWithDefault.stream()
-                .filter(s -> !toolchainConstraints.has(s))
-                .map(s -> s.label().getName())
-                .collect(joining(", "));
-        if (!missingSettings.isEmpty()) {
-          missingSettings = "; missing: " + missingSettings;
+        override fun reportMismatchedSettings(
+            toolchainConstraints: ConstraintCollection,
+            isTargetPlatform: Boolean,
+            platform: PlatformInfo,
+            targetLabel: Label?,
+            resolvedToolchainLabel: Label?,
+            mismatchSettingsWithDefault: com.google.common.collect.ImmutableSet<ConstraintSettingInfo?>
+        ) {
+            if (!mismatchSettingsWithDefault.isEmpty()) {
+                var mismatchValues: String =
+                    mismatchSettingsWithDefault.stream()
+                        .filter(toolchainConstraints::has)
+                        .map<Any?>(java.util.function.Function { s: ConstraintSettingInfo? ->
+                            toolchainConstraints.get(s).label().getName()
+                        })
+                        .collect(Collectors.joining(", "))
+                if (!mismatchValues.isEmpty()) {
+                    mismatchValues = "; mismatching values: " + mismatchValues
+                }
+
+                var missingSettings: String =
+                    mismatchSettingsWithDefault.stream()
+                        .filter(java.util.function.Predicate { s: ConstraintSettingInfo? -> !toolchainConstraints.has(s) })
+                        .map<Any?>(java.util.function.Function { s: ConstraintSettingInfo? -> s.label().getName() })
+                        .collect(Collectors.joining(", "))
+                if (!missingSettings.isEmpty()) {
+                    missingSettings = "; missing: " + missingSettings
+                }
+                if (isTargetPlatform) {
+                    debugMessage(
+                        IndentLevel.TOOLCHAIN_LEVEL,
+                        "Rejected toolchain %s (resolves to %s) %s",
+                        targetLabel,
+                        resolvedToolchainLabel,
+                        mismatchValues + missingSettings
+                    )
+                } else {
+                    debugMessage(
+                        IndentLevel.EXECUTION_PLATFORM_LEVEL,
+                        "Incompatible execution platform %s%s",
+                        platform.label(),
+                        mismatchValues + missingSettings
+                    )
+                }
+            }
         }
-        if (isTargetPlatform) {
-          debugMessage(
-              IndentLevel.TOOLCHAIN_LEVEL,
-              "Rejected toolchain %s (resolves to %s) %s",
-              targetLabel,
-              resolvedToolchainLabel,
-              mismatchValues + missingSettings);
-        } else {
-          debugMessage(
-              IndentLevel.EXECUTION_PLATFORM_LEVEL,
-              "Incompatible execution platform %s%s",
-              platform.label(),
-              mismatchValues + missingSettings);
+
+        override fun reportDone(toolchainType: Label?) {
+            debugMessage(
+                IndentLevel.TOOLCHAIN_LEVEL,
+                "All execution platforms have been assigned a %s toolchain, stopping",
+                toolchainType
+            )
         }
-      }
     }
 
-    @Override
-    public void reportDone(Label toolchainType) {
-      debugMessage(
-          IndentLevel.TOOLCHAIN_LEVEL,
-          "All execution platforms have been assigned a %s toolchain, stopping",
-          toolchainType);
+    companion object {
+        fun create(
+            debug: Boolean, eventHandler: ExtendedEventHandler
+        ): SingleToolchainResolutionDebugPrinter {
+            if (debug) {
+                return com.google.devtools.build.lib.skyframe.toolchains.SingleToolchainResolutionDebugPrinter.EventHandlerImpl(
+                    eventHandler
+                )
+            }
+            return com.google.devtools.build.lib.skyframe.toolchains.SingleToolchainResolutionDebugPrinter.NoopPrinter()
+        }
     }
-  }
 }

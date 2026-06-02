@@ -11,71 +11,73 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.devtools.build.lib.skyframe.serialization.ArrayProcessor.deserializeObjectArray;
+import com.google.devtools.build.lib.skyframe.serialization.ArrayProcessor
+import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.AsyncObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.SerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import java.lang.reflect.Array;
+/** [ObjectCodec] for arrays of an arbitrary component type.  */
+open class ArrayCodec<T> private constructor(
+    componentType: java.lang.Class<T?>?,
+    arrayType: java.lang.Class<Array<T?>?>?
+) : AsyncObjectCodec<Array<T?>?>() {
+    /** Codec for `Object[]`.  */
+    internal class ObjectArrayCodec : ArrayCodec<Any?>(Any::class.java, Array<Any>::class.java)
 
-/** {@link ObjectCodec} for arrays of an arbitrary component type. */
-public class ArrayCodec<T> extends AsyncObjectCodec<T[]> {
+    private val componentType: java.lang.Class<T?>?
+    private val arrayType: java.lang.Class<Array<T?>?>?
 
-  /** Creates a codec for arrays of the given component type. */
-  public static <T> ArrayCodec<T> forComponentType(Class<T> componentType) {
-    @SuppressWarnings("unchecked")
-    Class<T[]> arrayType = (Class<T[]>) Array.newInstance(componentType, 0).getClass();
-    return new ArrayCodec<>(componentType, arrayType);
-  }
-
-  /** Codec for {@code Object[]}. */
-  static final class ObjectArrayCodec extends ArrayCodec<Object> {
-    ObjectArrayCodec() {
-      super(Object.class, Object[].class);
+    init {
+        this.componentType = componentType
+        this.arrayType = arrayType
     }
-  }
 
-  private final Class<T> componentType;
-  private final Class<T[]> arrayType;
+    val encodedClass: java.lang.Class<Array<T?>?>?
+        get() = arrayType
 
-  private ArrayCodec(Class<T> componentType, Class<T[]> arrayType) {
-    this.componentType = componentType;
-    this.arrayType = arrayType;
-  }
-
-  @Override
-  public final Class<T[]> getEncodedClass() {
-    return arrayType;
-  }
-
-  @Override
-  public final void serialize(SerializationContext context, T[] obj, CodedOutputStream codedOut)
-      throws SerializationException, IOException {
-    codedOut.writeInt32NoTag(obj.length);
-    try {
-      for (Object item : obj) {
-        context.serialize(item, codedOut);
-      }
-    } catch (StackOverflowError e) {
-      // TODO(janakr): figure out if we need to handle this better and handle it better if so.
-      throw new SerializationException("StackOverflow serializing array", e);
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun serialize(context: SerializationContext, obj: Array<T?>, codedOut: CodedOutputStream) {
+        codedOut.writeInt32NoTag(obj.size)
+        try {
+            for (item in obj) {
+                context.serialize(item, codedOut)
+            }
+        } catch (e: java.lang.StackOverflowError) {
+            // TODO(janakr): figure out if we need to handle this better and handle it better if so.
+            throw com.google.devtools.build.lib.skyframe.serialization.SerializationException(
+                "StackOverflow serializing array",
+                e
+            )
+        }
     }
-  }
 
-  @Override
-  public final T[] deserializeAsync(AsyncDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    @SuppressWarnings("unchecked")
-    T[] result = (T[]) Array.newInstance(componentType, codedIn.readInt32());
-    context.registerInitialValue(result);
-    try {
-      deserializeObjectArray(context, codedIn, result, result.length);
-    } catch (StackOverflowError e) {
-      // TODO(janakr): figure out if we need to handle this better and handle it better if so.
-      throw new SerializationException("StackOverflow deserializing array", e);
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun deserializeAsync(context: AsyncDeserializationContext, codedIn: CodedInputStream): Array<T?> {
+        val result = java.lang.reflect.Array.newInstance(componentType, codedIn.readInt32()) as Array<T?>
+        context.registerInitialValue(result)
+        try {
+            ArrayProcessor.Companion.deserializeObjectArray(context, codedIn, result, result.size)
+        } catch (e: java.lang.StackOverflowError) {
+            // TODO(janakr): figure out if we need to handle this better and handle it better if so.
+            throw com.google.devtools.build.lib.skyframe.serialization.SerializationException(
+                "StackOverflow deserializing array",
+                e
+            )
+        }
+        return result
     }
-    return result;
-  }
+
+    companion object {
+        /** Creates a codec for arrays of the given component type.  */
+        fun <T> forComponentType(componentType: java.lang.Class<T?>?): ArrayCodec<T?> {
+            val arrayType: java.lang.Class<Array<T?>?> =
+                java.lang.reflect.Array.newInstance(componentType, 0).getClass() as java.lang.Class<Array<T?>?>
+            return ArrayCodec<T?>(componentType, arrayType)
+        }
+    }
 }

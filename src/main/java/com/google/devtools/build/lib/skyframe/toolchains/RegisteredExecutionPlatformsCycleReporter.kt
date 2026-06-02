@@ -11,120 +11,105 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.toolchains;
+package com.google.devtools.build.lib.skyframe.toolchains
 
-import static java.util.stream.Collectors.joining;
-
-import com.google.common.base.Function;
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.analysis.config.ToolchainTypeRequirement;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.skyframe.AbstractLabelCycleReporter;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.skyframe.CycleInfo;
-import com.google.devtools.build.skyframe.CyclesReporter;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.util.Optional;
+import com.google.devtools.build.lib.analysis.config.ToolchainTypeRequirement
 
 /**
- * {@link CyclesReporter.SingleCycleReporter} implementation that can handle cycles involving
+ * [CyclesReporter.SingleCycleReporter] implementation that can handle cycles involving
  * registered execution platforms.
  */
-public class RegisteredExecutionPlatformsCycleReporter
-    implements CyclesReporter.SingleCycleReporter {
+class RegisteredExecutionPlatformsCycleReporter
 
-  private static final Predicate<SkyKey> IS_REGISTERED_EXECUTION_PLATFORMS_SKY_KEY =
-      SkyFunctions.isSkyFunction(SkyFunctions.REGISTERED_EXECUTION_PLATFORMS);
+    : SingleCycleReporter {
+    override fun maybeReportCycle(
+        topLevelKey: SkyKey?,
+        cycleInfo: CycleInfo,
+        alreadyReported: Boolean,
+        eventHandler: ExtendedEventHandler
+    ): Boolean {
+        val cycle: com.google.common.collect.ImmutableList<SkyKey> = cycleInfo.getCycle()
+        if (alreadyReported) {
+            return true
+        } else if (!com.google.common.collect.Iterables.any<SkyKey?>(cycle, IS_TOOLCHAIN_RELATED)) {
+            return false
+        }
 
-  private static final Predicate<SkyKey> IS_CONFIGURED_TARGET_SKY_KEY =
-      SkyFunctions.isSkyFunction(SkyFunctions.CONFIGURED_TARGET);
+        // Find the ConfiguredTargetKey, this should tell the problem.
+        val configuredTargetKey: java.util.Optional<ConfiguredTargetKey?> = findRootConfiguredTarget(cycle)
+        if (!configuredTargetKey.isPresent()) {
+            return false
+        }
 
-  private static final Predicate<SkyKey> IS_TOOLCHAIN_RESOLUTION_SKY_KEY =
-      SkyFunctions.isSkyFunction(SkyFunctions.TOOLCHAIN_RESOLUTION);
+        val printer: com.google.common.base.Function<Any?, String?> =
+            com.google.common.base.Function { input: Any? ->
+                if (input is ConfiguredTargetKey) {
+                    val label: Label = input.getLabel()
+                    return@Function label.toString()
+                }
+                if (input is com.google.devtools.build.lib.skyframe.toolchains.RegisteredExecutionPlatformsValue.Key) {
+                    return@Function "RegisteredExecutionPlatforms"
+                }
+                if (input is ToolchainContextKey) {
+                    val toolchainTypes: String? =
+                        input.toolchainTypes().stream()
+                            .map<Any?>(ToolchainTypeRequirement::toolchainType)
+                            .map<Any?>(Label::toString)
+                            .collect(Collectors.joining(", "))
+                    return@Function java.lang.String.format("toolchain types %s", toolchainTypes)
+                }
+                throw java.lang.UnsupportedOperationException(input.toString())
+            }
 
-  private static final Predicate<SkyKey> IS_TOOLCHAIN_RELATED =
-      Predicates.or(IS_REGISTERED_EXECUTION_PLATFORMS_SKY_KEY, IS_TOOLCHAIN_RESOLUTION_SKY_KEY);
+        // TODO: jcater - Clean this up: ideally we only need to list the actual platform and the direct
+        // dependency of it in the cycle.
+        val cycleMessage: java.lang.StringBuilder =
+            java.lang.StringBuilder()
+                .append("Misconfigured execution platforms: ")
+                .append(printer.apply(configuredTargetKey.get()))
+                .append(" is declared as a platform but has inappropriate dependencies.")
+                .append(" Execution platforms should not have dependencies that themselves require")
+                .append(" toolchain resolution.")
 
-  @Override
-  public boolean maybeReportCycle(
-      SkyKey topLevelKey,
-      CycleInfo cycleInfo,
-      boolean alreadyReported,
-      ExtendedEventHandler eventHandler) {
-    ImmutableList<SkyKey> cycle = cycleInfo.getCycle();
-    if (alreadyReported) {
-      return true;
-    } else if (!Iterables.any(cycle, IS_TOOLCHAIN_RELATED)) {
-      return false;
+        AbstractLabelCycleReporter.printCycle(cycleInfo.getCycle(), cycleMessage, printer)
+        eventHandler.handle(Event.error(null, cycleMessage.toString()))
+        return true
     }
 
-    // Find the ConfiguredTargetKey, this should tell the problem.
-    Optional<ConfiguredTargetKey> configuredTargetKey = findRootConfiguredTarget(cycle);
-    if (!configuredTargetKey.isPresent()) {
-      return false;
+    /**
+     * Returns the first [SkyKey] that is an instance of [ConfiguredTargetKey] and follows
+     * [RegisteredToolchainsValue.Key]. This will loop over the cycle in case the [ ] is not first in the list.
+     */
+    private fun findRootConfiguredTarget(cycle: com.google.common.collect.ImmutableList<SkyKey>): java.util.Optional<ConfiguredTargetKey?> {
+        // Loop over the cycle, possibly twice, first looking for RegisteredExecutionPlatformsValue,
+        // then finding the first ConfiguredTargetKey.
+        var repvFound = false
+        for (i in 0..<cycle.size() * 2) {
+            val skyKey: SkyKey = cycle.get(i % cycle.size())
+            if (!repvFound && IS_REGISTERED_EXECUTION_PLATFORMS_SKY_KEY.apply(skyKey)) {
+                repvFound = true
+            }
+            if (repvFound && IS_CONFIGURED_TARGET_SKY_KEY.apply(skyKey)) {
+                return java.util.Optional.of<ConfiguredTargetKey?>(skyKey as ConfiguredTargetKey)
+            }
+        }
+
+        return java.util.Optional.empty<ConfiguredTargetKey?>()
     }
 
-    Function<Object, String> printer =
-        input -> {
-          if (input instanceof ConfiguredTargetKey ctk) {
-            Label label = ctk.getLabel();
-            return label.toString();
-          }
-          if (input instanceof RegisteredExecutionPlatformsValue.Key) {
-            return "RegisteredExecutionPlatforms";
-          }
-          if (input instanceof ToolchainContextKey toolchainContextKey) {
-            String toolchainTypes =
-                toolchainContextKey.toolchainTypes().stream()
-                    .map(ToolchainTypeRequirement::toolchainType)
-                    .map(Label::toString)
-                    .collect(joining(", "));
-            return String.format("toolchain types %s", toolchainTypes);
-          }
+    companion object {
+        private val IS_REGISTERED_EXECUTION_PLATFORMS_SKY_KEY: com.google.common.base.Predicate<SkyKey?> =
+            SkyFunctions.isSkyFunction(SkyFunctions.REGISTERED_EXECUTION_PLATFORMS)
 
-          throw new UnsupportedOperationException(input.toString());
-        };
+        private val IS_CONFIGURED_TARGET_SKY_KEY: com.google.common.base.Predicate<SkyKey?> =
+            SkyFunctions.isSkyFunction(SkyFunctions.CONFIGURED_TARGET)
 
-    // TODO: jcater - Clean this up: ideally we only need to list the actual platform and the direct
-    // dependency of it in the cycle.
-    StringBuilder cycleMessage =
-        new StringBuilder()
-            .append("Misconfigured execution platforms: ")
-            .append(printer.apply(configuredTargetKey.get()))
-            .append(" is declared as a platform but has inappropriate dependencies.")
-            .append(" Execution platforms should not have dependencies that themselves require")
-            .append(" toolchain resolution.");
+        private val IS_TOOLCHAIN_RESOLUTION_SKY_KEY: com.google.common.base.Predicate<SkyKey?> =
+            SkyFunctions.isSkyFunction(SkyFunctions.TOOLCHAIN_RESOLUTION)
 
-    AbstractLabelCycleReporter.printCycle(cycleInfo.getCycle(), cycleMessage, printer);
-    eventHandler.handle(Event.error(null, cycleMessage.toString()));
-    return true;
-  }
-
-  /**
-   * Returns the first {@link SkyKey} that is an instance of {@link ConfiguredTargetKey} and follows
-   * {@link RegisteredToolchainsValue.Key}. This will loop over the cycle in case the {@link
-   * RegisteredToolchainsValue} is not first in the list.
-   */
-  private Optional<ConfiguredTargetKey> findRootConfiguredTarget(ImmutableList<SkyKey> cycle) {
-    // Loop over the cycle, possibly twice, first looking for RegisteredExecutionPlatformsValue,
-    // then finding the first ConfiguredTargetKey.
-    boolean repvFound = false;
-    for (int i = 0; i < cycle.size() * 2; i++) {
-      SkyKey skyKey = cycle.get(i % cycle.size());
-      if (!repvFound && IS_REGISTERED_EXECUTION_PLATFORMS_SKY_KEY.apply(skyKey)) {
-        repvFound = true;
-      }
-      if (repvFound && IS_CONFIGURED_TARGET_SKY_KEY.apply(skyKey)) {
-        return Optional.of((ConfiguredTargetKey) skyKey);
-      }
+        private val IS_TOOLCHAIN_RELATED: com.google.common.base.Predicate<SkyKey?> =
+            com.google.common.base.Predicates.or<SkyKey?>(
+                IS_REGISTERED_EXECUTION_PLATFORMS_SKY_KEY, IS_TOOLCHAIN_RESOLUTION_SKY_KEY
+            )
     }
-
-    return Optional.empty();
-  }
 }

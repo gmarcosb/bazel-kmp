@@ -11,89 +11,77 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime.commands;
+package com.google.devtools.build.lib.runtime.commands
 
-import static com.google.devtools.build.lib.runtime.Command.BuildPhase.NONE;
+import com.google.devtools.build.lib.runtime.Command.BuildPhase.NONE
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.devtools.build.lib.analysis.BlazeVersionInfo;
-import com.google.devtools.build.lib.analysis.NoBuildEvent;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.runtime.BlazeCommand;
-import com.google.devtools.build.lib.runtime.BlazeCommandResult;
-import com.google.devtools.build.lib.runtime.Command;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.VersionCommand.Code;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParser;
-import com.google.devtools.common.options.OptionsParsingResult;
-import java.util.Optional;
-
-/** The 'blaze version' command, which informs users about the blaze version information. */
+/** The 'blaze version' command, which informs users about the blaze version information.  */
 @Command(
     name = "version",
     buildPhase = NONE,
-    options = {VersionCommand.VersionOptions.class},
+    options = [VersionOptions::class],
     allowResidue = false,
     mustRunInWorkspace = false,
     help = "resource:version.txt",
-    shortDescription = "Prints version information for %{product}.")
-public final class VersionCommand implements BlazeCommand {
-  /** Options for the "version" command. */
-  @OptionsClass
-  public abstract static class VersionOptions extends OptionsBase {
-    @Option(
-        name = "gnu_format",
-        defaultValue = "false",
-        documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
-        effectTags = {OptionEffectTag.AFFECTS_OUTPUTS, OptionEffectTag.EXECUTION},
-        help =
-            "If set, write the version to stdout using the conventions described in the GNU"
-                + " standards.")
-    public abstract boolean getGnuFormat();
-  }
-
-  @Override
-  public void editOptions(OptionsParser optionsParser) {}
-
-  @Override
-  public BlazeCommandResult exec(CommandEnvironment env, OptionsParsingResult options) {
-    env.getEventBus().post(new NoBuildEvent());
-
-    Optional<String> info =
-        getInfo(
-            env.getRuntime().getProductName(),
-            BlazeVersionInfo.instance(),
-            options.getOptions(VersionOptions.class).getGnuFormat());
-    if (info.isPresent()) {
-      env.getReporter().getOutErr().printOutLn(info.get());
-      return BlazeCommandResult.success();
+    shortDescription = "Prints version information for %{product}."
+)
+class VersionCommand : BlazeCommand {
+    /** Options for the "version" command.  */
+    @com.google.devtools.common.options.OptionsClass
+    abstract class VersionOptions : com.google.devtools.common.options.OptionsBase() {
+        @get:com.google.devtools.common.options.Option(
+            name = "gnu_format",
+            defaultValue = "false",
+            documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.OUTPUT_PARAMETERS,
+            effectTags = [com.google.devtools.common.options.OptionEffectTag.AFFECTS_OUTPUTS, com.google.devtools.common.options.OptionEffectTag.EXECUTION],
+            help = ("If set, write the version to stdout using the conventions described in the GNU"
+                    + " standards.")
+        )
+        abstract val gnuFormat: Boolean
     }
-    String message = "Version information not available";
-    env.getReporter().handle(Event.error(message));
-    return BlazeCommandResult.failureDetail(
-        FailureDetail.newBuilder()
-            .setMessage(message)
-            .setVersionCommand(
-                FailureDetails.VersionCommand.newBuilder().setCode(Code.NOT_AVAILABLE))
-            .build());
-  }
 
-  @VisibleForTesting
-  static Optional<String> getInfo(String productName, BlazeVersionInfo info, boolean gnuFormat) {
-    if (info.getSummary() == null) {
-      return Optional.empty();
+    public override fun editOptions(optionsParser: com.google.devtools.common.options.OptionsParser?) {}
+
+    public override fun exec(
+        env: CommandEnvironment,
+        options: com.google.devtools.common.options.OptionsParsingResult
+    ): BlazeCommandResult {
+        env.getEventBus().post(NoBuildEvent())
+
+        val info: java.util.Optional<String?> =
+            getInfo(
+                env.getRuntime().productName,
+                BlazeVersionInfo.instance(),
+                options.getOptions<VersionOptions?>(VersionOptions::class.java).getGnuFormat()
+            )
+        if (info.isPresent()) {
+            env.getReporter().getOutErr().printOutLn(info.get())
+            return BlazeCommandResult.success()
+        }
+        val message = "Version information not available"
+        env.getReporter().handle(com.google.devtools.build.lib.events.Event.error(message))
+        return BlazeCommandResult.failureDetail(
+            FailureDetail.newBuilder()
+                .setMessage(message)
+                .setVersionCommand(
+                    FailureDetails.VersionCommand.newBuilder().setCode(Code.NOT_AVAILABLE)
+                )
+                .build()
+        )
     }
-    if (gnuFormat) {
-      return Optional.of(
-          productName + " " + (info.isReleasedBlaze() ? info.getVersion() : "no_version"));
+
+    companion object {
+        @com.google.common.annotations.VisibleForTesting
+        fun getInfo(productName: String?, info: BlazeVersionInfo, gnuFormat: Boolean): java.util.Optional<String?> {
+            if (info.getSummary() == null) {
+                return java.util.Optional.empty<String?>()
+            }
+            if (gnuFormat) {
+                return java.util.Optional.of<String?>(
+                    productName + " " + (if (info.isReleasedBlaze()) info.getVersion() else "no_version")
+                )
+            }
+            return java.util.Optional.of<T?>(info.getSummary())
+        }
     }
-    return Optional.of(info.getSummary());
-  }
 }

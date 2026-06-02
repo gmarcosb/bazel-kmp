@@ -11,39 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.toolchains;
+package com.google.devtools.build.lib.skyframe.toolchains
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSetMultimap;
-import com.google.devtools.build.lib.analysis.ToolchainContext;
-import com.google.devtools.build.lib.analysis.platform.ToolchainTypeInfo;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.skyframe.SkyValue;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.ToolchainContext
 
 /**
  * Represents the state of toolchain resolution once the specific required toolchains have been
  * determined, but before the toolchain dependencies have been resolved.
  */
-public interface UnloadedToolchainContext extends ToolchainContext, SkyValue {
+interface UnloadedToolchainContext : ToolchainContext, SkyValue {
+    /** The map of toolchain type to resolved toolchain to be used.  */
+    fun toolchainTypeToResolved(): com.google.common.collect.ImmutableSetMultimap<ToolchainTypeInfo?, Label?>?
 
-  /** The map of toolchain type to resolved toolchain to be used. */
-  ImmutableSetMultimap<ToolchainTypeInfo, Label> toolchainTypeToResolved();
+    /**
+     * Maps from the actual requested [Label] to the discovered [ToolchainTypeInfo].
+     * 
+     * 
+     * Note that the key may be different from [ToolchainTypeInfo.typeLabel] if the
+     * requested [Label] is an `alias`. In this case, there will be two [ labels][Label] for the same [ToolchainTypeInfo].
+     */
+    fun requestedLabelToToolchainType(): com.google.common.collect.ImmutableMap<Label?, ToolchainTypeInfo?>?
 
-  /**
-   * Maps from the actual requested {@link Label} to the discovered {@link ToolchainTypeInfo}.
-   *
-   * <p>Note that the key may be different from {@link ToolchainTypeInfo#typeLabel()} if the
-   * requested {@link Label} is an {@code alias}. In this case, there will be two {@link Label
-   * labels} for the same {@link ToolchainTypeInfo}.
-   */
-  ImmutableMap<Label, ToolchainTypeInfo> requestedLabelToToolchainType();
+    public override fun resolvedToolchainLabels(): com.google.common.collect.ImmutableSet<Label?>?
 
-  @Override
-  ImmutableSet<Label> resolvedToolchainLabels();
-
-  /** Returns the error, if any, that occurred in resolving this toolchain context. */
-  @Nullable
-  NoMatchingPlatformData errorData();
+    /** Returns the error, if any, that occurred in resolving this toolchain context.  */
+    fun errorData(): NoMatchingPlatformData?
 }

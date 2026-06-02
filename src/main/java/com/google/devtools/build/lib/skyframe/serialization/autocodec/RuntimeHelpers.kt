@@ -11,25 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.autocodec;
+package com.google.devtools.build.lib.skyframe.serialization.autocodec
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
-
-/** Methods used by {@link AutoCodec} at runtime. */
-public final class RuntimeHelpers {
-  /** Returns the count of fields in {@code type} that are non-static and non-transient. */
-  public static int getSerializableFieldCount(Class<?> type) {
-    int count = 0;
-    for (Class<?> next = type; next != null; next = next.getSuperclass()) {
-      for (Field field : next.getDeclaredFields()) {
-        if ((field.getModifiers() & (Modifier.STATIC | Modifier.TRANSIENT)) == 0) {
-          count++;
-        }
-      }
+/** Methods used by [AutoCodec] at runtime.  */
+object RuntimeHelpers {
+    /** Returns the count of fields in `type` that are non-static and non-transient.  */
+    fun getSerializableFieldCount(type: java.lang.Class<*>?): Int {
+        var count = 0
+        /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
+        return count
     }
-    return count;
-  }
-
-  private RuntimeHelpers() {}
 }

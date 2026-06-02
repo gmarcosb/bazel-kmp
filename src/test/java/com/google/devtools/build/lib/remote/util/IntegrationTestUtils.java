@@ -179,7 +179,7 @@ public final class IntegrationTestUtils {
       var addr = new InetSocketAddress("localhost", port);
       var timeout = new IOException("Timed out while trying to connect to worker");
       for (var i = 0; i < 20; ++i) {
-        if (!process.isAlive()) {
+        if (!process.isAlive) {
           throw new IOException(
               String.format(
                   "Worker died while trying to connect\n"

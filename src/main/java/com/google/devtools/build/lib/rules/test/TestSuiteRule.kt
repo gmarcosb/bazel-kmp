@@ -11,34 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.test;
+package com.google.devtools.build.lib.rules.test
 
-import static com.google.devtools.build.lib.packages.Attribute.attr;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL_LIST;
-import static com.google.devtools.build.lib.packages.Type.BOOLEAN;
+import com.google.devtools.build.lib.packages.Attribute.attr
 
-import com.google.devtools.build.lib.analysis.BaseRuleClasses;
-import com.google.devtools.build.lib.analysis.RuleDefinition;
-import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment;
-import com.google.devtools.build.lib.analysis.test.TestConfiguration;
-import com.google.devtools.build.lib.packages.ConfigurationFragmentPolicy.MissingFragmentPolicy;
-import com.google.devtools.build.lib.packages.RuleClass;
-
-/** Rule object implementing "test_suite". */
-public final class TestSuiteRule implements RuleDefinition {
-  @Override
-  public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment env) {
-    return builder
-        // Technically, test_suite does not use TestConfiguration. But the tests it depends on
-        // will always depend on TestConfiguration, so requiring it here simply acknowledges that
-        // and prevents pruning by --trim_test_configuration.
-        .requiresConfigurationFragments(TestConfiguration.class)
-        .setMissingFragmentPolicy(TestConfiguration.class, MissingFragmentPolicy.IGNORE)
-        .override(
-            attr("testonly", BOOLEAN)
-                .value(true)
-                .nonconfigurable("policy decision: should be consistent across configurations"))
-        /* <!-- #BLAZE_RULE(test_suite).ATTRIBUTE(tags) -->
+/** Rule object implementing "test_suite".  */
+class TestSuiteRule : RuleDefinition {
+    public override fun build(builder: RuleClass.Builder, env: RuleDefinitionEnvironment?): RuleClass {
+        return builder // Technically, test_suite does not use TestConfiguration. But the tests it depends on
+            // will always depend on TestConfiguration, so requiring it here simply acknowledges that
+            // and prevents pruning by --trim_test_configuration.
+            .requiresConfigurationFragments(TestConfiguration::class.java)
+            .setMissingFragmentPolicy(TestConfiguration::class.java, MissingFragmentPolicy.IGNORE)
+            .override(
+                attr("testonly", BOOLEAN)
+                    .value(true)
+                    .nonconfigurable("policy decision: should be consistent across configurations")
+            ) /* <!-- #BLAZE_RULE(test_suite).ATTRIBUTE(tags) -->
         List of text tags such as "small" or "database" or "-flaky". Tags may be any valid string.
         <p>
           Tags which begin with a "-" character are considered negative tags. The
@@ -79,8 +68,7 @@ public final class TestSuiteRule implements RuleDefinition {
           previous two.
         </p>
         <!-- #END_BLAZE_RULE.ATTRIBUTE --> */
-
-        /* <!-- #BLAZE_RULE(test_suite).ATTRIBUTE(tests) -->
+            /* <!-- #BLAZE_RULE(test_suite).ATTRIBUTE(tests) -->
         A list of test suites and test targets of any language.
         <p>
           Any <code>*_test</code> is accepted here, independent of the language. No
@@ -96,31 +84,29 @@ public final class TestSuiteRule implements RuleDefinition {
           <code>manual</code>. These rules are still subject to <code>tag</code> filtering.
         </p>
         <!-- #END_BLAZE_RULE.ATTRIBUTE --> */
-        .add(
-            attr("tests", LABEL_LIST)
-                .orderIndependent()
-                .allowedFileTypes()
-                .nonconfigurable("policy decision: should be consistent across configurations"))
-        // This magic attribute contains all *test rules in the package, iff
-        // tests=[].
-        .add(
-            attr("$implicit_tests", LABEL_LIST)
-                .orderIndependent()
-                .nonconfigurable("Accessed in TestTargetUtils without config context"))
-        .build();
-  }
 
-  @Override
-  public Metadata getMetadata() {
-    return RuleDefinition.Metadata.builder()
-        .name("test_suite")
-        .ancestors(BaseRuleClasses.NativeBuildRule.class)
-        .factoryClass(TestSuite.class)
-        .build();
-  }
-}
+            .add(
+                attr("tests", LABEL_LIST)
+                    .orderIndependent()
+                    .allowedFileTypes()
+                    .nonconfigurable("policy decision: should be consistent across configurations")
+            ) // This magic attribute contains all *test rules in the package, iff
+            // tests=[].
+            .add(
+                attr("\$implicit_tests", LABEL_LIST)
+                    .orderIndependent()
+                    .nonconfigurable("Accessed in TestTargetUtils without config context")
+            )
+            .build()
+    }
 
-/*<!-- #BLAZE_RULE (NAME = test_suite, FAMILY = General)[GENERIC_RULE] -->
+    val metadata: Metadata
+        get() = RuleDefinition.Metadata.builder()
+            .name("test_suite")
+            .ancestors(BaseRuleClasses.NativeBuildRule::class.java)
+            .factoryClass(com.google.devtools.build.lib.rules.test.TestSuite::class.java)
+            .build()
+} /*<!-- #BLAZE_RULE (NAME = test_suite, FAMILY = General)[GENERIC_RULE] -->
 
 <p>
 A <code>test_suite</code> defines a set of tests that are considered "useful" to humans. This
@@ -162,3 +148,4 @@ test_suite(
 </pre>
 
 <!-- #END_BLAZE_RULE -->*/
+

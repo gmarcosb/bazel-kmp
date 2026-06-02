@@ -11,28 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime.commands.info
 
-package com.google.devtools.build.lib.runtime.commands.info;
+import com.google.common.base.Supplier
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue
 
-import com.google.common.base.Supplier;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.InfoItem;
+/** Info item for the make environment.  */
+class MakeInfoItem(name: String?, description: String?) : InfoItem(name, description, false) {
+    val description: String
+        get() = "Make environment variable '" + name + "'"
 
-/** Info item for the make environment. */
-public class MakeInfoItem extends InfoItem {
-  public MakeInfoItem(String name, String description) {
-    super(name, description, false);
-  }
-
-  @Override
-  public String getDescription() {
-    return "Make environment variable '" + name + "'";
-  }
-
-  @Override
-  public byte[] get(
-      Supplier<BuildConfigurationValue> configurationSupplier, CommandEnvironment env) {
-    return print(description);
-  }
+    public override fun get(
+        configurationSupplier: Supplier<BuildConfigurationValue?>?, env: CommandEnvironment?
+    ): ByteArray {
+        return print(description)
+    }
 }

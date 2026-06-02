@@ -11,31 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package net.starlark.java.eval;
-
-import javax.annotation.Nullable;
-import net.starlark.java.syntax.TokenKind;
+package net.starlark.java.eval
 
 /**
- * A Starlark value that supports binary operators such as {@code x+y}.
- *
- * <p>During evaluation of a Starlark binary operation, if none of the built-in cases match, then
- * the left operand is queried; if it implements HasBinary, its {@link #binaryOp} method is called.
+ * A Starlark value that supports binary operators such as `x+y`.
+ * 
+ * 
+ * During evaluation of a Starlark binary operation, if none of the built-in cases match, then
+ * the left operand is queried; if it implements HasBinary, its [.binaryOp] method is called.
  * If the left operand does not implement HasBinary, or declines to implement the particular
- * operation by returning null, then the right operand is queried for HasBinary and its {@link
- * #binaryOp} method is called. If neither operand defines the operator, evaluation fails.
- *
- * <p>Subclasses should strive for appropriate symmetries in their implementations, such as {@code x
- * * y == y * x}.
+ * operation by returning null, then the right operand is queried for HasBinary and its [ ][.binaryOp] method is called. If neither operand defines the operator, evaluation fails.
+ * 
+ * 
+ * Subclasses should strive for appropriate symmetries in their implementations, such as `x * y == y * x`.
  */
 // TODO(adonovan): rename BinaryOperand?
-public interface HasBinary extends StarlarkValue {
-
-  /**
-   * Returns {@code this op that}, if thisLeft, or {@code that op this} otherwise. May return null
-   * to indicate that the operation is not supported, or may throw a specific exception.
-   */
-  @Nullable
-  Object binaryOp(TokenKind op, Object that, boolean thisLeft) throws EvalException;
+interface HasBinary : net.starlark.java.eval.StarlarkValue {
+    /**
+     * Returns `this op that`, if thisLeft, or `that op this` otherwise. May return null
+     * to indicate that the operation is not supported, or may throw a specific exception.
+     */
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun binaryOp(op: net.starlark.java.syntax.TokenKind?, that: Any?, thisLeft: Boolean): Any?
 }

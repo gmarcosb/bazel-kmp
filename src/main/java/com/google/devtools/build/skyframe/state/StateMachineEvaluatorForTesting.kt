@@ -11,94 +11,99 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe.state;
+package com.google.devtools.build.skyframe.state
 
-import com.google.devtools.build.skyframe.ErrorInfo;
-import com.google.devtools.build.skyframe.EvaluationContext;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.MemoizingEvaluator;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.ArrayList;
-import java.util.HashMap;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.supplier.InterruptibleSupplier.get
+import com.google.devtools.build.skyframe.EvaluationResult
+import com.google.devtools.build.skyframe.MemoizingEvaluator
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
+import com.google.devtools.build.skyframe.state.EnvironmentForUtilities
+import com.google.devtools.build.skyframe.state.EnvironmentForUtilities.ResultProvider
+import com.google.devtools.build.skyframe.state.StateMachine
+import java.util.HashMap
 
 /**
- * Evaluates {@link StateMachine} using a given {@link MemoizingEvaluator} for testing.
- *
- * <p>As the {@link StateMachine} requests dependencies, delegates requests to the underlying graph
- * and records missing values. Then evaluates any missing dependencies before resuming the {@link
- * StateMachine}.
- *
- * <p>Only supports {@code keepGoing} evaluations.
+ * Evaluates [StateMachine] using a given [MemoizingEvaluator] for testing.
+ * 
+ * 
+ * As the [StateMachine] requests dependencies, delegates requests to the underlying graph
+ * and records missing values. Then evaluates any missing dependencies before resuming the [ ].
+ * 
+ * 
+ * Only supports `keepGoing` evaluations.
  */
-public final class StateMachineEvaluatorForTesting {
-  private final MemoizingEvaluator evaluator;
-  private final Driver driver;
+class StateMachineEvaluatorForTesting private constructor(root: StateMachine?, evaluator: MemoizingEvaluator) {
+    private val evaluator: MemoizingEvaluator
+    private val driver: com.google.devtools.build.skyframe.state.Driver
 
-  /** Values are either {@link SkyValue} or {@link Exception}. */
-  private final HashMap<SkyKey, Object> previousResults = new HashMap<>();
+    /** Values are either [SkyValue] or [Exception].  */
+    private val previousResults: HashMap<SkyKey?, Any?> = HashMap<SkyKey?, Any?>()
 
-  /**
-   * Runs the given {@link StateMachine}.
-   *
-   * @return the result of the last evalution, if any, for error handling.
-   */
-  @Nullable // Null if there were no evaluations.
-  public static EvaluationResult<SkyValue> run(
-      StateMachine root, MemoizingEvaluator evaluator, EvaluationContext context)
-      throws InterruptedException {
-    return new StateMachineEvaluatorForTesting(root, evaluator).evaluate(context);
-  }
-
-  private StateMachineEvaluatorForTesting(StateMachine root, MemoizingEvaluator evaluator) {
-    this.driver = new Driver(root);
-    this.evaluator = evaluator;
-  }
-
-  private EvaluationResult<SkyValue> evaluate(EvaluationContext context)
-      throws InterruptedException {
-    var missing = new ArrayList<SkyKey>();
-    var env =
-        new EnvironmentForUtilities(
-            skyKey -> {
-              var value = previousResults.get(skyKey);
-              if (value != null) {
-                return value;
-              }
-              missing.add(skyKey);
-              return null;
-            });
-
-    EvaluationResult<SkyValue> result = null;
-    boolean hasError = false;
-    while (!driver.drive(env)) {
-      if (hasError) {
-        return result; // Exits if there was an error in the previous round.
-      }
-
-      result = evaluator.evaluate(missing, context);
-      for (SkyKey key : missing) {
-        SkyValue value = result.get(key);
-        if (value != null) {
-          previousResults.put(key, value);
-          continue;
-        }
-        // Marks an error. The state machine will run one more time for "error bubbling" before
-        // exiting.
-        hasError = true;
-        ErrorInfo error = result.getError(key);
-        if (error == null) {
-          continue;
-        }
-        Exception exception = error.getException();
-        if (exception != null) {
-          previousResults.put(key, exception);
-        }
-        // Otherwise, there might be a cycle.
-      }
-      missing.clear();
+    init {
+        this.driver = com.google.devtools.build.skyframe.state.Driver(root)
+        this.evaluator = evaluator
     }
-    return result;
-  }
+
+    @Throws(java.lang.InterruptedException::class)
+    private fun evaluate(context: com.google.devtools.build.skyframe.EvaluationContext?): EvaluationResult<SkyValue?>? {
+        val missing: java.util.ArrayList<SkyKey?> = java.util.ArrayList<SkyKey?>()
+        val env: EnvironmentForUtilities =
+            EnvironmentForUtilities(
+                ResultProvider { skyKey: SkyKey? ->
+                    val value: Any? = previousResults.get(skyKey)
+                    if (value != null) {
+                        return@ResultProvider value
+                    }
+                    missing.add(skyKey)
+                    null
+                })
+
+        var result: EvaluationResult<SkyValue?>? = null
+        var hasError = false
+        while (!driver.drive(env)) {
+            if (hasError) {
+                return result // Exits if there was an error in the previous round.
+            }
+
+            result = evaluator.evaluate<SkyValue?>(missing, context)
+            for (key in missing) {
+                val value: SkyValue? = result.get(key)
+                if (value != null) {
+                    previousResults.put(key, value)
+                    continue
+                }
+                // Marks an error. The state machine will run one more time for "error bubbling" before
+                // exiting.
+                hasError = true
+                val error: com.google.devtools.build.skyframe.ErrorInfo? = result.getError(key)
+                if (error == null) {
+                    continue
+                }
+                val exception: java.lang.Exception? = error.getException()
+                if (exception != null) {
+                    previousResults.put(key, exception)
+                }
+                // Otherwise, there might be a cycle.
+            }
+            missing.clear()
+        }
+        return result
+    }
+
+    companion object {
+        /**
+         * Runs the given [StateMachine].
+         * 
+         * @return the result of the last evalution, if any, for error handling.
+         */
+        @Throws(java.lang.InterruptedException::class)  // Null if there were no evaluations.
+        fun run(
+            root: StateMachine?,
+            evaluator: MemoizingEvaluator,
+            context: com.google.devtools.build.skyframe.EvaluationContext?
+        ): EvaluationResult<SkyValue?>? {
+            return StateMachineEvaluatorForTesting(root, evaluator).evaluate(context)
+        }
+    }
 }

@@ -142,7 +142,7 @@ public class StarlarkOptionsParsingTest extends StarlarkOptionsTestCase {
             () -> parseStarlarkOptions("--//fake_flag=blahblahblah"));
 
     assertThat(e).hasMessageThat().contains("Error loading option //fake_flag");
-    assertThat(e.getInvalidArgument()).isEqualTo("//fake_flag");
+    assertThat(e.invalidArgument).isEqualTo("//fake_flag");
   }
 
   // test --fake_flag
@@ -155,7 +155,7 @@ public class StarlarkOptionsParsingTest extends StarlarkOptionsTestCase {
         assertThrows(OptionsParsingException.class, () -> parseStarlarkOptions("--//fake_flag"));
 
     assertThat(e).hasMessageThat().contains("Error loading option //fake_flag");
-    assertThat(e.getInvalidArgument()).isEqualTo("//fake_flag");
+    assertThat(e.invalidArgument).isEqualTo("//fake_flag");
   }
 
   @Test
@@ -168,7 +168,7 @@ public class StarlarkOptionsParsingTest extends StarlarkOptionsTestCase {
         assertThrows(OptionsParsingException.class, () -> parseStarlarkOptions("--//fake_flag"));
 
     assertThat(e).hasMessageThat().contains("Error loading option //fake_flag");
-    assertThat(e.getInvalidArgument()).isEqualTo("//fake_flag");
+    assertThat(e.invalidArgument).isEqualTo("//fake_flag");
   }
 
   @Test

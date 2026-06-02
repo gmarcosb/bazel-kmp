@@ -11,139 +11,129 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.objc
 
-package com.google.devtools.build.lib.rules.objc;
+import com.google.common.annotations.VisibleForTesting
+import com.google.common.base.Preconditions
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.analysis.config.BuildOptions
+import com.google.devtools.build.lib.concurrent.ThreadSafety
+import net.starlark.java.eval.EvalException
+import net.starlark.java.eval.StarlarkThread
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.CompilationMode;
-import com.google.devtools.build.lib.analysis.config.CoreOptions;
-import com.google.devtools.build.lib.analysis.config.Fragment;
-import com.google.devtools.build.lib.analysis.config.RequiresOptions;
-import com.google.devtools.build.lib.analysis.starlark.StarlarkRuleContext;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.AttributeMap;
-import com.google.devtools.build.lib.packages.BuiltinRestriction;
-import com.google.devtools.build.lib.packages.Type;
-import com.google.devtools.build.lib.starlarkbuildapi.apple.ObjcConfigurationApi;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.StarlarkThread;
+/** A compiler configuration containing flags required for Objective-C compilation.  */
+@ThreadSafety.Immutable
+@RequiresOptions(options = [ObjcCommandLineOptions::class])
+class ObjcConfiguration(buildOptions: BuildOptions) : Fragment(), ObjcConfigurationApi {
+    private val compilationMode: CompilationMode
+    private val deviceDebugEntitlements: Boolean
+    private val disallowSdkFrameworksAttributes: Boolean
+    private val alwayslinkByDefault: Boolean
+    private val stripExecutableSafely: Boolean
+    private val builtinObjcStripAction: Boolean
+    private val disableObjcFragment: Boolean
 
-/** A compiler configuration containing flags required for Objective-C compilation. */
-@Immutable
-@RequiresOptions(options = {ObjcCommandLineOptions.class})
-public class ObjcConfiguration extends Fragment implements ObjcConfigurationApi {
-  @VisibleForTesting
-  static final ImmutableList<String> DBG_COPTS =
-      ImmutableList.of("-O0", "-DDEBUG=1", "-fstack-protector", "-fstack-protector-all", "-g");
+    init {
+        val options: CoreOptions = buildOptions.get(CoreOptions::class.java)
+        val objcOptions: ObjcCommandLineOptions = buildOptions.get(ObjcCommandLineOptions::class.java)
 
-  @VisibleForTesting
-  static final ImmutableList<String> OPT_COPTS =
-      ImmutableList.of(
-          "-Os", "-DNDEBUG=1", "-Wno-unused-variable", "-Winit-self", "-Wno-extra");
-
-  private final CompilationMode compilationMode;
-  private final boolean deviceDebugEntitlements;
-  private final boolean disallowSdkFrameworksAttributes;
-  private final boolean alwayslinkByDefault;
-  private final boolean stripExecutableSafely;
-  private final boolean builtinObjcStripAction;
-  private final boolean disableObjcFragment;
-
-  public ObjcConfiguration(BuildOptions buildOptions) {
-    CoreOptions options = buildOptions.get(CoreOptions.class);
-    ObjcCommandLineOptions objcOptions = buildOptions.get(ObjcCommandLineOptions.class);
-
-    this.compilationMode =
-        Preconditions.checkNotNull(options.getCompilationMode(), "compilationMode");
-    this.deviceDebugEntitlements = objcOptions.getDeviceDebugEntitlements();
-    this.disallowSdkFrameworksAttributes =
-        objcOptions.getIncompatibleDisallowSdkFrameworksAttributes();
-    this.alwayslinkByDefault = objcOptions.getIncompatibleObjcAlwayslinkByDefault();
-    this.stripExecutableSafely = objcOptions.getIncompatibleStripExecutableSafely();
-    this.builtinObjcStripAction = objcOptions.getIncompatibleBuiltinObjcStripAction();
-    this.disableObjcFragment = objcOptions.getDisableObjcFragment();
-  }
-
-  @Override
-  public boolean shouldInclude() {
-    return !disableObjcFragment;
-  }
-
-  /**
-   * Returns the current compilation mode.
-   */
-  public CompilationMode getCompilationMode() {
-    return compilationMode;
-  }
-
-  @Override
-  public ImmutableList<String> getCoptsForCompilationMode() {
-    switch (compilationMode) {
-      case DBG, OPT -> {
-        return ImmutableList.of();
-      }
-      case FASTBUILD -> {
-        return ImmutableList.of("-O0", "-DDEBUG=1");
-      }
-      default -> throw new AssertionError();
-    }
-  }
-
-  /**
-   * Returns whether device debug entitlements should be included when signing an application.
-   *
-   * <p>Note that debug entitlements will be included only if the --device_debug_entitlements flag
-   * is set <b>and</b> the compilation mode is not {@code opt}.
-   */
-  @Override
-  public boolean useDeviceDebugEntitlements() {
-    return deviceDebugEntitlements && compilationMode != CompilationMode.OPT;
-  }
-
-  /** Returns whether sdk_frameworks and weak_sdk_frameworks attributes are disallowed. */
-  @Override
-  public boolean disallowSdkFrameworksAttributes() {
-    return disallowSdkFrameworksAttributes;
-  }
-
-  /** Returns whether objc_library and objc_import should default to alwayslink=True. */
-  @Override
-  public boolean alwayslinkByDefault() {
-    return alwayslinkByDefault;
-  }
-
-  /**
-   * Looks at any explicit value for alwayslink on ctx and then falls back to the value of
-   * alwayslink_by_default.
-   */
-  @Override
-  public boolean targetShouldAlwayslink(StarlarkRuleContext ruleContext, StarlarkThread thread)
-      throws EvalException {
-    BuiltinRestriction.failIfCalledOutsideDefaultAllowlist(thread);
-
-    AttributeMap attributes = ruleContext.getRuleContext().attributes();
-    if (attributes.isAttributeValueExplicitlySpecified("alwayslink")) {
-      return attributes.get("alwayslink", Type.BOOLEAN);
+        this.compilationMode =
+            Preconditions.checkNotNull(options.getCompilationMode(), "compilationMode")
+        this.deviceDebugEntitlements = objcOptions.getDeviceDebugEntitlements()
+        this.disallowSdkFrameworksAttributes =
+            objcOptions.getIncompatibleDisallowSdkFrameworksAttributes()
+        this.alwayslinkByDefault = objcOptions.getIncompatibleObjcAlwayslinkByDefault()
+        this.stripExecutableSafely = objcOptions.getIncompatibleStripExecutableSafely()
+        this.builtinObjcStripAction = objcOptions.getIncompatibleBuiltinObjcStripAction()
+        this.disableObjcFragment = objcOptions.getDisableObjcFragment()
     }
 
-    return alwayslinkByDefault;
-  }
+    public override fun shouldInclude(): Boolean {
+        return !disableObjcFragment
+    }
 
-  /**
-   * Returns whether executable strip action should use flag -x, which does not break dynamic symbol
-   * resolution.
-   */
-  @Override
-  public boolean stripExecutableSafely() {
-    return stripExecutableSafely;
-  }
+    /**
+     * Returns the current compilation mode.
+     */
+    fun getCompilationMode(): CompilationMode {
+        return compilationMode
+    }
 
-  /** Returns whether to emit a strip action as part of objc linking. */
-  @Override
-  public boolean builtinObjcStripAction() {
-    return builtinObjcStripAction;
-  }
+    val coptsForCompilationMode: ImmutableList<String?>
+        get() {
+            when (compilationMode) {
+                DBG, OPT -> {
+                    return ImmutableList.of<String?>()
+                }
+
+                FASTBUILD -> {
+                    return ImmutableList.of<String?>("-O0", "-DDEBUG=1")
+                }
+
+                else -> throw AssertionError()
+            }
+        }
+
+    /**
+     * Returns whether device debug entitlements should be included when signing an application.
+     * 
+     * 
+     * Note that debug entitlements will be included only if the --device_debug_entitlements flag
+     * is set **and** the compilation mode is not `opt`.
+     */
+    override fun useDeviceDebugEntitlements(): Boolean {
+        return deviceDebugEntitlements && compilationMode !== CompilationMode.OPT
+    }
+
+    /** Returns whether sdk_frameworks and weak_sdk_frameworks attributes are disallowed.  */
+    override fun disallowSdkFrameworksAttributes(): Boolean {
+        return disallowSdkFrameworksAttributes
+    }
+
+    /** Returns whether objc_library and objc_import should default to alwayslink=True.  */
+    override fun alwayslinkByDefault(): Boolean {
+        return alwayslinkByDefault
+    }
+
+    /**
+     * Looks at any explicit value for alwayslink on ctx and then falls back to the value of
+     * alwayslink_by_default.
+     */
+    @Throws(EvalException::class)
+    override fun targetShouldAlwayslink(ruleContext: StarlarkRuleContext, thread: StarlarkThread?): Boolean {
+        BuiltinRestriction.failIfCalledOutsideDefaultAllowlist(thread)
+
+        val attributes: AttributeMap = ruleContext.getRuleContext().attributes()
+        if (attributes.isAttributeValueExplicitlySpecified("alwayslink")) {
+            return attributes.get("alwayslink", Type.BOOLEAN)
+        }
+
+        return alwayslinkByDefault
+    }
+
+    /**
+     * Returns whether executable strip action should use flag -x, which does not break dynamic symbol
+     * resolution.
+     */
+    override fun stripExecutableSafely(): Boolean {
+        return stripExecutableSafely
+    }
+
+    /** Returns whether to emit a strip action as part of objc linking.  */
+    override fun builtinObjcStripAction(): Boolean {
+        return builtinObjcStripAction
+    }
+
+    companion object {
+        @kotlin.jvm.JvmField
+        @VisibleForTesting
+        val DBG_COPTS: ImmutableList<String?> =
+            ImmutableList.of<String?>("-O0", "-DDEBUG=1", "-fstack-protector", "-fstack-protector-all", "-g")
+
+        @kotlin.jvm.JvmField
+        @VisibleForTesting
+        val OPT_COPTS: ImmutableList<String?> = ImmutableList.of<String?>(
+            "-Os", "-DNDEBUG=1", "-Wno-unused-variable", "-Winit-self", "-Wno-extra"
+        )
+    }
 }

@@ -11,25 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.actiongraph.v2;
+package com.google.devtools.build.lib.skyframe.actiongraph.v2
 
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.RuleClass;
-import java.io.IOException;
+import com.google.devtools.build.lib.analysis.AnalysisProtosV2.RuleClass
 
-/** Cache for RuleClassStrings in the action graph. */
-public class KnownRuleClassStrings extends BaseCache<String, RuleClass> {
+/** Cache for RuleClassStrings in the action graph.  */
+class KnownRuleClassStrings internal constructor(aqueryOutputHandler: AqueryOutputHandler?) :
+    BaseCache<String?, RuleClass?>(aqueryOutputHandler) {
+    @Throws(IOException::class)
+    override fun createProto(ruleClassString: String?, id: Int): RuleClass {
+        return RuleClass.newBuilder().setId(id).setName(ruleClassString).build()
+    }
 
-  KnownRuleClassStrings(AqueryOutputHandler aqueryOutputHandler) {
-    super(aqueryOutputHandler);
-  }
-
-  @Override
-  RuleClass createProto(String ruleClassString, int id) throws IOException {
-    return RuleClass.newBuilder().setId(id).setName(ruleClassString).build();
-  }
-
-  @Override
-  void toOutput(RuleClass ruleClassProto) throws IOException {
-    aqueryOutputHandler.outputRuleClass(ruleClassProto);
-  }
+    @Throws(IOException::class)
+    override fun toOutput(ruleClassProto: RuleClass?) {
+        aqueryOutputHandler.outputRuleClass(ruleClassProto)
+    }
 }

@@ -11,46 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
-
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.devtools.build.lib.packages.MacroInstance;
-import com.google.devtools.build.lib.packages.PackagePieceIdentifier;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
+import com.google.devtools.build.lib.packages.MacroInstance
 
 /**
  * A Skyframe value representing the declaration of a symbolic macro instance.
- *
- * <p>The corresponding {@link com.google.devtools.build.skyframe.SkyKey} is {@link
- * MacroInstanceValue.Key}.
- *
- * <p>The purpose of this class is to store potentially large data (macro attribute values and the
- * Starlark stack) in a skyvalue rather than directly in a {@link PackagePieceValue.ForMacro}'s
+ * 
+ * 
+ * The corresponding [com.google.devtools.build.skyframe.SkyKey] is [ ].
+ * 
+ * 
+ * The purpose of this class is to store potentially large data (macro attribute values and the
+ * Starlark stack) in a skyvalue rather than directly in a [PackagePieceValue.ForMacro]'s
  * skykey.
  */
 @AutoCodec
-public record MacroInstanceValue(MacroInstance macroInstance) implements SkyValue {
-  public MacroInstanceValue {
-    checkNotNull(macroInstance);
-  }
+class MacroInstanceValue(macroInstance: MacroInstance?) : SkyValue {
+    /** A SkyKey for a [MacroInstanceValue].  */
+    @AutoCodec
+    class Key(packagePieceId: PackagePieceIdentifier?, @kotlin.jvm.JvmField val macroInstanceName: String?) : SkyKey {
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.MACRO_INSTANCE
+        }
 
-  /** A SkyKey for a {@link MacroInstanceValue}. */
-  @AutoCodec
-  public static record Key(PackagePieceIdentifier packagePieceId, String macroInstanceName)
-      implements SkyKey {
-    public Key {
-      checkNotNull(packagePieceId);
-      checkNotNull(macroInstanceName);
+        val packagePieceId: PackagePieceIdentifier?
+
+        init {
+            this.packagePieceId = packagePieceId
+            com.google.common.base.Preconditions.checkNotNull<Any?>(packagePieceId)
+            com.google.common.base.Preconditions.checkNotNull<String?>(macroInstanceName)
+        }
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.MACRO_INSTANCE;
+    val macroInstance: MacroInstance?
+
+    init {
+        this.macroInstance = macroInstance
+        com.google.common.base.Preconditions.checkNotNull<Any?>(macroInstance)
     }
-  }
 }

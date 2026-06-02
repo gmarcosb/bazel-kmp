@@ -11,47 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
-
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.TestStatus;
-import com.google.devtools.build.lib.view.test.TestStatus.BlazeTestStatus;
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos
 
 /**
  * Utility methods for the build event stream.
- *
- * <p>TODO(aehlig): remove once {@link BlazeTestStatus} is replaced by {@link TestStatus} from the
- * {@link BuildEventStreamProtos}.
+ * 
+ * 
+ * TODO(aehlig): remove once [BlazeTestStatus] is replaced by [TestStatus] from the
+ * [BuildEventStreamProtos].
  */
-public final class BuildEventStreamerUtils {
-
-  /** Map BlazeTestStatus to TestStatus. */
-  public static TestStatus bepStatus(BlazeTestStatus status) {
-    switch (status) {
-      case NO_STATUS:
-        return BuildEventStreamProtos.TestStatus.NO_STATUS;
-      case PASSED:
-        return BuildEventStreamProtos.TestStatus.PASSED;
-      case FLAKY:
-        return BuildEventStreamProtos.TestStatus.FLAKY;
-      case FAILED:
-        return BuildEventStreamProtos.TestStatus.FAILED;
-      case TIMEOUT:
-        return BuildEventStreamProtos.TestStatus.TIMEOUT;
-      case FAILED_TO_BUILD:
-        return BuildEventStreamProtos.TestStatus.FAILED_TO_BUILD;
-      case INCOMPLETE:
-        return BuildEventStreamProtos.TestStatus.INCOMPLETE;
-      case REMOTE_FAILURE:
-        return BuildEventStreamProtos.TestStatus.REMOTE_FAILURE;
-      case BLAZE_HALTED_BEFORE_TESTING:
-        return BuildEventStreamProtos.TestStatus.TOOL_HALTED_BEFORE_TESTING;
-      default:
-        // Not used as the above is a complete case distinction; however, by the open
-        // nature of protobuf enums, we need the clause to convice java, that we always
-        // have a return statement.
-        return BuildEventStreamProtos.TestStatus.NO_STATUS;
+object BuildEventStreamerUtils {
+    /** Map BlazeTestStatus to TestStatus.  */
+    fun bepStatus(status: BlazeTestStatus): TestStatus {
+        when (status) {
+            NO_STATUS -> return BuildEventStreamProtos.TestStatus.NO_STATUS
+            PASSED -> return BuildEventStreamProtos.TestStatus.PASSED
+            FLAKY -> return BuildEventStreamProtos.TestStatus.FLAKY
+            FAILED -> return BuildEventStreamProtos.TestStatus.FAILED
+            TIMEOUT -> return BuildEventStreamProtos.TestStatus.TIMEOUT
+            FAILED_TO_BUILD -> return BuildEventStreamProtos.TestStatus.FAILED_TO_BUILD
+            INCOMPLETE -> return BuildEventStreamProtos.TestStatus.INCOMPLETE
+            REMOTE_FAILURE -> return BuildEventStreamProtos.TestStatus.REMOTE_FAILURE
+            BLAZE_HALTED_BEFORE_TESTING -> return BuildEventStreamProtos.TestStatus.TOOL_HALTED_BEFORE_TESTING
+            else ->         // Not used as the above is a complete case distinction; however, by the open
+                // nature of protobuf enums, we need the clause to convice java, that we always
+                // have a return statement.
+                return BuildEventStreamProtos.TestStatus.NO_STATUS
+        }
     }
-  }
 }

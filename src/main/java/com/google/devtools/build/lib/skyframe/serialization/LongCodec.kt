@@ -11,30 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
+/** Codec for [Long].  */
+internal class LongCodec : LeafObjectCodec<Long?>() {
+    override fun getEncodedClass(): java.lang.Class<Long?> {
+        return Long::class.java
+    }
 
-/** Codec for {@link Long}. */
-class LongCodec extends LeafObjectCodec<Long> {
+    @Throws(IOException::class)
+    override fun serialize(context: LeafSerializationContext?, value: Long, codedOut: CodedOutputStream) {
+        codedOut.writeInt64NoTag(value)
+    }
 
-  @Override
-  public Class<Long> getEncodedClass() {
-    return Long.class;
-  }
-
-  @Override
-  public void serialize(LeafSerializationContext context, Long value, CodedOutputStream codedOut)
-      throws IOException {
-    codedOut.writeInt64NoTag(value);
-  }
-
-  @Override
-  public Long deserialize(LeafDeserializationContext context, CodedInputStream codedIn)
-      throws IOException {
-    return codedIn.readInt64();
-  }
+    @Throws(IOException::class)
+    override fun deserialize(context: LeafDeserializationContext?, codedIn: CodedInputStream): Long {
+        return codedIn.readInt64()
+    }
 }

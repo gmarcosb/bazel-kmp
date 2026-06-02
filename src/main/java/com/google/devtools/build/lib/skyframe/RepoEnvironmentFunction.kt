@@ -11,93 +11,95 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
-
-import com.google.common.collect.Collections2;
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.AbstractSkyKey;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.SkyframeLookupResult;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.skyframe.EnvironmentVariableValue
+import com.google.devtools.build.lib.skyframe.PrecomputedValue
+import com.google.devtools.build.lib.skyframe.RepoEnvironmentFunction
+import com.google.devtools.build.lib.skyframe.SkyFunctions
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
+import com.google.devtools.build.skyframe.AbstractSkyKey
+import com.google.devtools.build.skyframe.SkyFunction
+import com.google.devtools.build.skyframe.SkyFunctionName
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyKey.SkyKeyInterner
+import com.google.devtools.build.skyframe.SkyValue
+import com.google.devtools.build.skyframe.SkyframeLookupResult
 
 /**
  * Skyframe function that provides the effective value for an environment variable in the context of
  * repository rules and module extensions. This will be the value from the repo environment as
- * provided by {@link com.google.devtools.build.lib.runtime.CommandEnvironment#getRepoEnv()}.
+ * provided by [com.google.devtools.build.lib.runtime.CommandEnvironment.getRepoEnv].
  */
-public final class RepoEnvironmentFunction implements SkyFunction {
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env) throws InterruptedException {
-    Map<String, String> repoEnv = PrecomputedValue.REPO_ENV.get(env);
-    String key = (String) skyKey.argument();
-    return new EnvironmentVariableValue(repoEnv.get(key));
-  }
-
-  /** Returns the SkyKey to invoke this function for the environment variable {@code variable}. */
-  public static Key key(String variable) {
-    return Key.create(variable);
-  }
-
-  @VisibleForSerialization
-  @AutoCodec
-  static class Key extends AbstractSkyKey<String> {
-    private static final SkyKeyInterner<Key> interner = SkyKey.newInterner();
-
-    private Key(String arg) {
-      super(arg);
+class RepoEnvironmentFunction : SkyFunction {
+    @Throws(java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment): SkyValue {
+        val repoEnv: MutableMap<String?, String?>? = PrecomputedValue.Companion.REPO_ENV.get(env)
+        val key = skyKey.argument() as String?
+        return EnvironmentVariableValue(repoEnv!!.get(key))
     }
 
-    private static Key create(String arg) {
-      return interner.intern(new Key(arg));
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    @AutoCodec
+    internal class Key private constructor(arg: String?) : AbstractSkyKey<String?>(arg) {
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.REPOSITORY_ENVIRONMENT_VARIABLE
+        }
+
+        val skyKeyInterner: SkyKeyInterner<Key?>
+            get() = com.google.devtools.build.lib.skyframe.RepoEnvironmentFunction.Key.Companion.interner
+
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
+
+            private fun create(arg: String?): Key {
+                return com.google.devtools.build.lib.skyframe.RepoEnvironmentFunction.Key.Companion.interner.intern(
+                    com.google.devtools.build.lib.skyframe.RepoEnvironmentFunction.Key(
+                        arg
+                    )
+                )
+            }
+
+            @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+            @AutoCodec.Interner
+            fun intern(key: Key?): Key {
+                return com.google.devtools.build.lib.skyframe.RepoEnvironmentFunction.Key.Companion.interner.intern(key)
+            }
+        }
     }
 
-    @VisibleForSerialization
-    @AutoCodec.Interner
-    static Key intern(Key key) {
-      return interner.intern(key);
-    }
+    companion object {
+        /** Returns the SkyKey to invoke this function for the environment variable `variable`.  */
+        fun key(variable: String?): Key {
+            return com.google.devtools.build.lib.skyframe.RepoEnvironmentFunction.Key.Companion.create(variable)
+        }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.REPOSITORY_ENVIRONMENT_VARIABLE;
-    }
+        /**
+         * Returns a map of environment variable key => values, getting them from Skyframe. Returns null
+         * if and only if some dependencies from Skyframe still need to be resolved.
+         */
+        @Throws(java.lang.InterruptedException::class)
+        fun getEnvironmentView(
+            env: SkyFunction.Environment, keys: MutableSet<String?>
+        ): com.google.common.collect.ImmutableSortedMap<String?, java.util.Optional<String?>?>? {
+            val skyKeys: MutableCollection<Key> = com.google.common.collect.Collections2.transform<String?, Key>(
+                keys,
+                com.google.common.base.Function { variable: String? -> key(variable) })
+            val values: SkyframeLookupResult = env.getValuesAndExceptions(skyKeys)
+            if (env.valuesMissing()) {
+                return null
+            }
 
-    @Override
-    public SkyKeyInterner<Key> getSkyKeyInterner() {
-      return interner;
+            val result: com.google.common.collect.ImmutableSortedMap.Builder<String?, java.util.Optional<String?>?> =
+                com.google.common.collect.ImmutableSortedMap.naturalOrder<String?, java.util.Optional<String?>?>()
+            for (key in skyKeys) {
+                val value: EnvironmentVariableValue? = values.get(key) as EnvironmentVariableValue?
+                if (value == null) {
+                    return null
+                }
+                result.put(key.argument().toString(), java.util.Optional.ofNullable<String?>(value.value))
+            }
+            return result.buildOrThrow()
+        }
     }
-  }
-
-  /**
-   * Returns a map of environment variable key => values, getting them from Skyframe. Returns null
-   * if and only if some dependencies from Skyframe still need to be resolved.
-   */
-  @Nullable
-  public static ImmutableSortedMap<String, Optional<String>> getEnvironmentView(
-      Environment env, Set<String> keys) throws InterruptedException {
-    var skyKeys = Collections2.transform(keys, RepoEnvironmentFunction::key);
-    SkyframeLookupResult values = env.getValuesAndExceptions(skyKeys);
-    if (env.valuesMissing()) {
-      return null;
-    }
-
-    var result = ImmutableSortedMap.<String, Optional<String>>naturalOrder();
-    for (var key : skyKeys) {
-      var value = (EnvironmentVariableValue) values.get(key);
-      if (value == null) {
-        return null;
-      }
-      result.put(key.argument().toString(), Optional.ofNullable(value.value()));
-    }
-    return result.buildOrThrow();
-  }
 }

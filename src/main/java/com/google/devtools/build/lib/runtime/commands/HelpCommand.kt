@@ -11,633 +11,745 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime.commands;
+package com.google.devtools.build.lib.runtime.commands
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.devtools.build.lib.runtime.Command.BuildPhase.NONE;
-import static java.nio.charset.StandardCharsets.ISO_8859_1;
+import com.google.devtools.build.lib.runtime.Command.BuildPhase.NONE
 
-import com.google.common.base.Ascii;
-import com.google.common.base.CaseFormat;
-import com.google.common.base.Joiner;
-import com.google.common.base.Strings;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.common.collect.Iterables;
-import com.google.common.escape.Escaper;
-import com.google.common.html.HtmlEscapers;
-import com.google.devtools.build.lib.analysis.BlazeVersionInfo;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.NoBuildEvent;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.runtime.BlazeCommand;
-import com.google.devtools.build.lib.runtime.BlazeCommandResult;
-import com.google.devtools.build.lib.runtime.BlazeCommandUtils;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.Command;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.InfoItem;
-import com.google.devtools.build.lib.runtime.OptionsSupplier;
-import com.google.devtools.build.lib.runtime.commands.proto.BazelFlagsProto;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.HelpCommand.Code;
-import com.google.devtools.build.lib.util.StringUtil;
-import com.google.devtools.build.lib.util.StringUtilities;
-import com.google.devtools.build.lib.util.io.OutErr;
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.Converters;
-import com.google.devtools.common.options.EnumConverter;
-import com.google.devtools.common.options.HelpVerbosity;
-import com.google.devtools.common.options.HtmlUtils;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDefinition;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionFilterDescriptions;
-import com.google.devtools.common.options.OptionMetadataTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParser;
-import com.google.devtools.common.options.OptionsParsingResult;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
-import java.util.function.Predicate;
-import javax.annotation.Nullable;
-
-/** The 'blaze help' command, which prints all available commands as well as specific help pages. */
+/** The 'blaze help' command, which prints all available commands as well as specific help pages.  */
 @Command(
     name = "help",
     buildPhase = NONE,
-    options = {HelpCommand.Options.class},
+    options = [com.google.devtools.build.lib.runtime.commands.HelpCommand.Options::class],
     allowResidue = true,
     mustRunInWorkspace = false,
     shortDescription = "Prints help for commands, or the index.",
     completion = "command|{startup_options,target-syntax,info-keys}",
-    help = "resource:help.txt")
-public final class HelpCommand implements BlazeCommand {
-  private static final Joiner SPACE_JOINER = Joiner.on(" ");
+    help = "resource:help.txt"
+)
+class HelpCommand : BlazeCommand {
+    /** Options for the `help` command.  */
+    @com.google.devtools.common.options.OptionsClass
+    abstract class Options : com.google.devtools.common.options.OptionsBase() {
+        @get:com.google.devtools.common.options.Option(
+            name = "help_verbosity",
+            defaultValue = "medium",
+            converter = com.google.devtools.common.options.Converters.HelpVerbosityConverter::class,
+            documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+            effectTags = [com.google.devtools.common.options.OptionEffectTag.TERMINAL_OUTPUT],
+            help = "Select the verbosity of the help command."
+        )
+        abstract val helpVerbosity: com.google.devtools.common.options.HelpVerbosity?
 
-  /**
-   * Only to be used to escape the internal hard-coded help texts when outputting HTML from help,
-   * which don't pose a security risk.
-   */
-  private static final Escaper HTML_ESCAPER = HtmlEscapers.htmlEscaper();
+        @get:com.google.devtools.common.options.Option(
+            name = "long",
+            abbrev = 'l',
+            defaultValue = "null",
+            expansion = ["--help_verbosity=long"],
+            documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+            effectTags = [com.google.devtools.common.options.OptionEffectTag.TERMINAL_OUTPUT],
+            help = "Show full description of each option, instead of just its name."
+        )
+        abstract val showLongFormOptions: java.lang.Void?
 
-  /** Options for the {@code help} command. */
-  @OptionsClass
-  public abstract static class Options extends OptionsBase {
-
-    @Option(
-        name = "help_verbosity",
-        defaultValue = "medium",
-        converter = Converters.HelpVerbosityConverter.class,
-        documentationCategory = OptionDocumentationCategory.LOGGING,
-        effectTags = {OptionEffectTag.TERMINAL_OUTPUT},
-        help = "Select the verbosity of the help command.")
-    public abstract HelpVerbosity getHelpVerbosity();
-
-    @Option(
-        name = "long",
-        abbrev = 'l',
-        defaultValue = "null",
-        expansion = {"--help_verbosity=long"},
-        documentationCategory = OptionDocumentationCategory.LOGGING,
-        effectTags = {OptionEffectTag.TERMINAL_OUTPUT},
-        help = "Show full description of each option, instead of just its name.")
-    public abstract Void getShowLongFormOptions();
-
-    @Option(
-        name = "short",
-        defaultValue = "null",
-        expansion = {"--help_verbosity=short"},
-        documentationCategory = OptionDocumentationCategory.LOGGING,
-        effectTags = {OptionEffectTag.TERMINAL_OUTPUT},
-        help = "Show only the names of the options, not their types or meanings.")
-    public abstract Void getShowShortFormOptions();
-  }
-
-  @Override
-  public BlazeCommandResult exec(CommandEnvironment env, OptionsParsingResult options) {
-    env.getEventBus().post(new NoBuildEvent());
-
-    BlazeRuntime runtime = env.getRuntime();
-    OutErr outErr = env.getReporter().getOutErr();
-    Options helpOptions = options.getOptions(Options.class);
-    if (options.getResidue().isEmpty()) {
-      emitBlazeVersionInfo(outErr, runtime.getProductName());
-      emitGenericHelp(outErr, runtime);
-      return BlazeCommandResult.success();
-    }
-    if (options.getResidue().getFirst().equals("completion")) {
-      if (options.getResidue().size() > 2) {
-        String message = "The completion command takes at most one argument";
-        env.getReporter().handle(Event.error(message));
-        return createFailureResult(message, Code.MISSING_ARGUMENT);
-      }
-      String shell = options.getResidue().size() > 1 ? options.getResidue().get(1) : null;
-      return emitCompletionHelp(shell, runtime, env.getReporter());
-    }
-    if (options.getResidue().size() != 1) {
-      String message = "You must specify exactly one command";
-      env.getReporter().handle(Event.error(message));
-      return createFailureResult(message, Code.MISSING_ARGUMENT);
-    }
-    String helpSubject = options.getResidue().getFirst();
-    String productName = runtime.getProductName();
-    // Go through the custom subjects before going through Bazel commands.
-    switch (helpSubject) {
-      case "startup_options" -> {
-        emitBlazeVersionInfo(outErr, runtime.getProductName());
-        emitStartupOptions(outErr, helpOptions.getHelpVerbosity(), runtime);
-        return BlazeCommandResult.success();
-      }
-      case "target-syntax" -> {
-        emitBlazeVersionInfo(outErr, runtime.getProductName());
-        emitTargetSyntaxHelp(outErr, productName);
-
-        return BlazeCommandResult.success();
-      }
-      case "info-keys" -> {
-        emitInfoKeysHelp(env, outErr);
-        return BlazeCommandResult.success();
-      }
-      case "flags-as-proto" -> {
-        emitFlagsAsProtoHelp(runtime, outErr);
-        return BlazeCommandResult.success();
-      }
-      case "everything-as-html" -> {
-        new HtmlEmitter(runtime).emit(outErr);
-        return BlazeCommandResult.success();
-      }
-      default -> {}
+        @get:com.google.devtools.common.options.Option(
+            name = "short",
+            defaultValue = "null",
+            expansion = ["--help_verbosity=short"],
+            documentationCategory = com.google.devtools.common.options.OptionDocumentationCategory.LOGGING,
+            effectTags = [com.google.devtools.common.options.OptionEffectTag.TERMINAL_OUTPUT],
+            help = "Show only the names of the options, not their types or meanings."
+        )
+        abstract val showShortFormOptions: java.lang.Void?
     }
 
-    BlazeCommand command = runtime.getCommandMap().get(helpSubject);
-    if (command == null) {
-      String message = "'" + helpSubject + "' is not a known command";
-      env.getReporter().handle(Event.error(null, message));
-      return createFailureResult(message, Code.COMMAND_NOT_FOUND);
-    }
-    emitBlazeVersionInfo(outErr, productName);
-    outErr.printOut(
-        BlazeCommandUtils.getUsage(
-            command.getClass(),
-            helpOptions.getHelpVerbosity(),
-            runtime.getOptionsSuppliers(),
-            runtime.getRuleClassProvider(),
-            productName));
+    public override fun exec(
+        env: CommandEnvironment,
+        options: com.google.devtools.common.options.OptionsParsingResult
+    ): BlazeCommandResult? {
+        env.getEventBus().post(NoBuildEvent())
 
-    return BlazeCommandResult.success();
-  }
-
-  private static void emitBlazeVersionInfo(OutErr outErr, String productName) {
-    String releaseInfo = BlazeVersionInfo.instance().getReleaseName();
-    String line = "[%s %s]".formatted(productName, releaseInfo);
-    outErr.printOut("%80s\n".formatted(line));
-  }
-
-  private void emitStartupOptions(
-      OutErr outErr, HelpVerbosity helpVerbosity, BlazeRuntime runtime) {
-    outErr.printOut(
-        BlazeCommandUtils.expandHelpTopic(
-            "startup_options",
-            "resource:startup_options.txt",
-            getClass(),
-            BlazeCommandUtils.getStartupOptions(runtime.getOptionsSuppliers()),
-            helpVerbosity,
-            runtime.getProductName()));
-  }
-
-  private static BlazeCommandResult emitCompletionHelp(
-      @Nullable String shell, BlazeRuntime runtime, Reporter reporter) {
-    OutErr outErr = reporter.getOutErr();
-    return switch (shell) {
-      case "bash" -> {
-        outErr.printOutLn(loadCompletionScript("bazel-complete-header.bash"));
-        emitCompletionVariables(runtime, outErr);
-        outErr.printOutLn(loadCompletionScript("bazel-complete-template.bash"));
-        yield BlazeCommandResult.success();
-      }
-      case null -> {
-        // Preserved for backwards compatibility: print only the variables part of the bash
-        // completion script.
-        emitCompletionVariables(runtime, outErr);
-        yield BlazeCommandResult.success();
-      }
-      default -> {
-        String message =
-            "The completion command only supports 'bash' as an argument, got '%s'".formatted(shell);
-        reporter.handle(Event.error(message));
-        yield createFailureResult(message, Code.MISSING_ARGUMENT);
-      }
-    };
-  }
-
-  private static String loadCompletionScript(String basename) {
-    try {
-      String resourceName = "/scripts/" + basename;
-      try (var stream = HelpCommand.class.getResourceAsStream(resourceName)) {
-        if (stream == null) {
-          throw new IOException(resourceName + " not found.");
+        val runtime: BlazeRuntime = env.getRuntime()
+        val outErr: OutErr = env.getReporter().getOutErr()
+        val helpOptions: Options? =
+            options.getOptions<Options?>(com.google.devtools.build.lib.runtime.commands.HelpCommand.Options::class.java)
+        if (options.getResidue().isEmpty()) {
+            com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.emitBlazeVersionInfo(
+                outErr,
+                runtime.productName
+            )
+            com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.emitGenericHelp(outErr, runtime)
+            return BlazeCommandResult.success()
         }
-        return new String(stream.readAllBytes(), ISO_8859_1);
-      }
-    } catch (IOException e) {
-      throw new IllegalStateException(
-          "Failed to read built-in resource %s: %s".formatted(basename, e.getMessage()), e);
+        if (options.getResidue().getFirst() == "completion") {
+            if (options.getResidue().size > 2) {
+                val message = "The completion command takes at most one argument"
+                env.getReporter().handle(com.google.devtools.build.lib.events.Event.error(message))
+                return com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.createFailureResult(
+                    message,
+                    Code.MISSING_ARGUMENT
+                )
+            }
+            val shell: String? = if (options.getResidue().size > 1) options.getResidue().get(1) else null
+            return com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.emitCompletionHelp(
+                shell,
+                runtime,
+                env.getReporter()
+            )
+        }
+        if (options.getResidue().size != 1) {
+            val message = "You must specify exactly one command"
+            env.getReporter().handle(com.google.devtools.build.lib.events.Event.error(message))
+            return com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.createFailureResult(
+                message,
+                Code.MISSING_ARGUMENT
+            )
+        }
+        val helpSubject: String = options.getResidue().getFirst()
+        val productName: String? = runtime.productName
+        // Go through the custom subjects before going through Bazel commands.
+        when (helpSubject) {
+            "startup_options" -> {
+                com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.emitBlazeVersionInfo(
+                    outErr,
+                    runtime.productName
+                )
+                emitStartupOptions(outErr, helpOptions!!.helpVerbosity, runtime)
+                return BlazeCommandResult.success()
+            }
+
+            "target-syntax" -> {
+                com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.emitBlazeVersionInfo(
+                    outErr,
+                    runtime.productName
+                )
+                emitTargetSyntaxHelp(outErr, productName)
+
+                return BlazeCommandResult.success()
+            }
+
+            "info-keys" -> {
+                com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.emitInfoKeysHelp(env, outErr)
+                return BlazeCommandResult.success()
+            }
+
+            "flags-as-proto" -> {
+                com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.emitFlagsAsProtoHelp(
+                    runtime,
+                    outErr
+                )
+                return BlazeCommandResult.success()
+            }
+
+            "everything-as-html" -> {
+                HtmlEmitter(runtime).emit(outErr)
+                return BlazeCommandResult.success()
+            }
+
+            else -> {}
+        }
+
+        val command: BlazeCommand? = runtime.getCommandMap().get(helpSubject)
+        if (command == null) {
+            val message = "'" + helpSubject + "' is not a known command"
+            env.getReporter().handle(com.google.devtools.build.lib.events.Event.error(null, message))
+            return com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.createFailureResult(
+                message,
+                Code.COMMAND_NOT_FOUND
+            )
+        }
+        com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.emitBlazeVersionInfo(outErr, productName)
+        outErr.printOut(
+            BlazeCommandUtils.getUsage(
+                command.getClass(),
+                helpOptions!!.helpVerbosity,
+                runtime.getOptionsSuppliers(),
+                runtime.getRuleClassProvider(),
+                productName
+            )
+        )
+
+        return BlazeCommandResult.success()
     }
-  }
 
-  private static void emitCompletionVariables(BlazeRuntime runtime, OutErr outErr) {
-    Map<String, BlazeCommand> commandsByName = getSortedCommands(runtime);
-
-    outErr.printOutLn("BAZEL_COMMAND_LIST=\"" + SPACE_JOINER.join(commandsByName.keySet()) + "\"");
-
-    outErr.printOutLn("BAZEL_INFO_KEYS=\"");
-    for (String name : InfoCommand.getHardwiredInfoItemNames(runtime.getProductName())) {
-      outErr.printOutLn(name);
+    private fun emitStartupOptions(
+        outErr: OutErr, helpVerbosity: com.google.devtools.common.options.HelpVerbosity?, runtime: BlazeRuntime
+    ) {
+        outErr.printOut(
+            BlazeCommandUtils.expandHelpTopic(
+                "startup_options",
+                "resource:startup_options.txt",
+                javaClass,
+                BlazeCommandUtils.getStartupOptions(runtime.getOptionsSuppliers()),
+                helpVerbosity,
+                runtime.productName
+            )
+        )
     }
-    outErr.printOutLn("\"");
 
-    Consumer<OptionsParser> startupOptionVisitor =
-        parser -> {
-          outErr.printOutLn("BAZEL_STARTUP_OPTIONS=\"");
-          outErr.printOut(parser.getOptionsCompletion());
-          outErr.printOutLn("\"");
-        };
-    CommandOptionVisitor commandOptionVisitor =
-        (commandName, commandAnnotation, parser) -> {
-          String varName = CaseFormat.LOWER_HYPHEN.to(CaseFormat.UPPER_UNDERSCORE, commandName);
-          if (!Strings.isNullOrEmpty(commandAnnotation.completion())) {
+    private fun emitTargetSyntaxHelp(outErr: OutErr, productName: String?) {
+        outErr.printOut(
+            BlazeCommandUtils.expandHelpTopic(
+                "target-syntax",
+                "resource:target-syntax.txt",
+                javaClass,
+                com.google.common.collect.ImmutableList.of<E?>(),
+                com.google.devtools.common.options.HelpVerbosity.MEDIUM,
+                productName
+            )
+        )
+    }
+
+    private class HtmlEmitter(runtime: BlazeRuntime) {
+        private val runtime: BlazeRuntime
+
+        init {
+            this.runtime = runtime
+        }
+
+        fun emit(outErr: OutErr) {
+            val commandsByName: MutableMap<String?, BlazeCommand?> =
+                com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.getSortedCommands(runtime)
+            val result: java.lang.StringBuilder = java.lang.StringBuilder()
+            result.append("<h2>Commands</h2>\n")
+            result.append("<table>\n")
+            for (e in commandsByName.entries) {
+                val command: BlazeCommand = e.value
+                val annotation: Command = command.getClass().getAnnotation(Command::class.java)
+                if (annotation.hidden()) {
+                    continue
+                }
+                val shortDescription: String =
+                    annotation.shortDescription().replace("%{product}", runtime.productName)
+
+                result.append("<tr>\n")
+                result.append(
+                    String.format(
+                        "  <td><a href=\"#%s\"><code>%s</code></a></td>\n", e.key, e.key
+                    )
+                )
+                result.append("  <td>").append(
+                    com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.HTML_ESCAPER.escape(
+                        shortDescription
+                    )
+                ).append("</td>\n")
+                result.append("</tr>\n")
+            }
+            result.append("</table>\n")
+            result.append("\n")
+
+            result.append("<h2>Startup Options</h2>\n")
+            appendOptionsHtml(
+                result,
+                BlazeCommandUtils.getStartupOptions(runtime.getOptionsSuppliers()),
+                com.google.common.collect.ImmutableList.of<String?>(),
+                "startup_options"
+            )
+            result.append("\n")
+
+            result.append("<h2><a name=\"common_options\">Options Common to all Commands</a></h2>\n")
+            appendOptionsHtml(
+                result,
+                BlazeCommandUtils.getCommonOptions(runtime.getOptionsSuppliers()),
+                com.google.common.collect.ImmutableList.of<String?>(),
+                "common_options"
+            )
+            result.append("\n")
+
+            for (e in commandsByName.entries) {
+                result.append(
+                    String.format(
+                        "<h2><a name=\"%s\">%s Options</a></h2>\n",
+                        e.key, com.google.devtools.build.lib.util.StringUtilities.capitalize(e.key)
+                    )
+                )
+                val command: BlazeCommand = e.value
+                val annotation: Command = command.getClass().getAnnotation(Command::class.java)
+                if (annotation.hidden()) {
+                    continue
+                }
+                val inheritedCmdNames: MutableList<String?> = java.util.ArrayList<String?>()
+                for (base in annotation.inheritsOptionsFrom()) {
+                    val name: String? = base.getAnnotation<A?>(Command::class.java).name()
+                    inheritedCmdNames.add(String.format("<a href=\"#%s\">%s</a>", name, name))
+                }
+                if (!inheritedCmdNames.isEmpty()) {
+                    result.append("<p>Inherits all options from ")
+                    result.append(
+                        com.google.devtools.build.lib.util.StringUtil.joinEnglishList(
+                            inheritedCmdNames,
+                            "and"
+                        )
+                    )
+                    result.append(".</p>\n\n")
+                }
+                val options: MutableSet<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?> =
+                    HashSet<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?>()
+                Collections.addAll(options, annotation.options())
+                for (supplier in runtime.getOptionsSuppliers()) {
+                    com.google.common.collect.Iterables.addAll<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?>(
+                        options,
+                        supplier.getCommandOptions(annotation.name())
+                    )
+                }
+                val optionsToIgnore =
+                    appendOptionsHtml(result, options, com.google.common.collect.ImmutableList.of<String?>(), e.key)
+                result.append("\n")
+
+                // For now, we print all the configuration options in a list after all the non-configuration
+                // options.
+                if (annotation.usesConfigurationOptions()) {
+                    options.clear()
+                    Collections.addAll(options, annotation.options())
+                    options.addAll(runtime.getRuleClassProvider().getFragmentRegistry().getOptionsClasses())
+                    appendOptionsHtml(result, options, optionsToIgnore, null)
+                    result.append("\n")
+                }
+            }
+
+            // Describe the tags once, any mentions above should link to these descriptions.
+            val productName: String? = runtime.productName
+            val effectTagDescriptions: com.google.common.collect.ImmutableMap<com.google.devtools.common.options.OptionEffectTag?, String?> =
+                com.google.devtools.common.options.OptionFilterDescriptions.getOptionEffectTagDescription(productName)
+            result.append("<h3>Option Effect Tags</h3>\n")
+            result.append("<table>\n")
+            for (tag in com.google.devtools.common.options.OptionEffectTag.entries) {
+                val tagDescription: String? = effectTagDescriptions.get(tag)
+
+                result.append("<tr>\n")
+                result.append(
+                    String.format(
+                        "<td id=\"effect_tag_%s\"><code>%s</code></td>\n",
+                        tag, com.google.common.base.Ascii.toLowerCase(tag.name)
+                    )
+                )
+                result.append(
+                    String.format(
+                        "<td>%s</td>\n",
+                        com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.HTML_ESCAPER.escape(
+                            tagDescription
+                        )
+                    )
+                )
+                result.append("</tr>\n")
+            }
+            result.append("</table>\n")
+
+            val metadataTagDescriptions: com.google.common.collect.ImmutableMap<com.google.devtools.common.options.OptionMetadataTag?, String?> =
+                com.google.devtools.common.options.OptionFilterDescriptions.getOptionMetadataTagDescription(productName)
+            result.append("<h3>Option Metadata Tags</h3>\n")
+            result.append("<table>\n")
+            for (tag in com.google.devtools.common.options.OptionMetadataTag.entries) {
+                // skip the tags that are reserved for undocumented flags.
+                if (tag != com.google.devtools.common.options.OptionMetadataTag.HIDDEN && tag != com.google.devtools.common.options.OptionMetadataTag.INTERNAL) {
+                    val tagDescription: String? = metadataTagDescriptions.get(tag)
+
+                    result.append("<tr>\n")
+                    result.append(
+                        String.format(
+                            "<td id=\"metadata_tag_%s\"><code>%s</code></td>\n",
+                            tag, com.google.common.base.Ascii.toLowerCase(tag.name)
+                        )
+                    )
+                    result.append(
+                        String.format(
+                            "<td>%s</td>\n",
+                            com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.HTML_ESCAPER.escape(
+                                tagDescription
+                            )
+                        )
+                    )
+                    result.append("</tr>\n")
+                }
+            }
+            result.append("</table>\n")
+
+            outErr.printOut(result.toString())
+        }
+
+        // Returns the list of appended option names.
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun appendOptionsHtml(
+            result: java.lang.StringBuilder,
+            optionsClasses: Iterable<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?>?,
+            optionsToIgnore: MutableList<String?>?,
+            commandName: String?
+        ): MutableList<String?> {
+            val parser: com.google.devtools.common.options.OptionsParser =
+                com.google.devtools.common.options.OptionsParser.builder().optionsClasses(optionsClasses).build()
+            val productName: String = runtime.productName
+            result.append(
+                HtmlUtils.describeOptionsHtml(
+                    parser,
+                    com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.HTML_ESCAPER,
+                    optionsToIgnore,
+                    commandName
+                )
+                    .replace("%{product}", productName)
+            )
+
+            val optionNames: MutableList<String?> = java.util.ArrayList<String?>()
+            for (category in parser.getOptionsSortedByCategory().values) {
+                for (option in category) {
+                    optionNames.add(option.getOptionName())
+                }
+            }
+            return optionNames
+        }
+    }
+
+    /** A visitor for Blaze commands and their respective command line options.  */
+    internal fun interface CommandOptionVisitor {
+        /**
+         * Visits a Blaze command by providing access to its name, its meta-data and its command line
+         * options (via an [OptionsParser] instance).
+         * 
+         * @param commandName name of the command, e.g. "help".
+         * @param commandAnnotation [Command] that contains addition information about the
+         * command.
+         * @param parser an [OptionsParser] instance that provides access to all options supported
+         * by the command.
+         */
+        fun visit(
+            commandName: String?,
+            commandAnnotation: Command?,
+            parser: com.google.devtools.common.options.OptionsParser?
+        )
+    }
+
+    companion object {
+        private val SPACE_JOINER: com.google.common.base.Joiner = com.google.common.base.Joiner.on(" ")
+
+        /**
+         * Only to be used to escape the internal hard-coded help texts when outputting HTML from help,
+         * which don't pose a security risk.
+         */
+        private val HTML_ESCAPER: com.google.common.escape.Escaper = com.google.common.html.HtmlEscapers.htmlEscaper()
+
+        private fun emitBlazeVersionInfo(outErr: OutErr, productName: String?) {
+            val releaseInfo: String? = BlazeVersionInfo.instance().getReleaseName()
+            val line: String? = "[%s %s]".formatted(productName, releaseInfo)
+            outErr.printOut("%80s\n".formatted(line))
+        }
+
+        private fun emitCompletionHelp(
+            shell: String?, runtime: BlazeRuntime, reporter: com.google.devtools.build.lib.events.Reporter
+        ): BlazeCommandResult? {
+            val outErr: OutErr = reporter.getOutErr()
+            return when (shell) {
+                "bash" -> {
+                    outErr.printOutLn(
+                        com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.loadCompletionScript(
+                            "bazel-complete-header.bash"
+                        )
+                    )
+                    com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.emitCompletionVariables(
+                        runtime,
+                        outErr
+                    )
+                    outErr.printOutLn(
+                        com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.loadCompletionScript(
+                            "bazel-complete-template.bash"
+                        )
+                    )
+                    BlazeCommandResult.success()
+                }
+
+                null -> {
+                    // Preserved for backwards compatibility: print only the variables part of the bash
+                    // completion script.
+                    com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.emitCompletionVariables(
+                        runtime,
+                        outErr
+                    )
+                    BlazeCommandResult.success()
+                }
+
+                else -> {
+                    val message: String? =
+                        "The completion command only supports 'bash' as an argument, got '%s'".formatted(shell)
+                    reporter.handle(com.google.devtools.build.lib.events.Event.error(message))
+                    com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.createFailureResult(
+                        message,
+                        Code.MISSING_ARGUMENT
+                    )
+                }
+            }
+        }
+
+        private fun loadCompletionScript(basename: String): String {
+            try {
+                val resourceName = "/scripts/" + basename
+                com.google.devtools.build.lib.runtime.commands.HelpCommand::class.java.getResourceAsStream(resourceName)
+                    .use { stream ->
+                        if (stream == null) {
+                            throw IOException(resourceName + " not found.")
+                        }
+                        return String(stream.readAllBytes(), java.nio.charset.StandardCharsets.ISO_8859_1)
+                    }
+            } catch (e: IOException) {
+                throw java.lang.IllegalStateException(
+                    "Failed to read built-in resource %s: %s".formatted(basename, e.message), e
+                )
+            }
+        }
+
+        private fun emitCompletionVariables(runtime: BlazeRuntime, outErr: OutErr) {
+            val commandsByName: MutableMap<String?, BlazeCommand?> =
+                com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.getSortedCommands(runtime)
+
             outErr.printOutLn(
-                "BAZEL_COMMAND_"
-                    + varName
-                    + "_ARGUMENT=\""
-                    + commandAnnotation.completion()
-                    + "\"");
-          }
-          outErr.printOutLn("BAZEL_COMMAND_" + varName + "_FLAGS=\"");
-          outErr.printOut(parser.getOptionsCompletion());
-          outErr.printOutLn("\"");
-        };
+                "BAZEL_COMMAND_LIST=\"" + com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.SPACE_JOINER.join(
+                    commandsByName.keys
+                ) + "\""
+            )
 
-    visitAllOptions(runtime, startupOptionVisitor, commandOptionVisitor);
-  }
+            outErr.printOutLn("BAZEL_INFO_KEYS=\"")
+            for (name in InfoCommand.Companion.getHardwiredInfoItemNames(runtime.productName)) {
+                outErr.printOutLn(name)
+            }
+            outErr.printOutLn("\"")
 
-  private static void emitFlagsAsProtoHelp(BlazeRuntime runtime, OutErr outErr) {
-    Map<String, BazelFlagsProto.FlagInfo.Builder> flags = new HashMap<>();
+            val startupOptionVisitor: java.util.function.Consumer<com.google.devtools.common.options.OptionsParser?> =
+                java.util.function.Consumer { parser: com.google.devtools.common.options.OptionsParser? ->
+                    outErr.printOutLn("BAZEL_STARTUP_OPTIONS=\"")
+                    outErr.printOut(parser.getOptionsCompletion())
+                    outErr.printOutLn("\"")
+                }
+            val commandOptionVisitor =
+                CommandOptionVisitor { commandName: String?, commandAnnotation: Command?, parser: com.google.devtools.common.options.OptionsParser? ->
+                    val varName: String = com.google.common.base.CaseFormat.LOWER_HYPHEN.to(
+                        com.google.common.base.CaseFormat.UPPER_UNDERSCORE,
+                        commandName
+                    )
+                    if (!com.google.common.base.Strings.isNullOrEmpty(commandAnnotation.completion())) {
+                        outErr.printOutLn(
+                            ("BAZEL_COMMAND_"
+                                    + varName
+                                    + "_ARGUMENT=\""
+                                    + commandAnnotation.completion()
+                                    + "\"")
+                        )
+                    }
+                    outErr.printOutLn("BAZEL_COMMAND_" + varName + "_FLAGS=\"")
+                    outErr.printOut(parser.getOptionsCompletion())
+                    outErr.printOutLn("\"")
+                }
 
-    Predicate<OptionDefinition> allOptions = unused -> true;
-    BiConsumer<String, OptionDefinition> visitor =
-        (commandName, option) -> {
-          if (ImmutableSet.copyOf(option.getOptionMetadataTags())
-              .contains(OptionMetadataTag.INTERNAL)) {
-            return;
-          }
-          BazelFlagsProto.FlagInfo.Builder info =
-              flags.computeIfAbsent(option.getOptionName(), unused -> createFlagInfo(option));
-          info.addCommands(commandName);
-        };
-    Consumer<OptionsParser> startupOptionVisitor =
-        parser -> parser.visitOptions(allOptions, option -> visitor.accept("startup", option));
-    CommandOptionVisitor commandOptionVisitor =
-        (commandName, unused, parser) ->
-            parser.visitOptions(allOptions, option -> visitor.accept(commandName, option));
+            com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.visitAllOptions(
+                runtime,
+                startupOptionVisitor,
+                commandOptionVisitor
+            )
+        }
 
-    visitAllOptions(runtime, startupOptionVisitor, commandOptionVisitor);
+        private fun emitFlagsAsProtoHelp(runtime: BlazeRuntime, outErr: OutErr) {
+            val flags: MutableMap<String?, BazelFlagsProto.FlagInfo.Builder> =
+                HashMap<String?, BazelFlagsProto.FlagInfo.Builder>()
 
-    BazelFlagsProto.FlagCollection.Builder collectionBuilder =
-        BazelFlagsProto.FlagCollection.newBuilder();
-    for (BazelFlagsProto.FlagInfo.Builder info : flags.values()) {
-      collectionBuilder.addFlagInfos(info);
-    }
-    outErr.printOut(Base64.getEncoder().encodeToString(collectionBuilder.build().toByteArray()));
-  }
+            val allOptions: java.util.function.Predicate<com.google.devtools.common.options.OptionDefinition?> =
+                java.util.function.Predicate { unused: com.google.devtools.common.options.OptionDefinition? -> true }
+            val visitor: java.util.function.BiConsumer<String?, com.google.devtools.common.options.OptionDefinition?> =
+                java.util.function.BiConsumer { commandName: String?, option: com.google.devtools.common.options.OptionDefinition? ->
+                    if (com.google.common.collect.ImmutableSet.copyOf<com.google.devtools.common.options.OptionMetadataTag?>(
+                            option.getOptionMetadataTags()
+                        )
+                            .contains(com.google.devtools.common.options.OptionMetadataTag.INTERNAL)
+                    ) {
+                        return@BiConsumer
+                    }
+                    val info: BazelFlagsProto.FlagInfo.Builder =
+                        flags.computeIfAbsent(option.getOptionName()) { unused: String? ->
+                            com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.createFlagInfo(
+                                option
+                            )
+                        }
+                    info.addCommands(commandName)
+                }
+            val startupOptionVisitor: java.util.function.Consumer<com.google.devtools.common.options.OptionsParser?> =
+                java.util.function.Consumer { parser: com.google.devtools.common.options.OptionsParser? ->
+                    parser.visitOptions(
+                        allOptions,
+                        java.util.function.Consumer { option: com.google.devtools.common.options.OptionDefinition? ->
+                            visitor.accept(
+                                "startup",
+                                option
+                            )
+                        })
+                }
+            val commandOptionVisitor =
+                CommandOptionVisitor { commandName: String?, unused: Command?, parser: com.google.devtools.common.options.OptionsParser? ->
+                    parser.visitOptions(
+                        allOptions,
+                        java.util.function.Consumer { option: com.google.devtools.common.options.OptionDefinition? ->
+                            visitor.accept(
+                                commandName,
+                                option
+                            )
+                        })
+                }
 
-  private static BazelFlagsProto.FlagInfo.Builder createFlagInfo(OptionDefinition option) {
-    BazelFlagsProto.FlagInfo.Builder flagBuilder = BazelFlagsProto.FlagInfo.newBuilder();
-    flagBuilder.setName(option.getOptionName());
-    flagBuilder.setHasNegativeFlag(option.usesBooleanValueSyntax());
-    flagBuilder.setDocumentation(option.getHelpText());
-    flagBuilder.setAllowsMultiple(option.allowsMultiple());
-    flagBuilder.setRequiresValue(option.requiresValue());
+            com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.visitAllOptions(
+                runtime,
+                startupOptionVisitor,
+                commandOptionVisitor
+            )
 
-    if (option.getAbbreviation() != '\0') {
-      flagBuilder.setAbbreviation(String.valueOf(option.getAbbreviation()));
-    }
-    if (!option.getOldOptionName().isEmpty()) {
-      flagBuilder.setOldName(option.getOldOptionName());
-    }
+            val collectionBuilder: BazelFlagsProto.FlagCollection.Builder =
+                BazelFlagsProto.FlagCollection.newBuilder()
+            for (info in flags.values) {
+                collectionBuilder.addFlagInfos(info)
+            }
+            outErr.printOut(java.util.Base64.getEncoder().encodeToString(collectionBuilder.build().toByteArray()))
+        }
 
-    List<String> optionEffectTags =
-        Arrays.stream(option.getOptionEffectTags()).map(Enum::toString).toList();
-    flagBuilder.addAllEffectTags(optionEffectTags);
+        private fun createFlagInfo(option: com.google.devtools.common.options.OptionDefinition): BazelFlagsProto.FlagInfo.Builder {
+            val flagBuilder: BazelFlagsProto.FlagInfo.Builder = BazelFlagsProto.FlagInfo.newBuilder()
+            flagBuilder.setName(option.getOptionName())
+            flagBuilder.setHasNegativeFlag(option.usesBooleanValueSyntax())
+            flagBuilder.setDocumentation(option.getHelpText())
+            flagBuilder.setAllowsMultiple(option.allowsMultiple())
+            flagBuilder.setRequiresValue(option.requiresValue())
 
-    List<String> optionMetadataTags =
-        Arrays.stream(option.getOptionMetadataTags()).map(Enum::toString).toList();
-    flagBuilder.addAllMetadataTags(optionMetadataTags);
+            if (option.getAbbreviation() != '\u0000') {
+                flagBuilder.setAbbreviation(option.getAbbreviation().toString())
+            }
+            if (!option.getOldOptionName().isEmpty()) {
+                flagBuilder.setOldName(option.getOldOptionName())
+            }
 
-    if (option.getDocumentationCategory() != null) {
-      flagBuilder.setDocumentationCategory(option.getDocumentationCategory().toString());
-    }
+            val optionEffectTags: MutableList<String?> =
+                java.util.Arrays.stream<com.google.devtools.common.options.OptionEffectTag?>(option.getOptionEffectTags())
+                    .map<String?> { obj: com.google.devtools.common.options.OptionEffectTag? -> obj.toString() }
+                    .toList()
+            flagBuilder.addAllEffectTags(optionEffectTags)
 
-    if (!option.isSpecialNullDefault()) {
-      flagBuilder.setDefaultValue(option.getUnparsedDefaultValue());
-    }
+            val optionMetadataTags: MutableList<String?> =
+                java.util.Arrays.stream<com.google.devtools.common.options.OptionMetadataTag?>(option.getOptionMetadataTags())
+                    .map<String?> { obj: com.google.devtools.common.options.OptionMetadataTag? -> obj.toString() }
+                    .toList()
+            flagBuilder.addAllMetadataTags(optionMetadataTags)
 
-    if (!option.getDeprecationWarning().isEmpty()) {
-      flagBuilder.setDeprecationWarning(option.getDeprecationWarning());
-    }
+            if (option.getDocumentationCategory() != null) {
+                flagBuilder.setDocumentationCategory(option.getDocumentationCategory().toString())
+            }
 
-    if (option.getOptionExpansion().length > 0) {
-      flagBuilder.addAllOptionExpansions(ImmutableList.copyOf(option.getOptionExpansion()));
-    }
+            if (!option.isSpecialNullDefault()) {
+                flagBuilder.setDefaultValue(option.getUnparsedDefaultValue())
+            }
 
-    Converter<?> converter = option.getConverter();
-    String converterClassName = converter.getClass().getSimpleName();
-    if (converterClassName.endsWith("Converter")) {
-      String shortName =
-          converterClassName.substring(0, converterClassName.length() - "Converter".length());
-      flagBuilder.setTypeConverter(shortName);
-    }
-    if (converter instanceof EnumConverter<?> enumConverter) {
-      List<String> enumValues =
-          Arrays.stream(enumConverter.getEnumType().getEnumConstants())
-              .map(Object::toString)
-              .collect(toImmutableList());
-      flagBuilder.addAllEnumValues(enumValues);
-    }
+            if (!option.getDeprecationWarning().isEmpty()) {
+                flagBuilder.setDeprecationWarning(option.getDeprecationWarning())
+            }
 
-    return flagBuilder;
-  }
+            if (option.getOptionExpansion().size > 0) {
+                flagBuilder.addAllOptionExpansions(com.google.common.collect.ImmutableList.< E > copyOf < E ? > (option.getOptionExpansion()))
+            }
 
-  private static void visitAllOptions(
-      BlazeRuntime runtime,
-      Consumer<OptionsParser> startupOptionVisitor,
-      CommandOptionVisitor commandOptionVisitor) {
-    // First startup_options
-    Iterable<OptionsSupplier> optionsSuppliers = runtime.getOptionsSuppliers();
-    ConfiguredRuleClassProvider ruleClassProvider = runtime.getRuleClassProvider();
-    Map<String, BlazeCommand> commandsByName = getSortedCommands(runtime);
+            val converter: com.google.devtools.common.options.Converter<*> = option.getConverter()
+            val converterClassName: String = converter.javaClass.getSimpleName()
+            if (converterClassName.endsWith("Converter")) {
+                val shortName: String =
+                    converterClassName.substring(0, converterClassName.length - "Converter".length)
+                flagBuilder.setTypeConverter(shortName)
+            }
+            if (converter is com.google.devtools.common.options.EnumConverter<*>) {
+                val enumValues: MutableList<String?> =
+                    java.util.Arrays.stream(converter.getEnumType().getEnumConstants())
+                        .map<String?> { obj: Any? -> obj.toString() }
+                        .collect(com.google.common.collect.ImmutableList.toImmutableList<String?>())
+                flagBuilder.addAllEnumValues(enumValues)
+            }
 
-    Iterable<Class<? extends OptionsBase>> options =
-        BlazeCommandUtils.getStartupOptions(optionsSuppliers);
-    startupOptionVisitor.accept(OptionsParser.builder().optionsClasses(options).build());
+            return flagBuilder
+        }
 
-    for (Map.Entry<String, BlazeCommand> e : commandsByName.entrySet()) {
-      BlazeCommand command = e.getValue();
-      Command annotation = command.getClass().getAnnotation(Command.class);
-      options =
-          BlazeCommandUtils.getOptions(command.getClass(), optionsSuppliers, ruleClassProvider);
-      commandOptionVisitor.visit(
-          e.getKey(), annotation, OptionsParser.builder().optionsClasses(options).build());
-    }
-  }
+        private fun visitAllOptions(
+            runtime: BlazeRuntime,
+            startupOptionVisitor: java.util.function.Consumer<com.google.devtools.common.options.OptionsParser?>,
+            commandOptionVisitor: CommandOptionVisitor
+        ) {
+            // First startup_options
+            val optionsSuppliers: Iterable<com.google.devtools.build.lib.runtime.OptionsSupplier?>? =
+                runtime.getOptionsSuppliers()
+            val ruleClassProvider: ConfiguredRuleClassProvider? = runtime.getRuleClassProvider()
+            val commandsByName: MutableMap<String?, BlazeCommand?> =
+                com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.getSortedCommands(runtime)
 
-  private static Map<String, BlazeCommand> getSortedCommands(BlazeRuntime runtime) {
-    return ImmutableSortedMap.copyOf(runtime.getCommandMap());
-  }
+            var options: Iterable<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?>? =
+                BlazeCommandUtils.getStartupOptions(optionsSuppliers)
+            startupOptionVisitor.accept(
+                com.google.devtools.common.options.OptionsParser.builder().optionsClasses(options).build()
+            )
 
-  private void emitTargetSyntaxHelp(OutErr outErr, String productName) {
-    outErr.printOut(
-        BlazeCommandUtils.expandHelpTopic(
-            "target-syntax",
-            "resource:target-syntax.txt",
-            getClass(),
-            ImmutableList.of(),
-            HelpVerbosity.MEDIUM,
-            productName));
-  }
+            for (e in commandsByName.entries) {
+                val command: BlazeCommand = e.value
+                val annotation: Command? = command.getClass().getAnnotation(Command::class.java)
+                options =
+                    BlazeCommandUtils.getOptions(command.getClass(), optionsSuppliers, ruleClassProvider)
+                commandOptionVisitor.visit(
+                    e.key,
+                    annotation,
+                    com.google.devtools.common.options.OptionsParser.builder().optionsClasses(options).build()
+                )
+            }
+        }
 
-  private static void emitInfoKeysHelp(CommandEnvironment env, OutErr outErr) {
-    for (InfoItem item :
-        InfoCommand.getInfoItemMap(env, OptionsParser.builder().build()).values()) {
-      outErr.printOut("%-23s %s\n".formatted(item.getName(), item.getDescription()));
-    }
-  }
+        private fun getSortedCommands(runtime: BlazeRuntime): MutableMap<String?, BlazeCommand?> {
+            return com.google.common.collect.ImmutableSortedMap.copyOf(runtime.getCommandMap())
+        }
 
-  private static void emitGenericHelp(OutErr outErr, BlazeRuntime runtime) {
-    outErr.printOut("Usage: %s <command> <options> ...\n\n".formatted(runtime.getProductName()));
-    outErr.printOut("Available commands:\n");
+        private fun emitInfoKeysHelp(env: CommandEnvironment, outErr: OutErr) {
+            for (item in InfoCommand.Companion.getInfoItemMap(
+                env,
+                com.google.devtools.common.options.OptionsParser.builder().build()
+            ).values) {
+                outErr.printOut("%-23s %s\n".formatted(item.name, item.description))
+            }
+        }
 
-    for (Map.Entry<String, BlazeCommand> entry : getSortedCommands(runtime).entrySet()) {
-      String name = entry.getKey();
-      BlazeCommand command = entry.getValue();
-      Command annotation = command.getClass().getAnnotation(Command.class);
-      if (annotation.hidden()) {
-        continue;
-      }
+        private fun emitGenericHelp(outErr: OutErr, runtime: BlazeRuntime) {
+            outErr.printOut("Usage: %s <command> <options> ...\n\n".formatted(runtime.productName))
+            outErr.printOut("Available commands:\n")
 
-      String shortDescription =
-          annotation.shortDescription().replace("%{product}", runtime.getProductName());
-      outErr.printOut("  %-19s %s\n".formatted(name, shortDescription));
-    }
+            for (entry in com.google.devtools.build.lib.runtime.commands.HelpCommand.Companion.getSortedCommands(runtime).entries) {
+                val name: String? = entry.key
+                val command: BlazeCommand = entry.value
+                val annotation: Command = command.getClass().getAnnotation(Command::class.java)
+                if (annotation.hidden()) {
+                    continue
+                }
 
-    outErr.printOut(
-        """
+                val shortDescription: String? =
+                    annotation.shortDescription().replace("%{product}", runtime.productName)
+                outErr.printOut("  %-19s %s\n".formatted(name, shortDescription))
+            }
+
+            outErr.printOut(
+                """
 
         Getting more help:
-          %1$s help <command>
+          %1${'$'}s help <command>
                            Prints help and options for <command>.
-          %1$s help startup_options
-                           Options for the JVM hosting %1$s.
-          %1$s help target-syntax
+          %1${'$'}s help startup_options
+                           Options for the JVM hosting %1${'$'}s.
+          %1${'$'}s help target-syntax
                            Explains the syntax for specifying targets.
-          %1$s help info-keys
+          %1${'$'}s help info-keys
                            Displays a list of keys used by the info command.
+        
         """
-            .formatted(runtime.getProductName()));
-  }
+                    .trimIndent()
+                    .formatted(runtime.productName)
+            )
+        }
 
-  private static final class HtmlEmitter {
-    private final BlazeRuntime runtime;
-
-    private HtmlEmitter(BlazeRuntime runtime) {
-      this.runtime = runtime;
+        private fun createFailureResult(message: String?, detailedCode: Code?): BlazeCommandResult {
+            return BlazeCommandResult.failureDetail(
+                FailureDetail.newBuilder()
+                    .setMessage(message)
+                    .setHelpCommand(FailureDetails.HelpCommand.newBuilder().setCode(detailedCode))
+                    .build()
+            )
+        }
     }
-
-    private void emit(OutErr outErr) {
-      Map<String, BlazeCommand> commandsByName = getSortedCommands(runtime);
-      StringBuilder result = new StringBuilder();
-      result.append("<h2>Commands</h2>\n");
-      result.append("<table>\n");
-      for (Map.Entry<String, BlazeCommand> e : commandsByName.entrySet()) {
-        BlazeCommand command = e.getValue();
-        Command annotation = command.getClass().getAnnotation(Command.class);
-        if (annotation.hidden()) {
-          continue;
-        }
-        String shortDescription =
-            annotation.shortDescription().replace("%{product}", runtime.getProductName());
-
-        result.append("<tr>\n");
-        result.append(
-            String.format(
-                "  <td><a href=\"#%s\"><code>%s</code></a></td>\n", e.getKey(), e.getKey()));
-        result.append("  <td>").append(HTML_ESCAPER.escape(shortDescription)).append("</td>\n");
-        result.append("</tr>\n");
-      }
-      result.append("</table>\n");
-      result.append("\n");
-
-      result.append("<h2>Startup Options</h2>\n");
-      appendOptionsHtml(
-          result,
-          BlazeCommandUtils.getStartupOptions(runtime.getOptionsSuppliers()),
-          ImmutableList.of(),
-          "startup_options");
-      result.append("\n");
-
-      result.append("<h2><a name=\"common_options\">Options Common to all Commands</a></h2>\n");
-      appendOptionsHtml(
-          result,
-          BlazeCommandUtils.getCommonOptions(runtime.getOptionsSuppliers()),
-          ImmutableList.of(),
-          "common_options");
-      result.append("\n");
-
-      for (Map.Entry<String, BlazeCommand> e : commandsByName.entrySet()) {
-        result.append(
-            String.format(
-                "<h2><a name=\"%s\">%s Options</a></h2>\n",
-                e.getKey(), StringUtilities.capitalize(e.getKey())));
-        BlazeCommand command = e.getValue();
-        Command annotation = command.getClass().getAnnotation(Command.class);
-        if (annotation.hidden()) {
-          continue;
-        }
-        List<String> inheritedCmdNames = new ArrayList<>();
-        for (Class<? extends BlazeCommand> base : annotation.inheritsOptionsFrom()) {
-          String name = base.getAnnotation(Command.class).name();
-          inheritedCmdNames.add(String.format("<a href=\"#%s\">%s</a>", name, name));
-        }
-        if (!inheritedCmdNames.isEmpty()) {
-          result.append("<p>Inherits all options from ");
-          result.append(StringUtil.joinEnglishList(inheritedCmdNames, "and"));
-          result.append(".</p>\n\n");
-        }
-        Set<Class<? extends OptionsBase>> options = new HashSet<>();
-        Collections.addAll(options, annotation.options());
-        for (OptionsSupplier supplier : runtime.getOptionsSuppliers()) {
-          Iterables.addAll(options, supplier.getCommandOptions(annotation.name()));
-        }
-        List<String> optionsToIgnore =
-            appendOptionsHtml(result, options, ImmutableList.of(), e.getKey());
-        result.append("\n");
-
-        // For now, we print all the configuration options in a list after all the non-configuration
-        // options.
-        if (annotation.usesConfigurationOptions()) {
-          options.clear();
-          Collections.addAll(options, annotation.options());
-          options.addAll(runtime.getRuleClassProvider().getFragmentRegistry().getOptionsClasses());
-          appendOptionsHtml(result, options, optionsToIgnore, null);
-          result.append("\n");
-        }
-      }
-
-      // Describe the tags once, any mentions above should link to these descriptions.
-      String productName = runtime.getProductName();
-      ImmutableMap<OptionEffectTag, String> effectTagDescriptions =
-          OptionFilterDescriptions.getOptionEffectTagDescription(productName);
-      result.append("<h3>Option Effect Tags</h3>\n");
-      result.append("<table>\n");
-      for (OptionEffectTag tag : OptionEffectTag.values()) {
-        String tagDescription = effectTagDescriptions.get(tag);
-
-        result.append("<tr>\n");
-        result.append(
-            String.format(
-                "<td id=\"effect_tag_%s\"><code>%s</code></td>\n",
-                tag, Ascii.toLowerCase(tag.name())));
-        result.append(String.format("<td>%s</td>\n", HTML_ESCAPER.escape(tagDescription)));
-        result.append("</tr>\n");
-      }
-      result.append("</table>\n");
-
-      ImmutableMap<OptionMetadataTag, String> metadataTagDescriptions =
-          OptionFilterDescriptions.getOptionMetadataTagDescription(productName);
-      result.append("<h3>Option Metadata Tags</h3>\n");
-      result.append("<table>\n");
-      for (OptionMetadataTag tag : OptionMetadataTag.values()) {
-        // skip the tags that are reserved for undocumented flags.
-        if (!tag.equals(OptionMetadataTag.HIDDEN) && !tag.equals(OptionMetadataTag.INTERNAL)) {
-          String tagDescription = metadataTagDescriptions.get(tag);
-
-          result.append("<tr>\n");
-          result.append(
-              String.format(
-                  "<td id=\"metadata_tag_%s\"><code>%s</code></td>\n",
-                  tag, Ascii.toLowerCase(tag.name())));
-          result.append(String.format("<td>%s</td>\n", HTML_ESCAPER.escape(tagDescription)));
-          result.append("</tr>\n");
-        }
-      }
-      result.append("</table>\n");
-
-      outErr.printOut(result.toString());
-    }
-
-    // Returns the list of appended option names.
-    @CanIgnoreReturnValue
-    private List<String> appendOptionsHtml(
-        StringBuilder result,
-        Iterable<Class<? extends OptionsBase>> optionsClasses,
-        List<String> optionsToIgnore,
-        @Nullable String commandName) {
-      OptionsParser parser = OptionsParser.builder().optionsClasses(optionsClasses).build();
-      String productName = runtime.getProductName();
-      result.append(
-          HtmlUtils.describeOptionsHtml(parser, HTML_ESCAPER, optionsToIgnore, commandName)
-              .replace("%{product}", productName));
-
-      List<String> optionNames = new ArrayList<>();
-      for (List<OptionDefinition> category : parser.getOptionsSortedByCategory().values()) {
-        for (OptionDefinition option : category) {
-          optionNames.add(option.getOptionName());
-        }
-      }
-      return optionNames;
-    }
-  }
-
-  /** A visitor for Blaze commands and their respective command line options. */
-  @FunctionalInterface
-  interface CommandOptionVisitor {
-
-    /**
-     * Visits a Blaze command by providing access to its name, its meta-data and its command line
-     * options (via an {@link OptionsParser} instance).
-     *
-     * @param commandName name of the command, e.g. "help".
-     * @param commandAnnotation {@link Command} that contains addition information about the
-     *     command.
-     * @param parser an {@link OptionsParser} instance that provides access to all options supported
-     *     by the command.
-     */
-    void visit(String commandName, Command commandAnnotation, OptionsParser parser);
-  }
-
-  private static BlazeCommandResult createFailureResult(String message, Code detailedCode) {
-    return BlazeCommandResult.failureDetail(
-        FailureDetail.newBuilder()
-            .setMessage(message)
-            .setHelpCommand(FailureDetails.HelpCommand.newBuilder().setCode(detailedCode))
-            .build());
-  }
 }

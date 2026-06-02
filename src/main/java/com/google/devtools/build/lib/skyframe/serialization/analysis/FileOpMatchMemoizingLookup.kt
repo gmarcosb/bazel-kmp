@@ -11,179 +11,177 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
-import static com.google.devtools.build.lib.skyframe.serialization.analysis.AlwaysMatch.ALWAYS_MATCH_RESULT;
-import static java.lang.Math.min;
-
-import com.google.common.util.concurrent.FutureCallback;
-import com.google.common.util.concurrent.Futures;
-import com.google.devtools.build.lib.concurrent.QuiescingFuture;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencies.AvailableFileDependencies;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencies.MissingFileDependencies;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileOpMatchResultTypes.FileOpMatchResult;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileOpMatchResultTypes.FileOpMatchResultOrFuture;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileOpMatchResultTypes.FutureFileOpMatchResult;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileSystemDependencies.FileOpDependency;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.ListingDependencies.AvailableListingDependencies;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.ListingDependencies.MissingListingDependencies;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.VarHandle;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.Executor;
+import com.google.devtools.build.lib.concurrent.QuiescingFuture
 
 /**
- * Matches {@link FileOpDependency} instances representing cached value dependencies against {@link
- * #changes}, containing file system content changes.
- *
- * <p>The {@code validityHorizon} (VH) parameter of {@link #getValueOrFuture} has subtle semantics,
+ * Matches [FileOpDependency] instances representing cached value dependencies against [ ][.changes], containing file system content changes.
+ * 
+ * 
+ * The `validityHorizon` (VH) parameter of [.getValueOrFuture] has subtle semantics,
  * but works correctly, even in the presence of multiple overlapping nodes at different versions and
- * VH values. See {@link VersionedChangesValidator} and {@link VersionedChanges} for more details.
+ * VH values. See [VersionedChangesValidator] and [VersionedChanges] for more details.
  */
-final class FileOpMatchMemoizingLookup
-    extends AbstractValueOrFutureMap<
-        FileOpDependency, FileOpMatchResultOrFuture, FileOpMatchResult, FutureFileOpMatchResult> {
-  private final VersionedChanges changes;
-  private final Executor executor;
+internal class FileOpMatchMemoizingLookup
+    (
+    executor: java.util.concurrent.Executor,
+    changes: VersionedChanges?,
+    map: ConcurrentMap<FileOpDependency?, FileOpMatchResultOrFuture?>?
+) : AbstractValueOrFutureMap<FileOpDependency?, FileOpMatchResultOrFuture?, FileOpMatchResult?, FutureFileOpMatchResult?>(
+    map,
+    java.util.function.BiFunction { key: FileOpDependency?, consumer: java.util.function.BiConsumer<FileOpDependency?, FileOpMatchResult?>? ->
+        FutureFileOpMatchResult(
+            key,
+            consumer
+        )
+    },
+    FutureFileOpMatchResult::class.java
+) {
+    private val changes: VersionedChanges?
+    private val executor: java.util.concurrent.Executor
 
-  FileOpMatchMemoizingLookup(
-      Executor executor,
-      VersionedChanges changes,
-      ConcurrentMap<FileOpDependency, FileOpMatchResultOrFuture> map) {
-    super(map, FutureFileOpMatchResult::new, FutureFileOpMatchResult.class);
-    this.changes = changes;
-    this.executor = executor;
-  }
-
-  VersionedChanges changes() {
-    return changes;
-  }
-
-  FileOpMatchResultOrFuture getValueOrFuture(FileOpDependency key, int validityHorizon) {
-    FileOpMatchResultOrFuture result = getOrCreateValueForSubclasses(key);
-    if (result instanceof FutureFileOpMatchResult future && future.tryTakeOwnership()) {
-      try {
-        return populateFutureFileOpMatchResult(validityHorizon, future);
-      } finally {
-        future.verifyComplete();
-      }
-    }
-    return result;
-  }
-
-  private FileOpMatchResultOrFuture populateFutureFileOpMatchResult(
-      int validityHorizon, FutureFileOpMatchResult ownedFuture) {
-    return switch (ownedFuture.key()) {
-      case AvailableFileDependencies file ->
-          aggregateAnyAdditionalFileDependencies(
-              file.findEarliestMatch(changes, validityHorizon), file, validityHorizon, ownedFuture);
-      case MissingFileDependencies missing -> ownedFuture.completeWith(ALWAYS_MATCH_RESULT);
-      case AvailableListingDependencies listing -> {
-        // Matches the listing (files inside the directory changed).
-        int version = listing.findEarliestMatch(changes, validityHorizon);
-        // Then matches the directory itself.
-        AvailableFileDependencies realDirectory = listing.realDirectory();
-        yield aggregateAnyAdditionalFileDependencies(
-            min(version, realDirectory.findEarliestMatch(changes, validityHorizon)),
-            realDirectory,
-            validityHorizon,
-            ownedFuture);
-      }
-      case MissingListingDependencies missing -> ownedFuture.completeWith(ALWAYS_MATCH_RESULT);
-    };
-  }
-
-  private FileOpMatchResultOrFuture aggregateAnyAdditionalFileDependencies(
-      int baseVersion,
-      AvailableFileDependencies file,
-      int validityHorizon,
-      FutureFileOpMatchResult ownedFuture) {
-    if (file.getDependencyCount() == 0) {
-      return ownedFuture.completeWith(FileOpMatchResult.create(baseVersion));
-    }
-    var aggregator = new AggregatingFutureFileOpMatchResult(baseVersion, executor);
-    for (int i = 0; i < file.getDependencyCount(); i++) {
-      aggregator.addDependency(getValueOrFuture(file.getDependency(i), validityHorizon));
-    }
-    aggregator.notifyAllDependenciesAdded();
-    return ownedFuture.completeWith(aggregator);
-  }
-
-  private static final class AggregatingFutureFileOpMatchResult
-      extends QuiescingFuture<FileOpMatchResult> implements FutureCallback<FileOpMatchResult> {
-    private final Executor executor;
-    private volatile FileOpMatchResult result;
-
-    private AggregatingFutureFileOpMatchResult(int version, Executor executor) {
-      super(directExecutor());
-      this.executor = executor;
-      this.result = FileOpMatchResult.create(version);
+    init {
+        this.changes = changes
+        this.executor = executor
     }
 
-    private void addDependency(FileOpMatchResultOrFuture resultOrFuture) {
-      switch (resultOrFuture) {
-        case FileOpMatchResult match:
-          updateResult(match);
-          break;
-        case FutureFileOpMatchResult future:
-          increment();
-          Futures.addCallback(future, (FutureCallback<FileOpMatchResult>) this, executor);
-          break;
-      }
+    fun changes(): VersionedChanges? {
+        return changes
     }
 
-    private void notifyAllDependenciesAdded() {
-      decrement();
+    fun getValueOrFuture(key: FileOpDependency?, validityHorizon: Int): FileOpMatchResultOrFuture? {
+        val result: FileOpMatchResultOrFuture? = getOrCreateValueForSubclasses(key)
+        if (result is FutureFileOpMatchResult && result.tryTakeOwnership()) {
+            try {
+                return populateFutureFileOpMatchResult(validityHorizon, result)
+            } finally {
+                result.verifyComplete()
+            }
+        }
+        return result
     }
 
-    private void updateResult(FileOpMatchResult newResult) {
-      FileOpMatchResult snapshot;
-      do {
-        snapshot = result;
-      } while (newResult.version() < snapshot.version()
-          && !RESULT_HANDLE.compareAndSet(this, snapshot, newResult));
+    private fun populateFutureFileOpMatchResult(
+        validityHorizon: Int, ownedFuture: FutureFileOpMatchResult
+    ): FileOpMatchResultOrFuture? {
+        return when (ownedFuture.key()) {
+            -> aggregateAnyAdditionalFileDependencies(
+                file.findEarliestMatch(changes, validityHorizon), file, validityHorizon, ownedFuture
+            )
+
+            -> ownedFuture.completeWith(AlwaysMatch.ALWAYS_MATCH_RESULT)
+            -> {
+                // Matches the listing (files inside the directory changed).
+                val version: Int = listing.findEarliestMatch(changes, validityHorizon)
+                // Then matches the directory itself.
+                val realDirectory: AvailableFileDependencies = listing.realDirectory()
+                aggregateAnyAdditionalFileDependencies(
+                    min(version, realDirectory.findEarliestMatch(changes, validityHorizon)),
+                    realDirectory,
+                    validityHorizon,
+                    ownedFuture
+                )
+            }
+
+            -> ownedFuture.completeWith(AlwaysMatch.ALWAYS_MATCH_RESULT)
+        }
     }
 
-    @Override
-    protected FileOpMatchResult getValue() {
-      return result;
+    private fun aggregateAnyAdditionalFileDependencies(
+        baseVersion: Int,
+        file: AvailableFileDependencies,
+        validityHorizon: Int,
+        ownedFuture: FutureFileOpMatchResult
+    ): FileOpMatchResultOrFuture? {
+        if (file.dependencyCount === 0) {
+            return ownedFuture.completeWith(FileOpMatchResult.Companion.create(baseVersion))
+        }
+        val aggregator = AggregatingFutureFileOpMatchResult(baseVersion, executor)
+        for (i in 0..<file.dependencyCount) {
+            aggregator.addDependency(getValueOrFuture(file.getDependency(i), validityHorizon))
+        }
+        aggregator.notifyAllDependenciesAdded()
+        return ownedFuture.completeWith(aggregator)
     }
 
-    /**
-     * Implementation of {@link FutureCallback<FileOpMatchResult>}.
-     *
-     * @deprecated only for {@link #addDependency} futures callback processing.
-     */
-    @Deprecated
-    @Override
-    public void onSuccess(FileOpMatchResult result) {
-      updateResult(result);
-      decrement();
-    }
+    private class AggregatingFutureFileOpMatchResult
+        (version: Int, executor: java.util.concurrent.Executor) :
+        QuiescingFuture<FileOpMatchResult?>(com.google.common.util.concurrent.MoreExecutors.directExecutor()),
+        com.google.common.util.concurrent.FutureCallback<FileOpMatchResult?> {
+        private val executor: java.util.concurrent.Executor
 
-    /**
-     * Implementation of {@link FutureCallback<FileOpMatchResult>}.
-     *
-     * @deprecated only for {@link #addDependency} futures callback processing.
-     */
-    @Deprecated
-    @Override
-    public void onFailure(Throwable t) {
-      notifyException(t);
-    }
+        @kotlin.concurrent.Volatile
+        private var result: FileOpMatchResult
 
-    private static final VarHandle RESULT_HANDLE;
+        fun addDependency(resultOrFuture: FileOpMatchResultOrFuture) {
+            when (resultOrFuture) {
+                -> updateResult(match)
+                -> {
+                    increment()
+                    com.google.common.util.concurrent.Futures.addCallback<FileOpMatchResult?>(
+                        future,
+                        this as com.google.common.util.concurrent.FutureCallback<FileOpMatchResult?>,
+                        executor
+                    )
+                }
+            }
+        }
 
-    static {
-      try {
-        RESULT_HANDLE =
-            MethodHandles.lookup()
-                .findVarHandle(
-                    AggregatingFutureFileOpMatchResult.class, "result", FileOpMatchResult.class);
-      } catch (ReflectiveOperationException e) {
-        throw new ExceptionInInitializerError(e);
-      }
+        fun notifyAllDependenciesAdded() {
+            decrement()
+        }
+
+        fun updateResult(newResult: FileOpMatchResult) {
+            var snapshot: FileOpMatchResult
+            do {
+                snapshot = result
+            } while (newResult.version() < snapshot.version()
+                && !RESULT_HANDLE.compareAndSet(this, snapshot, newResult)
+            )
+        }
+
+        protected val value: FileOpMatchResult
+            get() = result
+
+        /**
+         * Implementation of [<].
+         * 
+         */
+        @Deprecated("only for {@link #addDependency} futures callback processing.")
+        override fun onSuccess(result: FileOpMatchResult) {
+            updateResult(result)
+            decrement()
+        }
+
+        /**
+         * Implementation of [<].
+         * 
+         */
+        @Deprecated("only for {@link #addDependency} futures callback processing.")
+        override fun onFailure(t: Throwable) {
+            notifyException(t)
+        }
+
+        init {
+            this.executor = executor
+            this.result = FileOpMatchResult.Companion.create(version)
+        }
+
+        companion object {
+            private val RESULT_HANDLE: java.lang.invoke.VarHandle
+
+            init {
+                try {
+                    RESULT_HANDLE =
+                        java.lang.invoke.MethodHandles.lookup()
+                            .findVarHandle(
+                                AggregatingFutureFileOpMatchResult::class.java, "result", FileOpMatchResult::class.java
+                            )
+                } catch (e: java.lang.ReflectiveOperationException) {
+                    throw java.lang.ExceptionInInitializerError(e)
+                }
+            }
+        }
     }
-  }
 }

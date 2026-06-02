@@ -11,21 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.SerializationDependencyProvider
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
 /**
- * Context provided to {@link LeafObjectCodec} implementations.
- *
- * <p>This context permits delegation only to other {@link LeafObjectCodec} instances and dependency
+ * Context provided to [LeafObjectCodec] implementations.
+ * 
+ * 
+ * This context permits delegation only to other [LeafObjectCodec] instances and dependency
  * lookups.
  */
-public interface LeafSerializationContext extends SerializationDependencyProvider {
-  /** Serializes {@code obj} using {@code codec} into {@code codedOut}. */
-  public <T> void serializeLeaf(
-      @Nullable T obj, LeafObjectCodec<T> codec, CodedOutputStream codedOut)
-      throws IOException, SerializationException;
+interface LeafSerializationContext : SerializationDependencyProvider {
+    /** Serializes `obj` using `codec` into `codedOut`.  */
+    @Throws(IOException::class, com.google.devtools.build.lib.skyframe.serialization.SerializationException::class)
+    fun <T> serializeLeaf(
+        obj: T?, codec: LeafObjectCodec<T?>?, codedOut: CodedOutputStream?
+    )
 }

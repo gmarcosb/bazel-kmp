@@ -70,8 +70,8 @@ public class WorkerTestUtils {
       boolean dynamic,
       String... args) {
     WorkerOptions workerOptions = Options.getDefaults(WorkerOptions.class);
-    workerOptions.setWorkerMultiplex(multiplex);
-    workerOptions.setWorkerSandboxing(sandboxed);
+    workerOptions.workerMultiplex = multiplex;
+    workerOptions.workerSandboxing = sandboxed;
 
     return createWorkerKeyFromOptions(
         protocolFormat,

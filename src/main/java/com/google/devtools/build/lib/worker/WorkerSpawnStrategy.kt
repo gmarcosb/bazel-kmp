@@ -11,23 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.worker;
+package com.google.devtools.build.lib.worker
 
-import com.google.devtools.build.lib.exec.AbstractSpawnStrategy;
-import com.google.devtools.build.lib.exec.ExecutionOptions;
+import com.google.devtools.build.lib.exec.AbstractSpawnStrategy
 
 /**
  * A spawn action context that launches Spawns the first time they are used in a persistent mode and
  * then shards work over all the processes.
  */
-public final class WorkerSpawnStrategy extends AbstractSpawnStrategy {
-
-  public WorkerSpawnStrategy(WorkerSpawnRunner spawnRunner, ExecutionOptions executionOptions) {
-    super(spawnRunner, executionOptions);
-  }
-
-  @Override
-  public String toString() {
-    return "worker";
-  }
+class WorkerSpawnStrategy(spawnRunner: WorkerSpawnRunner?, executionOptions: ExecutionOptions?) :
+    AbstractSpawnStrategy(spawnRunner, executionOptions) {
+    override fun toString(): String {
+        return "worker"
+    }
 }

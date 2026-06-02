@@ -11,22 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.standalone;
+package com.google.devtools.build.lib.standalone
 
-import com.google.devtools.build.lib.exec.AbstractSpawnStrategy;
-import com.google.devtools.build.lib.exec.ExecutionOptions;
-import com.google.devtools.build.lib.exec.SpawnRunner;
+import com.google.devtools.build.lib.exec.AbstractSpawnStrategy
 
 /**
  * Strategy that uses subprocessing to execute a process.
  */
-public class StandaloneSpawnStrategy extends AbstractSpawnStrategy {
-  public StandaloneSpawnStrategy(SpawnRunner spawnRunner, ExecutionOptions executionOptions) {
-    super(spawnRunner, executionOptions);
-  }
-
-  @Override
-  public String toString() {
-    return "standalone";
-  }
+class StandaloneSpawnStrategy(spawnRunner: SpawnRunner?, executionOptions: ExecutionOptions?) :
+    AbstractSpawnStrategy(spawnRunner, executionOptions) {
+    override fun toString(): String {
+        return "standalone"
+    }
 }

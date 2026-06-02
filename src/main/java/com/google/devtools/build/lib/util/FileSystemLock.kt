@@ -11,119 +11,112 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.devtools.build.lib.concurrent.ThreadSafety;
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.IOException;
-import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
-import java.nio.channels.FileLockInterruptionException;
-import java.nio.file.StandardOpenOption;
+package com.google.devtools.build.lib.util
 
 /**
  * Manages shared or exclusive access to the filesystem by concurrent processes through a lock file.
  */
-public final class FileSystemLock implements AutoCloseable {
-  private final FileChannel channel;
-  private final FileLock lock;
+class FileSystemLock private constructor(channel: FileChannel, lock: FileLock) : java.lang.AutoCloseable {
+    private val channel: FileChannel
+    private val lock: FileLock
 
-  /**
-   * The exception thrown when a lock cannot be acquired because it is already exclusively held by
-   * another process.
-   */
-  public static class LockAlreadyHeldException extends IOException {
-    LockAlreadyHeldException(LockMode mode, Path path) {
-      super("failed to acquire %s filesystem lock on %s".formatted(mode, path));
+    /**
+     * The exception thrown when a lock cannot be acquired because it is already exclusively held by
+     * another process.
+     */
+    class LockAlreadyHeldException internal constructor(
+        mode: LockMode?,
+        path: com.google.devtools.build.lib.vfs.Path?
+    ) : IOException("failed to acquire %s filesystem lock on %s".formatted(mode, path))
+
+    /** The mode of a lock.  */
+    enum class LockMode {
+        SHARED,
+        EXCLUSIVE;
+
+        override fun toString(): String {
+            return when (this) {
+                LockMode.SHARED -> "shared"
+                LockMode.EXCLUSIVE -> "exclusive"
+            }
+        }
     }
-  }
 
-  /** The mode of a lock. */
-  public enum LockMode {
-    SHARED,
-    EXCLUSIVE;
-
-    @Override
-    public String toString() {
-      return switch (this) {
-        case SHARED -> "shared";
-        case EXCLUSIVE -> "exclusive";
-      };
+    init {
+        this.channel = channel
+        this.lock = lock
     }
-  }
 
-  private FileSystemLock(FileChannel channel, FileLock lock) {
-    this.channel = channel;
-    this.lock = lock;
-  }
+    @get:com.google.common.annotations.VisibleForTesting
+    val isShared: Boolean
+        get() = lock.isShared()
 
-  private static FileChannel prepareChannel(Path path) throws IOException {
-    path.getParentDirectory().createDirectoryAndParents();
-    return FileChannel.open(
-        // Correctly handle non-ASCII paths by converting from the internal string encoding.
-        java.nio.file.Path.of(StringEncoding.internalToPlatform(path.getPathString())),
-        StandardOpenOption.READ,
-        StandardOpenOption.WRITE,
-        StandardOpenOption.CREATE);
-  }
+    @get:com.google.common.annotations.VisibleForTesting
+    val isExclusive: Boolean
+        get() = !this.isShared
 
-  /**
-   * Tries to acquires a lock on the given path with the given mode. Throws an exception if the lock
-   * is already held by another process.
-   *
-   * <p>This method must not be called concurrently from multiple threads with the same path.
-   *
-   * @throws LockAlreadyHeldException if the lock is already exclusively held by another process
-   * @throws IOException if another error occurred
-   */
-  @ThreadSafety.ThreadHostile
-  public static FileSystemLock tryGet(Path path, LockMode mode) throws IOException {
-    FileChannel channel = prepareChannel(path);
-    FileLock lock = channel.tryLock(0, Long.MAX_VALUE, mode == LockMode.SHARED);
-    if (lock == null) {
-      throw new LockAlreadyHeldException(mode, path);
+    /** Releases access to the lock file.  */
+    @Throws(IOException::class)
+    override fun close() {
+        try {
+            lock.release()
+        } finally {
+            channel.close()
+        }
     }
-    return new FileSystemLock(channel, lock);
-  }
 
-  /**
-   * Acquires a lock on the given path with the given mode. Blocks until the lock is acquired.
-   *
-   * <p>This method must not be called concurrently from multiple threads with the same path.
-   */
-  @ThreadSafety.ThreadHostile
-  public static FileSystemLock get(Path path, LockMode mode)
-      throws IOException, InterruptedException {
-    FileChannel channel = prepareChannel(path);
-    FileLock lock;
-    try {
-      lock = channel.lock(0, Long.MAX_VALUE, mode == LockMode.SHARED);
-    } catch (FileLockInterruptionException e) {
-      Thread.interrupted(); // clear interrupt bit
-      channel.close();
-      throw new InterruptedException();
+    companion object {
+        @Throws(IOException::class)
+        private fun prepareChannel(path: com.google.devtools.build.lib.vfs.Path): FileChannel {
+            path.getParentDirectory().createDirectoryAndParents()
+            return FileChannel.open( // Correctly handle non-ASCII paths by converting from the internal string encoding.
+                java.nio.file.Path.of(StringEncoding.internalToPlatform(path.getPathString())),
+                StandardOpenOption.READ,
+                StandardOpenOption.WRITE,
+                StandardOpenOption.CREATE
+            )
+        }
+
+        /**
+         * Tries to acquires a lock on the given path with the given mode. Throws an exception if the lock
+         * is already held by another process.
+         * 
+         * 
+         * This method must not be called concurrently from multiple threads with the same path.
+         * 
+         * @throws LockAlreadyHeldException if the lock is already exclusively held by another process
+         * @throws IOException if another error occurred
+         */
+        @ThreadHostile
+        @Throws(IOException::class)
+        fun tryGet(path: com.google.devtools.build.lib.vfs.Path, mode: LockMode?): FileSystemLock {
+            val channel: FileChannel = prepareChannel(path)
+            val lock: FileLock = channel.tryLock(0, java.lang.Long.MAX_VALUE, mode == LockMode.SHARED)
+            if (lock == null) {
+                throw LockAlreadyHeldException(mode, path)
+            }
+            return FileSystemLock(channel, lock)
+        }
+
+        /**
+         * Acquires a lock on the given path with the given mode. Blocks until the lock is acquired.
+         * 
+         * 
+         * This method must not be called concurrently from multiple threads with the same path.
+         */
+        @ThreadHostile
+        @Throws(IOException::class, java.lang.InterruptedException::class)
+        fun get(path: com.google.devtools.build.lib.vfs.Path, mode: LockMode?): FileSystemLock {
+            val channel: FileChannel = prepareChannel(path)
+            val lock: FileLock
+            try {
+                lock = channel.lock(0, java.lang.Long.MAX_VALUE, mode == LockMode.SHARED)
+            } catch (e: FileLockInterruptionException) {
+                java.lang.Thread.interrupted() // clear interrupt bit
+                channel.close()
+                throw java.lang.InterruptedException()
+            }
+            return FileSystemLock(channel, lock)
+        }
     }
-    return new FileSystemLock(channel, lock);
-  }
-
-  @VisibleForTesting
-  boolean isShared() {
-    return lock.isShared();
-  }
-
-  @VisibleForTesting
-  boolean isExclusive() {
-    return !isShared();
-  }
-
-  /** Releases access to the lock file. */
-  @Override
-  public void close() throws IOException {
-    try {
-      lock.release();
-    } finally {
-      channel.close();
-    }
-  }
 }

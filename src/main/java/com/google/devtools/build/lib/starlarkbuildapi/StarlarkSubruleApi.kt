@@ -11,32 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi
 
-package com.google.devtools.build.lib.starlarkbuildapi;
-
-import com.google.devtools.build.docgen.annot.DocCategory;
-import java.util.List;
-import java.util.Optional;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.eval.StarlarkValue;
-
-/** The interface for Starlark-defined subrules in the Build API. */
-@StarlarkBuiltin(
+/** The interface for Starlark-defined subrules in the Build API.  */
+@net.starlark.java.annot.StarlarkBuiltin(
     name = "Subrule",
-    category = DocCategory.BUILTIN,
-    doc =
-        "Experimental: a building block for writing rules with shared code. For more information,"
+    category = com.google.devtools.build.docgen.annot.DocCategory.BUILTIN,
+    doc = ("Experimental: a building block for writing rules with shared code. For more information,"
             + " please see the subrule proposal:"
             + " https://docs.google.com/document/d/1RbNC88QieKvBEwir7iV5zZU08AaMlOzxhVkPnmKDedQ")
-public interface StarlarkSubruleApi extends StarlarkValue {
+)
+interface StarlarkSubruleApi : net.starlark.java.eval.StarlarkValue {
+    fun getUserDefinedNameIfSubruleAttr(attrName: String?): java.util.Optional<String?>?
 
-  static Optional<String> getUserDefinedNameIfSubruleAttr(
-      List<? extends StarlarkSubruleApi> subrules, String attributeName) {
-    return subrules.stream()
-        .map(s -> s.getUserDefinedNameIfSubruleAttr(attributeName))
-        .flatMap(Optional::stream)
-        .findFirst();
-  }
-
-  Optional<String> getUserDefinedNameIfSubruleAttr(String attrName);
+    companion object {
+        fun getUserDefinedNameIfSubruleAttr(
+            subrules: MutableList<out StarlarkSubruleApi?>, attributeName: String?
+        ): java.util.Optional<String?> {
+            return subrules.stream()
+                .map<java.util.Optional<String?>?> { s: StarlarkSubruleApi? ->
+                    s!!.getUserDefinedNameIfSubruleAttr(
+                        attributeName
+                    )
+                }
+                .flatMap<String?> { obj: java.util.Optional<kotlin.String?>? -> obj.stream() }
+                .findFirst()
+        }
+    }
 }

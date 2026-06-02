@@ -55,7 +55,7 @@ class StarlarkRepositoryDebugModule : BlazeModule() {
     @AllowConcurrentEvents
     fun requestDefinition(event: RequestRepositoryInformationEvent) {
         val toReport =
-            if (reported!!.add(event.getName())) repositoryDefinitions!!.get(event.getName()) else null
+            if (reported!!.add(event.name)) repositoryDefinitions!!.get(event.name) else null
         if (toReport != null) {
             reporter!!.handle(Event.info(toReport))
         }

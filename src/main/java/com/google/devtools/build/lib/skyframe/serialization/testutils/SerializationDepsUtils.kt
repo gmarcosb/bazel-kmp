@@ -11,25 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.testutils;
+package com.google.devtools.build.lib.skyframe.serialization.testutils
 
-import com.google.common.collect.ImmutableClassToInstanceMap;
-import com.google.devtools.build.lib.actions.Artifact.ArtifactSerializationContext;
-import com.google.devtools.build.lib.actions.Artifact.SourceArtifact;
-import com.google.devtools.build.lib.analysis.config.BuildOptions.MapBackedChecksumCache;
-import com.google.devtools.build.lib.analysis.config.BuildOptions.OptionsChecksumCache;
+import com.google.devtools.build.lib.actions.Artifact.ArtifactSerializationContext
 
-/** Utilities for testing with serialization dependencies. */
-public final class SerializationDepsUtils {
-
-  /** Default serialization dependencies for testing. */
-  public static final ImmutableClassToInstanceMap<?> SERIALIZATION_DEPS_FOR_TEST =
-      ImmutableClassToInstanceMap.builder()
-          .put(
-              ArtifactSerializationContext.class,
-              (execPath, root, owner) -> new SourceArtifact(root, execPath, owner))
-          .put(OptionsChecksumCache.class, new MapBackedChecksumCache())
-          .build();
-
-  private SerializationDepsUtils() {}
+/** Utilities for testing with serialization dependencies.  */
+object SerializationDepsUtils {
+    /** Default serialization dependencies for testing.  */
+    @kotlin.jvm.JvmField
+    val SERIALIZATION_DEPS_FOR_TEST: com.google.common.collect.ImmutableClassToInstanceMap<*> =
+        com.google.common.collect.ImmutableClassToInstanceMap.builder<Any?>()
+            .put<ArtifactSerializationContext?>(
+                ArtifactSerializationContext::class.java,
+                ArtifactSerializationContext { execPath, root, owner -> SourceArtifact(root, execPath, owner) })
+            .put<OptionsChecksumCache?>(OptionsChecksumCache::class.java, MapBackedChecksumCache())
+            .build()
 }

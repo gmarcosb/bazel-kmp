@@ -11,111 +11,131 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.devtools.build.skyframe.InMemoryGraphImpl.EdgelessInMemoryGraphImpl;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.Collection;
-import java.util.Map;
-import java.util.function.Consumer;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.InMemoryGraphImpl
+import com.google.devtools.build.skyframe.InMemoryGraphImpl.EdgelessInMemoryGraphImpl
+import com.google.devtools.build.skyframe.InMemoryNodeEntry
+import com.google.devtools.build.skyframe.NodeBatch
+import com.google.devtools.build.skyframe.NodeEntry
+import com.google.devtools.build.skyframe.ProcessableGraph
+import com.google.devtools.build.skyframe.QueryableGraph
+import com.google.devtools.build.skyframe.QueryableGraph.LookupHint
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
 
-/** {@link ProcessableGraph} that exposes the contents of the entire graph. */
-public interface InMemoryGraph extends ProcessableGraph {
+/** [ProcessableGraph] that exposes the contents of the entire graph.  */
+interface InMemoryGraph : ProcessableGraph {
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    override fun createIfAbsentBatch(
+        requestor: SkyKey?,
+        reason: com.google.devtools.build.skyframe.QueryableGraph.Reason?,
+        keys: Iterable<out SkyKey?>?
+    ): NodeBatch?
 
-  /** Creates a new in-memory graph suitable for incremental builds. */
-  static InMemoryGraph create() {
-    return new InMemoryGraphImpl(/* usePooledInterning= */ true);
-  }
+    override fun get(
+        requestor: SkyKey?,
+        reason: com.google.devtools.build.skyframe.QueryableGraph.Reason?,
+        key: SkyKey?
+    ): NodeEntry?
 
-  static InMemoryGraph create(boolean usePooledInterning) {
-    return new InMemoryGraphImpl(usePooledInterning);
-  }
+    override fun getBatch(
+        requestor: SkyKey?,
+        reason: com.google.devtools.build.skyframe.QueryableGraph.Reason?,
+        keys: Iterable<out SkyKey?>?
+    ): NodeBatch? {
+        return NodeBatch { key: SkyKey? -> getBatchMap(requestor, reason, keys)!!.get(key) }
+    }
 
-  /**
-   * Creates a new in-memory graph that discards graph edges to save memory and cannot be used for
-   * incremental builds.
-   */
-  static InMemoryGraph createEdgeless(boolean usePooledInterning) {
-    return new EdgelessInMemoryGraphImpl(usePooledInterning);
-  }
+    override fun getLookupHint(key: SkyKey?): LookupHint? {
+        return LookupHint.INDIVIDUAL
+    }
 
-  @Override
-  @CanIgnoreReturnValue
-  NodeBatch createIfAbsentBatch(
-      @Nullable SkyKey requestor, Reason reason, Iterable<? extends SkyKey> keys);
+    override fun getBatchMap(
+        requestor: SkyKey?,
+        reason: com.google.devtools.build.skyframe.QueryableGraph.Reason?,
+        keys: Iterable<out SkyKey?>?
+    ): MutableMap<SkyKey?, out NodeEntry?>?
 
-  @Nullable
-  @Override
-  NodeEntry get(@Nullable SkyKey requestor, Reason reason, SkyKey key);
+    /**
+     * Returns a read-only live view of the nodes in the graph. All node are included. Dirty values
+     * include their Node value. Values in error have a null value.
+     */
+    @kotlin.jvm.JvmField
+    val values: MutableMap<SkyKey, SkyValue>?
 
-  @Override
-  default NodeBatch getBatch(
-      @Nullable SkyKey requestor, Reason reason, Iterable<? extends SkyKey> keys) {
-    return getBatchMap(requestor, reason, keys)::get;
-  }
+    fun valuesSize(): Int {
+        return this.values.size()
+    }
 
-  @Override
-  default LookupHint getLookupHint(SkyKey key) {
-    return LookupHint.INDIVIDUAL;
-  }
+    /**
+     * Returns a read-only live view of the done values in the graph. Dirty, changed, and error values
+     * are not present in the returned map
+     */
+    @kotlin.jvm.JvmField
+    val doneValues: MutableMap<SkyKey, SkyValue>?
 
-  @Override
-  Map<SkyKey, ? extends NodeEntry> getBatchMap(
-      @Nullable SkyKey requestor, Reason reason, Iterable<? extends SkyKey> keys);
+    /** Returns an unmodifiable collection of all nodes in the graph.  */
+    @kotlin.jvm.JvmField
+    val allNodeEntries: MutableCollection<InMemoryNodeEntry>?
 
-  /**
-   * Returns a read-only live view of the nodes in the graph. All node are included. Dirty values
-   * include their Node value. Values in error have a null value.
-   */
-  Map<SkyKey, SkyValue> getValues();
+    /** Applies the given consumer to each node in the graph, potentially in parallel.  */
+    fun parallelForEach(consumer: java.util.function.Consumer<InMemoryNodeEntry?>?)
 
-  default int valuesSize() {
-    return getValues().size();
-  }
+    /**
+     * Removes the node entry associated with the given [SkyKey] from the graph if it is done.
+     */
+    fun removeIfDone(key: SkyKey?)
 
-  /**
-   * Returns a read-only live view of the done values in the graph. Dirty, changed, and error values
-   * are not present in the returned map
-   */
-  Map<SkyKey, SkyValue> getDoneValues();
+    /**
+     * Cleans up [interning][com.google.devtools.build.lib.concurrent.PooledInterner.Pool] by moving objects to weak interners and uninstalling the current pools.
+     * 
+     * 
+     * May destroy this graph. Only call when the graph is about to be thrown away.
+     */
+    fun cleanupInterningPools()
 
-  /** Returns an unmodifiable collection of all nodes in the graph. */
-  Collection<InMemoryNodeEntry> getAllNodeEntries();
+    /**
+     * Returns the [InMemoryNodeEntry] for a given [SkyKey] if present in the graph.
+     * Otherwise, returns null.
+     */
+    fun getIfPresent(key: SkyKey?): InMemoryNodeEntry?
 
-  /** Applies the given consumer to each node in the graph, potentially in parallel. */
-  void parallelForEach(Consumer<InMemoryNodeEntry> consumer);
+    /**
+     * Minimizes the size of the data structure backing the graph. May be costly to run (O(n)).
+     * 
+     * 
+     * Must NOT be called concurrently with any other methods.
+     * 
+     * 
+     * Useful after removing large numbers of nodes from the in-memory graph, and the data
+     * structure used doesn't have automatic resizing (e.g. ConcurrentHashMap).
+     * 
+     * 
+     * WARNING: Implementations have to take care of existing references into the data structure if
+     * replaced by a new one (e.g. functions that close over the data structure).
+     */
+    fun shrinkNodeMap()
 
-  /**
-   * Removes the node entry associated with the given {@link SkyKey} from the graph if it is done.
-   */
-  void removeIfDone(SkyKey key);
+    companion object {
+        /** Creates a new in-memory graph suitable for incremental builds.  */
+        @kotlin.jvm.JvmStatic
+        fun create(): InMemoryGraph {
+            return InMemoryGraphImpl( /* usePooledInterning= */true)
+        }
 
-  /**
-   * Cleans up {@linkplain com.google.devtools.build.lib.concurrent.PooledInterner.Pool interning
-   * pools} by moving objects to weak interners and uninstalling the current pools.
-   *
-   * <p>May destroy this graph. Only call when the graph is about to be thrown away.
-   */
-  void cleanupInterningPools();
+        @kotlin.jvm.JvmStatic
+        fun create(usePooledInterning: Boolean): InMemoryGraph {
+            return InMemoryGraphImpl(usePooledInterning)
+        }
 
-  /**
-   * Returns the {@link InMemoryNodeEntry} for a given {@link SkyKey} if present in the graph.
-   * Otherwise, returns null.
-   */
-  @Nullable
-  InMemoryNodeEntry getIfPresent(SkyKey key);
-
-  /**
-   * Minimizes the size of the data structure backing the graph. May be costly to run (O(n)).
-   *
-   * <p>Must NOT be called concurrently with any other methods.
-   *
-   * <p>Useful after removing large numbers of nodes from the in-memory graph, and the data
-   * structure used doesn't have automatic resizing (e.g. ConcurrentHashMap).
-   *
-   * <p>WARNING: Implementations have to take care of existing references into the data structure if
-   * replaced by a new one (e.g. functions that close over the data structure).
-   */
-  void shrinkNodeMap();
+        /**
+         * Creates a new in-memory graph that discards graph edges to save memory and cannot be used for
+         * incremental builds.
+         */
+        @kotlin.jvm.JvmStatic
+        fun createEdgeless(usePooledInterning: Boolean): InMemoryGraph {
+            return EdgelessInMemoryGraphImpl(usePooledInterning)
+        }
+    }
 }

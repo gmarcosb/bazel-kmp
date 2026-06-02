@@ -11,42 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.starlarkdocextract
 
-package com.google.devtools.build.lib.rules.starlarkdocextract;
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.packages.Attribute.attr
+import com.google.devtools.build.lib.util.FileType
 
-import static com.google.devtools.build.lib.packages.Attribute.attr;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL_LIST;
-import static com.google.devtools.build.lib.packages.ImplicitOutputsFunction.fromFunctions;
-import static com.google.devtools.build.lib.packages.Type.BOOLEAN;
-import static com.google.devtools.build.lib.packages.Types.STRING_LIST;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.BaseRuleClasses;
-import com.google.devtools.build.lib.analysis.RuleDefinition;
-import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment;
-import com.google.devtools.build.lib.packages.RuleClass;
-import com.google.devtools.build.lib.util.FileType;
-import javax.annotation.Nullable;
-
-/** Definition of the {@code starlark_doc_extract} rule. */
-public final class StarlarkDocExtractRule implements RuleDefinition {
-  @Override
-  @Nullable
-  public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment env) {
-    return builder
-        /*<!-- #BLAZE_RULE(starlark_doc_extract).ATTRIBUTE(src) -->
+/** Definition of the `starlark_doc_extract` rule.  */
+class StarlarkDocExtractRule : RuleDefinition {
+    public override fun build(builder: RuleClass.Builder, env: RuleDefinitionEnvironment?): RuleClass? {
+        return builder /*<!-- #BLAZE_RULE(starlark_doc_extract).ATTRIBUTE(src) -->
         A Starlark file from which to extract documentation.
 
         <p>Note that this must be a file in the source tree; Bazel cannot <code>load()</code>
         generated files.
         <!-- #END_BLAZE_RULE.ATTRIBUTE -->*/
-        .add(
-            attr(StarlarkDocExtract.SRC_ATTR, LABEL)
-                .allowedFileTypes(FileType.of(".bzl"), FileType.of(".scl"))
-                .singleArtifact()
-                .mandatory())
-        /*<!-- #BLAZE_RULE(starlark_doc_extract).ATTRIBUTE(deps) -->
+            .add(
+                attr(StarlarkDocExtract.Companion.SRC_ATTR, LABEL)
+                    .allowedFileTypes(FileType.of(".bzl"), FileType.of(".scl"))
+                    .singleArtifact()
+                    .mandatory()
+            ) /*<!-- #BLAZE_RULE(starlark_doc_extract).ATTRIBUTE(deps) -->
         A list of targets wrapping the Starlark files which are <code>load()</code>-ed by
         <code>src</code>. These targets <em>should</em> under normal usage be
         <a href="https://github.com/bazelbuild/bazel-skylib/blob/main/bzl_library.bzl"><code>bzl_library</code></a>
@@ -56,15 +41,15 @@ public final class StarlarkDocExtractRule implements RuleDefinition {
         <p>Note that the wrapped Starlark files must be files in the source tree; Bazel cannot
         <code>load()</code> generated files.
         <!-- #END_BLAZE_RULE.ATTRIBUTE -->*/
-        // TODO(https://github.com/bazelbuild/bazel/issues/18599): we cannot set
-        // mandatoryProviders(StarlarkLibraryInfo) because StarlarkLibraryInfo is defined in
-        // bazel_skylib, not natively in Bazel. Ideally, we ought to get rid of the deps attribute
-        // altogether; but that requires new dependency machinery for `bazel query` to use the
-        // Starlark load graph for collecting the dependencies of starlark_doc_extract's src.
-        .override(
-            attr(StarlarkDocExtract.DEPS_ATTR, LABEL_LIST)
-                .allowedFileTypes(FileType.of(".bzl"), FileType.of(".scl")))
-        /*<!-- #BLAZE_RULE(starlark_doc_extract).ATTRIBUTE(symbol_names) -->
+            // TODO(https://github.com/bazelbuild/bazel/issues/18599): we cannot set
+            // mandatoryProviders(StarlarkLibraryInfo) because StarlarkLibraryInfo is defined in
+            // bazel_skylib, not natively in Bazel. Ideally, we ought to get rid of the deps attribute
+            // altogether; but that requires new dependency machinery for `bazel query` to use the
+            // Starlark load graph for collecting the dependencies of starlark_doc_extract's src.
+            .override(
+                attr(StarlarkDocExtract.Companion.DEPS_ATTR, LABEL_LIST)
+                    .allowedFileTypes(FileType.of(".bzl"), FileType.of(".scl"))
+            ) /*<!-- #BLAZE_RULE(starlark_doc_extract).ATTRIBUTE(symbol_names) -->
         An optional list of qualified names of exported functions, rules, providers, or aspects (or
         structs in which they are nested) for which to extract documentation. Here, a <em>qualified
         name</em> means the name under which an entity is made available to a user of the module,
@@ -91,10 +76,10 @@ public final class StarlarkDocExtractRule implements RuleDefinition {
           </li>
         </ol>
         <!-- #END_BLAZE_RULE.ATTRIBUTE -->*/
-        .add(
-            attr(StarlarkDocExtract.SYMBOL_NAMES_ATTR, STRING_LIST)
-                .value(ImmutableList.<String>of()))
-        /*<!-- #BLAZE_RULE(starlark_doc_extract).ATTRIBUTE(render_main_repo_name) -->
+            .add(
+                attr(StarlarkDocExtract.Companion.SYMBOL_NAMES_ATTR, STRING_LIST)
+                    .value(ImmutableList.of<String?>())
+            ) /*<!-- #BLAZE_RULE(starlark_doc_extract).ATTRIBUTE(render_main_repo_name) -->
         If true, render labels in the main repository in emitted documentation with a repo component
         (in other words, <code>//foo:bar.bzl</code> will be emitted as
         <code>@main_repo_name//foo:bar.bzl</code>).
@@ -106,15 +91,13 @@ public final class StarlarkDocExtractRule implements RuleDefinition {
         <code>True</code> when generating documentation for Starlark files which are intended to be
         used from other repositories.
         <!-- #END_BLAZE_RULE.ATTRIBUTE -->*/
-        .add(attr(StarlarkDocExtract.RENDER_MAIN_REPO_NAME, BOOLEAN).value(false))
-        /*<!-- #BLAZE_RULE(starlark_doc_extract).ATTRIBUTE(allow_unused_doc_comments) -->
+            .add(attr(StarlarkDocExtract.Companion.RENDER_MAIN_REPO_NAME, BOOLEAN).value(false)) /*<!-- #BLAZE_RULE(starlark_doc_extract).ATTRIBUTE(allow_unused_doc_comments) -->
         If true, allow and silently ignore doc comments (comments starting with <code>#:</code>)
         which are not attached to any global variable, or which are attached to a variable whose
         value's documentation should be provided in a different way (for example, in a docstring for
         a function, or via <code>rule(doc = ...)</code> for a rule).
         <!-- #END_BLAZE_RULE.ATTRIBUTE -->*/
-        .add(attr(StarlarkDocExtract.ALLOW_UNUSED_DOC_COMMENTS, BOOLEAN).value(false))
-        /*<!-- #BLAZE_RULE(starlark_doc_extract).IMPLICIT_OUTPUTS -->
+            .add(attr(StarlarkDocExtract.Companion.ALLOW_UNUSED_DOC_COMMENTS, BOOLEAN).value(false)) /*<!-- #BLAZE_RULE(starlark_doc_extract).IMPLICIT_OUTPUTS -->
         <ul>
           <li><code><var>name</var>.binaryproto</code> (the default output): A
             <code>ModuleInfo</code> binary proto.</li>
@@ -122,22 +105,19 @@ public final class StarlarkDocExtractRule implements RuleDefinition {
             proto version of <code><var>name</var>.binaryproto</code>.</li>
         </ul>
         <!-- #END_BLAZE_RULE.IMPLICIT_OUTPUTS -->*/
-        .setImplicitOutputsFunction(
-            fromFunctions(StarlarkDocExtract.BINARYPROTO_OUT, StarlarkDocExtract.TEXTPROTO_OUT))
-        .build();
-  }
+            .setImplicitOutputsFunction(
+                fromFunctions(StarlarkDocExtract.Companion.BINARYPROTO_OUT, StarlarkDocExtract.Companion.TEXTPROTO_OUT)
+            )
+            .build()
+    }
 
-  @Override
-  public Metadata getMetadata() {
-    return RuleDefinition.Metadata.builder()
-        // TODO(b/276733514): add `bazel dump --starlark_doc` command.
-        .name("starlark_doc_extract")
-        .ancestors(BaseRuleClasses.NativeActionCreatingRule.class)
-        .factoryClass(StarlarkDocExtract.class)
-        .build();
-  }
-}
-/*<!-- #BLAZE_RULE (NAME = starlark_doc_extract, FAMILY = General)[GENERIC_RULE] -->
+    val metadata: Metadata
+        get() = RuleDefinition.Metadata.builder() // TODO(b/276733514): add `bazel dump --starlark_doc` command.
+            .name("starlark_doc_extract")
+            .ancestors(BaseRuleClasses.NativeActionCreatingRule::class.java)
+            .factoryClass(StarlarkDocExtract::class.java)
+            .build()
+} /*<!-- #BLAZE_RULE (NAME = starlark_doc_extract, FAMILY = General)[GENERIC_RULE] -->
 
 <p><code>starlark_doc_extract()</code> extracts documentation for rules, functions (including
 macros), aspects, and providers defined or re-exported in a given <code>.bzl</code> or

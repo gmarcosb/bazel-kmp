@@ -160,7 +160,7 @@ public class TargetPatternEvaluatorIOTest extends AbstractTargetPatternEvaluator
 
     // When we find all the targets beneath parent in keep_going mode, we get the valid target
     // parent:parent, even though processing badstat threw an IOException,
-    assertThat(parseListKeepGoing("//parent/...").getFirst())
+    assertThat(parseListKeepGoing("//parent/...").first)
         .containsExactlyElementsIn(labels("//parent:parent"));
 
     // And the TargetPatternEvaluator reported the expected ERROR event to the handler.
@@ -186,23 +186,23 @@ public class TargetPatternEvaluatorIOTest extends AbstractTargetPatternEvaluator
 
             @Override
             public boolean isFile() {
-              return stat.isFile();
+              return stat.isFile;
             }
 
             @Override
             public boolean isSpecialFile() {
-              return stat.isSpecialFile();
+              return stat.isSpecialFile;
             }
 
             @Override
             public boolean isSymbolicLink() {
-              return stat.isSymbolicLink();
+              return stat.isSymbolicLink;
             }
 
             @Override
             public long getSize() {
               try {
-                return stat.getSize();
+                return stat.size;
               } catch (IOException e) {
                 throw new IllegalStateException(e);
               }
@@ -211,7 +211,7 @@ public class TargetPatternEvaluatorIOTest extends AbstractTargetPatternEvaluator
             @Override
             public synchronized long getLastModifiedTime() {
               try {
-                return stat.getLastModifiedTime();
+                return stat.lastModifiedTime;
               } catch (IOException e) {
                 throw new IllegalStateException(e);
               }
@@ -220,7 +220,7 @@ public class TargetPatternEvaluatorIOTest extends AbstractTargetPatternEvaluator
             @Override
             public synchronized long getLastChangeTime() {
               try {
-                return stat.getLastChangeTime();
+                return stat.lastChangeTime;
               } catch (IOException e) {
                 throw new IllegalStateException(e);
               }
@@ -229,7 +229,7 @@ public class TargetPatternEvaluatorIOTest extends AbstractTargetPatternEvaluator
             @Override
             public long getNodeId() {
               try {
-                return stat.getNodeId();
+                return stat.nodeId;
               } catch (IOException e) {
                 throw new IllegalStateException(e);
               }

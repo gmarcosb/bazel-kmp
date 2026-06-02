@@ -11,21 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static java.nio.charset.StandardCharsets.UTF_8;
+import com.google.devtools.build.lib.skyframe.serialization.KeyBytesProvider
 
-import com.google.common.primitives.Bytes;
+/** A key backed by a [String].  */
+@kotlin.jvm.JvmRecord
+data class StringKey(val key: String?) : KeyBytesProvider {
+    override fun toBytes(): ByteArray? {
+        return key.getBytes(java.nio.charset.StandardCharsets.UTF_8)
+    }
 
-/** A key backed by a {@link String}. */
-public record StringKey(String key) implements KeyBytesProvider {
-  @Override
-  public byte[] toBytes() {
-    return key.getBytes(UTF_8);
-  }
-
-  @Override
-  public byte[] concat(byte[] tail) {
-    return Bytes.concat(toBytes(), tail);
-  }
+    override fun concat(tail: ByteArray?): ByteArray {
+        return com.google.common.primitives.Bytes.concat(toBytes(), tail)
+    }
 }

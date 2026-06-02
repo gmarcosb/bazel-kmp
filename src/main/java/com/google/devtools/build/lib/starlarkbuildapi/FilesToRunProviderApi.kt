@@ -11,48 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi
 
-package com.google.devtools.build.lib.starlarkbuildapi;
+import com.google.devtools.build.lib.starlarkbuildapi.FileApi
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import javax.annotation.Nullable;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkValue;
+/** Returns information about executables produced by a target and the files needed to run it.  */
+@net.starlark.java.annot.StarlarkBuiltin(
+    name = "FilesToRunProvider", doc = """
+Contains information about executables produced by a target and the files needed to run it. This provider can not be created directly, it is an implicit output of executable targets accessible via <a href="../providers/DefaultInfo.html#files_to_run"><code>DefaultInfo.files_to_run</code></a>.
 
-/** Returns information about executables produced by a target and the files needed to run it. */
-@StarlarkBuiltin(
-    name = "FilesToRunProvider",
-    doc =
-"""
-Contains information about executables produced by a target and the files needed to run it. This \
-provider can not be created directly, it is an implicit output of executable targets accessible \
-via <a href="../providers/DefaultInfo.html#files_to_run"><code>DefaultInfo.files_to_run</code></a>.
-""",
-    category = DocCategory.PROVIDER)
-public interface FilesToRunProviderApi<FileT extends FileApi> extends StarlarkValue {
+""".trimIndent(), category = com.google.devtools.build.docgen.annot.DocCategory.PROVIDER
+)
+interface FilesToRunProviderApi<FileT : FileApi?> : net.starlark.java.eval.StarlarkValue {
+    @get:net.starlark.java.annot.StarlarkMethod(
+        name = "executable",
+        doc = "The main executable or None if it does not exist.",
+        structField = true,
+        allowReturnNones = true
+    )
+    val executable: FileT?
 
-  @StarlarkMethod(
-      name = "executable",
-      doc = "The main executable or None if it does not exist.",
-      structField = true,
-      allowReturnNones = true)
-  @Nullable
-  FileT getExecutable();
+    @get:net.starlark.java.annot.StarlarkMethod(
+        name = "runfiles_manifest",
+        doc = "The runfiles manifest or None if it does not exist.",
+        structField = true,
+        allowReturnNones = true
+    )
+    val runfilesManifest: FileT?
 
-  @StarlarkMethod(
-      name = "runfiles_manifest",
-      doc = "The runfiles manifest or None if it does not exist.",
-      structField = true,
-      allowReturnNones = true)
-  @Nullable
-  FileT getRunfilesManifest();
-
-  @StarlarkMethod(
-      name = "repo_mapping_manifest",
-      doc = "The repo mapping manifest or None if it does not exist.",
-      structField = true,
-      allowReturnNones = true)
-  @Nullable
-  FileT getRepoMappingManifest();
+    @get:net.starlark.java.annot.StarlarkMethod(
+        name = "repo_mapping_manifest",
+        doc = "The repo mapping manifest or None if it does not exist.",
+        structField = true,
+        allowReturnNones = true
+    )
+    val repoMappingManifest: FileT?
 }

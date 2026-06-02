@@ -11,272 +11,257 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import com.google.devtools.build.lib.actions.ActionExecutionInactivityEvent
 
-import com.google.common.eventbus.Subscribe;
-import com.google.common.flogger.GoogleLogger;
-import com.google.common.util.concurrent.Uninterruptibles;
-import com.google.devtools.build.lib.actions.ActionExecutionInactivityEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventArtifactUploader;
-import com.google.devtools.build.lib.buildeventstream.BuildEventProtocolOptions;
-import com.google.devtools.build.lib.buildtool.BuildResult.BuildToolLogCollection;
-import com.google.devtools.build.lib.buildtool.buildevent.BuildCompleteEvent;
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.runtime.BuildEventArtifactUploaderFactory.InvalidPackagePathSymlinkException;
-import com.google.devtools.build.lib.runtime.InstrumentationOutputFactory.DestinationRelativeTo;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.ExitCode;
-import com.google.devtools.build.lib.util.ThreadDumpAnalyzer;
-import com.google.devtools.build.lib.util.ThreadDumper;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.atomic.AtomicReference;
-import javax.annotation.Nullable;
+/** A [BlazeModule] that dumps the state of all threads periodically.  */
+class ThreadDumpModule : BlazeModule() {
+    private val threadDumpTaskRef: AtomicReference<ThreadDumpTask?> = AtomicReference<ThreadDumpTask?>()
 
-/** A {@link BlazeModule} that dumps the state of all threads periodically. */
-public final class ThreadDumpModule extends BlazeModule {
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
-  private static final DateTimeFormatter TIME_FORMAT =
-      DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
-
-  private final AtomicReference<ThreadDumpTask> threadDumpTaskRef = new AtomicReference<>();
-
-  @Override
-  public void beforeCommand(CommandEnvironment env) throws AbruptExitException {
-    var commandOptions = env.getOptions().getOptions(CommonCommandOptions.class);
-    if (commandOptions == null || !commandOptions.getEnableThreadDump()) {
-      return;
-    }
-
-    if (commandOptions.getThreadDumpInterval().isZero()
-        && commandOptions.getThreadDumpActionExecutionInactivityDuration().isZero()) {
-      env.getReporter()
-          .handle(
-              Event.warn(
-                  "--experimental_enable_thread_dump is set, but"
-                      + " --experimental_thread_dump_interval and"
-                      + " --experimental_thread_dump_action_execution_inactivity_duration are 0. No"
-                      + " thread dumps will be written."));
-      return;
-    }
-
-    var bepOptions = env.getOptions().getOptions(BuildEventProtocolOptions.class);
-    BuildEventArtifactUploader uploader = null;
-    if (bepOptions != null && bepOptions.streamingLogFileUploads) {
-      try {
-        uploader = newUploader(env, bepOptions);
-      } catch (InvalidPackagePathSymlinkException e) {
-        throw createAbruptExitException("Failed to create uploader", e);
-      }
-    }
-
-    var outputBaseRelativeDumpDirectory = prepareDumpDirectory(env);
-    var threadDumpTask =
-        new ThreadDumpTask(
-            env,
-            ProcessHandle.current().pid(),
-            env.getRuntime().getClock(),
-            outputBaseRelativeDumpDirectory,
-            commandOptions.getThreadDumpActionExecutionInactivityDuration(),
-            commandOptions.getThreadDumpInterval(),
-            uploader);
-    var oldThreadDumpTask = threadDumpTaskRef.getAndSet(threadDumpTask);
-    checkState(oldThreadDumpTask == null);
-
-    env.getEventBus().register(this);
-  }
-
-  private static BuildEventArtifactUploader newUploader(
-      CommandEnvironment env, BuildEventProtocolOptions bepOptions)
-      throws InvalidPackagePathSymlinkException {
-    return env.getRuntime()
-        .getBuildEventArtifactUploaderFactoryMap()
-        .select(bepOptions.buildEventUploadStrategy)
-        .create(env);
-  }
-
-  private PathFragment prepareDumpDirectory(CommandEnvironment env) throws AbruptExitException {
-    var runtime = env.getRuntime();
-    var serverDirectory = runtime.getServerDirectory();
-    var dumpDirectory = serverDirectory.getChild("thread_dumps");
-    try {
-      dumpDirectory.deleteTree();
-      dumpDirectory.createDirectoryAndParents();
-    } catch (IOException e) {
-      throw createAbruptExitException("Failed to setup thread dump directory", e);
-    }
-    return dumpDirectory.relativeTo(env.getDirectories().getOutputBase());
-  }
-
-  private static AbruptExitException createAbruptExitException(String message, Throwable cause) {
-    return new AbruptExitException(
-        DetailedExitCode.of(
-            ExitCode.LOCAL_ENVIRONMENTAL_ERROR,
-            FailureDetail.newBuilder().setMessage(message).build()),
-        cause);
-  }
-
-  @Subscribe
-  public void onActionExecutionInactivityEvent(ActionExecutionInactivityEvent event) {
-    var threadDumpTask = threadDumpTaskRef.get();
-    checkNotNull(threadDumpTask);
-    threadDumpTask.onActionExecutionInactivityEvent(event);
-  }
-
-  @Subscribe
-  public void buildComplete(BuildCompleteEvent event) {
-    shutdown(event.getResult().buildToolLogCollection);
-  }
-
-  private void shutdown(@Nullable BuildToolLogCollection buildToolLogCollection) {
-    // We might get concurrent call to shutdown (via afterCommand).
-    var threadDumpTask = threadDumpTaskRef.getAndSet(null);
-    if (threadDumpTask != null) {
-      threadDumpTask.shutdown(buildToolLogCollection);
-    }
-  }
-
-  @Override
-  public void afterCommand() {
-    // Defensively shut down in case we failed to do so under normal operation.
-    shutdown(/* buildToolLogCollection= */ null);
-  }
-
-  private static final class ThreadDumpTask implements Runnable {
-    private final CommandEnvironment env;
-    private final long pid;
-    private final Clock clock;
-    private final PathFragment outputBaseRelativeDumpDirectory;
-    private final Duration threadDumpActionExecutionInactivityDuration;
-    @Nullable private final BuildEventArtifactUploader uploader;
-    private final ScheduledExecutorService scheduledExecutor;
-
-    private final List<InstrumentationOutput> instrumentationOutputs =
-        Collections.synchronizedList(new ArrayList<>());
-
-    private Instant lastDumpAt = Instant.EPOCH;
-
-    private ThreadDumpTask(
-        CommandEnvironment env,
-        long pid,
-        Clock clock,
-        PathFragment outputBaseRelativeDumpDirectory,
-        Duration threadDumpActionExecutionInactivityDuration,
-        Duration threadDumpInterval,
-        @Nullable BuildEventArtifactUploader uploader) {
-      this.env = env;
-      this.pid = pid;
-      this.clock = clock;
-      this.outputBaseRelativeDumpDirectory = outputBaseRelativeDumpDirectory;
-      this.threadDumpActionExecutionInactivityDuration =
-          threadDumpActionExecutionInactivityDuration;
-      this.uploader = uploader;
-      this.scheduledExecutor = Executors.newSingleThreadScheduledExecutor();
-
-      if (!threadDumpInterval.isZero()) {
-        var unused =
-            scheduledExecutor.scheduleAtFixedRate(
-                this, threadDumpInterval.toMillis(), threadDumpInterval.toMillis(), MILLISECONDS);
-      }
-    }
-
-    @Override
-    public void run() {
-      var bos = new ByteArrayOutputStream();
-      try (var sc = Profiler.instance().profile("Dumping threads")) {
-        ThreadDumper.dumpThreads(bos);
-      } catch (IOException e) {
-        logger.atWarning().withCause(e).log("Failed to dump threads.");
-      }
-
-      String formattedTime =
-          Instant.ofEpochMilli(clock.currentTimeMillis())
-              .atZone(ZoneOffset.UTC)
-              .format(TIME_FORMAT);
-      var dumpOutput =
-          createThreadDumpOutput(String.format("thread_dump.%d.%s.txt", pid, formattedTime));
-      instrumentationOutputs.add(dumpOutput);
-      var analyzer = new ThreadDumpAnalyzer();
-      try (var sc = Profiler.instance().profile("Analyzing thread dump");
-          var out = dumpOutput.createOutputStream()) {
-        analyzer.analyze(new ByteArrayInputStream(bos.toByteArray()), out);
-      } catch (IOException e) {
-        logger.atWarning().withCause(e).log("Failed to analyze threads.");
-      }
-
-      lastDumpAt = clock.now();
-    }
-
-    private boolean shouldDumpForActionExecutionInactivity(ActionExecutionInactivityEvent event) {
-      if (threadDumpActionExecutionInactivityDuration.isZero()) {
-        return false;
-      }
-
-      var now = clock.now();
-      if (now.isBefore(
-          event.lastActionCompletedAt().plus(threadDumpActionExecutionInactivityDuration))) {
-        return false;
-      }
-
-      return now.isAfter(lastDumpAt.plus(threadDumpActionExecutionInactivityDuration));
-    }
-
-    void onActionExecutionInactivityEvent(ActionExecutionInactivityEvent event) {
-      if (shouldDumpForActionExecutionInactivity(event)) {
-        var unused = scheduledExecutor.schedule(this, 0, MILLISECONDS);
-      }
-    }
-
-    void shutdown(@Nullable BuildToolLogCollection buildToolLogCollection) {
-      scheduledExecutor.shutdownNow();
-      try (var sc = Profiler.instance().profile("Joining dump thread")) {
-        Uninterruptibles.awaitTerminationUninterruptibly(scheduledExecutor);
-      }
-
-      if (buildToolLogCollection != null) {
-        for (var output : instrumentationOutputs) {
-          output.publish(buildToolLogCollection);
+    @Throws(AbruptExitException::class)
+    public override fun beforeCommand(env: CommandEnvironment) {
+        val commandOptions: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            env.getOptions().getOptions(CommonCommandOptions::class.java)
+        if (commandOptions == null || !commandOptions.getEnableThreadDump()) {
+            return
         }
-      }
 
-      if (uploader != null) {
-        uploader.release();
-      }
+        if (commandOptions.getThreadDumpInterval().isZero()
+            && commandOptions.getThreadDumpActionExecutionInactivityDuration().isZero()
+        ) {
+            env.getReporter()
+                .handle(
+                    com.google.devtools.build.lib.events.Event.warn(
+                        ("--experimental_enable_thread_dump is set, but"
+                                + " --experimental_thread_dump_interval and"
+                                + " --experimental_thread_dump_action_execution_inactivity_duration are 0. No"
+                                + " thread dumps will be written.")
+                    )
+                )
+            return
+        }
+
+        val bepOptions: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            env.getOptions().getOptions(BuildEventProtocolOptions::class.java)
+        var uploader: BuildEventArtifactUploader? = null
+        if (bepOptions != null && bepOptions.streamingLogFileUploads) {
+            try {
+                uploader = newUploader(env, bepOptions)
+            } catch (e: InvalidPackagePathSymlinkException) {
+                throw createAbruptExitException("Failed to create uploader", e)
+            }
+        }
+
+        val outputBaseRelativeDumpDirectory: PathFragment = prepareDumpDirectory(env)
+        val threadDumpTask =
+            ThreadDumpTask(
+                env,
+                java.lang.ProcessHandle.current().pid(),
+                env.getRuntime().getClock(),
+                outputBaseRelativeDumpDirectory,
+                commandOptions.getThreadDumpActionExecutionInactivityDuration(),
+                commandOptions.getThreadDumpInterval(),
+                uploader
+            )
+        val oldThreadDumpTask: ThreadDumpTask? = threadDumpTaskRef.getAndSet(threadDumpTask)
+        com.google.common.base.Preconditions.checkState(oldThreadDumpTask == null)
+
+        env.getEventBus().register(this)
     }
 
-    private InstrumentationOutput createThreadDumpOutput(String name) {
-      var outputFactory = env.getRuntime().getInstrumentationOutputFactory();
-      if (uploader != null) {
-        return outputFactory.createBuildEventArtifactInstrumentationOutput(name, uploader);
-      }
-      return outputFactory.createInstrumentationOutput(
-          /* name= */ name,
-          /* destination= */ outputBaseRelativeDumpDirectory.getRelative(name),
-          DestinationRelativeTo.OUTPUT_BASE,
-          env,
-          env.getReporter(),
-          /* append= */ null,
-          /* internal= */ null,
-          /* createParent= */ true);
+    @Throws(AbruptExitException::class)
+    private fun prepareDumpDirectory(env: CommandEnvironment): PathFragment {
+        val runtime: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? = env.getRuntime()
+        val serverDirectory: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            runtime.getServerDirectory()
+        val dumpDirectory: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            serverDirectory.getChild("thread_dumps")
+        try {
+            dumpDirectory.deleteTree()
+            dumpDirectory.createDirectoryAndParents()
+        } catch (e: IOException) {
+            throw createAbruptExitException("Failed to setup thread dump directory", e)
+        }
+        return dumpDirectory.relativeTo(env.getDirectories().getOutputBase())
     }
-  }
+
+    @com.google.common.eventbus.Subscribe
+    fun onActionExecutionInactivityEvent(event: ActionExecutionInactivityEvent) {
+        val threadDumpTask: ThreadDumpTask? = threadDumpTaskRef.get()
+        com.google.common.base.Preconditions.checkNotNull<ThreadDumpTask?>(threadDumpTask)
+        threadDumpTask!!.onActionExecutionInactivityEvent(event)
+    }
+
+    @com.google.common.eventbus.Subscribe
+    fun buildComplete(event: BuildCompleteEvent) {
+        shutdown(event.getResult().buildToolLogCollection)
+    }
+
+    private fun shutdown(buildToolLogCollection: BuildToolLogCollection?) {
+        // We might get concurrent call to shutdown (via afterCommand).
+        val threadDumpTask: ThreadDumpTask? = threadDumpTaskRef.getAndSet(null)
+        if (threadDumpTask != null) {
+            threadDumpTask.shutdown(buildToolLogCollection)
+        }
+    }
+
+    public override fun afterCommand() {
+        // Defensively shut down in case we failed to do so under normal operation.
+        shutdown( /* buildToolLogCollection= */null)
+    }
+
+    private class ThreadDumpTask(
+        env: CommandEnvironment,
+        pid: Long,
+        clock: com.google.devtools.build.lib.clock.Clock,
+        outputBaseRelativeDumpDirectory: PathFragment,
+        threadDumpActionExecutionInactivityDuration: java.time.Duration,
+        threadDumpInterval: java.time.Duration,
+        uploader: BuildEventArtifactUploader?
+    ) : java.lang.Runnable {
+        private val env: CommandEnvironment
+        private val pid: Long
+        private val clock: com.google.devtools.build.lib.clock.Clock
+        private val outputBaseRelativeDumpDirectory: PathFragment
+        private val threadDumpActionExecutionInactivityDuration: java.time.Duration
+        private val uploader: BuildEventArtifactUploader?
+        private val scheduledExecutor: ScheduledExecutorService
+
+        private val instrumentationOutputs: MutableList<InstrumentationOutput> =
+            Collections.synchronizedList<InstrumentationOutput?>(java.util.ArrayList<InstrumentationOutput?>())
+
+        private var lastDumpAt: Instant? = Instant.EPOCH
+
+        init {
+            this.env = env
+            this.pid = pid
+            this.clock = clock
+            this.outputBaseRelativeDumpDirectory = outputBaseRelativeDumpDirectory
+            this.threadDumpActionExecutionInactivityDuration =
+                threadDumpActionExecutionInactivityDuration
+            this.uploader = uploader
+            this.scheduledExecutor = Executors.newSingleThreadScheduledExecutor()
+
+            if (!threadDumpInterval.isZero()) {
+                val unused: java.util.concurrent.ScheduledFuture<*>? =
+                    scheduledExecutor.scheduleAtFixedRate(
+                        this, threadDumpInterval.toMillis(), threadDumpInterval.toMillis(), TimeUnit.MILLISECONDS
+                    )
+            }
+        }
+
+        override fun run() {
+            val bos: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+            try {
+                com.google.devtools.build.lib.profiler.Profiler.instance().profile("Dumping threads").use { sc ->
+                    com.google.devtools.build.lib.util.ThreadDumper.dumpThreads(bos)
+                }
+            } catch (e: IOException) {
+                logger.atWarning().withCause(e).log("Failed to dump threads.")
+            }
+
+            val formattedTime: String =
+                Instant.ofEpochMilli(clock.currentTimeMillis())
+                    .atZone(ZoneOffset.UTC)
+                    .format(TIME_FORMAT)
+            val dumpOutput: InstrumentationOutput =
+                createThreadDumpOutput(java.lang.String.format("thread_dump.%d.%s.txt", pid, formattedTime))
+            instrumentationOutputs.add(dumpOutput)
+            val analyzer: ThreadDumpAnalyzer = ThreadDumpAnalyzer()
+            try {
+                com.google.devtools.build.lib.profiler.Profiler.instance().profile("Analyzing thread dump").use { sc ->
+                    dumpOutput.createOutputStream().use { out ->
+                        analyzer.analyze(ByteArrayInputStream(bos.toByteArray()), out)
+                    }
+                }
+            } catch (e: IOException) {
+                logger.atWarning().withCause(e).log("Failed to analyze threads.")
+            }
+
+            lastDumpAt = clock.now()
+        }
+
+        fun shouldDumpForActionExecutionInactivity(event: ActionExecutionInactivityEvent): Boolean {
+            if (threadDumpActionExecutionInactivityDuration.isZero()) {
+                return false
+            }
+
+            val now: Instant? = clock.now()
+            if (now.isBefore(
+                    event.lastActionCompletedAt().plus(threadDumpActionExecutionInactivityDuration)
+                )
+            ) {
+                return false
+            }
+
+            return now.isAfter(lastDumpAt.plus(threadDumpActionExecutionInactivityDuration))
+        }
+
+        fun onActionExecutionInactivityEvent(event: ActionExecutionInactivityEvent) {
+            if (shouldDumpForActionExecutionInactivity(event)) {
+                val unused: java.util.concurrent.ScheduledFuture<*>? =
+                    scheduledExecutor.schedule(this, 0, TimeUnit.MILLISECONDS)
+            }
+        }
+
+        fun shutdown(buildToolLogCollection: BuildToolLogCollection?) {
+            scheduledExecutor.shutdownNow()
+            com.google.devtools.build.lib.profiler.Profiler.instance().profile("Joining dump thread").use { sc ->
+                com.google.common.util.concurrent.Uninterruptibles.awaitTerminationUninterruptibly(scheduledExecutor)
+            }
+            if (buildToolLogCollection != null) {
+                for (output in instrumentationOutputs) {
+                    output.publish(buildToolLogCollection)
+                }
+            }
+
+            if (uploader != null) {
+                uploader.release()
+            }
+        }
+
+        fun createThreadDumpOutput(name: String?): InstrumentationOutput {
+            val outputFactory: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                env.getRuntime().getInstrumentationOutputFactory()
+            if (uploader != null) {
+                return outputFactory.createBuildEventArtifactInstrumentationOutput(name, uploader)
+            }
+            return outputFactory.createInstrumentationOutput( /* name= */
+                name,  /* destination= */
+                outputBaseRelativeDumpDirectory.getRelative(name),
+                DestinationRelativeTo.OUTPUT_BASE,
+                env,
+                env.getReporter(),  /* append= */
+                null,  /* internal= */
+                null,  /* createParent= */
+                true
+            )
+        }
+    }
+
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+        private val TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
+
+        @Throws(InvalidPackagePathSymlinkException::class)
+        private fun newUploader(
+            env: CommandEnvironment, bepOptions: BuildEventProtocolOptions
+        ): BuildEventArtifactUploader {
+            return env.getRuntime()
+                .getBuildEventArtifactUploaderFactoryMap()
+                .select(bepOptions.buildEventUploadStrategy)
+                .create(env)
+        }
+
+        private fun createAbruptExitException(message: String?, cause: Throwable?): AbruptExitException {
+            return AbruptExitException(
+                DetailedExitCode.of(
+                    ExitCode.LOCAL_ENVIRONMENTAL_ERROR,
+                    FailureDetail.newBuilder().setMessage(message).build()
+                ),
+                cause
+            )
+        }
+    }
 }

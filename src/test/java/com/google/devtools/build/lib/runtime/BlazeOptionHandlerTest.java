@@ -280,7 +280,7 @@ public class BlazeOptionHandlerTest {
     parser.parse("--config=config");
     optionHandler.expandConfigOptions(eventHandler, structuredArgsFrom2SimpleRcsWithOnlyResidue());
     assertThat(parser.getResidue()).containsExactly("b");
-    assertThat(optionHandler.getRcfileNotes())
+    assertThat(optionHandler.rcfileNotes)
         .containsExactly("Found applicable config definition build:config in file rc1: b");
   }
 
@@ -356,7 +356,7 @@ public class BlazeOptionHandlerTest {
                 optionHandler.expandConfigOptions(
                     eventHandler, structuredArgsFrom2SimpleRcsWithOnlyResidue()));
     assertThat(parser.getResidue()).isEmpty();
-    assertThat(optionHandler.getRcfileNotes()).isEmpty();
+    assertThat(optionHandler.rcfileNotes).isEmpty();
     assertThat(e).hasMessageThat().contains("Config value 'other' is not defined in any .rc file");
   }
 
@@ -449,7 +449,7 @@ public class BlazeOptionHandlerTest {
 
     assertThat(eventHandler.getEvents()).isEmpty();
     assertThat(parser.getResidue()).isEmpty();
-    assertThat(optionHandler.getRcfileNotes())
+    assertThat(optionHandler.rcfileNotes)
         .containsExactly("Found applicable config definition common:empty in file rc1: ");
   }
 
@@ -460,7 +460,7 @@ public class BlazeOptionHandlerTest {
             ImmutableList.of("build"), eventHandler, ImmutableList.builder());
     assertThat(eventHandler.getEvents()).isEmpty();
     assertThat(parser.getResidue()).isEmpty();
-    assertThat(optionHandler.getRcfileNotes()).isEmpty();
+    assertThat(optionHandler.rcfileNotes).isEmpty();
   }
 
   @Test
@@ -470,7 +470,7 @@ public class BlazeOptionHandlerTest {
             ImmutableList.of("build", "res"), eventHandler, ImmutableList.builder());
     assertThat(eventHandler.getEvents()).isEmpty();
     assertThat(parser.getResidue()).contains("res");
-    assertThat(optionHandler.getRcfileNotes()).isEmpty();
+    assertThat(optionHandler.rcfileNotes).isEmpty();
   }
 
   @Test
@@ -482,7 +482,7 @@ public class BlazeOptionHandlerTest {
             ImmutableList.builder());
     assertThat(eventHandler.getEvents()).isEmpty();
     assertThat(parser.getResidue()).isEmpty();
-    assertThat(optionHandler.getRcfileNotes()).isEmpty();
+    assertThat(optionHandler.rcfileNotes).isEmpty();
     TestOptions options = parser.getOptions(TestOptions.class);
     assertThat(options).isNotNull();
     assertThat(options.getTestMultipleString()).containsExactly("explicit");
@@ -502,7 +502,7 @@ public class BlazeOptionHandlerTest {
     assertThat(eventHandler.getEvents()).isEmpty();
     assertThat(parser.getResidue()).isEmpty();
     // Check that multiple options in the same rc chunk are collapsed into 1 announce_rc entry.
-    assertThat(optionHandler.getRcfileNotes())
+    assertThat(optionHandler.rcfileNotes)
         .containsExactly(
             "Reading rc options for 'build' from /somewhere/.blazerc:\n"
                 + "  'build' options: --test_multiple_string=rc_a --test_multiple_string=rc_b");
@@ -526,7 +526,7 @@ public class BlazeOptionHandlerTest {
             ImmutableList.builder());
     assertThat(eventHandler.getEvents()).isEmpty();
     assertThat(parser.getResidue()).isEmpty();
-    assertThat(optionHandler.getRcfileNotes())
+    assertThat(optionHandler.rcfileNotes)
         .containsExactly(
             "Reading rc options for 'build' from /somewhere/.blazerc:\n"
                 + "  'build' options: --test_multiple_string=rc1_a",
@@ -556,7 +556,7 @@ public class BlazeOptionHandlerTest {
             ImmutableList.builder());
     assertThat(eventHandler.getEvents()).isEmpty();
     assertThat(parser.getResidue()).isEmpty();
-    assertThat(optionHandler.getRcfileNotes())
+    assertThat(optionHandler.rcfileNotes)
         .containsExactly(
             "Reading rc options for 'build' from /some/other/.blazerc:\n"
                 + "  Inherited 'common' options: --test_multiple_string=rc2_common",
@@ -588,7 +588,7 @@ public class BlazeOptionHandlerTest {
             ImmutableList.builder());
     assertThat(eventHandler.getEvents()).isEmpty();
     assertThat(parser.getResidue()).isEmpty();
-    assertThat(optionHandler.getRcfileNotes())
+    assertThat(optionHandler.rcfileNotes)
         .containsExactly(
             "Reading rc options for 'build' from /somewhere/.blazerc:\n"
                 + "  'build' options: --test_multiple_string=rc");
@@ -612,7 +612,7 @@ public class BlazeOptionHandlerTest {
             ImmutableList.builder());
     assertThat(eventHandler.getEvents()).isEmpty();
     assertThat(parser.getResidue()).isEmpty();
-    assertThat(optionHandler.getRcfileNotes())
+    assertThat(optionHandler.rcfileNotes)
         .containsExactly(
             "Reading rc options for 'build' from /somewhere/.blazerc:\n"
                 + "  Inherited 'common' options: --test_multiple_string=rc_common",
@@ -644,7 +644,7 @@ public class BlazeOptionHandlerTest {
             ImmutableList.builder());
     assertThat(eventHandler.getEvents()).isEmpty();
     assertThat(parser.getResidue()).isEmpty();
-    assertThat(optionHandler.getRcfileNotes())
+    assertThat(optionHandler.rcfileNotes)
         .containsExactly(
             "Reading rc options for 'build' from /some/other/.blazerc:\n"
                 + "  Inherited 'common' options: --test_multiple_string=rc2_common",
@@ -678,7 +678,7 @@ public class BlazeOptionHandlerTest {
             ImmutableList.builder());
     assertThat(eventHandler.getEvents()).isEmpty();
     assertThat(parser.getResidue()).isEmpty();
-    assertThat(optionHandler.getRcfileNotes())
+    assertThat(optionHandler.rcfileNotes)
         .containsExactly(
             "Reading rc options for 'build' from /somewhere/.blazerc:\n"
                 + "  'build' options: --test_multiple_string=rc",
@@ -707,7 +707,7 @@ public class BlazeOptionHandlerTest {
             ImmutableList.builder());
     assertThat(eventHandler.getEvents()).isEmpty();
     assertThat(parser.getResidue()).isEmpty();
-    assertThat(optionHandler.getRcfileNotes())
+    assertThat(optionHandler.rcfileNotes)
         .containsExactly(
             "Found applicable config definition common:empty in file /somewhere/.blazerc: ");
 
@@ -731,7 +731,7 @@ public class BlazeOptionHandlerTest {
             ImmutableList.builder());
     assertThat(eventHandler.getEvents()).isEmpty();
     assertThat(parser.getResidue()).isEmpty();
-    assertThat(optionHandler.getRcfileNotes())
+    assertThat(optionHandler.rcfileNotes)
         .containsExactly(
             "Reading rc options for 'build' from /somewhere/.blazerc:\n"
                 + "  'build' options: --config=conf --test_multiple_string=rc",
@@ -764,7 +764,7 @@ public class BlazeOptionHandlerTest {
             ImmutableList.builder());
     assertThat(eventHandler.getEvents()).isEmpty();
     assertThat(parser.getResidue()).isEmpty();
-    assertThat(optionHandler.getRcfileNotes())
+    assertThat(optionHandler.rcfileNotes)
         .containsExactly(
             "Reading rc options for 'build' from /somewhere/.blazerc:\n"
                 + "  'build' options: --config=conf --test_multiple_string=rc",
@@ -834,7 +834,7 @@ public class BlazeOptionHandlerTest {
             ImmutableList.builder());
     assertThat(eventHandler.getEvents()).isEmpty();
     assertThat(parser.getResidue()).isEmpty();
-    assertThat(optionHandler.getRcfileNotes())
+    assertThat(optionHandler.rcfileNotes)
         .containsExactly(
             "Reading rc options for 'build' from /somewhere/.blazerc:\n  'build' options: "
                 + "--test_multiple_string=rc1 --config=foo --test_multiple_string=rc2",
@@ -891,7 +891,7 @@ public class BlazeOptionHandlerTest {
             Event.warn(
                 "The following configs were expanded more than once: [bar]. For repeatable flags, "
                     + "repeats are counted twice and may lead to unexpected behavior."));
-    assertThat(optionHandler.getRcfileNotes())
+    assertThat(optionHandler.rcfileNotes)
         .containsExactly(
             "Reading rc options for 'build' from /somewhere/.blazerc:\n"
                 + "  'build' options: --config=foo --test_multiple_string=rc",
@@ -932,7 +932,7 @@ public class BlazeOptionHandlerTest {
             Event.warn(
                 "The following configs were expanded more than once: [foo, bar]. For repeatable "
                     + "flags, repeats are counted twice and may lead to unexpected behavior."));
-    assertThat(optionHandler.getRcfileNotes())
+    assertThat(optionHandler.rcfileNotes)
         .containsExactly(
             "Found applicable config definition build:foo in file /somewhere/.blazerc: "
                 + "--test_multiple_string=foo --config=bar",
@@ -1024,7 +1024,7 @@ public class BlazeOptionHandlerTest {
 
     // The 2nd config, --config=other, is expanded twice at the same time as --config=conf,
     // both initially present. The "common" definition is therefore first. other is expanded twice.
-    assertThat(optionHandler.getRcfileNotes())
+    assertThat(optionHandler.rcfileNotes)
         .containsExactly(
             "Reading rc options for 'build' from /somewhere/.blazerc:\n"
                 + "  'build' options: --config=other --config=conf --test_multiple_string=rc",
@@ -1085,7 +1085,7 @@ public class BlazeOptionHandlerTest {
     DetailedExitCode unused =
         optionHandler.parseOptions(args, eventHandler, ImmutableList.builder());
     assertThat(parser.getResidue()).isEmpty();
-    assertThat(optionHandler.getRcfileNotes())
+    assertThat(optionHandler.rcfileNotes)
         .containsExactly(
             "Found applicable config definition build:alpha in file /somewhere/.blazerc: "
                 + "--test_multiple_string=alpha --config=beta",
@@ -1181,7 +1181,7 @@ public class BlazeOptionHandlerTest {
         .containsExactly(
             Event.warn("You are forcing this warning to print for no apparent reason"));
     assertThat(parser.getResidue()).isEmpty();
-    assertThat(optionHandler.getRcfileNotes()).isEmpty();
+    assertThat(optionHandler.rcfileNotes).isEmpty();
   }
 
   @Test
@@ -1197,7 +1197,7 @@ public class BlazeOptionHandlerTest {
             ImmutableList.builder());
     assertThat(eventHandler.getEvents()).isEmpty();
     assertThat(parser.getResidue()).isEmpty();
-    assertThat(optionHandler.getRcfileNotes()).isEmpty();
+    assertThat(optionHandler.rcfileNotes).isEmpty();
   }
 
   @Test
@@ -1215,7 +1215,7 @@ public class BlazeOptionHandlerTest {
     assertThat(eventHandler.getEvents())
         .containsExactly(Event.warn("config \"conf\" is deprecated, please stop using!"));
     assertThat(parser.getResidue()).isEmpty();
-    assertThat(optionHandler.getRcfileNotes())
+    assertThat(optionHandler.rcfileNotes)
         .containsExactly(
             "Found applicable config definition build:conf in file /somewhere/.blazerc: "
                 + "--unconditional_warning=config \"conf\" is deprecated, please stop using!");
@@ -1243,7 +1243,7 @@ public class BlazeOptionHandlerTest {
                     + "overrides the explicit option --test_string=explicitValue with "
                     + "--test_string=fromConf"));
     assertThat(parseResult.getTestString()).isEqualTo("fromConf");
-    assertThat(optionHandler.getRcfileNotes())
+    assertThat(optionHandler.rcfileNotes)
         .containsExactly(
             "Found applicable config definition build:conf in file /somewhere/.blazerc: "
                 + "--test_string=fromConf");
@@ -1264,7 +1264,7 @@ public class BlazeOptionHandlerTest {
     TestOptions parseResult = parser.getOptions(TestOptions.class);
     assertThat(eventHandler.getEvents()).isEmpty();
     assertThat(parseResult.getTestString()).isEqualTo("explicitValue");
-    assertThat(optionHandler.getRcfileNotes())
+    assertThat(optionHandler.rcfileNotes)
         .containsExactly(
             "Found applicable config definition build:conf in file /somewhere/.blazerc: "
                 + "--test_string=fromConf");

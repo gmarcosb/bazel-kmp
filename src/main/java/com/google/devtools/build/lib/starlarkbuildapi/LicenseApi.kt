@@ -11,19 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi
 
-package com.google.devtools.build.lib.starlarkbuildapi;
-
-import com.google.devtools.build.docgen.annot.DocCategory;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.eval.StarlarkValue;
-
-/** The interface for a license in Starlark. */
-@StarlarkBuiltin(
+/** The interface for a license in Starlark.  */
+@net.starlark.java.annot.StarlarkBuiltin(
     name = "License",
-    category = DocCategory.BUILTIN,
+    category = com.google.devtools.build.docgen.annot.DocCategory.BUILTIN,
     documented = true,
-    doc =
-        "This API is deprecated and will be removed. Please do not depend on it. "
+    doc = ("This API is deprecated and will be removed. Please do not depend on it. "
             + "This object represents the value of a license attribute.")
-public interface LicenseApi extends StarlarkValue {}
+)
+interface LicenseApi : net.starlark.java.eval.StarlarkValue

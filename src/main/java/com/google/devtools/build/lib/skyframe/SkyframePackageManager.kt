@@ -11,122 +11,99 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.io.InconsistentFilesystemException;
-import com.google.devtools.build.lib.packages.CachingPackageLocator;
-import com.google.devtools.build.lib.packages.InputFile;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.NoSuchPackagePieceException;
-import com.google.devtools.build.lib.packages.NoSuchTargetException;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.pkgcache.PackageManager;
-import com.google.devtools.build.lib.pkgcache.PathPackageLocator;
-import com.google.devtools.build.lib.skyframe.SkyframeExecutor.SkyframePackageLoader;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import java.io.PrintStream;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+internal class SkyframePackageManager(
+    packageLoader: SkyframePackageLoader,
+    syscallCache: SyscallCache?,
+    pkgLocator: java.util.function.Supplier<PathPackageLocator?>,
+    numPackagesSuccessfullyLoaded: AtomicInteger
+) : PackageManager, CachingPackageLocator {
+    private val packageLoader: SkyframePackageLoader
+    private val syscallCache: SyscallCache?
+    private val pkgLocator: java.util.function.Supplier<PathPackageLocator?>
+    private val numPackagesSuccessfullyLoaded: AtomicInteger
 
-class SkyframePackageManager implements PackageManager, CachingPackageLocator {
-  private final SkyframePackageLoader packageLoader;
-  private final SyscallCache syscallCache;
-  private final Supplier<PathPackageLocator> pkgLocator;
-  private final AtomicInteger numPackagesSuccessfullyLoaded;
-
-  SkyframePackageManager(
-      SkyframePackageLoader packageLoader,
-      SyscallCache syscallCache,
-      Supplier<PathPackageLocator> pkgLocator,
-      AtomicInteger numPackagesSuccessfullyLoaded) {
-    this.packageLoader = packageLoader;
-    this.pkgLocator = pkgLocator;
-    this.syscallCache = syscallCache;
-    this.numPackagesSuccessfullyLoaded = numPackagesSuccessfullyLoaded;
-  }
-
-  @ThreadSafe
-  @Override
-  public Package getPackage(ExtendedEventHandler eventHandler, PackageIdentifier packageIdentifier)
-      throws NoSuchPackageException, InterruptedException {
-    return packageLoader.getPackage(eventHandler, packageIdentifier);
-  }
-
-  @ThreadSafe
-  @Override
-  public InputFile getBuildFile(
-      ExtendedEventHandler eventHandler, PackageIdentifier packageIdentifier)
-      throws NoSuchPackageException, NoSuchPackagePieceException, InterruptedException {
-    return packageLoader.getBuildFile(eventHandler, packageIdentifier);
-  }
-
-  @Override
-  public Target getTarget(ExtendedEventHandler eventHandler, Label label)
-      throws NoSuchPackageException, NoSuchTargetException, InterruptedException {
-    // TODO(https://github.com/bazelbuild/bazel/issues/23852): don't expand the full package if lazy
-    // macro expansion is enabled.
-    return Preconditions.checkNotNull(getPackage(eventHandler, label.getPackageIdentifier()), label)
-        .getTarget(label.name);
-  }
-
-  @Override
-  public PackageManagerStatistics getAndClearStatistics() {
-    int packagesSuccessfullyLoaded = numPackagesSuccessfullyLoaded.getAndSet(0);
-    return () -> packagesSuccessfullyLoaded;
-  }
-
-  @Override
-  public boolean isPackage(ExtendedEventHandler eventHandler, PackageIdentifier packageName)
-      throws InconsistentFilesystemException, InterruptedException {
-    return getBuildFileForPackage(packageName) != null;
-  }
-
-  @Override
-  public void dump(PrintStream printStream) {
-    packageLoader.dumpPackages(printStream);
-  }
-
-  @ThreadSafe
-  @Override
-  @Nullable
-  public Path getBuildFileForPackage(PackageIdentifier packageName) {
-    // Note that this method needs to be thread-safe, as it is currently used concurrently by
-    // legacy blaze code.
-    if (packageLoader.isPackageDeleted(packageName)) {
-      return null;
+    init {
+        this.packageLoader = packageLoader
+        this.pkgLocator = pkgLocator
+        this.syscallCache = syscallCache
+        this.numPackagesSuccessfullyLoaded = numPackagesSuccessfullyLoaded
     }
-    // TODO(bazel-team): Use a PackageLookupValue here [skyframe-loading]
-    // TODO(bazel-team): The implementation in PackageCache also checks for duplicate packages, see
-    // BuildFileCache#getBuildFile [skyframe-loading]
-    return pkgLocator.get().getPackageBuildFileNullable(packageName, syscallCache);
-  }
 
-  @Override
-  public String getBaseNameForLoadedPackage(PackageIdentifier packageName) {
-    PackageLookupValue pkgLookupValue =
-        checkNotNull(
-            packageLoader.getPackageLookupValue(packageName),
-            "Package should already have been visited: %s",
-            packageName);
-    checkState(
-        pkgLookupValue.packageExists(), "Package must exist: %s %s", packageName, pkgLookupValue);
-    return pkgLookupValue.getBuildFileName().getFilenameFragment().getBaseName();
-  }
+    @com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+    @Throws(NoSuchPackageException::class, java.lang.InterruptedException::class)
+    public override fun getPackage(
+        eventHandler: ExtendedEventHandler?,
+        packageIdentifier: PackageIdentifier?
+    ): Package? {
+        return packageLoader.getPackage(eventHandler, packageIdentifier)
+    }
 
-  @Override
-  public PathPackageLocator getPackagePath() {
-    return pkgLocator.get();
-  }
+    @com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+    @Throws(NoSuchPackageException::class, NoSuchPackagePieceException::class, java.lang.InterruptedException::class)
+    public override fun getBuildFile(
+        eventHandler: ExtendedEventHandler?, packageIdentifier: PackageIdentifier?
+    ): InputFile? {
+        return packageLoader.getBuildFile(eventHandler, packageIdentifier)
+    }
 
+    @Throws(NoSuchPackageException::class, NoSuchTargetException::class, java.lang.InterruptedException::class)
+    public override fun getTarget(eventHandler: ExtendedEventHandler?, label: Label): Target {
+        // TODO(https://github.com/bazelbuild/bazel/issues/23852): don't expand the full package if lazy
+        // macro expansion is enabled.
+        return com.google.common.base.Preconditions.checkNotNull<Any?>(
+            getPackage(
+                eventHandler,
+                label.getPackageIdentifier()
+            ), label
+        )
+            .getTarget(label.name)
+    }
+
+    val andClearStatistics: PackageManagerStatistics?
+        get() {
+            val packagesSuccessfullyLoaded: Int = numPackagesSuccessfullyLoaded.getAndSet(0)
+            return PackageManagerStatistics { packagesSuccessfullyLoaded }
+        }
+
+    @Throws(InconsistentFilesystemException::class, java.lang.InterruptedException::class)
+    public override fun isPackage(eventHandler: ExtendedEventHandler?, packageName: PackageIdentifier?): Boolean {
+        return getBuildFileForPackage(packageName) != null
+    }
+
+    public override fun dump(printStream: PrintStream?) {
+        packageLoader.dumpPackages(printStream)
+    }
+
+    @com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+    public override fun getBuildFileForPackage(packageName: PackageIdentifier?): com.google.devtools.build.lib.vfs.Path? {
+        // Note that this method needs to be thread-safe, as it is currently used concurrently by
+        // legacy blaze code.
+        if (packageLoader.isPackageDeleted(packageName)) {
+            return null
+        }
+        // TODO(bazel-team): Use a PackageLookupValue here [skyframe-loading]
+        // TODO(bazel-team): The implementation in PackageCache also checks for duplicate packages, see
+        // BuildFileCache#getBuildFile [skyframe-loading]
+        return pkgLocator.get().getPackageBuildFileNullable(packageName, syscallCache)
+    }
+
+    public override fun getBaseNameForLoadedPackage(packageName: PackageIdentifier?): String {
+        val pkgLookupValue: PackageLookupValue =
+            com.google.common.base.Preconditions.checkNotNull<PackageLookupValue>(
+                packageLoader.getPackageLookupValue(packageName),
+                "Package should already have been visited: %s",
+                packageName
+            )
+        checkState(
+            pkgLookupValue.packageExists(), "Package must exist: %s %s", packageName, pkgLookupValue
+        )
+        return pkgLookupValue.buildFileName.getFilenameFragment().getBaseName()
+    }
+
+    val packagePath: PathPackageLocator?
+        get() = pkgLocator.get()
 }

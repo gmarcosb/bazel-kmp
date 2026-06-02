@@ -11,13 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import java.lang.ref.Cleaner;
-
-/** Common {@link Cleaner} for Bazel. */
-public final class BazelCleaner {
-  public static final Cleaner CLEANER = Cleaner.create();
-
-  private BazelCleaner() {}
+/** Common [Cleaner] for Bazel.  */
+object BazelCleaner {
+    val CLEANER: java.lang.ref.Cleaner = java.lang.ref.Cleaner.create()
 }

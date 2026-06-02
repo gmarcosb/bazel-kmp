@@ -77,7 +77,7 @@ public class WindowsSubprocessTest {
     process.waitFor();
     assertThat(process.exitValue()).isEqualTo(0);
 
-    byte[] buf = process.getInputStream().readAllBytes();
+    byte[] buf = process.inputStream.readAllBytes();
     assertThat(new String(buf, UTF_8).trim()).isEqualTo(System.getenv("SYSTEMROOT").trim());
   }
 
@@ -93,7 +93,7 @@ public class WindowsSubprocessTest {
     process.waitFor();
     assertThat(process.exitValue()).isEqualTo(0);
 
-    byte[] buf = process.getInputStream().readAllBytes();
+    byte[] buf = process.inputStream.readAllBytes();
     assertThat(new String(buf, UTF_8).trim()).isEqualTo(System.getenv("SYSTEMDRIVE").trim());
   }
 
@@ -109,7 +109,7 @@ public class WindowsSubprocessTest {
     process.waitFor();
     assertThat(process.exitValue()).isEqualTo(0);
 
-    byte[] buf = process.getInputStream().readAllBytes();
+    byte[] buf = process.inputStream.readAllBytes();
     assertThat(new String(buf, UTF_8).trim()).isEqualTo("C:\\MySystemRoot");
   }
 
@@ -126,7 +126,7 @@ public class WindowsSubprocessTest {
     process.waitFor();
     assertThat(process.exitValue()).isEqualTo(0);
 
-    byte[] buf = process.getInputStream().readAllBytes();
+    byte[] buf = process.inputStream.readAllBytes();
     assertThat(new String(buf, UTF_8).trim()).isEqualTo("X:");
   }
 
@@ -143,7 +143,7 @@ public class WindowsSubprocessTest {
     process.waitFor();
     assertThat(process.exitValue()).isEqualTo(0);
 
-    byte[] buf = process.getInputStream().readAllBytes();
+    byte[] buf = process.inputStream.readAllBytes();
     assertThat(new String(buf, UTF_8).trim()).isEmpty();
   }
 
@@ -161,7 +161,7 @@ public class WindowsSubprocessTest {
     process.waitFor();
     assertThat(process.exitValue()).isEqualTo(0);
 
-    byte[] buf = process.getInputStream().readAllBytes();
+    byte[] buf = process.inputStream.readAllBytes();
     assertThat(new String(buf, UTF_8).trim()).isEqualTo("abcdef");
   }
 
@@ -177,7 +177,7 @@ public class WindowsSubprocessTest {
     process.waitFor();
     assertThat(process.exitValue()).isEqualTo(0);
 
-    byte[] buf = process.getInputStream().readAllBytes();
+    byte[] buf = process.inputStream.readAllBytes();
     assertThat(new String(buf, UTF_8).trim()).isEqualTo(System.getenv("TZ"));
   }
 
@@ -188,7 +188,7 @@ public class WindowsSubprocessTest {
     subprocessBuilder.setWorkingDirectory(new File("."));
     subprocessBuilder.setArgv(ImmutableList.of(mockBinary, "-jar", mockSubprocess, "OHELLO"));
     process = subprocessBuilder.start();
-    InputStream inputStream = process.getInputStream();
+    InputStream inputStream = process.inputStream;
     // We don't know if the process has already written to the pipe
     assertThat(inputStream.available()).isAnyOf(0, 5);
     process.waitFor();
@@ -239,7 +239,7 @@ public class WindowsSubprocessTest {
 
       // The subprocess printed its argv[1] in parentheses, e.g. (foo).
       // Assert that it printed exactly the *original* argument in parentheses.
-      byte[] buf = process.getInputStream().readAllBytes();
+      byte[] buf = process.inputStream.readAllBytes();
       String actual = new String(buf, UTF_8).trim();
       assertThat(actual).isEqualTo("(" + arg.original + ")");
     }

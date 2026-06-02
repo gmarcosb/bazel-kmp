@@ -11,21 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.vfs
 
-package com.google.devtools.build.lib.vfs;
+import com.google.devtools.build.lib.io.FileSymlinkException
 
-import com.google.devtools.build.lib.io.FileSymlinkException;
-import com.google.devtools.build.lib.skybridge.SkybridgeInterface;
-
-/** A {@link FileSymlinkException} that indicates a symlink loop. */
-@SkybridgeInterface // TODO(tjgq): Replace with a type owned by NativePosixFilesService.
-public final class FileSymlinkLoopException extends FileSymlinkException {
-  public FileSymlinkLoopException(String message) {
-    super(message);
-  }
-
-  @Override
-  public String getUserFriendlyMessage() {
-    return getMessage();
-  }
+/** A [FileSymlinkException] that indicates a symlink loop.  */
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface // TODO(tjgq): Replace with a type owned by NativePosixFilesService.
+class FileSymlinkLoopException(message: String?) : FileSymlinkException(message) {
+    val userFriendlyMessage: String
+        get() = getMessage()
 }

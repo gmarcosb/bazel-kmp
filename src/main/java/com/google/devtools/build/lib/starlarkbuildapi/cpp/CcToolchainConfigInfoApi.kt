@@ -11,30 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.cpp
 
-package com.google.devtools.build.lib.starlarkbuildapi.cpp;
+import com.google.devtools.build.docgen.annot.DocCategory
+import com.google.devtools.build.lib.starlarkbuildapi.core.ProviderApi
+import com.google.devtools.build.lib.starlarkbuildapi.core.StructApi
+import net.starlark.java.annot.StarlarkBuiltin
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.starlarkbuildapi.core.ProviderApi;
-import com.google.devtools.build.lib.starlarkbuildapi.core.StructApi;
-import net.starlark.java.annot.StarlarkBuiltin;
-
-/** Additional layer of configurability for c++ rules through features and actions. */
+/** Additional layer of configurability for c++ rules through features and actions.  */
 @StarlarkBuiltin(
     name = "CcToolchainConfigInfo",
     category = DocCategory.PROVIDER,
-    doc =
-        "Additional layer of configurability for C++ rules. Encapsulates platform-dependent "
+    doc = ("Additional layer of configurability for C++ rules. Encapsulates platform-dependent "
             + "specifics of C++ actions through features and action configs. It is used to "
             + "configure the C++ toolchain, and later on for command line construction. "
             + "Replaces the functionality of CROSSTOOL file.")
-public interface CcToolchainConfigInfoApi extends StructApi {
-  /** Provider class for {@link CcToolchainConfigInfoApi} objects. */
-  @StarlarkBuiltin(
-      name = "Provider",
-      // This object is documented via the CcInfo documentation and the docuemntation of its
-      // callable function.
-      documented = false,
-      doc = "")
-  public interface Provider extends ProviderApi {}
+)
+interface CcToolchainConfigInfoApi : StructApi {
+    /** Provider class for [CcToolchainConfigInfoApi] objects.  */
+    @StarlarkBuiltin(name = "Provider", documented = false, doc = "")
+    interface Provider : ProviderApi
 }

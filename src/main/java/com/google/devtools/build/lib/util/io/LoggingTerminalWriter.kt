@@ -11,84 +11,74 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
+package com.google.devtools.build.lib.util.io
 
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.io.IOException;
+import com.google.devtools.build.lib.util.io.AnsiTerminalWriter
+import java.io.IOException
 
 /**
- * An {@link AnsiTerminalWriter} that just generates a transcript of the events it was exposed of.
+ * An [AnsiTerminalWriter] that just generates a transcript of the events it was exposed of.
  */
-public class LoggingTerminalWriter implements AnsiTerminalWriter {
-  // Strings for recording the non-append calls
-  public static final String NEWLINE = "[NL]";
-  public static final String OK = "[OK]";
-  public static final String FAIL = "[FAIL]";
-  public static final String NORMAL = "[NORMAL]";
+class LoggingTerminalWriter @kotlin.jvm.JvmOverloads constructor(private val discardHighlight: Boolean = false) :
+    AnsiTerminalWriter {
+    var transcript: String? = ""
+        private set
 
-  private String transcript;
-  private final boolean discardHighlight;
-
-  public LoggingTerminalWriter(boolean discardHighlight) {
-    this.transcript = "";
-    this.discardHighlight = discardHighlight;
-  }
-
-  public LoggingTerminalWriter() {
-    this(false);
-  }
-
-  /** Clears the stored transcript; mostly useful for testing purposes. */
-  public void reset() {
-    transcript = "";
-  }
-
-  @CanIgnoreReturnValue
-  @Override
-  public AnsiTerminalWriter append(String text) throws IOException {
-    transcript += text;
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  @Override
-  public AnsiTerminalWriter newline() throws IOException {
-    if (!discardHighlight) {
-      transcript += NEWLINE;
-    } else {
-      transcript += "\n";
+    /** Clears the stored transcript; mostly useful for testing purposes.  */
+    fun reset() {
+        transcript = ""
     }
-    return this;
-  }
 
-  @CanIgnoreReturnValue
-  @Override
-  public AnsiTerminalWriter okStatus() throws IOException {
-    if (!discardHighlight) {
-      transcript += OK;
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(IOException::class)
+    override fun append(text: String?): AnsiTerminalWriter {
+        transcript += text
+        return this
     }
-    return this;
-  }
 
-  @CanIgnoreReturnValue
-  @Override
-  public AnsiTerminalWriter failStatus() throws IOException {
-    if (!discardHighlight) {
-      transcript += FAIL;
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(IOException::class)
+    override fun newline(): AnsiTerminalWriter {
+        if (!discardHighlight) {
+            transcript += NEWLINE
+        } else {
+            transcript += "\n"
+        }
+        return this
     }
-    return this;
-  }
 
-  @CanIgnoreReturnValue
-  @Override
-  public AnsiTerminalWriter normal() throws IOException {
-    if (!discardHighlight) {
-      transcript += NORMAL;
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(IOException::class)
+    override fun okStatus(): AnsiTerminalWriter {
+        if (!discardHighlight) {
+            transcript += OK
+        }
+        return this
     }
-    return this;
-  }
 
-  public String getTranscript() {
-    return transcript;
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(IOException::class)
+    override fun failStatus(): AnsiTerminalWriter {
+        if (!discardHighlight) {
+            transcript += FAIL
+        }
+        return this
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(IOException::class)
+    override fun normal(): AnsiTerminalWriter {
+        if (!discardHighlight) {
+            transcript += NORMAL
+        }
+        return this
+    }
+
+    companion object {
+        // Strings for recording the non-append calls
+        const val NEWLINE: String = "[NL]"
+        const val OK: String = "[OK]"
+        const val FAIL: String = "[FAIL]"
+        const val NORMAL: String = "[NORMAL]"
+    }
 }

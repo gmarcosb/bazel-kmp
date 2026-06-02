@@ -11,69 +11,58 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.util
 
-package com.google.devtools.build.lib.util;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.cmdline.Label;
-import java.io.File;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * Utility methods for describing command failures. See also the CommandUtils class. Unlike that
  * one, this class does not depend on Command; instead, it just manipulates command lines
  * represented as Collection&lt;String&gt;.
  */
-public class CommandFailureUtils {
-  private static final int APPROXIMATE_MAXIMUM_MESSAGE_LENGTH = 200;
+object CommandFailureUtils {
+    private const val APPROXIMATE_MAXIMUM_MESSAGE_LENGTH = 200
 
-  private CommandFailureUtils() {} // Prevent instantiation.
+    /**
+     * Construct a string that describes the command. Currently this returns a message of the form
+     * "foo bar baz", with shell meta-characters appropriately quoted and/or escaped, prefixed (if
+     * verbose is true) with an "env" command to set the environment.
+     * 
+     * @param form Form of the command to generate; see the documentation of the [     ] values.
+     */
+    fun describeCommand(
+        form: CommandDescriptionForm?,
+        prettyPrintArgs: Boolean,
+        commandLineElements: MutableCollection<String>,
+        environment: MutableMap<String?, String?>?,
+        environmentVariablesToClear: MutableList<String?>?,
+        cwd: String?,
+        configurationChecksum: String?,
+        executionPlatformLabel: Label?,
+        spawnRunner: String?
+    ): String {
+        com.google.common.base.Preconditions.checkNotNull<CommandDescriptionForm?>(form)
+        val message: java.lang.StringBuilder = java.lang.StringBuilder()
+        val size: Int = commandLineElements.size()
+        var numberRemaining = size
 
-  /**
-   * Construct a string that describes the command. Currently this returns a message of the form
-   * "foo bar baz", with shell meta-characters appropriately quoted and/or escaped, prefixed (if
-   * verbose is true) with an "env" command to set the environment.
-   *
-   * @param form Form of the command to generate; see the documentation of the {@link
-   *     CommandDescriptionForm} values.
-   */
-  public static String describeCommand(
-      CommandDescriptionForm form,
-      boolean prettyPrintArgs,
-      Collection<String> commandLineElements,
-      @Nullable Map<String, String> environment,
-      @Nullable List<String> environmentVariablesToClear,
-      @Nullable String cwd,
-      @Nullable String configurationChecksum,
-      @Nullable Label executionPlatformLabel,
-      @Nullable String spawnRunner) {
+        if (form == CommandDescriptionForm.COMPLETE) {
+            ScriptUtil.emitBeginIsolate(message)
+        }
 
-    Preconditions.checkNotNull(form);
-    StringBuilder message = new StringBuilder();
-    int size = commandLineElements.size();
-    int numberRemaining = size;
-
-    if (form == CommandDescriptionForm.COMPLETE) {
-      ScriptUtil.emitBeginIsolate(message);
-    }
-
-    if (form != CommandDescriptionForm.ABBREVIATED) {
-      if (cwd != null) {
-        ScriptUtil.emitChangeDirectory(message, cwd);
-      }
-      /*
+        if (form != CommandDescriptionForm.ABBREVIATED) {
+            if (cwd != null) {
+                ScriptUtil.emitChangeDirectory(message, cwd)
+            }
+            /*
        * On Linux, insert an "exec" keyword to save a fork in "blaze run"
        * generated scripts.  If we use "env" as a wrapper, the "exec" needs to
        * be applied to the entire "env" invocation.
        *
        * On Windows, this is a no-op.
        */
-      ScriptUtil.emitExec(message);
-      /*
+            ScriptUtil.emitExec(message)
+            /*
        * Java does not provide any way to invoke a subprocess with the environment variables
        * in a specified order.  The order of environment variables in the 'environ' array
        * (which is set by the 'envp' parameter to the execve() system call)
@@ -94,116 +83,122 @@ public class CommandFailureUtils {
        * sequence as the iteration over entrySet() inside the ProcessBuilder class
        * (in ProcessEnvironment.StringEnvironment.toEnvironmentBlock()).
        */
-      if (environment != null) {
-        ScriptUtil.emitEnvPrefix(
-            message, /* ignoreEnvironment= */ true, environment, environmentVariablesToClear);
-      }
-    }
-
-    boolean isFirstArgument = true;
-    for (String commandElement : commandLineElements) {
-      if (form == CommandDescriptionForm.ABBREVIATED
-          && message.length() + commandElement.length() > APPROXIMATE_MAXIMUM_MESSAGE_LENGTH) {
-        message
-            .append(" ... (remaining ")
-            .append(numberRemaining)
-            .append(numberRemaining == 1 ? " argument" : " arguments")
-            .append(" skipped)");
-        break;
-      } else {
-        if (numberRemaining < size) {
-          message.append(prettyPrintArgs ? " \\\n    " : " ");
+            if (environment != null) {
+                ScriptUtil.emitEnvPrefix(
+                    message,  /* ignoreEnvironment= */true, environment, environmentVariablesToClear
+                )
+            }
         }
-        ScriptUtil.emitCommandElement(message, commandElement, isFirstArgument);
-        numberRemaining--;
-      }
-      isFirstArgument = false;
+
+        var isFirstArgument = true
+        for (commandElement in commandLineElements) {
+            if (form == CommandDescriptionForm.ABBREVIATED
+                && message.length() + commandElement.length() > APPROXIMATE_MAXIMUM_MESSAGE_LENGTH
+            ) {
+                message
+                    .append(" ... (remaining ")
+                    .append(numberRemaining)
+                    .append(if (numberRemaining == 1) " argument" else " arguments")
+                    .append(" skipped)")
+                break
+            } else {
+                if (numberRemaining < size) {
+                    message.append(if (prettyPrintArgs) " \\\n    " else " ")
+                }
+                ScriptUtil.emitCommandElement(message, commandElement, isFirstArgument)
+                numberRemaining--
+            }
+            isFirstArgument = false
+        }
+
+        if (form == CommandDescriptionForm.COMPLETE) {
+            ScriptUtil.emitEndIsolate(message)
+        }
+
+        if (form == CommandDescriptionForm.COMPLETE) {
+            if (configurationChecksum != null) {
+                message.append("\n")
+                message.append("# Configuration: ").append(configurationChecksum)
+            }
+
+            if (executionPlatformLabel != null) {
+                message.append("\n")
+                message.append("# Execution platform: ").append(executionPlatformLabel)
+            }
+
+            if (spawnRunner != null) {
+                message.append("\n")
+                message.append("# Runner: ").append(spawnRunner)
+            }
+        }
+
+        return message.toString()
     }
 
-    if (form == CommandDescriptionForm.COMPLETE) {
-      ScriptUtil.emitEndIsolate(message);
+    /**
+     * Construct an error message that describes a failed command invocation. Currently this returns a
+     * message of the form "foo failed: error executing FooCompile command /dir/foo bar baz".
+     */
+    @com.google.common.annotations.VisibleForTesting
+    fun describeCommandFailure(
+        verbose: Boolean,
+        mnemonic: String?,
+        commandLineElements: MutableCollection<String>,
+        env: MutableMap<String?, String?>?,
+        cwd: String?,
+        configurationChecksum: String?,
+        targetDescription: String?,
+        executionPlatformLabel: Label?,
+        spawnRunner: String?
+    ): String {
+        val commandName = commandLineElements.iterator().next()
+        // Extract the part of the command name after the last "/", if any.
+        val shortCommandName: String? = java.io.File(commandName).getName()
+
+        val form: CommandDescriptionForm = if (verbose)
+            CommandDescriptionForm.COMPLETE
+        else
+            CommandDescriptionForm.ABBREVIATED
+
+        val output: java.lang.StringBuilder = java.lang.StringBuilder()
+        output.append("error executing ")
+        output.append(mnemonic)
+        output.append(" command ")
+        if (targetDescription != null) {
+            output.append("(from ").append(targetDescription).append(") ")
+        }
+        if (verbose) {
+            output.append("\n  ")
+        }
+        output.append(
+            describeCommand(
+                form,  /* prettyPrintArgs= */
+                false,
+                commandLineElements,
+                env,
+                null,
+                cwd,
+                configurationChecksum,
+                executionPlatformLabel,
+                spawnRunner
+            )
+        )
+        return shortCommandName + " failed: " + output
     }
 
-    if (form == CommandDescriptionForm.COMPLETE) {
-
-      if (configurationChecksum != null) {
-        message.append("\n");
-        message.append("# Configuration: ").append(configurationChecksum);
-      }
-
-      if (executionPlatformLabel != null) {
-        message.append("\n");
-        message.append("# Execution platform: ").append(executionPlatformLabel);
-      }
-
-      if (spawnRunner != null) {
-        message.append("\n");
-        message.append("# Runner: ").append(spawnRunner);
-      }
-    }
-
-    return message.toString();
-  }
-
-  /**
-   * Construct an error message that describes a failed command invocation. Currently this returns a
-   * message of the form "foo failed: error executing FooCompile command /dir/foo bar baz".
-   */
-  @VisibleForTesting
-  static String describeCommandFailure(
-      boolean verbose,
-      String mnemonic,
-      Collection<String> commandLineElements,
-      Map<String, String> env,
-      @Nullable String cwd,
-      @Nullable String configurationChecksum,
-      @Nullable String targetDescription,
-      @Nullable Label executionPlatformLabel,
-      @Nullable String spawnRunner) {
-
-    String commandName = commandLineElements.iterator().next();
-    // Extract the part of the command name after the last "/", if any.
-    String shortCommandName = new File(commandName).getName();
-
-    CommandDescriptionForm form = verbose
-        ? CommandDescriptionForm.COMPLETE
-        : CommandDescriptionForm.ABBREVIATED;
-
-    StringBuilder output = new StringBuilder();
-    output.append("error executing ");
-    output.append(mnemonic);
-    output.append(" command ");
-    if (targetDescription != null) {
-      output.append("(from ").append(targetDescription).append(") ");
-    }
-    if (verbose) {
-      output.append("\n  ");
-    }
-    output.append(
-        describeCommand(
-            form,
-            /* prettyPrintArgs= */ false,
-            commandLineElements,
-            env,
-            null,
+    fun describeCommandFailure(
+        verboseFailures: Boolean, cwd: String?, command: DescribableExecutionUnit
+    ): String {
+        return describeCommandFailure(
+            verboseFailures,
+            command.getMnemonic(),
+            command.getArguments(),
+            command.getEnvironment(),
             cwd,
-            configurationChecksum,
-            executionPlatformLabel,
-            spawnRunner));
-    return shortCommandName + " failed: " + output;
-  }
-
-  public static String describeCommandFailure(
-      boolean verboseFailures, @Nullable String cwd, DescribableExecutionUnit command) {
-    return describeCommandFailure(
-        verboseFailures,
-        command.getMnemonic(),
-        command.getArguments(),
-        command.getEnvironment(),
-        cwd,
-        command.getConfigurationChecksum(),
-        command.getTargetDescription(),
-        command.getExecutionPlatformLabel(),
-        /* spawnRunner= */ null);
-  }
+            command.getConfigurationChecksum(),
+            command.getTargetDescription(),
+            command.getExecutionPlatformLabel(),  /* spawnRunner= */
+            null
+        )
+    }
 }

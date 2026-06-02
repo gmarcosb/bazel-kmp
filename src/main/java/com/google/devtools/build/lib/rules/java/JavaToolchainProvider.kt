@@ -11,336 +11,345 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.java;
+package com.google.devtools.build.lib.rules.java
 
-import static com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild;
-import static java.util.Objects.requireNonNull;
+import com.google.common.annotations.VisibleForTesting
+import com.google.common.base.Preconditions
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.actions.Artifact
+import com.google.devtools.build.lib.concurrent.ThreadSafety
+import net.starlark.java.eval.EvalException
+import net.starlark.java.eval.Sequence
+import net.starlark.java.eval.Starlark
+import net.starlark.java.eval.StarlarkValue
+import java.util.*
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.FilesToRunProvider;
-import com.google.devtools.build.lib.analysis.PackageSpecificationProvider;
-import com.google.devtools.build.lib.analysis.ProviderCollection;
-import com.google.devtools.build.lib.analysis.RuleContext;
-import com.google.devtools.build.lib.analysis.RuleErrorConsumer;
-import com.google.devtools.build.lib.analysis.platform.ToolchainInfo;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.Info;
-import com.google.devtools.build.lib.packages.PackageSpecification.PackageGroupContents;
-import com.google.devtools.build.lib.packages.RuleClass.ConfiguredTargetFactory.RuleErrorException;
-import com.google.devtools.build.lib.packages.StarlarkInfo;
-import com.google.devtools.build.lib.packages.StarlarkInfoWithSchema;
-import com.google.devtools.build.lib.packages.StarlarkProviderWrapper;
-import com.google.devtools.build.lib.packages.StructImpl;
-import com.google.devtools.build.lib.rules.java.JavaPluginInfo.JavaPluginData;
-import com.google.devtools.build.lib.skyframe.BzlLoadValue;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Sequence;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkValue;
-
-/** Information about the JDK used by the <code>java_*</code> rules. */
-@Immutable
-public final class JavaToolchainProvider extends StarlarkInfoWrapper {
-
-  public static final StarlarkProviderWrapper<JavaToolchainProvider> RULES_JAVA_PROVIDER =
-      new RulesJavaProvider();
-  public static final StarlarkProviderWrapper<JavaToolchainProvider> PROVIDER = new Provider();
-
-  private JavaToolchainProvider(StarlarkInfo underlying) {
-    super(underlying);
-  }
-
-  public static JavaToolchainProvider wrap(Info info) throws RuleErrorException {
-    com.google.devtools.build.lib.packages.Provider.Key key = info.getProvider().getKey();
-    if (key.equals(PROVIDER.getKey())) {
-      return PROVIDER.wrap(info);
-    } else if (key.equals(RULES_JAVA_PROVIDER.getKey())) {
-      return RULES_JAVA_PROVIDER.wrap(info);
-    } else {
-      throw new RuleErrorException("expected JavaToolchainInfo, got: " + key);
-    }
-  }
-
-  @Override
-  public int hashCode() {
-    try {
-      // StructImpl.hashcode() is too expensive, just the label should be enough
-      return getToolchainLabel().hashCode();
-    } catch (RuleErrorException e) {
-      throw new IllegalStateException(e);
-    }
-  }
-
-  @Override
-  public boolean equals(Object obj) {
-    if (this == obj) {
-      return true;
-    }
-    if (!(obj instanceof JavaToolchainProvider)) {
-      return false;
-    }
-    return underlying.equals(((JavaToolchainProvider) obj).underlying);
-  }
-
-  /** Returns the Java Toolchain associated with the rule being analyzed or {@code null}. */
-  public static JavaToolchainProvider from(RuleContext ruleContext) {
-    ToolchainInfo toolchainInfo =
-        ruleContext.getToolchainInfo(
-            ruleContext.getPrerequisite("$java_toolchain_type").getLabel());
-    return from(toolchainInfo, ruleContext);
-  }
-
-  @VisibleForTesting
-  public static JavaToolchainProvider from(ProviderCollection collection) {
-    ToolchainInfo toolchainInfo = collection.get(ToolchainInfo.PROVIDER);
-    return from(toolchainInfo, null);
-  }
-
-  @Nullable
-  private static JavaToolchainProvider from(
-      ToolchainInfo toolchainInfo, @Nullable RuleErrorConsumer errorConsumer) {
-    if (toolchainInfo != null) {
-      try {
-        JavaToolchainProvider provider =
-            JavaToolchainProvider.wrap(toolchainInfo.getValue("java", Info.class));
-        if (provider != null) {
-          return provider;
-        }
-      } catch (EvalException | RuleErrorException e) {
-        if (errorConsumer != null) {
-          errorConsumer.ruleError(
-              String.format("There was an error reading the Java toolchain: %s", e));
-        }
-      }
-    }
-    if (errorConsumer != null) {
-      errorConsumer.ruleError("The selected Java toolchain is not a JavaToolchainProvider");
-    }
-    return null;
-  }
-
-  /** Returns the label for this {@code java_toolchain}. */
-  public Label getToolchainLabel() throws RuleErrorException {
-    return Preconditions.checkNotNull(getUnderlyingValue("label", Label.class));
-  }
-
-  /** Returns the target Java bootclasspath. */
-  public BootClassPathInfo getBootclasspath() throws RuleErrorException {
-    return BootClassPathInfo.wrap(getUnderlyingValue("_bootclasspath_info", Info.class));
-  }
-
-  /** Returns the {@link Artifact}s of compilation tools. */
-  public NestedSet<Artifact> getTools() throws RuleErrorException {
-    return getUnderlyingNestedSet("tools", Artifact.class);
-  }
-
-  /** Returns the {@link JavaToolchainTool} for JavaBuilder */
-  public JavaToolchainTool getJavaBuilder() throws RuleErrorException {
-    return JavaToolchainTool.fromStarlark(
-        getUnderlyingValue("_javabuilder", StructImpl.class), this);
-  }
-
-  /** Returns the {@link JavaToolchainTool} for the header compiler */
-  @Nullable
-  public JavaToolchainTool getHeaderCompiler() throws RuleErrorException {
-    return JavaToolchainTool.fromStarlark(
-        getUnderlyingValue("_header_compiler", StructImpl.class), this);
-  }
-
-  /**
-   * Returns the {@link FilesToRunProvider} of the Header Compiler deploy jar for direct-classpath,
-   * non-annotation processing actions.
-   */
-  @Nullable
-  public JavaToolchainTool getHeaderCompilerDirect() throws RuleErrorException {
-    return JavaToolchainTool.fromStarlark(
-        getUnderlyingValue("_header_compiler_direct", StructImpl.class), this);
-  }
-
-  @Nullable
-  @VisibleForTesting
-  public StructImpl getAndroidLint() throws RuleErrorException {
-    return getUnderlyingValue("_android_linter", StructImpl.class);
-  }
-
-  @Nullable
-  public JspecifyInfo jspecifyInfo() throws RuleErrorException {
-    return JspecifyInfo.fromStarlark(getUnderlyingValue("_jspecify_info", StarlarkValue.class));
-  }
-
-  @Nullable
-  public JavaToolchainTool getBytecodeOptimizer() throws RuleErrorException {
-    return JavaToolchainTool.fromStarlark(
-        getUnderlyingValue("_bytecode_optimizer", StructImpl.class), this);
-  }
-
-  public ImmutableList<Artifact> getLocalJavaOptimizationConfiguration() throws RuleErrorException {
-    return getUnderlyingSequence("_local_java_optimization_config", Artifact.class)
-        .getImmutableList();
-  }
-
-  /** Returns class names of annotation processors that are built in to the header compiler. */
-  public ImmutableSet<String> getHeaderCompilerBuiltinProcessors() throws RuleErrorException {
-    return getUnderlyingNestedSet("_header_compiler_builtin_processors", String.class).toSet();
-  }
-
-  public ImmutableSet<String> getReducedClasspathIncompatibleProcessors()
-      throws RuleErrorException {
-    return getUnderlyingNestedSet("_reduced_classpath_incompatible_processors", String.class)
-        .toSet();
-  }
-
-  /** Returns the {@link FilesToRunProvider} of the SingleJar tool. */
-  public FilesToRunProvider getSingleJar() throws RuleErrorException {
-    return getUnderlyingValue("single_jar", FilesToRunProvider.class);
-  }
-
-  /** Returns the {@link Artifact} of the GenClass deploy jar */
-  public Artifact getGenClass() throws RuleErrorException {
-    return getUnderlyingValue("_gen_class", Artifact.class);
-  }
-
-  /**
-   * Returns the {@link Artifact} of the latest timezone data resource jar that can be loaded by
-   * Java 8 binaries.
-   */
-  @Nullable
-  @VisibleForTesting
-  public Artifact getTimezoneData() throws RuleErrorException {
-    return getUnderlyingValue("_timezone_data", Artifact.class);
-  }
-
-  /** Returns the ijar executable */
-  public FilesToRunProvider getIjar() throws RuleErrorException {
-    return getUnderlyingValue("ijar", FilesToRunProvider.class);
-  }
-
-  /**
-   * Returns the NestedSet of default options for the JVM running the java compiler and associated
-   * tools.
-   */
-  public NestedSet<String> getJvmOptions() throws RuleErrorException {
-    return getUnderlyingNestedSet("jvm_opt", String.class);
-  }
-
-  /** Returns whether JavaBuilders supports running as a persistent worker or not. */
-  public boolean getJavacSupportsWorkers() throws RuleErrorException {
-    return getUnderlyingValue("_javac_supports_workers", Boolean.class);
-  }
-
-  /** Returns whether JavaBuilders supports running persistent workers in multiplex mode */
-  public boolean getJavacSupportsMultiplexWorkers() throws RuleErrorException {
-    return getUnderlyingValue("_javac_supports_multiplex_workers", Boolean.class);
-  }
-
-  /** Returns whether JavaBuilders supports running persistent workers with cancellation */
-  public boolean getJavacSupportsWorkerCancellation() throws RuleErrorException {
-    return getUnderlyingValue("_javac_supports_worker_cancellation", Boolean.class);
-  }
-
-  /** Returns whether JavaBuilders supports running multiplex persistent workers in sandbox mode */
-  public boolean getJavacSupportsWorkerMultiplexSandboxing() throws RuleErrorException {
-    return getUnderlyingValue("_javac_supports_worker_multiplex_sandboxing", Boolean.class);
-  }
-
-  /** Returns the global {@code java_package_configuration} data. */
-  public ImmutableList<JavaPackageConfigurationProvider> packageConfiguration()
-      throws RuleErrorException {
-    return JavaPackageConfigurationProvider.wrapSequence(
-        getUnderlyingSequence("_package_configuration", StructImpl.class));
-  }
-
-  public FilesToRunProvider getJacocoRunner() throws RuleErrorException {
-    return getUnderlyingValue("jacocorunner", FilesToRunProvider.class);
-  }
-
-  public JavaRuntimeInfo getJavaRuntime() throws RuleErrorException {
-    return JavaRuntimeInfo.wrap(getUnderlyingValue("java_runtime", Info.class), "java_runtime");
-  }
-
-  record JspecifyInfo(
-      JavaPluginData jspecifyProcessor,
-      NestedSet<Artifact> jspecifyImplicitDeps,
-      ImmutableList<String> jspecifyJavacopts,
-      ImmutableList<PackageSpecificationProvider> jspecifyPackages) {
-    JspecifyInfo {
-      requireNonNull(jspecifyProcessor, "jspecifyProcessor");
-      requireNonNull(jspecifyImplicitDeps, "jspecifyImplicitDeps");
-      requireNonNull(jspecifyJavacopts, "jspecifyJavacopts");
-      requireNonNull(jspecifyPackages, "jspecifyPackages");
-    }
-
-    boolean matches(Label label) {
-      for (PackageSpecificationProvider provider : jspecifyPackages()) {
-        for (PackageGroupContents specifications : provider.getPackageSpecifications().toList()) {
-          if (specifications.containsPackage(label.getPackageIdentifier())) {
-            return true;
-          }
-        }
-      }
-      return false;
-    }
-
-    @Nullable
-    static JspecifyInfo fromStarlark(@Nullable StarlarkValue value) throws RuleErrorException {
-      if (value == null || value == Starlark.NONE) {
-        return null;
-      } else if (value instanceof StructImpl struct) {
+/** Information about the JDK used by the `java_*` rules.  */
+@ThreadSafety.Immutable
+class JavaToolchainProvider private constructor(underlying: StarlarkInfo?) : StarlarkInfoWrapper(underlying) {
+    override fun hashCode(): Int {
         try {
-          return new JspecifyInfo(
-              JavaPluginData.wrap(struct.getValue("processor")),
-              Depset.noneableCast(
-                  struct.getValue("implicit_deps"), Artifact.class, "implicit_deps"),
-              Sequence.noneableCast(struct.getValue("javacopts"), String.class, "javacopts")
-                  .getImmutableList(),
-              Sequence.noneableCast(
-                      struct.getValue("packages"), PackageSpecificationProvider.class, "packages")
-                  .getImmutableList());
-        } catch (EvalException e) {
-          throw new RuleErrorException(e);
+            // StructImpl.hashcode() is too expensive, just the label should be enough
+            return this.toolchainLabel.hashCode()
+        } catch (e: RuleErrorException) {
+            throw IllegalStateException(e)
         }
-      } else {
-        throw new RuleErrorException("expected JspecifyInfo, got: " + Starlark.type(value));
-      }
-    }
-  }
-
-  private static class RulesJavaProvider extends Provider {
-    private RulesJavaProvider() {
-      super(keyForBuild(Label.parseCanonicalUnchecked("//java/common/rules:java_toolchain.bzl")));
-    }
-  }
-
-  private static class Provider extends StarlarkProviderWrapper<JavaToolchainProvider> {
-    private Provider() {
-      this(
-          keyForBuild(
-              Label.parseCanonicalUnchecked(
-                  JavaSemantics.RULES_JAVA_PROVIDER_LABELS_PREFIX
-                      + "java/common/rules:java_toolchain.bzl")));
     }
 
-    private Provider(BzlLoadValue.Key key) {
-      super(key, "JavaToolchainInfo");
+    override fun equals(obj: Any?): Boolean {
+        if (this === obj) {
+            return true
+        }
+        if (obj !is JavaToolchainProvider) {
+            return false
+        }
+        return underlying.equals(obj.underlying)
     }
 
-    @Override
-    public JavaToolchainProvider wrap(Info value) throws RuleErrorException {
-      if (value instanceof StarlarkInfoWithSchema
-          && value.getProvider().getKey().equals(getKey())) {
-        return new JavaToolchainProvider((StarlarkInfo) value);
-      } else {
-        throw new RuleErrorException(
-            "got value of type '" + Starlark.type(value) + "', want 'JavaToolchainInfo'");
-      }
+    @get:Throws(RuleErrorException::class)
+    val toolchainLabel: Label?
+        /** Returns the label for this `java_toolchain`.  */
+        get() = Preconditions.checkNotNull<Label?>(
+            getUnderlyingValue<Label?>(
+                "label",
+                Label::class.java
+            )
+        )
+
+    @get:Throws(RuleErrorException::class)
+    val bootclasspath: BootClassPathInfo
+        /** Returns the target Java bootclasspath.  */
+        get() = BootClassPathInfo.Companion.wrap(getUnderlyingValue<Info?>("_bootclasspath_info", Info::class.java))
+
+    @get:Throws(RuleErrorException::class)
+    val tools: NestedSet<Artifact?>?
+        /** Returns the [Artifact]s of compilation tools.  */
+        get() = getUnderlyingNestedSet<Artifact?>("tools", Artifact::class.java)
+
+    @get:Throws(RuleErrorException::class)
+    val javaBuilder: JavaToolchainTool?
+        /** Returns the [JavaToolchainTool] for JavaBuilder  */
+        get() = JavaToolchainTool.Companion.fromStarlark(
+            getUnderlyingValue<StructImpl?>("_javabuilder", StructImpl::class.java), this
+        )
+
+    @get:Throws(RuleErrorException::class)
+    val headerCompiler: JavaToolchainTool?
+        /** Returns the [JavaToolchainTool] for the header compiler  */
+        get() = JavaToolchainTool.Companion.fromStarlark(
+            getUnderlyingValue<StructImpl?>("_header_compiler", StructImpl::class.java), this
+        )
+
+    @get:Throws(RuleErrorException::class)
+    val headerCompilerDirect: JavaToolchainTool?
+        /**
+         * Returns the [FilesToRunProvider] of the Header Compiler deploy jar for direct-classpath,
+         * non-annotation processing actions.
+         */
+        get() = JavaToolchainTool.Companion.fromStarlark(
+            getUnderlyingValue<StructImpl?>("_header_compiler_direct", StructImpl::class.java), this
+        )
+
+    @get:Throws(RuleErrorException::class)
+    @get:VisibleForTesting
+    val androidLint: StructImpl?
+        get() = getUnderlyingValue<StructImpl?>("_android_linter", StructImpl::class.java)
+
+    @Throws(RuleErrorException::class)
+    fun jspecifyInfo(): JspecifyInfo? {
+        return JspecifyInfo.Companion.fromStarlark(
+            getUnderlyingValue<StarlarkValue?>(
+                "_jspecify_info",
+                StarlarkValue::class.java
+            )
+        )
     }
-  }
+
+    @get:Throws(RuleErrorException::class)
+    val bytecodeOptimizer: JavaToolchainTool?
+        get() = JavaToolchainTool.Companion.fromStarlark(
+            getUnderlyingValue<StructImpl?>("_bytecode_optimizer", StructImpl::class.java), this
+        )
+
+    @get:Throws(RuleErrorException::class)
+    val localJavaOptimizationConfiguration: ImmutableList<Artifact>?
+        get() = getUnderlyingSequence<Artifact?>("_local_java_optimization_config", Artifact::class.java)
+            .getImmutableList()
+
+    @get:Throws(RuleErrorException::class)
+    val headerCompilerBuiltinProcessors: ImmutableSet<String?>
+        /** Returns class names of annotation processors that are built in to the header compiler.  */
+        get() = getUnderlyingNestedSet<String?>(
+            "_header_compiler_builtin_processors",
+            String::class.java
+        ).toSet()
+
+    @get:Throws(RuleErrorException::class)
+    val reducedClasspathIncompatibleProcessors: ImmutableSet<String?>
+        get() = getUnderlyingNestedSet<String?>(
+            "_reduced_classpath_incompatible_processors",
+            String::class.java
+        )
+            .toSet()
+
+    @get:Throws(RuleErrorException::class)
+    val singleJar: FilesToRunProvider?
+        /** Returns the [FilesToRunProvider] of the SingleJar tool.  */
+        get() = getUnderlyingValue<FilesToRunProvider?>("single_jar", FilesToRunProvider::class.java)
+
+    @get:Throws(RuleErrorException::class)
+    val genClass: Artifact?
+        /** Returns the [Artifact] of the GenClass deploy jar  */
+        get() = getUnderlyingValue<Artifact?>("_gen_class", Artifact::class.java)
+
+    @get:Throws(RuleErrorException::class)
+    @get:VisibleForTesting
+    val timezoneData: Artifact?
+        /**
+         * Returns the [Artifact] of the latest timezone data resource jar that can be loaded by
+         * Java 8 binaries.
+         */
+        get() = getUnderlyingValue<Artifact?>("_timezone_data", Artifact::class.java)
+
+    @get:Throws(RuleErrorException::class)
+    val ijar: FilesToRunProvider?
+        /** Returns the ijar executable  */
+        get() = getUnderlyingValue<FilesToRunProvider?>("ijar", FilesToRunProvider::class.java)
+
+    @get:Throws(RuleErrorException::class)
+    val jvmOptions: NestedSet<String?>?
+        /**
+         * Returns the NestedSet of default options for the JVM running the java compiler and associated
+         * tools.
+         */
+        get() = getUnderlyingNestedSet<String?>("jvm_opt", String::class.java)
+
+    @get:Throws(RuleErrorException::class)
+    val javacSupportsWorkers: Boolean
+        /** Returns whether JavaBuilders supports running as a persistent worker or not.  */
+        get() = getUnderlyingValue<Boolean?>("_javac_supports_workers", Boolean::class.java)
+
+    @get:Throws(RuleErrorException::class)
+    val javacSupportsMultiplexWorkers: Boolean
+        /** Returns whether JavaBuilders supports running persistent workers in multiplex mode  */
+        get() = getUnderlyingValue<Boolean?>("_javac_supports_multiplex_workers", Boolean::class.java)
+
+    @get:Throws(RuleErrorException::class)
+    val javacSupportsWorkerCancellation: Boolean
+        /** Returns whether JavaBuilders supports running persistent workers with cancellation  */
+        get() = getUnderlyingValue<Boolean?>("_javac_supports_worker_cancellation", Boolean::class.java)
+
+    @get:Throws(RuleErrorException::class)
+    val javacSupportsWorkerMultiplexSandboxing: Boolean
+        /** Returns whether JavaBuilders supports running multiplex persistent workers in sandbox mode  */
+        get() = getUnderlyingValue<Boolean?>("_javac_supports_worker_multiplex_sandboxing", Boolean::class.java)
+
+    /** Returns the global `java_package_configuration` data.  */
+    @Throws(RuleErrorException::class)
+    fun packageConfiguration(): ImmutableList<JavaPackageConfigurationProvider?> {
+        return JavaPackageConfigurationProvider.Companion.wrapSequence(
+            getUnderlyingSequence<StructImpl?>("_package_configuration", StructImpl::class.java)
+        )
+    }
+
+    @get:Throws(RuleErrorException::class)
+    val jacocoRunner: FilesToRunProvider?
+        get() = getUnderlyingValue<FilesToRunProvider?>("jacocorunner", FilesToRunProvider::class.java)
+
+    @get:Throws(RuleErrorException::class)
+    val javaRuntime: JavaRuntimeInfo?
+        get() = JavaRuntimeInfo.Companion.wrap(
+            getUnderlyingValue<Info?>("java_runtime", Info::class.java),
+            "java_runtime"
+        )
+
+    internal class JspecifyInfo(
+        jspecifyProcessor: JavaPluginData?,
+        jspecifyImplicitDeps: NestedSet<Artifact?>?,
+        jspecifyJavacopts: ImmutableList<String?>?,
+        jspecifyPackages: ImmutableList<PackageSpecificationProvider>?
+    ) {
+        fun matches(label: Label): Boolean {
+            for (provider in this.jspecifyPackages!!) {
+                for (specifications in provider.getPackageSpecifications().toList()) {
+                    if (specifications.containsPackage(label.getPackageIdentifier())) {
+                        return true
+                    }
+                }
+            }
+            return false
+        }
+
+        val jspecifyProcessor: JavaPluginData?
+        val jspecifyImplicitDeps: NestedSet<Artifact?>?
+        val jspecifyJavacopts: ImmutableList<String?>?
+        val jspecifyPackages: ImmutableList<PackageSpecificationProvider>?
+
+        init {
+            this.jspecifyPackages = jspecifyPackages
+            this.jspecifyJavacopts = jspecifyJavacopts
+            this.jspecifyImplicitDeps = jspecifyImplicitDeps
+            this.jspecifyProcessor = jspecifyProcessor
+            Objects.requireNonNull<JavaPluginData?>(jspecifyProcessor, "jspecifyProcessor")
+            Objects.requireNonNull<Any?>(jspecifyImplicitDeps, "jspecifyImplicitDeps")
+            Objects.requireNonNull<ImmutableList<String?>?>(jspecifyJavacopts, "jspecifyJavacopts")
+            Objects.requireNonNull<ImmutableList<PackageSpecificationProvider?>?>(jspecifyPackages, "jspecifyPackages")
+        }
+
+        companion object {
+            @Throws(RuleErrorException::class)
+            fun fromStarlark(value: StarlarkValue?): JspecifyInfo? {
+                if (value == null || value === Starlark.NONE) {
+                    return null
+                } else if (value is StructImpl) {
+                    try {
+                        return JspecifyInfo(
+                            JavaPluginData.Companion.wrap(value.getValue("processor")),
+                            Depset.noneableCast(
+                                value.getValue("implicit_deps"), Artifact::class.java, "implicit_deps"
+                            ),
+                            Sequence.noneableCast<T?>(value.getValue("javacopts"), String::class.java, "javacopts")
+                                .getImmutableList(),
+                            Sequence.noneableCast<T?>(
+                                value.getValue("packages"), PackageSpecificationProvider::class.java, "packages"
+                            )
+                                .getImmutableList()
+                        )
+                    } catch (e: EvalException) {
+                        throw RuleErrorException(e)
+                    }
+                } else {
+                    throw RuleErrorException("expected JspecifyInfo, got: " + Starlark.type(value))
+                }
+            }
+        }
+    }
+
+    private class RulesJavaProvider :
+        Provider(BzlLoadValue.keyForBuild(Label.parseCanonicalUnchecked("//java/common/rules:java_toolchain.bzl")))
+
+    private open class Provider(
+        key: BzlLoadValue.Key? = BzlLoadValue.keyForBuild(
+            Label.parseCanonicalUnchecked(
+                JavaSemantics.Companion.RULES_JAVA_PROVIDER_LABELS_PREFIX
+                        + "java/common/rules:java_toolchain.bzl"
+            )
+        )
+    ) : StarlarkProviderWrapper<JavaToolchainProvider?>(key, "JavaToolchainInfo") {
+        @Throws(RuleErrorException::class)
+        public override fun wrap(value: Info): JavaToolchainProvider {
+            if (value is StarlarkInfoWithSchema
+                && value.getProvider().getKey().equals(getKey())
+            ) {
+                return JavaToolchainProvider(value as StarlarkInfo)
+            } else {
+                throw RuleErrorException(
+                    "got value of type '" + Starlark.type(value) + "', want 'JavaToolchainInfo'"
+                )
+            }
+        }
+    }
+
+    companion object {
+        val RULES_JAVA_PROVIDER: StarlarkProviderWrapper<JavaToolchainProvider?> = RulesJavaProvider()
+        @kotlin.jvm.JvmField
+        val PROVIDER: StarlarkProviderWrapper<JavaToolchainProvider?> = Provider()
+
+        @Throws(RuleErrorException::class)
+        fun wrap(info: Info): JavaToolchainProvider {
+            val key: com.google.devtools.build.lib.packages.Provider.Key = info.getProvider().getKey()
+            if (key.equals(PROVIDER.getKey())) {
+                return PROVIDER.wrap(info)
+            } else if (key.equals(RULES_JAVA_PROVIDER.getKey())) {
+                return RULES_JAVA_PROVIDER.wrap(info)
+            } else {
+                throw RuleErrorException("expected JavaToolchainInfo, got: " + key)
+            }
+        }
+
+        /** Returns the Java Toolchain associated with the rule being analyzed or `null`.  */
+        fun from(ruleContext: RuleContext): JavaToolchainProvider? {
+            val toolchainInfo: ToolchainInfo? =
+                ruleContext.getToolchainInfo(
+                    ruleContext.getPrerequisite("\$java_toolchain_type").getLabel()
+                )
+            return from(toolchainInfo, ruleContext)
+        }
+
+        @VisibleForTesting
+        fun from(collection: ProviderCollection): JavaToolchainProvider? {
+            val toolchainInfo: ToolchainInfo? = collection.get(ToolchainInfo.PROVIDER)
+            return from(toolchainInfo, null)
+        }
+
+        private fun from(
+            toolchainInfo: ToolchainInfo?, errorConsumer: RuleErrorConsumer?
+        ): JavaToolchainProvider? {
+            if (toolchainInfo != null) {
+                try {
+                    val provider: JavaToolchainProvider? =
+                        wrap(toolchainInfo.getValue("java", Info::class.java))
+                    if (provider != null) {
+                        return provider
+                    }
+                } catch (e: EvalException) {
+                    if (errorConsumer != null) {
+                        errorConsumer.ruleError(
+                            java.lang.String.format("There was an error reading the Java toolchain: %s", e)
+                        )
+                    }
+                } catch (e: RuleErrorException) {
+                    if (errorConsumer != null) {
+                        errorConsumer.ruleError(
+                            java.lang.String.format("There was an error reading the Java toolchain: %s", e)
+                        )
+                    }
+                }
+            }
+            if (errorConsumer != null) {
+                errorConsumer.ruleError("The selected Java toolchain is not a JavaToolchainProvider")
+            }
+            return null
+        }
+    }
 }

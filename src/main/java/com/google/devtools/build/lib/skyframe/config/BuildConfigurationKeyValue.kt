@@ -11,116 +11,105 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.config;
+package com.google.devtools.build.lib.skyframe.config
 
-import com.google.common.base.MoreObjects;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.concurrent.ThreadSafety;
-import com.google.devtools.build.lib.skyframe.SkyFunctions;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Objects;
+import com.google.devtools.build.lib.analysis.config.BuildOptions
 
-/** Stores a {@link BuildConfigurationKey} with all platform mappings applied. */
+/** Stores a [BuildConfigurationKey] with all platform mappings applied.  */
 @AutoCodec
-public final class BuildConfigurationKeyValue implements SkyValue {
+class BuildConfigurationKeyValue internal constructor(buildConfigurationKey: BuildConfigurationKey) : SkyValue {
+    /** Key for [BuildConfigurationKeyValue] based on the build options.  */
+    @ThreadSafety.Immutable
+    @AutoCodec
+    class Key private constructor(buildOptions: BuildOptions) : SkyKey {
+        private val buildOptions: BuildOptions
 
-  /** Key for {@link BuildConfigurationKeyValue} based on the build options. */
-  @ThreadSafety.Immutable
-  @AutoCodec
-  public static final class Key implements SkyKey {
-    private static final SkyKeyInterner<Key> interner = SkyKey.newInterner();
+        init {
+            this.buildOptions = buildOptions
+        }
 
-    public static Key create(BuildOptions buildOptions) {
-      return interner.intern(new Key(buildOptions));
+        fun buildOptions(): BuildOptions {
+            return buildOptions
+        }
+
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.BUILD_CONFIGURATION_KEY
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false
+            }
+            val key = o as Key
+            return buildOptions == key.buildOptions
+        }
+
+        override fun hashCode(): Int {
+            return java.util.Objects.hashCode(buildOptions)
+        }
+
+        override fun toString(): String {
+            return "BuildConfigurationKeyValue.Key{buildOptions=" + buildOptions.checksum() + "}"
+        }
+
+        val skyKeyInterner: SkyKeyInterner<Key?>
+            get() = com.google.devtools.build.lib.skyframe.config.BuildConfigurationKeyValue.Key.Companion.interner
+
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
+
+            fun create(buildOptions: BuildOptions): Key {
+                return com.google.devtools.build.lib.skyframe.config.BuildConfigurationKeyValue.Key.Companion.interner.intern(
+                    com.google.devtools.build.lib.skyframe.config.BuildConfigurationKeyValue.Key(buildOptions)
+                )
+            }
+
+            @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+            @AutoCodec.Interner
+            fun intern(key: Key?): Key {
+                return com.google.devtools.build.lib.skyframe.config.BuildConfigurationKeyValue.Key.Companion.interner.intern(
+                    key
+                )
+            }
+        }
     }
 
-    @VisibleForSerialization
-    @AutoCodec.Interner
-    static Key intern(Key key) {
-      return interner.intern(key);
+    private val buildConfigurationKey: BuildConfigurationKey
+
+    init {
+        this.buildConfigurationKey = buildConfigurationKey
     }
 
-    private final BuildOptions buildOptions;
-
-    private Key(BuildOptions buildOptions) {
-      this.buildOptions = buildOptions;
+    fun buildConfigurationKey(): BuildConfigurationKey {
+        return buildConfigurationKey
     }
 
-    public BuildOptions buildOptions() {
-      return buildOptions;
+    override fun equals(obj: Any?): Boolean {
+        if (this === obj) {
+            return true
+        }
+        if (obj !is BuildConfigurationKeyValue) {
+            return false
+        }
+        return this.buildConfigurationKey == obj.buildConfigurationKey
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.BUILD_CONFIGURATION_KEY;
+    override fun hashCode(): Int {
+        return java.util.Objects.hashCode(buildConfigurationKey)
     }
 
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (o == null || getClass() != o.getClass()) {
-        return false;
-      }
-      Key key = (Key) o;
-      return Objects.equals(buildOptions, key.buildOptions);
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("buildConfigurationKey", buildConfigurationKey)
+            .toString()
     }
 
-    @Override
-    public int hashCode() {
-      return Objects.hashCode(buildOptions);
+    companion object {
+        fun create(buildConfigurationKey: BuildConfigurationKey): BuildConfigurationKeyValue {
+            return BuildConfigurationKeyValue(buildConfigurationKey)
+        }
     }
-
-    @Override
-    public String toString() {
-      return "BuildConfigurationKeyValue.Key{buildOptions=" + buildOptions.checksum() + "}";
-    }
-
-    @Override
-    public SkyKeyInterner<Key> getSkyKeyInterner() {
-      return interner;
-    }
-  }
-
-  public static BuildConfigurationKeyValue create(BuildConfigurationKey buildConfigurationKey) {
-    return new BuildConfigurationKeyValue(buildConfigurationKey);
-  }
-
-  private final BuildConfigurationKey buildConfigurationKey;
-
-  BuildConfigurationKeyValue(BuildConfigurationKey buildConfigurationKey) {
-    this.buildConfigurationKey = buildConfigurationKey;
-  }
-
-  public BuildConfigurationKey buildConfigurationKey() {
-    return buildConfigurationKey;
-  }
-
-  @Override
-  public boolean equals(Object obj) {
-    if (this == obj) {
-      return true;
-    }
-    if (!(obj instanceof BuildConfigurationKeyValue that)) {
-      return false;
-    }
-    return this.buildConfigurationKey.equals(that.buildConfigurationKey);
-  }
-
-  @Override
-  public int hashCode() {
-    return Objects.hashCode(buildConfigurationKey);
-  }
-
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("buildConfigurationKey", buildConfigurationKey)
-        .toString();
-  }
 }

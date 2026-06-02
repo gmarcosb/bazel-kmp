@@ -11,9 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-/** Simple bytes consumer. */
-public interface BytesSink {
-  void acceptBytes(byte[] buf, int offset, int len);
+/** Simple bytes consumer.  */
+interface BytesSink {
+    fun acceptBytes(buf: ByteArray?, offset: Int, len: Int)
 }

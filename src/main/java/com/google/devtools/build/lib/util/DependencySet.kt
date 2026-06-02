@@ -11,312 +11,323 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.util
 
-package com.google.devtools.build.lib.util;
-
-import static java.nio.charset.StandardCharsets.ISO_8859_1;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Ascii;
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.io.IOException;
-import java.io.PrintStream;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.supplier.InterruptibleSupplier.get
+import com.google.devtools.build.lib.util.DependencySet
+import com.google.devtools.build.lib.util.StringEncoding
+import java.io.IOException
+import java.io.PrintStream
+import java.util.Collections
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Representation of a set of file dependencies for a given output file. There are generally one
- * input dependency and a bunch of include dependencies. The files are stored as {@code Path}s and
+ * input dependency and a bunch of include dependencies. The files are stored as `Path`s and
  * may be relative or absolute.
- *
- * <p>The serialized format read and written is equivalent and compatible with the ".d" file
+ * 
+ * 
+ * The serialized format read and written is equivalent and compatible with the ".d" file
  * produced by the -MM for a given out (.o) file.
- *
- * <p>The file format looks like:
- *
+ * 
+ * 
+ * The file format looks like:
+ * 
  * <pre>
  * {outfile}:  \
- *  {infile} \
- *   {include} \
- *   ... \
- *   {include}
- * </pre>
- *
- * @see "http://gcc.gnu.org/onlinedocs/gcc-4.2.1/gcc/Preprocessor-Options.html#Preprocessor-Options"
+ * {infile} \
+ * {include} \
+ * ... \
+ * {include}
+</pre> * 
+ * 
+ * @see "http://gcc.gnu.org/onlinedocs/gcc-4.2.1/gcc/Preprocessor-Options.html.Preprocessor-Options"
  */
-public final class DependencySet {
+class DependencySet(root: com.google.devtools.build.lib.vfs.Path) {
+    /**
+     * The set of dependent files that this DependencySet embodies. They are all Path with the same
+     * FileSystem A tree set is used to ensure that we write them out in a consistent order.
+     */
+    private val dependencies: MutableCollection<com.google.devtools.build.lib.vfs.Path> =
+        java.util.ArrayList<com.google.devtools.build.lib.vfs.Path>()
 
-  /**
-   * The set of dependent files that this DependencySet embodies. They are all Path with the same
-   * FileSystem A tree set is used to ensure that we write them out in a consistent order.
-   */
-  private final Collection<Path> dependencies = new ArrayList<>();
+    private val root: com.google.devtools.build.lib.vfs.Path
 
-  private final Path root;
-  private String outputFileName;
+    /** Get output file name for which dependencies are included in this DependencySet.  */
+    @kotlin.jvm.JvmField
+    var outputFileName: String? = null
 
-  /** Get output file name for which dependencies are included in this DependencySet. */
-  public String getOutputFileName() {
-    return outputFileName;
-  }
-
-  public void setOutputFileName(String outputFileName) {
-    this.outputFileName = outputFileName;
-  }
-
-  /** Constructs a new empty DependencySet instance. */
-  public DependencySet(Path root) {
-    this.root = root;
-  }
-
-  /**
-   * Gets an unmodifiable view of the set of dependencies in {@link Path} form from this
-   * DependencySet instance.
-   */
-  public Collection<Path> getDependencies() {
-    return Collections.unmodifiableCollection(dependencies);
-  }
-
-  /**
-   * Adds a given collection of dependencies in Path form to this DependencySet instance. Paths are
-   * converted to root-relative
-   */
-  @VisibleForTesting // only called from DependencySetTest
-  public void addDependencies(Collection<Path> deps) {
-    for (Path d : deps) {
-      Preconditions.checkArgument(d.startsWith(root));
-      dependencies.add(d);
-    }
-  }
-
-  /** Adds a given dependency to this DependencySet instance. */
-  private void addDependency(String dep) {
-    dep = translatePath(dep);
-    Path depPath = root.getRelative(dep);
-    dependencies.add(depPath);
-  }
-
-  private String translatePath(String path) {
-    if (OS.getCurrent() != OS.WINDOWS) {
-      return path;
-    }
-    return WindowsPath.removeWorkspace(WindowsPath.translateWindowsPath(path));
-  }
-
-  /** Reads a dotd file into this DependencySet instance. */
-  public DependencySet read(Path dotdFile) throws IOException {
-    byte[] content = FileSystemUtils.readContent(dotdFile);
-    try {
-      return process(content);
-    } catch (IOException e) {
-      throw new IOException("Error processing " + dotdFile + ": " + e.getMessage());
-    }
-  }
-
-  /**
-   * Parses a .d file.
-   *
-   * <p>Performance-critical! In large C++ builds there are lots of .d files to read, and some of
-   * them reach into hundreds of kilobytes.
-   */
-  @CanIgnoreReturnValue
-  public DependencySet process(byte[] content) throws IOException {
-    final int n = content.length;
-    if (n > 0 && content[n - 1] != '\n') {
-      throw new IOException("File does not end in a newline");
-      // From now on, we can safely peek ahead one character when not at a newline.
-    }
-    // Our write position in content[]; we use the prefix as working space to build strings.
-    int w = 0;
-    // Have we seen a leading "mumble.o:" on this line yet?  If not, we ignore
-    // any dependencies we parse.  This is bug-for-bug compatibility with our
-    // MSVC wrapper, which generates invalid .d files :(
-    boolean sawTarget = false;
-    for (int r = 0; r < n; ) {
-      final byte c = content[r++];
-      switch (c) {
-        case ' ':
-          // If we haven't yet seen the colon delimiting the target name,
-          // keep scanning.  We do this to cope with "foo.o : \" which is
-          // valid Makefile syntax produced by the cuda compiler.
-          if (sawTarget && w > 0) {
-            addDependency(new String(content, 0, w, ISO_8859_1));
-            w = 0;
-          }
-          continue;
-
-        case '\r':
-          // Ignore, should be followed by a \n.
-          continue;
-
-        case '\n':
-          // This closes a filename.
-          // (Arguably if !sawTarget && w > 0 we should report an error,
-          // as that suggests the .d file is malformed.)
-          if (sawTarget && w > 0) {
-            addDependency(new String(content, 0, w, ISO_8859_1));
-          }
-          w = 0;
-          sawTarget = false; // reset for new line
-          continue;
-
-        case ':':
-          // Normally this indicates the target name, but it might be part of a
-          // filename on Windows.  Peek ahead at the next character.
-          switch (content[r]) {
-            case ' ':
-            case '\n':
-            case '\r':
-              if (w > 0) {
-                outputFileName = new String(content, 0, w, ISO_8859_1);
-                w = 0;
-                sawTarget = true;
-              }
-              continue;
-            default:
-              content[w++] = c; // copy a colon to filename
-              continue;
-          }
-
-        case '\\':
-          // Peek ahead at the next character.
-          switch (content[r]) {
-              // Backslashes are taken literally except when followed by whitespace.
-              // See the Windows tests for some of the nonsense we have to tolerate.
-            case ' ':
-              content[w++] = ' '; // copy a space to the filename
-              ++r; // skip over the space
-              continue;
-            case '\n':
-              ++r; // skip over the newline
-              continue;
-            case '\r':
-              // One backslash can escape \r\n, so peek one more character.
-              if (content[++r] == '\n') {
-                ++r;
-              }
-              continue;
-            default:
-              content[w++] = c; // copy a backlash to the filename
-              continue;
-          }
-
-        case '$':
-          if (content[r] == '$') {
-            content[w++] = '$';
-            ++r;
-            continue;
-          }
-          // I don't think this can ever happen, but fall through nevertheless...
-
-        default:
-          content[w++] = c;
-      }
-    }
-    return this;
-  }
-
-  /**
-   * Writes this DependencySet object for a specified output file under the root dir, and with a
-   * given suffix.
-   */
-  public void write(Path outFile, String suffix) throws IOException {
-    Path dotdFile =
-        outFile.getRelative(FileSystemUtils.replaceExtension(outFile.asFragment(), suffix));
-
-    try (PrintStream out = new PrintStream(dotdFile.getOutputStream())) {
-      out.print(outFile.relativeTo(root) + ": ");
-      for (Path d : dependencies) {
-        out.print(" \\\n  " + d.getPathString()); // should already be root relative
-      }
-      out.println();
-    }
-  }
-
-  @Override
-  public boolean equals(Object other) {
-    return other instanceof DependencySet dependencySet
-        && dependencySet.dependencies.equals(dependencies);
-  }
-
-  @Override
-  public int hashCode() {
-    return dependencies.hashCode();
-  }
-
-  private static final class WindowsPath {
-    private static final AtomicReference<String> UNIX_ROOT = new AtomicReference<>(null);
-
-    private static final Pattern EXECROOT_BASE_HEADER_PATTERN =
-        Pattern.compile(".*execroot[\\\\/](?<headerPath>.*)");
-
-    private static String removeWorkspace(String path) {
-      Matcher m = EXECROOT_BASE_HEADER_PATTERN.matcher(path);
-      if (m.matches()) {
-        path = "../" + m.group("headerPath");
-      }
-      return path;
+    /** Constructs a new empty DependencySet instance.  */
+    init {
+        this.root = root
     }
 
-    private static String translateWindowsPath(String path) {
-      int n = path.length();
-      if (n == 0 || path.charAt(0) != '/') {
-        return path;
-      }
-      if (n >= 2 && isAsciiLetter(path.charAt(1)) && (n == 2 || path.charAt(2) == '/')) {
-        return Ascii.toUpperCase(path.charAt(1)) + ":/" + path.substring(2);
-      } else {
-        String unixRoot = getUnixRoot();
-        return unixRoot + path;
-      }
+    /**
+     * Gets an unmodifiable view of the set of dependencies in [Path] form from this
+     * DependencySet instance.
+     */
+    fun getDependencies(): MutableCollection<com.google.devtools.build.lib.vfs.Path?> {
+        return Collections.unmodifiableCollection<com.google.devtools.build.lib.vfs.Path?>(dependencies)
     }
 
-    private static boolean isAsciiLetter(char c) {
-      return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
-    }
-
-    private static String getUnixRoot() {
-      String value = UNIX_ROOT.get();
-      if (value == null) {
-        String jvmFlag = "bazel.windows_unix_root";
-        value = determineUnixRoot(jvmFlag);
-        if (value == null) {
-          throw new IllegalStateException(
-              String.format(
-                  "\"%1$s\" JVM flag is not set. Use the --host_jvm_args flag. "
-                      + "For example: "
-                      + "\"--host_jvm_args=-D%1$s=c:/msys64\".",
-                  jvmFlag));
+    /**
+     * Adds a given collection of dependencies in Path form to this DependencySet instance. Paths are
+     * converted to root-relative
+     */
+    @com.google.common.annotations.VisibleForTesting // only called from DependencySetTest
+    fun addDependencies(deps: MutableCollection<com.google.devtools.build.lib.vfs.Path>) {
+        for (d in deps) {
+            com.google.common.base.Preconditions.checkArgument(d.startsWith(root))
+            dependencies.add(d)
         }
-        value = value.replace('\\', '/');
-        if (value.length() > 3 && value.endsWith("/")) {
-          value = value.substring(0, value.length() - 1);
-        }
-        UNIX_ROOT.set(value);
-      }
-      return value;
     }
 
-    @Nullable
-    private static String determineUnixRoot(String jvmArgName) {
-      // Get the path from a JVM flag, if specified.
-      String path = StringEncoding.platformToInternal(System.getProperty(jvmArgName));
-      if (path == null) {
-        return null;
-      }
-      path = path.trim();
-      if (path.isEmpty()) {
-        return null;
-      }
-      return path;
+    /** Adds a given dependency to this DependencySet instance.  */
+    private fun addDependency(dep: String) {
+        var dep = dep
+        dep = translatePath(dep)!!
+        val depPath: com.google.devtools.build.lib.vfs.Path? = root.getRelative(dep)
+        dependencies.add(depPath)
     }
-  }
+
+    private fun translatePath(path: String): String? {
+        if (com.google.devtools.build.lib.util.OS.Companion.getCurrent() != com.google.devtools.build.lib.util.OS.WINDOWS) {
+            return path
+        }
+        return com.google.devtools.build.lib.util.DependencySet.WindowsPath.removeWorkspace(
+            com.google.devtools.build.lib.util.DependencySet.WindowsPath.translateWindowsPath(
+                path
+            )
+        )
+    }
+
+    /** Reads a dotd file into this DependencySet instance.  */
+    @Throws(IOException::class)
+    fun read(dotdFile: com.google.devtools.build.lib.vfs.Path?): DependencySet {
+        val content: ByteArray = com.google.devtools.build.lib.vfs.FileSystemUtils.readContent(dotdFile)
+        try {
+            return process(content)
+        } catch (e: IOException) {
+            throw IOException("Error processing " + dotdFile + ": " + e.message)
+        }
+    }
+
+    /**
+     * Parses a .d file.
+     * 
+     * 
+     * Performance-critical! In large C++ builds there are lots of .d files to read, and some of
+     * them reach into hundreds of kilobytes.
+     */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(IOException::class)
+    fun process(content: ByteArray): DependencySet {
+        val n = content.size
+        if (n > 0 && content[n - 1] != '\n'.code.toByte()) {
+            throw IOException("File does not end in a newline")
+            // From now on, we can safely peek ahead one character when not at a newline.
+        }
+        // Our write position in content[]; we use the prefix as working space to build strings.
+        var w = 0
+        // Have we seen a leading "mumble.o:" on this line yet?  If not, we ignore
+        // any dependencies we parse.  This is bug-for-bug compatibility with our
+        // MSVC wrapper, which generates invalid .d files :(
+        var sawTarget = false
+        var r = 0
+        while (r < n) {
+            val c = content[r++]
+            when (c) {
+                ' ' -> {
+                    // If we haven't yet seen the colon delimiting the target name,
+                    // keep scanning.  We do this to cope with "foo.o : \" which is
+                    // valid Makefile syntax produced by the cuda compiler.
+                    if (sawTarget && w > 0) {
+                        addDependency(String(content, 0, w, java.nio.charset.StandardCharsets.ISO_8859_1))
+                        w = 0
+                    }
+                    continue
+                }
+
+                '\r' -> {
+                    // Ignore, should be followed by a \n.
+                    continue
+                }
+
+                '\n' -> {
+                    // This closes a filename.
+                    // (Arguably if !sawTarget && w > 0 we should report an error,
+                    // as that suggests the .d file is malformed.)
+                    if (sawTarget && w > 0) {
+                        addDependency(String(content, 0, w, java.nio.charset.StandardCharsets.ISO_8859_1))
+                    }
+                    w = 0
+                    sawTarget = false // reset for new line
+                    continue
+                }
+
+                ':' ->           // Normally this indicates the target name, but it might be part of a
+                    // filename on Windows.  Peek ahead at the next character.
+                    when (content[r]) {
+                        ' ', '\n', '\r' -> {
+                            if (w > 0) {
+                                outputFileName = String(content, 0, w, java.nio.charset.StandardCharsets.ISO_8859_1)
+                                w = 0
+                                sawTarget = true
+                            }
+                            continue
+                        }
+
+                        else -> {
+                            content[w++] = c // copy a colon to filename
+                            continue
+                        }
+                    }
+
+                '\\' ->           // Peek ahead at the next character.
+                    when (content[r]) {
+                        ' ' -> {
+                            content[w++] = ' '.code.toByte() // copy a space to the filename
+                            ++r // skip over the space
+                            continue
+                        }
+
+                        '\n' -> {
+                            ++r // skip over the newline
+                            continue
+                        }
+
+                        '\r' -> {
+                            // One backslash can escape \r\n, so peek one more character.
+                            if (content[++r] == '\n'.code.toByte()) {
+                                ++r
+                            }
+                            continue
+                        }
+
+                        else -> {
+                            content[w++] = c // copy a backlash to the filename
+                            continue
+                        }
+                    }
+
+                '$' -> {
+                    if (content[r] == '$'.code.toByte()) {
+                        content[w++] = '$'.code.toByte()
+                        ++r
+                        continue
+                    }
+
+                    content[w++] = c
+                }
+
+                else -> content[w++] = c
+            }
+        }
+        return this
+    }
+
+    /**
+     * Writes this DependencySet object for a specified output file under the root dir, and with a
+     * given suffix.
+     */
+    @Throws(IOException::class)
+    fun write(outFile: com.google.devtools.build.lib.vfs.Path, suffix: String?) {
+        val dotdFile: com.google.devtools.build.lib.vfs.Path =
+            outFile.getRelative(
+                com.google.devtools.build.lib.vfs.FileSystemUtils.replaceExtension(
+                    outFile.asFragment(),
+                    suffix
+                )
+            )
+
+        PrintStream(dotdFile.getOutputStream()).use { out ->
+            out.print(outFile.relativeTo(root).toString() + ": ")
+            for (d in dependencies) {
+                out.print(" \\\n  " + d.getPathString()) // should already be root relative
+            }
+            out.println()
+        }
+    }
+
+    override fun equals(other: Any?): Boolean {
+        return other is DependencySet
+                && other.dependencies == dependencies
+    }
+
+    override fun hashCode(): Int {
+        return dependencies.hashCode()
+    }
+
+    private object WindowsPath {
+        private val UNIX_ROOT: AtomicReference<String?> = AtomicReference<String?>(null)
+
+        private val EXECROOT_BASE_HEADER_PATTERN: java.util.regex.Pattern =
+            java.util.regex.Pattern.compile(".*execroot[\\\\/](?<headerPath>.*)")
+
+        fun removeWorkspace(path: String?): String? {
+            var path = path
+            val m: java.util.regex.Matcher =
+                com.google.devtools.build.lib.util.DependencySet.WindowsPath.EXECROOT_BASE_HEADER_PATTERN.matcher(path)
+            if (m.matches()) {
+                path = "../" + m.group("headerPath")
+            }
+            return path
+        }
+
+        fun translateWindowsPath(path: String): String {
+            val n = path.length
+            if (n == 0 || path.get(0) != '/') {
+                return path
+            }
+            if (n >= 2 && com.google.devtools.build.lib.util.DependencySet.WindowsPath.isAsciiLetter(path.get(1)) && (n == 2 || path.get(
+                    2
+                ) == '/')
+            ) {
+                return com.google.common.base.Ascii.toUpperCase(path.get(1)).toString() + ":/" + path.substring(2)
+            } else {
+                val unixRoot: String = com.google.devtools.build.lib.util.DependencySet.WindowsPath.getUnixRoot()
+                return unixRoot + path
+            }
+        }
+
+        fun isAsciiLetter(c: Char): Boolean {
+            return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+        }
+
+        val unixRoot: String
+            get() {
+                var value: String? = com.google.devtools.build.lib.util.DependencySet.WindowsPath.UNIX_ROOT.get()
+                if (value == null) {
+                    val jvmFlag = "bazel.windows_unix_root"
+                    value = com.google.devtools.build.lib.util.DependencySet.WindowsPath.determineUnixRoot(jvmFlag)
+                    checkNotNull(value) {
+                        String.format(
+                            ("\"%1\$s\" JVM flag is not set. Use the --host_jvm_args flag. "
+                                    + "For example: "
+                                    + "\"--host_jvm_args=-D%1\$s=c:/msys64\"."),
+                            jvmFlag
+                        )
+                    }
+                    value = value.replace('\\', '/')
+                    if (value!!.length > 3 && value.endsWith("/")) {
+                        value = value.substring(0, value.length - 1)
+                    }
+                    com.google.devtools.build.lib.util.DependencySet.WindowsPath.UNIX_ROOT.set(value)
+                }
+                return value!!
+            }
+
+        fun determineUnixRoot(jvmArgName: String): String? {
+            // Get the path from a JVM flag, if specified.
+            var path: String? = StringEncoding.platformToInternal(java.lang.System.getProperty(jvmArgName))
+            if (path == null) {
+                return null
+            }
+            path = path.trim { it <= ' ' }
+            if (path.isEmpty()) {
+                return null
+            }
+            return path
+        }
+    }
 }

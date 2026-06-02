@@ -11,22 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi
 
-package com.google.devtools.build.lib.starlarkbuildapi;
-
-import com.google.common.base.Joiner;
-import com.google.devtools.build.docgen.annot.DocCategory;
-import javax.annotation.Nullable;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.eval.StarlarkValue;
-import net.starlark.java.eval.Structure;
-
-/** Represents a collection of configuration fragments in Starlark. */
-@StarlarkBuiltin(
+/** Represents a collection of configuration fragments in Starlark.  */
+@net.starlark.java.annot.StarlarkBuiltin(
     name = "fragments",
-    category = DocCategory.BUILTIN,
-    doc =
-        "A collection of configuration fragments available in the current rule implementation"
+    category = com.google.devtools.build.docgen.annot.DocCategory.BUILTIN,
+    doc = ("A collection of configuration fragments available in the current rule implementation"
             + " context. Access a specific fragment by its field name. For example,"
             + " <code>ctx.fragments.java</code> <p>Only configuration fragments which are declared"
             + " in the rule definition may be accessed in this collection.</p><p>See the <a"
@@ -34,17 +25,16 @@ import net.starlark.java.eval.Structure;
             + " fragment reference</a> for a list of available fragments and the <a"
             + " href=\"https://bazel.build/extending/rules#configuration_fragments\">rules"
             + " documentation</a> for how to use them.")
-public interface FragmentCollectionApi extends Structure, StarlarkValue {
+)
+interface FragmentCollectionApi : net.starlark.java.eval.Structure, net.starlark.java.eval.StarlarkValue {
+    override fun getErrorMessageForUnknownField(name: String?): String? {
+        return String.format(
+            "There is no configuration fragment named '%s'. Available fragments: %s",
+            name, fieldsToString()
+        )
+    }
 
-  @Override
-  @Nullable
-  default String getErrorMessageForUnknownField(String name) {
-    return String.format(
-        "There is no configuration fragment named '%s'. Available fragments: %s",
-        name, fieldsToString());
-  }
-
-  default String fieldsToString() {
-    return String.format("'%s'", Joiner.on("', '").join(getFieldNames()));
-  }
+    fun fieldsToString(): String? {
+        return String.format("'%s'", com.google.common.base.Joiner.on("', '").join(getFieldNames()))
+    }
 }

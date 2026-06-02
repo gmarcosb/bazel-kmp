@@ -11,90 +11,91 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.devtools.build.lib.skyframe.serialization.MapHelpers.deserializeMapEntries;
-import static com.google.devtools.build.lib.skyframe.serialization.MapHelpers.serializeMapEntries;
-
-import com.google.common.collect.ImmutableClassToInstanceMap;
-import com.google.common.collect.ImmutableMap;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
+import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.DeferredObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.DeferredObjectCodec.DeferredValue
+import com.google.devtools.build.lib.skyframe.serialization.MapHelpers
+import com.google.devtools.build.lib.skyframe.serialization.SerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
 /**
- * Encodes an {@link ImmutableClassToInstanceMap}. The iteration order of the deserialized map is
+ * Encodes an [ImmutableClassToInstanceMap]. The iteration order of the deserialized map is
  * the same as the original map's.
- *
- * <p>We handle {@link ImmutableClassToInstanceMap} by treating it as an {@link ImmutableMap} and
- * calling the proper conversion method ({@link ImmutableClassToInstanceMap#copyOf}) when
+ * 
+ * 
+ * We handle [ImmutableClassToInstanceMap] by treating it as an [ImmutableMap] and
+ * calling the proper conversion method ([ImmutableClassToInstanceMap.copyOf]) when
  * deserializing.
- *
- * <p>Any {@link SerializationException} or {@link IOException} that arises while serializing or
- * deserializing a map entry's value (not its key) will be wrapped in a new {@link
- * SerializationException} using {@link SerializationException#propagate}. (Note that this preserves
- * the type of {@link SerializationException.NoCodecException} exceptions.) The message will include
- * the {@code toString()} of the entry's key. For errors that occur while serializing, it will also
+ * 
+ * 
+ * Any [SerializationException] or [IOException] that arises while serializing or
+ * deserializing a map entry's value (not its key) will be wrapped in a new [ ] using [SerializationException.propagate]. (Note that this preserves
+ * the type of [SerializationException.NoCodecException] exceptions.) The message will include
+ * the `toString()` of the entry's key. For errors that occur while serializing, it will also
  * include the class name of the entry's value. Errors that occur while serializing an entry key are
  * not affected.
  */
-@SuppressWarnings({"unchecked", "rawtypes"})
-class ImmutableClassToInstanceMapCodec extends DeferredObjectCodec<ImmutableClassToInstanceMap> {
-
-  @Override
-  public Class<ImmutableClassToInstanceMap> getEncodedClass() {
-    return ImmutableClassToInstanceMap.class;
-  }
-
-  @Override
-  public void serialize(
-      SerializationContext context, ImmutableClassToInstanceMap map, CodedOutputStream codedOut)
-      throws SerializationException, IOException {
-    codedOut.writeInt32NoTag(map.size());
-    serializeMapEntries(context, map, codedOut);
-  }
-
-  @Override
-  public DeferredValue<ImmutableClassToInstanceMap> deserializeDeferred(
-      AsyncDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    int size = codedIn.readInt32();
-    if (size < 0) {
-      throw new SerializationException("Expected non-negative length: " + size);
-    }
-    if (size == 0) {
-      return ImmutableClassToInstanceMap::of;
+internal class ImmutableClassToInstanceMapCodec :
+    DeferredObjectCodec<com.google.common.collect.ImmutableClassToInstanceMap<*>?>() {
+    override fun getEncodedClass(): java.lang.Class<com.google.common.collect.ImmutableClassToInstanceMap<*>?> {
+        return com.google.common.collect.ImmutableClassToInstanceMap::class.java
     }
 
-    EntryBuffer buffer = new EntryBuffer(size);
-    deserializeMapEntries(
-        context,
-        codedIn,
-        buffer.keys,
-        buffer.values);
-    return buffer;
-  }
-
-  private static class EntryBuffer implements DeferredValue<ImmutableClassToInstanceMap> {
-    final Object[] keys;
-    final Object[] values;
-
-    private EntryBuffer(int size) {
-      this.keys = new Object[size];
-      this.values = new Object[size];
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun serialize(
+        context: SerializationContext?,
+        map: com.google.common.collect.ImmutableClassToInstanceMap<*>,
+        codedOut: CodedOutputStream
+    ) {
+        codedOut.writeInt32NoTag(map.size())
+        MapHelpers.serializeMapEntries(context, map, codedOut)
     }
 
-    @Override
-    public ImmutableClassToInstanceMap call() {
-      ImmutableClassToInstanceMap.Builder builder = ImmutableClassToInstanceMap.builder();
-      for (int i = 0; i < size(); i++) {
-        builder.put((Class) keys[i], values[i]);
-      }
-      return builder.build();
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun deserializeDeferred(
+        context: AsyncDeserializationContext?, codedIn: CodedInputStream
+    ): DeferredValue<com.google.common.collect.ImmutableClassToInstanceMap<*>?> {
+        val size: Int = codedIn.readInt32()
+        if (size < 0) {
+            throw com.google.devtools.build.lib.skyframe.serialization.SerializationException("Expected non-negative length: " + size)
+        }
+        if (size == 0) {
+            return DeferredValue { com.google.common.collect.ImmutableClassToInstanceMap.of() }
+        }
+
+        val buffer: EntryBuffer =
+            com.google.devtools.build.lib.skyframe.serialization.ImmutableClassToInstanceMapCodec.EntryBuffer(size)
+        MapHelpers.deserializeMapEntries(
+            context,
+            codedIn,
+            buffer.keys,
+            buffer.values
+        )
+        return buffer
     }
 
-    private int size() {
-      return keys.length;
+    private class EntryBuffer(size: Int) : DeferredValue<com.google.common.collect.ImmutableClassToInstanceMap<*>?> {
+        val keys: Array<Any?>
+        val values: Array<Any?>
+
+        init {
+            this.keys = arrayOfNulls<Any>(size)
+            this.values = arrayOfNulls<Any>(size)
+        }
+
+        override fun call(): com.google.common.collect.ImmutableClassToInstanceMap<*> {
+            val builder: com.google.common.collect.ImmutableClassToInstanceMap.Builder<*> =
+                com.google.common.collect.ImmutableClassToInstanceMap.builder<Any?>()
+            /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
+            return builder.build()
+        }
+
+        fun size(): Int {
+            return keys.size
+        }
     }
-  }
 }

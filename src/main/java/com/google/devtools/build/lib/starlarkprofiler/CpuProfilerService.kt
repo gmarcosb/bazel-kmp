@@ -11,21 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.starlarkprofiler;
+package com.google.devtools.build.lib.starlarkprofiler
 
-import com.google.devtools.build.lib.runtime.BlazeService;
-import com.google.devtools.build.lib.skybridge.SkybridgeInterface;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.CpuProfilerNativeSupport;
+import com.google.devtools.build.lib.runtime.BlazeService
 
-/** A {@link BlazeService} that provides access to {@link CpuProfilerNativeSupport}. */
-@SuppressWarnings("GoodTime")
-@SkybridgeInterface
-public interface CpuProfilerService extends BlazeService {
-  /**
-   * Returns the {@link CpuProfilerNativeSupport} implementation, or null if one isn't available for
-   * the current platform.
-   */
-  @Nullable
-  CpuProfilerNativeSupport getCpuProfilerNativeSupport();
+/** A [BlazeService] that provides access to [CpuProfilerNativeSupport].  */
+@com.google.devtools.build.lib.skybridge.SkybridgeInterface
+interface CpuProfilerService : BlazeService {
+    /**
+     * Returns the [CpuProfilerNativeSupport] implementation, or null if one isn't available for
+     * the current platform.
+     */
+    val cpuProfilerNativeSupport: net.starlark.java.eval.CpuProfilerNativeSupport?
 }

@@ -11,62 +11,57 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-import com.google.common.io.ByteStreams;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.IOException
 
 /**
  * A little utility to load resources (property files) from jars or the classpath. Recommended for
  * longer texts that do not fit nicely into a piece of Java code - e.g. a template for a lengthy
  * email.
  */
-public final class ResourceFileLoader {
-
-  private ResourceFileLoader() {}
-
-  public static boolean resourceExists(Class<?> relativeToClass, String resourceName) {
-    try (InputStream resourceStream = getResourceAsStream(relativeToClass, resourceName)) {
-      return resourceStream != null;
-    } catch (IOException e) {
-      return false;
+object ResourceFileLoader {
+    fun resourceExists(relativeToClass: java.lang.Class<*>, resourceName: String): Boolean {
+        try {
+            getResourceAsStream(relativeToClass, resourceName).use { resourceStream ->
+                return resourceStream != null
+            }
+        } catch (e: IOException) {
+            return false
+        }
     }
-  }
 
-  /**
-   * Loads a text resource that is located in a directory on the Java classpath that corresponds to
-   * the package of <code>relativeToClass</code> using UTF8 encoding. E.g. <code>
-   * loadResource(Class.forName("com.google.foo.Foo", "bar.txt"))</code> will look for <code>
-   * com/google/foo/bar.txt</code> in the classpath.
-   */
-  public static String loadResource(Class<?> relativeToClass, String resourceName)
-      throws IOException {
-    try (InputStream stream = getResourceAsStream(relativeToClass, resourceName)) {
-      if (stream == null) {
-        throw new IOException(resourceName + " not found.");
-      }
-      return new String(ByteStreams.toByteArray(stream), UTF_8);
+    /**
+     * Loads a text resource that is located in a directory on the Java classpath that corresponds to
+     * the package of `relativeToClass` using UTF8 encoding. E.g. `
+     * loadResource(Class.forName("com.google.foo.Foo", "bar.txt"))` will look for `
+     * com/google/foo/bar.txt` in the classpath.
+     */
+    @Throws(IOException::class)
+    fun loadResource(relativeToClass: java.lang.Class<*>, resourceName: String): String {
+        getResourceAsStream(relativeToClass, resourceName).use { stream ->
+            if (stream == null) {
+                throw IOException(resourceName + " not found.")
+            }
+            return String(com.google.common.io.ByteStreams.toByteArray(stream), java.nio.charset.StandardCharsets.UTF_8)
+        }
     }
-  }
 
-  private static InputStream getResourceAsStream(Class<?> relativeToClass, String resourceName) {
-    ClassLoader loader = relativeToClass.getClassLoader();
-    String resource = resolveResource(relativeToClass, resourceName);
-    return loader.getResourceAsStream(resource);
-  }
+    private fun getResourceAsStream(relativeToClass: java.lang.Class<*>, resourceName: String): java.io.InputStream {
+        val loader: java.lang.ClassLoader = relativeToClass.getClassLoader()
+        val resource = resolveResource(relativeToClass, resourceName)
+        return loader.getResourceAsStream(resource)
+    }
 
-  /**
-   * Converts a relative resource name and Java class to a full resource path, using the same logic
-   * as {@link #loadResource}.
-   */
-  public static String resolveResource(Class<?> relativeToClass, String resourceName) {
-    // TODO(bazel-team): use relativeToClass.getPackage().getName().
-    String className = relativeToClass.getName();
-    String packageName = className.substring(0, className.lastIndexOf('.'));
-    String path = packageName.replace('.', '/');
-    return path + '/' + resourceName;
-  }
+    /**
+     * Converts a relative resource name and Java class to a full resource path, using the same logic
+     * as [.loadResource].
+     */
+    fun resolveResource(relativeToClass: java.lang.Class<*>, resourceName: String): String {
+        // TODO(bazel-team): use relativeToClass.getPackage().getName().
+        val className: String = relativeToClass.getName()
+        val packageName: String = className.substring(0, className.lastIndexOf('.'))
+        val path: String? = packageName.replace('.', '/')
+        return path + '/' + resourceName
+    }
 }

@@ -11,214 +11,205 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.base.MoreObjects.toStringHelper;
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.ActionLookupValue;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.ConfiguredTargetValue;
-import com.google.devtools.build.lib.analysis.configuredtargets.RuleConfiguredTarget;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.packages.NoSuchTargetException;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.packages.TargetData;
-import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.DeferredObjectCodec;
-import com.google.devtools.build.lib.skyframe.serialization.DeserializedSkyValue;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.errorprone.annotations.Keep;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionAnalysisMetadata
 
 /**
- * A {@link ConfiguredTargetValue} fetched from a remote source.
- *
- * <p>This doesn't contain actions, but contains enough information for dependents to perform
- * analysis. In particular, contains {@link TargetData}, allowing the construction of {@link
- * ConfiguredTargetAndData}, containing everything needed by dependents of the {@link
- * ConfiguredTargetValue} in analysis.
+ * A [ConfiguredTargetValue] fetched from a remote source.
+ * 
+ * 
+ * This doesn't contain actions, but contains enough information for dependents to perform
+ * analysis. In particular, contains [TargetData], allowing the construction of [ ], containing everything needed by dependents of the [ ] in analysis.
  */
-public sealed class RemoteConfiguredTargetValue
-    implements ConfiguredTargetValue, DeserializedSkyValue {
+open class RemoteConfiguredTargetValue
+private constructor(configuredTarget: ConfiguredTarget?, targetData: TargetData?) : ConfiguredTargetValue,
+    DeserializedSkyValue {
+    // Null after clearing.
+    private var configuredTarget: ConfiguredTarget?
 
-  @Nullable // Null after clearing.
-  private ConfiguredTarget configuredTarget;
+    // Null after clearing.
+    private var targetData: TargetData?
 
-  @Nullable // Null after clearing.
-  private TargetData targetData;
-
-  private RemoteConfiguredTargetValue(ConfiguredTarget configuredTarget, TargetData targetData) {
-    this.configuredTarget = configuredTarget;
-    this.targetData = targetData;
-  }
-
-  @Nullable // Null after clearing everything.
-  @Override
-  public final ConfiguredTarget getConfiguredTarget() {
-    return configuredTarget;
-  }
-
-  @Nullable // Never serialized.
-  @Override
-  public final NestedSet<Package.Metadata> getTransitivePackages() {
-    return null;
-  }
-
-  @Override
-  public final void clear(boolean clearEverything) {
-    if (clearEverything) {
-      configuredTarget = null;
-      targetData = null;
-    }
-  }
-
-  @Override
-  @Nullable // Null after clearing everything.
-  public final TargetData getTargetData() {
-    return targetData;
-  }
-
-  @Override
-  public final String toString() {
-    return toStringHelper(this)
-        .add("configuredTarget", configuredTarget)
-        .add("targetData", targetData)
-        .toString();
-  }
-
-  private static final class RemoteRuleConfiguredTargetValue extends RemoteConfiguredTargetValue
-      implements ActionLookupValue {
-    private final ImmutableList<ActionAnalysisMetadata> actions;
-
-    RemoteRuleConfiguredTargetValue(
-        RuleConfiguredTarget ruleConfiguredTarget, TargetData targetData) {
-      super(ruleConfiguredTarget, targetData);
-      this.actions = ruleConfiguredTarget.getActions();
+    init {
+        this.configuredTarget = configuredTarget
+        this.targetData = targetData
     }
 
-    @Override
-    public ImmutableList<ActionAnalysisMetadata> getActions() {
-      return actions;
-    }
-  }
-
-  public static ConfiguredTargetValueCodec codec() {
-    return ConfiguredTargetValueCodec.INSTANCE;
-  }
-
-  /**
-   * Codec for {@link ConfiguredTargetValue}s.
-   *
-   * <p>This codec is crafted to serialize the minimal amount of data needed by its rdeps.
-   *
-   * <p>The serialized constituents are: the {@link ConfiguredTarget}, followed by its (compact)
-   * {@link TargetData}, if it already exists. Otherwise, the {@link TargetData} will be constructed
-   * from the {@link Target} in the {@link Package} dep.
-   */
-  @Keep // Accessed reflectively.
-  private static class ConfiguredTargetValueCodec
-      extends DeferredObjectCodec<ConfiguredTargetValue> {
-
-    private static final ConfiguredTargetValueCodec INSTANCE = new ConfiguredTargetValueCodec();
-
-    @Override
-    public boolean autoRegister() {
-      return false;
+    public override fun getConfiguredTarget(): ConfiguredTarget? {
+        return configuredTarget
     }
 
-    @Override
-    public Class<ConfiguredTargetValue> getEncodedClass() {
-      return ConfiguredTargetValue.class;
+    val transitivePackages: NestedSet<Package.Metadata?>?
+        get() = null
+
+    public override fun clear(clearEverything: Boolean) {
+        if (clearEverything) {
+            configuredTarget = null
+            targetData = null
+        }
     }
 
-    @Override
-    public ImmutableSet<Class<? extends ConfiguredTargetValue>> additionalEncodedClasses() {
-      return ImmutableSet.of(
-          RuleConfiguredTargetValue.class,
-          NonRuleConfiguredTargetValue.class,
-          RemoteConfiguredTargetValue.class);
+    // Null after clearing everything.
+    public override fun getTargetData(): TargetData? {
+        return targetData
     }
 
-    @Override
-    public void serialize(
-        SerializationContext context, ConfiguredTargetValue obj, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      ConfiguredTarget configuredTarget =
-          checkNotNull(
-              obj.getConfiguredTarget(),
-              "tried to serialize a cleared ConfiguredTargetValue? %s",
-              obj);
-      context.serialize(configuredTarget, codedOut);
-      if (obj instanceof RemoteConfiguredTargetValue value) {
-        context.serialize(value.targetData, codedOut);
-        return;
-      }
-
-      // Looks up the Target and serializes it as TargetData.
-      Label label = configuredTarget.getLabel();
-      var pkgFunction = context.getDependency(PrerequisitePackageFunction.class);
-      Package pkg;
-      try {
-        pkg = pkgFunction.getExistingPackage(label.getPackageIdentifier());
-      } catch (InterruptedException e) {
-        throw new SerializationException(
-            "serialization of ConfiguredTargetValue "
-                + configuredTarget.getLabel()
-                + " interrupted while looking up its package",
-            e);
-      }
-
-      Target target;
-      try {
-        target = pkg.getTarget(label.name);
-      } catch (NoSuchTargetException e) {
-        throw new IllegalStateException(
-            "The target associated with " + configuredTarget + " was unexpectedly missing", e);
-      }
-      context.serialize(target.reduceForSerialization(), codedOut);
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("configuredTarget", configuredTarget)
+            .add("targetData", targetData)
+            .toString()
     }
 
-    @Override
-    public DeferredValue<RemoteConfiguredTargetValue> deserializeDeferred(
-        AsyncDeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      var value = new DeserializationBuilder();
-      context.deserialize(codedIn, value, DeserializationBuilder::setConfiguredTarget);
-      context.deserialize(codedIn, value, DeserializationBuilder::setTargetData);
-      return value;
+    private class RemoteRuleConfiguredTargetValue(ruleConfiguredTarget: RuleConfiguredTarget, targetData: TargetData?) :
+        RemoteConfiguredTargetValue(ruleConfiguredTarget, targetData), ActionLookupValue {
+        private val actions: com.google.common.collect.ImmutableList<ActionAnalysisMetadata?>?
+
+        init {
+            this.actions = ruleConfiguredTarget.getActions()
+        }
+
+        public override fun getActions(): com.google.common.collect.ImmutableList<ActionAnalysisMetadata?>? {
+            return actions
+        }
     }
 
-    private static class DeserializationBuilder
-        implements DeferredValue<RemoteConfiguredTargetValue> {
-      private ConfiguredTarget configuredTarget;
-      private TargetData targetData;
+    /**
+     * Codec for [ConfiguredTargetValue]s.
+     * 
+     * 
+     * This codec is crafted to serialize the minimal amount of data needed by its rdeps.
+     * 
+     * 
+     * The serialized constituents are: the [ConfiguredTarget], followed by its (compact)
+     * [TargetData], if it already exists. Otherwise, the [TargetData] will be constructed
+     * from the [Target] in the [Package] dep.
+     */
+    @com.google.errorprone.annotations.Keep // Accessed reflectively.
+    private class ConfiguredTargetValueCodec
 
-      @Override
-      public RemoteConfiguredTargetValue call() {
-        checkNotNull(configuredTarget);
-        checkNotNull(targetData);
-        return configuredTarget instanceof RuleConfiguredTarget ruleConfiguredTarget
-            ? new RemoteRuleConfiguredTargetValue(ruleConfiguredTarget, targetData)
-            : new RemoteConfiguredTargetValue(configuredTarget, targetData);
-      }
+        : DeferredObjectCodec<ConfiguredTargetValue?>() {
+        override fun autoRegister(): Boolean {
+            return false
+        }
 
-      private static void setConfiguredTarget(DeserializationBuilder builder, Object value) {
-        builder.configuredTarget = (ConfiguredTarget) value;
-      }
+        val encodedClass: java.lang.Class<ConfiguredTargetValue?>
+            get() = ConfiguredTargetValue::class.java
 
-      private static void setTargetData(DeserializationBuilder builder, Object value) {
-        builder.targetData = (TargetData) value;
-      }
+        override fun additionalEncodedClasses(): com.google.common.collect.ImmutableSet<java.lang.Class<out ConfiguredTargetValue?>?> {
+            return com.google.common.collect.ImmutableSet.of<E?>(
+                RuleConfiguredTargetValue::class.java,
+                NonRuleConfiguredTargetValue::class.java,
+                RemoteConfiguredTargetValue::class.java
+            )
+        }
+
+        @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+        override fun serialize(
+            context: SerializationContext, obj: ConfiguredTargetValue, codedOut: CodedOutputStream?
+        ) {
+            val configuredTarget: ConfiguredTarget =
+                checkNotNull(
+                    obj.getConfiguredTarget(),
+                    "tried to serialize a cleared ConfiguredTargetValue? %s",
+                    obj
+                )
+            context.serialize(configuredTarget, codedOut)
+            if (obj is RemoteConfiguredTargetValue) {
+                context.serialize(obj.targetData, codedOut)
+                return
+            }
+
+            // Looks up the Target and serializes it as TargetData.
+            val label: Label = configuredTarget.getLabel()
+            val pkgFunction: PrerequisitePackageFunction =
+                context.getDependency<PrerequisitePackageFunction>(PrerequisitePackageFunction::class.java)
+            val pkg: Package?
+            try {
+                pkg = pkgFunction.getExistingPackage(label.getPackageIdentifier())
+            } catch (e: java.lang.InterruptedException) {
+                throw com.google.devtools.build.lib.skyframe.serialization.SerializationException(
+                    ("serialization of ConfiguredTargetValue "
+                            + configuredTarget.getLabel()
+                            + " interrupted while looking up its package"),
+                    e
+                )
+            }
+
+            val target: Target
+            try {
+                target = pkg.getTarget(label.name)
+            } catch (e: NoSuchTargetException) {
+                throw java.lang.IllegalStateException(
+                    "The target associated with " + configuredTarget + " was unexpectedly missing", e
+                )
+            }
+            context.serialize(target.reduceForSerialization(), codedOut)
+        }
+
+        @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+        override fun deserializeDeferred(
+            context: AsyncDeserializationContext, codedIn: CodedInputStream?
+        ): DeferredValue<RemoteConfiguredTargetValue?> {
+            val value: DeserializationBuilder =
+                com.google.devtools.build.lib.skyframe.RemoteConfiguredTargetValue.ConfiguredTargetValueCodec.DeserializationBuilder()
+            context.deserialize<DeserializationBuilder?>(
+                codedIn,
+                value,
+                AsyncDeserializationContext.FieldSetter { builder: DeserializationBuilder?, value: Any? ->
+                    com.google.devtools.build.lib.skyframe.RemoteConfiguredTargetValue.ConfiguredTargetValueCodec.DeserializationBuilder.Companion.setConfiguredTarget(
+                        builder,
+                        value
+                    )
+                })
+            context.deserialize<DeserializationBuilder?>(
+                codedIn,
+                value,
+                AsyncDeserializationContext.FieldSetter { builder: DeserializationBuilder?, value: Any? ->
+                    com.google.devtools.build.lib.skyframe.RemoteConfiguredTargetValue.ConfiguredTargetValueCodec.DeserializationBuilder.Companion.setTargetData(
+                        builder,
+                        value
+                    )
+                })
+            return value
+        }
+
+        private class DeserializationBuilder
+
+            : DeferredValue<RemoteConfiguredTargetValue?> {
+            private var configuredTarget: ConfiguredTarget? = null
+            private var targetData: TargetData? = null
+
+            override fun call(): RemoteConfiguredTargetValue {
+                com.google.common.base.Preconditions.checkNotNull<Any?>(configuredTarget)
+                com.google.common.base.Preconditions.checkNotNull<Any?>(targetData)
+                return if (configuredTarget is RuleConfiguredTarget)
+                    RemoteRuleConfiguredTargetValue(configuredTarget, targetData)
+                else
+                    RemoteConfiguredTargetValue(configuredTarget, targetData)
+            }
+
+            companion object {
+                private fun setConfiguredTarget(builder: DeserializationBuilder, value: Any?) {
+                    builder.configuredTarget = value as ConfiguredTarget?
+                }
+
+                private fun setTargetData(builder: DeserializationBuilder, value: Any?) {
+                    builder.targetData = value as TargetData?
+                }
+            }
+        }
+
+        companion object {
+            private val INSTANCE = ConfiguredTargetValueCodec()
+        }
     }
-  }
+
+    companion object {
+        @kotlin.jvm.JvmStatic
+        fun codec(): ConfiguredTargetValueCodec {
+            return ConfiguredTargetValueCodec.Companion.INSTANCE
+        }
+    }
 }

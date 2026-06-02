@@ -11,244 +11,232 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
-
-import static java.util.concurrent.TimeUnit.SECONDS;
-
-import com.google.common.base.Preconditions;
-import com.google.common.flogger.GoogleLogger;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueService;
-import com.google.devtools.build.lib.skyframe.serialization.FrontierNodeVersion;
-import com.google.devtools.build.lib.skyframe.serialization.KeyValueWriter;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecs;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.devtools.build.lib.skyframe.serialization.SkyValueRetriever.RetrievalResult;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCachingDependenciesProvider.SerializationDependenciesProvider;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCachingOptions.RemoteAnalysisCacheMode;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.util.Optional;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Predicate;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
 /**
  * Implementation of remote analysis cache functionality that is needed for reading and writing.
- *
- * <p>The parts that are needed for maintenance of Skyframe, etc. are in {@link
- * RemoteAnalysisCacheManager}.
+ * 
+ * 
+ * The parts that are needed for maintenance of Skyframe, etc. are in [ ].
  */
-public class RemoteAnalysisCacheDeps
-    implements SerializationDependenciesProvider, RemoteAnalysisCacheReaderDepsProvider {
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
+class RemoteAnalysisCacheDeps
 
-  private static final long CLIENT_LOOKUP_TIMEOUT_SEC = 20L;
+    : SerializationDependenciesProvider, RemoteAnalysisCacheReaderDepsProvider {
+    private val mode: RemoteAnalysisCacheMode?
+    private val bailOutOnMissingFingerprint: Boolean
+    private val minimizeMemory: Boolean
+    private val serializedFrontierProfile: String?
+    private val activeDirectoriesMatcher: java.util.Optional<java.util.function.Predicate<PackageIdentifier?>?>?
+    private val listener: RemoteAnalysisCachingEventListener?
+    private val frontierNodeVersion: FrontierNodeVersion?
+    private val skycacheAnalysisOnly: Boolean
 
-  private final RemoteAnalysisCacheMode mode;
-  private final boolean bailOutOnMissingFingerprint;
-  private final boolean minimizeMemory;
-  private final String serializedFrontierProfile;
-  private final Optional<Predicate<PackageIdentifier>> activeDirectoriesMatcher;
-  private final RemoteAnalysisCachingEventListener listener;
-  private final FrontierNodeVersion frontierNodeVersion;
-  private final boolean skycacheAnalysisOnly;
+    private val objectCodecs: com.google.common.util.concurrent.ListenableFuture<ObjectCodecs?>?
+    private val fingerprintValueServiceFuture: com.google.common.util.concurrent.ListenableFuture<FingerprintValueService?>?
+    private val analysisCacheClient: com.google.common.util.concurrent.ListenableFuture<out RemoteAnalysisCacheClient?>?
+    private val metadataWriter: com.google.common.util.concurrent.ListenableFuture<out RemoteAnalysisMetadataWriter?>?
 
-  private final ListenableFuture<ObjectCodecs> objectCodecs;
-  private final ListenableFuture<FingerprintValueService> fingerprintValueServiceFuture;
-  @Nullable private final ListenableFuture<? extends RemoteAnalysisCacheClient> analysisCacheClient;
-  @Nullable private final ListenableFuture<? extends RemoteAnalysisMetadataWriter> metadataWriter;
+    private val bailedOut: AtomicBoolean = AtomicBoolean()
+    private val eventHandler: ExtendedEventHandler?
 
-  private final AtomicBoolean bailedOut = new AtomicBoolean();
-  private final ExtendedEventHandler eventHandler;
+    internal constructor(
+        eventHandler: ExtendedEventHandler?,
+        mode: RemoteAnalysisCacheMode?,
+        bailOutOnMissingFingerprint: Boolean,
+        minimizeMemory: Boolean,
+        servicesSupplier: RemoteAnalysisCachingServicesSupplier,
+        listener: RemoteAnalysisCachingEventListener?,
+        objectCodecs: com.google.common.util.concurrent.ListenableFuture<ObjectCodecs?>?,
+        frontierNodeVersion: FrontierNodeVersion?,
+        activeDirectoriesMatcher: java.util.Optional<java.util.function.Predicate<PackageIdentifier?>?>?,
+        serializedFrontierProfile: String?,
+        skycacheAnalysisOnly: Boolean
+    ) {
+        this.mode = mode
+        this.bailOutOnMissingFingerprint = bailOutOnMissingFingerprint
+        this.skycacheAnalysisOnly = skycacheAnalysisOnly
+        this.minimizeMemory = minimizeMemory
+        this.serializedFrontierProfile = serializedFrontierProfile
+        this.activeDirectoriesMatcher = activeDirectoriesMatcher
+        this.eventHandler = eventHandler
 
-  public static RemoteAnalysisCacheDeps createDisabled() {
-    return new RemoteAnalysisCacheDeps();
-  }
+        this.objectCodecs = objectCodecs
+        this.listener = listener
 
-  RemoteAnalysisCacheDeps(
-      ExtendedEventHandler eventHandler,
-      RemoteAnalysisCacheMode mode,
-      boolean bailOutOnMissingFingerprint,
-      boolean minimizeMemory,
-      RemoteAnalysisCachingServicesSupplier servicesSupplier,
-      RemoteAnalysisCachingEventListener listener,
-      ListenableFuture<ObjectCodecs> objectCodecs,
-      FrontierNodeVersion frontierNodeVersion,
-      Optional<Predicate<PackageIdentifier>> activeDirectoriesMatcher,
-      String serializedFrontierProfile,
-      boolean skycacheAnalysisOnly) {
-    this.mode = mode;
-    this.bailOutOnMissingFingerprint = bailOutOnMissingFingerprint;
-    this.skycacheAnalysisOnly = skycacheAnalysisOnly;
-    this.minimizeMemory = minimizeMemory;
-    this.serializedFrontierProfile = serializedFrontierProfile;
-    this.activeDirectoriesMatcher = activeDirectoriesMatcher;
-    this.eventHandler = eventHandler;
+        this.frontierNodeVersion = frontierNodeVersion
 
-    this.objectCodecs = objectCodecs;
-    this.listener = listener;
-
-    this.frontierNodeVersion = frontierNodeVersion;
-
-    this.fingerprintValueServiceFuture = servicesSupplier.getFingerprintValueService();
-    this.metadataWriter = servicesSupplier.getMetadataWriter();
-    this.analysisCacheClient = servicesSupplier.getAnalysisCacheClient();
-  }
-
-  private RemoteAnalysisCacheDeps() {
-    this.mode = RemoteAnalysisCacheMode.OFF;
-    this.bailOutOnMissingFingerprint = false;
-    this.minimizeMemory = false;
-    this.skycacheAnalysisOnly = false;
-    this.serializedFrontierProfile = "";
-    this.activeDirectoriesMatcher = Optional.empty();
-    this.eventHandler = null;
-    this.objectCodecs = null;
-    this.listener = null;
-    this.frontierNodeVersion = null;
-    this.fingerprintValueServiceFuture = null;
-    this.metadataWriter = null;
-    this.analysisCacheClient = null;
-  }
-
-  static <T> T resolveWithTimeout(Future<? extends T> future, String what)
-      throws InterruptedException {
-    if (future == null) {
-      return null;
-    }
-    try (SilentCloseable unused = Profiler.instance().profile("resolveWithTimeout: " + what)) {
-      return future.get(CLIENT_LOOKUP_TIMEOUT_SEC, SECONDS);
-    } catch (ExecutionException | TimeoutException e) {
-      logger.atWarning().withCause(e).log("Unable to initialize %s", what);
-      return null;
-    }
-  }
-
-  private void checkEnabled() {
-    Preconditions.checkState(
-        mode != RemoteAnalysisCacheMode.OFF, "Remote analysis cache is disabled");
-  }
-
-  @Override
-  public RemoteAnalysisCacheMode mode() {
-    return mode;
-  }
-
-  @Override
-  public boolean shouldMinimizeMemory() {
-    checkEnabled();
-    return minimizeMemory;
-  }
-
-  @Override
-  public String getSerializedFrontierProfile() {
-    checkEnabled();
-    return serializedFrontierProfile;
-  }
-
-  @Override
-  public Optional<Predicate<PackageIdentifier>> getActiveDirectoriesMatcher() {
-    checkEnabled();
-    return activeDirectoriesMatcher;
-  }
-
-  @Override
-  public FrontierNodeVersion getSkyValueVersion() {
-    checkEnabled();
-    return frontierNodeVersion;
-  }
-
-  @Override
-  public ObjectCodecs getObjectCodecs() throws InterruptedException {
-    checkEnabled();
-    try {
-      return objectCodecs.get();
-    } catch (ExecutionException e) {
-      throw new IllegalStateException("Failed to initialize ObjectCodecs", e);
-    }
-  }
-
-  @Override
-  public FingerprintValueService getFingerprintValueService() throws InterruptedException {
-    checkEnabled();
-    return resolveWithTimeout(fingerprintValueServiceFuture, "fingerprint value service");
-  }
-
-  @Override
-  public KeyValueWriter getFileInvalidationWriter() throws InterruptedException {
-    checkEnabled();
-    return getFingerprintValueService();
-  }
-
-  @Override
-  @Nullable
-  public RemoteAnalysisCacheClient getAnalysisCacheClient() throws InterruptedException {
-    checkEnabled();
-    return resolveWithTimeout(analysisCacheClient, "analysis cache client");
-  }
-
-  @Override
-  @Nullable
-  public RemoteAnalysisMetadataWriter getMetadataWriter() throws InterruptedException {
-    checkEnabled();
-    return resolveWithTimeout(metadataWriter, "metadata writer");
-  }
-
-  @Override
-  public void recordRetrievalResult(RetrievalResult retrievalResult, SkyKey key) {
-    checkEnabled();
-    listener.recordRetrievalResult(retrievalResult, key);
-  }
-
-  @Override
-  public void recordSerializationException(SerializationException e, SkyKey key) {
-    checkEnabled();
-    listener.recordSerializationException(e, key);
-  }
-
-  @Override
-  public boolean shouldBailOutOnMissingFingerprint() {
-    checkEnabled();
-    if (!bailOutOnMissingFingerprint) {
-      return false;
-    }
-    if (bailedOut.get()) {
-      return true;
+        this.fingerprintValueServiceFuture = servicesSupplier.getFingerprintValueService()
+        this.metadataWriter = servicesSupplier.getMetadataWriter()
+        this.analysisCacheClient = servicesSupplier.getAnalysisCacheClient()
     }
 
-    try {
-      FingerprintValueService service = getFingerprintValueService();
-      boolean retVal = service != null && service.getStats().entriesNotFound() > 0;
-      if (retVal) {
-        bailedOut.set(true);
-        eventHandler.handle(
-            Event.warn(
-                "Skycache: falling back to local evaluation due to unexpected missing cache"
-                    + " entries"));
-        analysisCacheClient.get().bailOutDueToMissingFingerprint();
-      }
-      return retVal;
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      return false;
-    } catch (ExecutionException e) {
-      throw new IllegalStateException(
-          "At this point the Skycache client should have been initialized", e);
+    private constructor() {
+        this.mode = RemoteAnalysisCacheMode.OFF
+        this.bailOutOnMissingFingerprint = false
+        this.minimizeMemory = false
+        this.skycacheAnalysisOnly = false
+        this.serializedFrontierProfile = ""
+        this.activeDirectoriesMatcher = java.util.Optional.empty<java.util.function.Predicate<PackageIdentifier?>?>()
+        this.eventHandler = null
+        this.objectCodecs = null
+        this.listener = null
+        this.frontierNodeVersion = null
+        this.fingerprintValueServiceFuture = null
+        this.metadataWriter = null
+        this.analysisCacheClient = null
     }
-  }
 
-  @Override
-  public boolean getSkycacheAnalysisOnly() {
-    checkEnabled();
-    return skycacheAnalysisOnly;
-  }
+    private fun checkEnabled() {
+        com.google.common.base.Preconditions.checkState(
+            mode != RemoteAnalysisCacheMode.OFF, "Remote analysis cache is disabled"
+        )
+    }
+
+    public override fun mode(): RemoteAnalysisCacheMode? {
+        return mode
+    }
+
+    public override fun shouldMinimizeMemory(): Boolean {
+        checkEnabled()
+        return minimizeMemory
+    }
+
+    public override fun getSerializedFrontierProfile(): String? {
+        checkEnabled()
+        return serializedFrontierProfile
+    }
+
+    public override fun getActiveDirectoriesMatcher(): java.util.Optional<java.util.function.Predicate<PackageIdentifier?>?>? {
+        checkEnabled()
+        return activeDirectoriesMatcher
+    }
+
+    val skyValueVersion: FrontierNodeVersion?
+        get() {
+            checkEnabled()
+            return frontierNodeVersion
+        }
+
+    @Throws(java.lang.InterruptedException::class)
+    public override fun getObjectCodecs(): ObjectCodecs? {
+        checkEnabled()
+        try {
+            return objectCodecs.get()
+        } catch (e: ExecutionException) {
+            throw java.lang.IllegalStateException("Failed to initialize ObjectCodecs", e)
+        }
+    }
+
+    @get:Throws(java.lang.InterruptedException::class)
+    val fingerprintValueService: FingerprintValueService?
+        get() {
+            checkEnabled()
+            return Companion.resolveWithTimeout<FingerprintValueService?>(
+                fingerprintValueServiceFuture,
+                "fingerprint value service"
+            )
+        }
+
+    @get:Throws(java.lang.InterruptedException::class)
+    val fileInvalidationWriter: KeyValueWriter?
+        get() {
+            checkEnabled()
+            return this.fingerprintValueService
+        }
+
+    @Throws(java.lang.InterruptedException::class)
+    public override fun getAnalysisCacheClient(): RemoteAnalysisCacheClient? {
+        checkEnabled()
+        return resolveWithTimeout(analysisCacheClient, "analysis cache client")
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    public override fun getMetadataWriter(): RemoteAnalysisMetadataWriter? {
+        checkEnabled()
+        return resolveWithTimeout(metadataWriter, "metadata writer")
+    }
+
+    public override fun recordRetrievalResult(retrievalResult: RetrievalResult?, key: SkyKey?) {
+        checkEnabled()
+        listener.recordRetrievalResult(retrievalResult, key)
+    }
+
+    public override fun recordSerializationException(
+        e: com.google.devtools.build.lib.skyframe.serialization.SerializationException?,
+        key: SkyKey?
+    ) {
+        checkEnabled()
+        listener.recordSerializationException(e, key)
+    }
+
+    public override fun shouldBailOutOnMissingFingerprint(): Boolean {
+        checkEnabled()
+        if (!bailOutOnMissingFingerprint) {
+            return false
+        }
+        if (bailedOut.get()) {
+            return true
+        }
+
+        try {
+            val service: FingerprintValueService? = this.fingerprintValueService
+            val retVal = service != null && service.getStats().entriesNotFound > 0
+            if (retVal) {
+                bailedOut.set(true)
+                eventHandler.handle(
+                    Event.warn(
+                        "Skycache: falling back to local evaluation due to unexpected missing cache"
+                                + " entries"
+                    )
+                )
+                analysisCacheClient.get().bailOutDueToMissingFingerprint()
+            }
+            return retVal
+        } catch (e: java.lang.InterruptedException) {
+            java.lang.Thread.currentThread().interrupt()
+            return false
+        } catch (e: ExecutionException) {
+            throw java.lang.IllegalStateException(
+                "At this point the Skycache client should have been initialized", e
+            )
+        }
+    }
+
+    public override fun getSkycacheAnalysisOnly(): Boolean {
+        checkEnabled()
+        return skycacheAnalysisOnly
+    }
+
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+
+        private const val CLIENT_LOOKUP_TIMEOUT_SEC = 20L
+
+        @kotlin.jvm.JvmStatic
+        fun createDisabled(): RemoteAnalysisCacheDeps {
+            return RemoteAnalysisCacheDeps()
+        }
+
+        @Throws(java.lang.InterruptedException::class)
+        fun <T> resolveWithTimeout(future: java.util.concurrent.Future<out T?>?, what: String?): T? {
+            if (future == null) {
+                return null
+            }
+            try {
+                Profiler.instance().profile("resolveWithTimeout: " + what).use { unused ->
+                    return future.get(
+                        CLIENT_LOOKUP_TIMEOUT_SEC, TimeUnit.SECONDS
+                    )
+                }
+            } catch (e: ExecutionException) {
+                logger.atWarning().withCause(e).log("Unable to initialize %s", what)
+                return null
+            } catch (e: java.util.concurrent.TimeoutException) {
+                logger.atWarning().withCause(e).log("Unable to initialize %s", what)
+                return null
+            }
+        }
+    }
 }

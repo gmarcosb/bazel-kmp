@@ -11,63 +11,46 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
-
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.NoSuchPackagePieceException;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.PackagePieceIdentifier;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionException.Transience;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.packages.NoSuchPackageException
 
 /**
- * A SkyFunction that looks up a {@link Package.Declarations} in a {@link
- * com.google.devtools.build.lib.packages.PackagePiece.ForBuildFile}, producing a {@link
- * PackageDeclarationsValue}.
+ * A SkyFunction that looks up a [Package.Declarations] in a [ ], producing a [ ].
  */
-public final class PackageDeclarationsFunction implements SkyFunction {
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws PackageDeclarationsFunctionException, InterruptedException {
-    PackageDeclarationsValue.Key key = (PackageDeclarationsValue.Key) skyKey.argument();
-    @Nullable PackagePieceValue.ForBuildFile packagePieceValue;
-    try {
-      packagePieceValue =
-          (PackagePieceValue.ForBuildFile)
-              env.getValueOrThrow(
-                  new PackagePieceIdentifier.ForBuildFile(key.packageId()),
-                  NoSuchPackageException.class,
-                  NoSuchPackagePieceException.class);
-    } catch (NoSuchPackageException e) {
-      throw new PackageDeclarationsFunctionException(e);
-    } catch (NoSuchPackagePieceException e) {
-      throw new PackageDeclarationsFunctionException(e);
-    }
-    if (packagePieceValue == null) {
-      return null;
+class PackageDeclarationsFunction : SkyFunction {
+    @Throws(PackageDeclarationsFunctionException::class, java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment): SkyValue? {
+        val key: PackageDeclarationsValue.Key = skyKey.argument() as PackageDeclarationsValue.Key
+        val packagePieceValue: PackagePieceValue.ForBuildFile?
+        try {
+            packagePieceValue =
+                env.getValueOrThrow<E1?, E2?>(
+                    ForBuildFile(key.packageId()),
+                    NoSuchPackageException::class.java,
+                    NoSuchPackagePieceException::class.java
+                ) as PackagePieceValue.ForBuildFile?
+        } catch (e: NoSuchPackageException) {
+            throw PackageDeclarationsFunctionException(e)
+        } catch (e: NoSuchPackagePieceException) {
+            throw PackageDeclarationsFunctionException(e)
+        }
+        if (packagePieceValue == null) {
+            return null
+        }
+
+        return PackageDeclarationsValue(
+            packagePieceValue.getPackagePiece().getMetadata(),
+            packagePieceValue.getPackagePiece().getDeclarations(),
+            packagePieceValue.starlarkSemantics(),
+            packagePieceValue.mainRepositoryMapping()
+        )
     }
 
-    return new PackageDeclarationsValue(
-        packagePieceValue.getPackagePiece().getMetadata(),
-        packagePieceValue.getPackagePiece().getDeclarations(),
-        packagePieceValue.starlarkSemantics(),
-        packagePieceValue.mainRepositoryMapping());
-  }
+    /** Wrapper for exceptions which can be thrown by [PackageDeclarationsFunction.compute].  */
+    class PackageDeclarationsFunctionException : SkyFunctionException {
+        internal constructor(cause: NoSuchPackageException?) : super(cause, Transience.PERSISTENT)
 
-  /** Wrapper for exceptions which can be thrown by {@link PackageDeclarationsFunction#compute}. */
-  public static final class PackageDeclarationsFunctionException extends SkyFunctionException {
-    PackageDeclarationsFunctionException(NoSuchPackageException cause) {
-      super(cause, Transience.PERSISTENT);
+        internal constructor(cause: NoSuchPackagePieceException?) : super(cause, Transience.PERSISTENT)
     }
-
-    PackageDeclarationsFunctionException(NoSuchPackagePieceException cause) {
-      super(cause, Transience.PERSISTENT);
-    }
-  }
 }

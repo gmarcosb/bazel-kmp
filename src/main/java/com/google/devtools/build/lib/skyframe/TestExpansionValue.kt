@@ -11,19 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.ResolvedTargets;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.packages.TargetUtils;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Objects;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * A value referring to a computed set of resolved targets. This is used for the results of target
@@ -31,71 +21,65 @@ import java.util.Objects;
  */
 @Immutable
 @ThreadSafe
-final class TestExpansionValue implements SkyValue {
-  private final ResolvedTargets<Label> labels;
+internal class TestExpansionValue(labels: ResolvedTargets<Label?>?) : SkyValue {
+    private val labels: ResolvedTargets<Label?>
 
-  TestExpansionValue(ResolvedTargets<Label> labels) {
-    this.labels = Preconditions.checkNotNull(labels);
-  }
-
-  public ResolvedTargets<Label> getLabels() {
-    return labels;
-  }
-
-  /**
-   * Create a target pattern value key.
-   *
-   * @param target the target to be expanded
-   */
-  @ThreadSafe
-  public static SkyKey key(Target target, boolean strict) {
-    Preconditions.checkState(TargetUtils.isTestSuiteRule(target));
-    return new TestExpansionKey(target.getLabel(), strict);
-  }
-
-  /** A list of targets of which all test suites should be expanded. */
-  @ThreadSafe
-  static final class TestExpansionKey implements SkyKey {
-    private final Label label;
-    private final boolean strict;
-
-    public TestExpansionKey(Label label, boolean strict) {
-      this.label = label;
-      this.strict = strict;
+    init {
+        this.labels = com.google.common.base.Preconditions.checkNotNull<ResolvedTargets<Label?>>(labels)
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.TESTS_IN_SUITE;
+    fun getLabels(): ResolvedTargets<Label?> {
+        return labels
     }
 
-    public Label getLabel() {
-      return label;
+    /** A list of targets of which all test suites should be expanded.  */
+    @ThreadSafe
+    internal class TestExpansionKey(label: Label, strict: Boolean) : SkyKey {
+        private val label: Label
+        val isStrict: Boolean
+
+        init {
+            this.label = label
+            this.isStrict = strict
+        }
+
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.TESTS_IN_SUITE
+        }
+
+        fun getLabel(): Label {
+            return label
+        }
+
+        override fun toString(): String {
+            return "TestsInSuite(" + label + ", strict=" + this.isStrict + ")"
+        }
+
+        override fun hashCode(): Int {
+            return java.util.Objects.hash(label, this.isStrict)
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            if (this === obj) {
+                return true
+            }
+            if (obj !is TestExpansionKey) {
+                return false
+            }
+            return obj.label.equals(label) && obj.isStrict == this.isStrict
+        }
     }
 
-    public boolean isStrict() {
-      return strict;
+    companion object {
+        /**
+         * Create a target pattern value key.
+         * 
+         * @param target the target to be expanded
+         */
+        @ThreadSafe
+        fun key(target: Target, strict: Boolean): SkyKey {
+            com.google.common.base.Preconditions.checkState(TargetUtils.isTestSuiteRule(target))
+            return TestExpansionKey(target.getLabel(), strict)
+        }
     }
-
-    @Override
-    public String toString() {
-      return "TestsInSuite(" + label + ", strict=" + strict + ")";
-    }
-
-    @Override
-    public int hashCode() {
-      return Objects.hash(label, strict);
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      if (this == obj) {
-        return true;
-      }
-      if (!(obj instanceof TestExpansionKey other)) {
-        return false;
-      }
-      return other.label.equals(label) && other.strict == strict;
-    }
-  }
 }

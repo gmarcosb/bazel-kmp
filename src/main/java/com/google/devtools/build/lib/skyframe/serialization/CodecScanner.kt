@@ -11,137 +11,156 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
-
-import static com.google.common.collect.ImmutableList.toImmutableList;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.flogger.GoogleLogger;
-import com.google.common.reflect.ClassPath;
-import com.google.common.reflect.ClassPath.ClassInfo;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.RegisteredSingletonDoNotUse;
-import java.io.IOException;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Modifier;
-import java.util.Comparator;
-import java.util.function.Predicate;
+import com.google.common.flogger.GoogleLogger
+import com.google.devtools.build.lib.skyframe.serialization.CodecRegisterer
+import com.google.devtools.build.lib.skyframe.serialization.CodecScanningConstants
+import com.google.devtools.build.lib.skyframe.serialization.ObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecRegistry
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.RegisteredSingletonDoNotUse
+import java.io.IOException
 
 /**
- * Scans the classpath to find {@link ObjectCodec} and {@link CodecRegisterer} instances.
- *
- * <p>To avoid loading classes unnecessarily, the scanner filters by class name before loading.
- * {@link ObjectCodec} implementation class names should end in "Codec" while {@link
- * CodecRegisterer} implementation class names should end in "CodecRegisterer".
- *
- * <p>See {@link CodecRegisterer} for more details.
+ * Scans the classpath to find [ObjectCodec] and [CodecRegisterer] instances.
+ * 
+ * 
+ * To avoid loading classes unnecessarily, the scanner filters by class name before loading.
+ * [ObjectCodec] implementation class names should end in "Codec" while [ ] implementation class names should end in "CodecRegisterer".
+ * 
+ * 
+ * See [CodecRegisterer] for more details.
  */
-final class CodecScanner {
+internal object CodecScanner {
+    private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
 
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
-
-  /**
-   * Initializes an {@link ObjectCodecRegistry} builder by scanning classes matching the given
-   * package filter.
-   *
-   * @param packageFilter a filter applied to the package name of each class
-   * @see CodecRegisterer
-   */
-  static ObjectCodecRegistry.Builder initializeCodecRegistry(Predicate<String> packageFilter)
-      throws IOException, ReflectiveOperationException {
-    logger.atInfo().log("Building ObjectCodecRegistry");
-    ObjectCodecRegistry.Builder builder = ObjectCodecRegistry.newBuilder();
-    for (ClassInfo classInfo : getClassInfos(packageFilter)) {
-      if (classInfo.getName().endsWith("Codec")) {
-        processLikelyCodec(classInfo.load(), builder);
-      } else if (classInfo.getName().endsWith("CodecRegisterer")) {
-        processLikelyRegisterer(classInfo.load(), builder);
-      } else if (classInfo.getName().endsWith(CodecScanningConstants.REGISTERED_SINGLETON_SUFFIX)) {
-        processLikelyConstant(classInfo.load(), builder);
-      } else {
-        builder.addClassName(classInfo.getName().intern());
-      }
-    }
-    return builder;
-  }
-
-  private static void processLikelyCodec(Class<?> type, ObjectCodecRegistry.Builder builder)
-      throws ReflectiveOperationException {
-    if (ObjectCodec.class.equals(type)
-        || !ObjectCodec.class.isAssignableFrom(type)
-        || Modifier.isAbstract(type.getModifiers())) {
-      return;
+    /**
+     * Initializes an [ObjectCodecRegistry] builder by scanning classes matching the given
+     * package filter.
+     * 
+     * @param packageFilter a filter applied to the package name of each class
+     * @see CodecRegisterer
+     */
+    @Throws(IOException::class, java.lang.ReflectiveOperationException::class)
+    fun initializeCodecRegistry(packageFilter: java.util.function.Predicate<String?>): com.google.devtools.build.lib.skyframe.serialization.ObjectCodecRegistry.Builder {
+        logger.atInfo().log("Building ObjectCodecRegistry")
+        val builder: com.google.devtools.build.lib.skyframe.serialization.ObjectCodecRegistry.Builder =
+            ObjectCodecRegistry.Companion.newBuilder()
+        for (classInfo in getClassInfos(packageFilter)) {
+            if (classInfo.getName().endsWith("Codec")) {
+                processLikelyCodec(classInfo.load(), builder)
+            } else if (classInfo.getName().endsWith("CodecRegisterer")) {
+                processLikelyRegisterer(classInfo.load(), builder)
+            } else if (classInfo.getName().endsWith(CodecScanningConstants.REGISTERED_SINGLETON_SUFFIX)) {
+                processLikelyConstant(classInfo.load(), builder)
+            } else {
+                builder.addClassName(classInfo.getName().intern())
+            }
+        }
+        return builder
     }
 
-    try {
-      Constructor<?> constructor = type.getDeclaredConstructor();
-      constructor.setAccessible(true);
-      ObjectCodec<?> codec = (ObjectCodec<?>) constructor.newInstance();
-      if (codec.autoRegister()) {
-        builder.add(codec);
-      }
-    } catch (NoSuchMethodException e) {
-      logger.atFine().withCause(e).log(
-          "Skipping registration of %s because it had no default constructor", type);
-    }
-  }
+    @Throws(java.lang.ReflectiveOperationException::class)
+    private fun processLikelyCodec(
+        type: java.lang.Class<*>,
+        builder: com.google.devtools.build.lib.skyframe.serialization.ObjectCodecRegistry.Builder
+    ) {
+        if (ObjectCodec::class.java == type
+            || !ObjectCodec::class.java.isAssignableFrom(type) || java.lang.reflect.Modifier.isAbstract(type.getModifiers())
+        ) {
+            return
+        }
 
-  private static void processLikelyRegisterer(Class<?> type, ObjectCodecRegistry.Builder builder)
-      throws NoSuchMethodException, InvocationTargetException, InstantiationException,
-          IllegalAccessException {
-    if (CodecRegisterer.class.equals(type) || !CodecRegisterer.class.isAssignableFrom(type)) {
-      return;
+        try {
+            val constructor: java.lang.reflect.Constructor<*> = type.getDeclaredConstructor()
+            constructor.setAccessible(true)
+            val codec: ObjectCodec<*> = constructor.newInstance() as ObjectCodec<*>
+            if (codec.autoRegister()) {
+                builder.add(codec)
+            }
+        } catch (e: java.lang.NoSuchMethodException) {
+            logger.atFine().withCause(e).log(
+                "Skipping registration of %s because it had no default constructor", type
+            )
+        }
     }
 
-    Constructor<? extends CodecRegisterer> constructor =
-        type.asSubclass(CodecRegisterer.class).getDeclaredConstructor();
-    constructor.setAccessible(true);
-    CodecRegisterer registerer = constructor.newInstance();
-    for (ObjectCodec<?> codec : registerer.getCodecsToRegister()) {
-      builder.add(codec);
-    }
-  }
+    @Throws(
+        java.lang.NoSuchMethodException::class,
+        java.lang.reflect.InvocationTargetException::class,
+        java.lang.InstantiationException::class,
+        java.lang.IllegalAccessException::class
+    )
+    private fun processLikelyRegisterer(
+        type: java.lang.Class<*>,
+        builder: com.google.devtools.build.lib.skyframe.serialization.ObjectCodecRegistry.Builder
+    ) {
+        if (CodecRegisterer::class.java == type || !CodecRegisterer::class.java.isAssignableFrom(type)) {
+            return
+        }
 
-  private static void processLikelyConstant(Class<?> type, ObjectCodecRegistry.Builder builder) {
-    if (!RegisteredSingletonDoNotUse.class.isAssignableFrom(type)) {
-      return;
+        val constructor: java.lang.reflect.Constructor<out CodecRegisterer> =
+            type.asSubclass<CodecRegisterer>(CodecRegisterer::class.java).getDeclaredConstructor()
+        constructor.setAccessible(true)
+        val registerer: CodecRegisterer = constructor.newInstance()
+        for (codec in registerer.getCodecsToRegister()) {
+            builder.add(codec)
+        }
     }
-    Field field;
-    try {
-      field = type.getDeclaredField(CodecScanningConstants.REGISTERED_SINGLETON_INSTANCE_VAR_NAME);
-    } catch (NoSuchFieldException e) {
-      throw new IllegalStateException(
-          type
-              + " inherits from "
-              + RegisteredSingletonDoNotUse.class
-              + " but does not have a field "
-              + CodecScanningConstants.REGISTERED_SINGLETON_INSTANCE_VAR_NAME,
-          e);
-    }
-    try {
-      builder.addReferenceConstant(
-          Preconditions.checkNotNull(field.get(null), "%s %s", field, type));
-    } catch (IllegalAccessException e) {
-      throw new IllegalStateException("Could not access field " + field + " for " + type, e);
-    }
-  }
 
-  /** Return the {@link ClassInfo}s matching {@code packageFilter}, sorted by name. */
-  private static ImmutableList<ClassInfo> getClassInfos(Predicate<String> packageFilter)
-      throws IOException {
-    // Search all classes in the classloader that loaded this class.
-    // This is the system classloader when using a monolithic binary, and a custom classloader for
-    // the Logic Component when using a split binary.
-    return ClassPath.from(CodecScanner.class.getClassLoader()).getResources().stream()
-        .filter(ClassInfo.class::isInstance)
-        .map(ClassInfo.class::cast)
-        .filter(c -> packageFilter.test(c.getPackageName()))
-        .sorted(Comparator.comparing(ClassInfo::getName))
-        .collect(toImmutableList());
-  }
+    private fun processLikelyConstant(
+        type: java.lang.Class<*>,
+        builder: com.google.devtools.build.lib.skyframe.serialization.ObjectCodecRegistry.Builder
+    ) {
+        if (!RegisteredSingletonDoNotUse::class.java.isAssignableFrom(type)) {
+            return
+        }
+        val field: java.lang.reflect.Field
+        try {
+            field = type.getDeclaredField(CodecScanningConstants.REGISTERED_SINGLETON_INSTANCE_VAR_NAME)
+        } catch (e: java.lang.NoSuchFieldException) {
+            throw java.lang.IllegalStateException(
+                (type
+                    .toString() + " inherits from "
+                        + RegisteredSingletonDoNotUse::class.java
+                        + " but does not have a field "
+                        + CodecScanningConstants.REGISTERED_SINGLETON_INSTANCE_VAR_NAME),
+                e
+            )
+        }
+        try {
+            builder.addReferenceConstant(
+                com.google.common.base.Preconditions.checkNotNull<Any?>(field.get(null), "%s %s", field, type)
+            )
+        } catch (e: java.lang.IllegalAccessException) {
+            throw java.lang.IllegalStateException("Could not access field " + field + " for " + type, e)
+        }
+    }
 
-  private CodecScanner() {}
+    /** Return the [ClassInfo]s matching `packageFilter`, sorted by name.  */
+    @Throws(IOException::class)
+    private fun getClassInfos(packageFilter: java.util.function.Predicate<String?>): com.google.common.collect.ImmutableList<com.google.common.reflect.ClassPath.ClassInfo> {
+        // Search all classes in the classloader that loaded this class.
+        // This is the system classloader when using a monolithic binary, and a custom classloader for
+        // the Logic Component when using a split binary.
+        return com.google.common.reflect.ClassPath.from(CodecScanner::class.java.getClassLoader()).getResources()
+            .stream()
+            .filter(java.util.function.Predicate { obj: com.google.common.reflect.ClassPath.ResourceInfo? ->
+                com.google.common.reflect.ClassPath.ClassInfo::class.java.isInstance(
+                    obj
+                )
+            })
+            .map<com.google.common.reflect.ClassPath.ClassInfo?>(java.util.function.Function { obj: com.google.common.reflect.ClassPath.ResourceInfo? ->
+                com.google.common.reflect.ClassPath.ClassInfo::class.java.cast(
+                    obj
+                )
+            })
+            .filter(java.util.function.Predicate { c: com.google.common.reflect.ClassPath.ClassInfo? ->
+                packageFilter.test(
+                    c.getPackageName()
+                )
+            })
+            .sorted(java.util.Comparator.comparing<com.google.common.reflect.ClassPath.ClassInfo?, String?>(java.util.function.Function { obj: com.google.common.reflect.ClassPath.ClassInfo? -> obj.getName() }))
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<com.google.common.reflect.ClassPath.ClassInfo?>())
+    }
 }

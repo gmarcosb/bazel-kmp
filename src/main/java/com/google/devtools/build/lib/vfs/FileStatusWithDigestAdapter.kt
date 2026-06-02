@@ -11,77 +11,63 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import com.google.common.base.Preconditions;
-import java.io.IOException;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.vfs.FileStatus
+import com.google.devtools.build.lib.vfs.FileStatusWithDigest
+import java.io.IOException
 
-/** An adapter from FileStatus to FileStatusWithDigest. */
-public class FileStatusWithDigestAdapter implements FileStatusWithDigest {
-  private final FileStatus stat;
+/** An adapter from FileStatus to FileStatusWithDigest.  */
+class FileStatusWithDigestAdapter private constructor(stat: FileStatus?) : FileStatusWithDigest {
+    private val stat: FileStatus
 
-  @Nullable
-  public static FileStatusWithDigest maybeAdapt(@Nullable FileStatus stat) {
-    return stat == null
-        ? null
-        : stat instanceof FileStatusWithDigest fileStatusWithDigest
-            ? fileStatusWithDigest
-            : new FileStatusWithDigestAdapter(stat);
-  }
+    init {
+        this.stat = com.google.common.base.Preconditions.checkNotNull<FileStatus>(stat)
+    }
 
-  private FileStatusWithDigestAdapter(FileStatus stat) {
-    this.stat = Preconditions.checkNotNull(stat);
-  }
+    val digest: ByteArray?
+        get() = null
 
-  @Nullable
-  @Override
-  public byte[] getDigest() {
-    return null;
-  }
+    val isFile: Boolean
+        get() = stat.isFile()
 
-  @Override
-  public boolean isFile() {
-    return stat.isFile();
-  }
+    val isSpecialFile: Boolean
+        get() = stat.isSpecialFile()
 
-  @Override
-  public boolean isSpecialFile() {
-    return stat.isSpecialFile();
-  }
+    val isDirectory: Boolean
+        get() = stat.isDirectory()
 
-  @Override
-  public boolean isDirectory() {
-    return stat.isDirectory();
-  }
+    val isSymbolicLink: Boolean
+        get() = stat.isSymbolicLink()
 
-  @Override
-  public boolean isSymbolicLink() {
-    return stat.isSymbolicLink();
-  }
+    @get:Throws(IOException::class)
+    val size: Long
+        get() = stat.getSize()
 
-  @Override
-  public long getSize() throws IOException {
-    return stat.getSize();
-  }
+    @get:Throws(IOException::class)
+    val lastModifiedTime: Long
+        get() = stat.getLastModifiedTime()
 
-  @Override
-  public long getLastModifiedTime() throws IOException {
-    return stat.getLastModifiedTime();
-  }
+    @get:Throws(IOException::class)
+    val lastChangeTime: Long
+        get() = stat.getLastChangeTime()
 
-  @Override
-  public long getLastChangeTime() throws IOException {
-    return stat.getLastChangeTime();
-  }
+    @get:Throws(IOException::class)
+    val nodeId: Long
+        get() = stat.getNodeId()
 
-  @Override
-  public long getNodeId() throws IOException {
-    return stat.getNodeId();
-  }
+    val permissions: Int
+        get() = stat.getPermissions()
 
-  @Override
-  public int getPermissions() {
-    return stat.getPermissions();
-  }
+    companion object {
+        fun maybeAdapt(stat: FileStatus?): FileStatusWithDigest? {
+            return if (stat == null)
+                null
+            else
+                if (stat is FileStatusWithDigest)
+                    stat
+                else
+                    FileStatusWithDigestAdapter(stat)
+        }
+    }
 }

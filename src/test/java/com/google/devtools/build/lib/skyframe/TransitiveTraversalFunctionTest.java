@@ -138,8 +138,7 @@ public class TransitiveTraversalFunctionTest extends BuildViewTestCase {
     when(mockEnv.valuesMissing()).thenReturn(false);
 
     assertThat(
-            ((TransitiveTraversalValue) function.compute(function.getKey(label), mockEnv))
-                .getErrorMessage())
+            ((TransitiveTraversalValue) function.compute(function.getKey(label), mockEnv)).errorMessage)
         .isEqualTo("bad bar");
   }
 
@@ -175,7 +174,7 @@ public class TransitiveTraversalFunctionTest extends BuildViewTestCase {
 
     TransitiveTraversalValue transitiveTraversalValue =
         (TransitiveTraversalValue) function.compute(function.getKey(label), mockEnv);
-    assertThat(transitiveTraversalValue.getErrorMessage()).isEqualTo("self error is long and last");
+    assertThat(transitiveTraversalValue.errorMessage).isEqualTo("self error is long and last");
   }
 
   @Test
@@ -238,7 +237,7 @@ public class TransitiveTraversalFunctionTest extends BuildViewTestCase {
 
     TransitiveTraversalValue transitiveTraversalValue =
         (TransitiveTraversalValue) function.compute(function.getKey(label), mockEnv);
-    assertThat(transitiveTraversalValue.getErrorMessage()).isEqualTo("bad test");
+    assertThat(transitiveTraversalValue.errorMessage).isEqualTo("bad test");
     assertThat(valuesMissing.get()).isFalse();
   }
 

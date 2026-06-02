@@ -11,66 +11,59 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.java
 
-package com.google.devtools.build.lib.rules.java;
+import com.google.devtools.build.lib.actions.Artifact
 
-import com.google.auto.value.AutoValue;
-import com.google.devtools.build.lib.actions.Artifact;
-import javax.annotation.Nullable;
-
-/** The outputs of a {@link JavaCompileAction}. */
+/** The outputs of a [JavaCompileAction].  */
 @AutoValue
-public abstract class JavaCompileOutputs<T extends Artifact> {
+abstract class JavaCompileOutputs<T : Artifact?> {
+    /** The class jar Artifact to create with the Action  */
+    abstract fun output(): T?
 
-  /** The class jar Artifact to create with the Action */
-  public abstract T output();
+    /** The output artifact for the manifest proto emitted from JavaBuilder  */
+    abstract fun manifestProto(): T?
 
-  /** The output artifact for the manifest proto emitted from JavaBuilder */
-  public abstract T manifestProto();
+    abstract fun depsProto(): T?
 
-  @Nullable
-  public abstract T depsProto();
+    /** The generated class jar, or `null` if no annotation processing is expected.  */
+    abstract fun genClass(): T?
 
-  /** The generated class jar, or {@code null} if no annotation processing is expected. */
-  @Nullable
-  public abstract T genClass();
+    /**
+     * The generated sources jar Artifact to create with the Action (null if no sources will be
+     * generated).
+     */
+    abstract fun genSource(): T?
 
-  /**
-   * The generated sources jar Artifact to create with the Action (null if no sources will be
-   * generated).
-   */
-  @Nullable
-  public abstract T genSource();
+    /** An archive of generated native header files.  */
+    abstract fun nativeHeader(): T?
 
-  /** An archive of generated native header files. */
-  @Nullable
-  public abstract T nativeHeader();
+    abstract fun toBuilder(): Builder<T?>?
 
-  static <T extends Artifact> Builder<T> builder() {
-    return new AutoValue_JavaCompileOutputs.Builder<>();
-  }
+    fun withOutput(output: T?): JavaCompileOutputs<T?>? {
+        return toBuilder()!!.output(output)!!.build()
+    }
 
-  public abstract Builder<T> toBuilder();
+    @AutoValue.Builder
+    internal abstract class Builder<T : Artifact?> {
+        abstract fun output(artifact: T?): Builder<T?>?
 
-  public JavaCompileOutputs<T> withOutput(T output) {
-    return toBuilder().output(output).build();
-  }
+        abstract fun manifestProto(artifact: T?): Builder<T?>?
 
-  @AutoValue.Builder
-  abstract static class Builder<T extends Artifact> {
+        abstract fun depsProto(artifact: T?): Builder<T?>?
 
-    abstract Builder<T> output(T artifact);
+        abstract fun genClass(artifact: T?): Builder<T?>?
 
-    abstract Builder<T> manifestProto(T artifact);
+        abstract fun genSource(artifact: T?): Builder<T?>?
 
-    abstract Builder<T> depsProto(@Nullable T artifact);
+        abstract fun nativeHeader(artifact: T?): Builder<T?>?
 
-    abstract Builder<T> genClass(@Nullable T artifact);
+        abstract fun build(): JavaCompileOutputs<T?>?
+    }
 
-    abstract Builder<T> genSource(@Nullable T artifact);
-
-    abstract Builder<T> nativeHeader(@Nullable T artifact);
-
-    abstract JavaCompileOutputs<T> build();
-  }
+    companion object {
+        fun <T : Artifact?> builder(): Builder<T?> {
+            return Builder()
+        }
+    }
 }

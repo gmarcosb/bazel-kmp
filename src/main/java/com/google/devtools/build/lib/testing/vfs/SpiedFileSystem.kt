@@ -11,32 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testing.vfs;
+package com.google.devtools.build.lib.testing.vfs
 
-import static org.mockito.Mockito.spy;
-
-import com.google.devtools.build.lib.vfs.DelegateFileSystem;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
+import com.google.devtools.build.lib.vfs.DelegateFileSystem
+import com.google.devtools.build.lib.vfs.DigestHashFunction
+import com.google.devtools.build.lib.vfs.FileSystem
+import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem
+import org.mockito.Mockito
 
 /**
- * Delegate file system with the sole purpose of creating a {@link org.mockito.Mockito#spy}.
+ * Delegate file system with the sole purpose of creating a [Mockito.spy].
  */
-public class SpiedFileSystem extends DelegateFileSystem {
+class SpiedFileSystem private constructor(delegateFs: FileSystem?) : DelegateFileSystem(delegateFs) {
+    companion object {
+        /**
+         * Create a spied file system instance delegating all calls to the provided `fileSystem`.
+         */
+        @kotlin.jvm.JvmStatic
+        fun createSpy(fileSystem: FileSystem?): SpiedFileSystem? {
+            return Mockito.spy<SpiedFileSystem?>(SpiedFileSystem(fileSystem))
+        }
 
-  private SpiedFileSystem(FileSystem delegateFs) {
-    super(delegateFs);
-  }
-
-  /**
-   * Create a spied file system instance delegating all calls to the provided {@code fileSystem}.
-   */
-  public static SpiedFileSystem createSpy(FileSystem fileSystem) {
-    return spy(new SpiedFileSystem(fileSystem));
-  }
-
-  public static SpiedFileSystem createInMemorySpy() {
-    return createSpy(new InMemoryFileSystem(DigestHashFunction.SHA256));
-  }
+        @kotlin.jvm.JvmStatic
+        fun createInMemorySpy(): SpiedFileSystem? {
+            return createSpy(InMemoryFileSystem(DigestHashFunction.SHA256))
+        }
+    }
 }

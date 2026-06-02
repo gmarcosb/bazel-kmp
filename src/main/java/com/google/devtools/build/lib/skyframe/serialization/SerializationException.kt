@@ -11,110 +11,106 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.proto.MissReason
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.proto.MissReason;
-import java.util.ArrayList;
+/** Exception signaling a failure to Serialize or Deserialize an Object.  */
+open class SerializationException : java.lang.Exception {
+    private val trail: java.util.ArrayList<String?> = java.util.ArrayList<String?>()
+    private val reason: MissReason?
 
-/** Exception signaling a failure to Serialize or Deserialize an Object. */
-public class SerializationException extends Exception {
-  private final ArrayList<String> trail = new ArrayList<>();
-  private final MissReason reason;
-
-  private static MissReason maybePropagateReason(Throwable cause) {
-    return cause instanceof SerializationException se
-        ? se.getReason()
-        : MissReason.MISS_REASON_UNSPECIFIED;
-  }
-
-  public SerializationException(String msg) {
-    super(msg);
-    this.reason = MissReason.MISS_REASON_UNSPECIFIED;
-  }
-
-  public SerializationException(Throwable cause) {
-    super(cause);
-    this.reason = maybePropagateReason(cause);
-  }
-
-  public SerializationException(String msg, MissReason reason) {
-    super(msg);
-    this.reason = reason;
-  }
-
-  public SerializationException(String msg, Throwable cause) {
-    super(msg, cause);
-    this.reason = maybePropagateReason(cause);
-  }
-
-  public SerializationException(String msg, Throwable cause, MissReason reason) {
-    super(msg, cause);
-    this.reason = reason;
-  }
-
-  public MissReason getReason() {
-    return reason;
-  }
-
-  // No SerializationException(Throwable) overload because serialization errors should always
-  // provide as much context as possible.
-
-  /**
-   * {@link SerializationException} indicating that Blaze has no serialization schema for an object
-   * or type of object.
-   */
-  public static class NoCodecException extends SerializationException {
-    NoCodecException(String message) {
-      super(message);
+    constructor(msg: String?) : super(msg) {
+        this.reason = MissReason.MISS_REASON_UNSPECIFIED
     }
 
-    NoCodecException(String message, Class<?> type) {
-      super(message);
-      addTrail(type);
+    constructor(cause: Throwable?) : super(cause) {
+        this.reason =
+            com.google.devtools.build.lib.skyframe.serialization.SerializationException.Companion.maybePropagateReason(
+                cause
+            )
     }
 
-    // Needed for wrapping.
-    NoCodecException(String message, NoCodecException e) {
-      super(message, e);
+    constructor(msg: String?, reason: MissReason?) : super(msg) {
+        this.reason = reason
     }
-  }
 
-  @Override
-  public String getMessage() {
-    return super.getMessage() + (trail.isEmpty() ? "" : " " + trail);
-  }
-
-  /**
-   * Adds extra tracing info for debugging.
-   *
-   * <p>Primarily useful for {@link DynamicCodec}.
-   */
-  public void addTrail(Class<?> type) {
-    trail.add(type.getName());
-  }
-
-  public ImmutableList<String> getTrailForTesting() {
-    return ImmutableList.copyOf(trail);
-  }
-
-  /**
-   * Throws a {@link SerializationException} with the given message and that wraps the given cause.
-   *
-   * <p>If the cause is a {@link NoCodecException}, the returned exception will also be a {@code
-   * NoCodecException}.
-   *
-   * <p>The return type is {@link SerializationException} rather than {@code void} so that you can
-   * call this function from within a {@code throw} statement. Doing so keeps the calling code more
-   * readable. It also avoids spurious compiler errors, e.g. for using uninitialized variables after
-   * the {@code throw}.
-   */
-  public static SerializationException propagate(String msg, Throwable cause) {
-    if (cause instanceof NoCodecException) {
-      return new NoCodecException(msg, (NoCodecException) cause);
-    } else {
-      return new SerializationException(msg, cause);
+    constructor(msg: String?, cause: Throwable?) : super(msg, cause) {
+        this.reason =
+            com.google.devtools.build.lib.skyframe.serialization.SerializationException.Companion.maybePropagateReason(
+                cause
+            )
     }
-  }
+
+    constructor(msg: String?, cause: Throwable?, reason: MissReason?) : super(msg, cause) {
+        this.reason = reason
+    }
+
+    fun getReason(): MissReason? {
+        return reason
+    }
+
+    // No SerializationException(Throwable) overload because serialization errors should always
+    // provide as much context as possible.
+    /**
+     * [SerializationException] indicating that Blaze has no serialization schema for an object
+     * or type of object.
+     */
+    class NoCodecException : SerializationException {
+        internal constructor(message: String?) : super(message)
+
+        internal constructor(message: String?, type: java.lang.Class<*>) : super(message) {
+            addTrail(type)
+        }
+
+        // Needed for wrapping.
+        internal constructor(message: String?, e: NoCodecException?) : super(message, e)
+    }
+
+    override fun getMessage(): String {
+        return super.getMessage() + (if (trail.isEmpty()) "" else " " + trail)
+    }
+
+    /**
+     * Adds extra tracing info for debugging.
+     * 
+     * 
+     * Primarily useful for [DynamicCodec].
+     */
+    fun addTrail(type: java.lang.Class<*>) {
+        trail.add(type.getName())
+    }
+
+    fun getTrailForTesting(): com.google.common.collect.ImmutableList<String?> {
+        return com.google.common.collect.ImmutableList.copyOf<String?>(trail)
+    }
+
+    companion object {
+        private fun maybePropagateReason(cause: Throwable?): MissReason? {
+            return if (cause is SerializationException)
+                cause.getReason()
+            else
+                MissReason.MISS_REASON_UNSPECIFIED
+        }
+
+        /**
+         * Throws a [SerializationException] with the given message and that wraps the given cause.
+         * 
+         * 
+         * If the cause is a [NoCodecException], the returned exception will also be a `NoCodecException`.
+         * 
+         * 
+         * The return type is [SerializationException] rather than `void` so that you can
+         * call this function from within a `throw` statement. Doing so keeps the calling code more
+         * readable. It also avoids spurious compiler errors, e.g. for using uninitialized variables after
+         * the `throw`.
+         */
+        fun propagate(msg: String?, cause: Throwable?): SerializationException {
+            if (cause is NoCodecException) {
+                return NoCodecException(msg, cause as NoCodecException)
+            } else {
+                return com.google.devtools.build.lib.skyframe.serialization.SerializationException(msg, cause)
+            }
+        }
+    }
 }

@@ -11,85 +11,79 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import com.google.common.base.MoreObjects;
-import com.google.devtools.build.lib.skyframe.serialization.FrontierNodeVersion;
-import java.util.Objects;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.skyframe.serialization.FrontierNodeVersion
 
 /**
  * State to track information pertinent to Skyframe nodes that were deserialized from the remote
  * analysis cache through the lifetime of the Bazel server (until clean/shutdown), that is, across
  * multiple invocations.
  */
-public final class RemoteAnalysisCachingServerState {
+class RemoteAnalysisCachingServerState(version: FrontierNodeVersion?, clientId: ClientId?) {
+    /** The [FrontierNodeVersion]  */
+    private var latestInvocationVersion: FrontierNodeVersion?
 
-  /** The {@link FrontierNodeVersion} */
-  @Nullable private FrontierNodeVersion latestInvocationVersion;
+    private var latestInvocationClientId: ClientId?
 
-  @Nullable private ClientId latestInvocationClientId;
-
-  public RemoteAnalysisCachingServerState(
-      @Nullable FrontierNodeVersion version, @Nullable ClientId clientId) {
-    this.latestInvocationVersion = version;
-    this.latestInvocationClientId = clientId;
-  }
-
-  /** Returns a {@link RemoteAnalysisCachingServerState} with empty/null fields. */
-  public static RemoteAnalysisCachingServerState initializeEmpty() {
-    return new RemoteAnalysisCachingServerState(/* version= */ null, /* clientId= */ null);
-  }
-
-  /** Returns {@link FrontierNodeVersion} of the latest (previous) invocation, if any. */
-  @Nullable
-  public FrontierNodeVersion version() {
-    return latestInvocationVersion;
-  }
-
-  /**
-   * Sets the {@link FrontierNodeVersion} of the remote analysis cache keys used in the current
-   * invocation.
-   *
-   * <p>This will be used to determine invalidation during the next invocation.
-   */
-  public void setVersion(FrontierNodeVersion version) {
-    this.latestInvocationVersion = version;
-  }
-
-  /** Returns the {@link ClientId} of the latest (previous) invocation, if any. */
-  @Nullable
-  public ClientId clientId() {
-    return latestInvocationClientId;
-  }
-
-  /** Sets the {@link ClientId} of the current invocation. */
-  public void setClientId(ClientId clientId) {
-    this.latestInvocationClientId = clientId;
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (this == o) {
-      return true;
+    init {
+        this.latestInvocationVersion = version
+        this.latestInvocationClientId = clientId
     }
-    if (!(o instanceof RemoteAnalysisCachingServerState that)) {
-      return false;
+
+    /** Returns [FrontierNodeVersion] of the latest (previous) invocation, if any.  */
+    fun version(): FrontierNodeVersion? {
+        return latestInvocationVersion
     }
-    return Objects.equals(latestInvocationVersion, that.latestInvocationVersion)
-        && Objects.equals(latestInvocationClientId, that.latestInvocationClientId);
-  }
 
-  @Override
-  public int hashCode() {
-    return Objects.hash(latestInvocationVersion, latestInvocationClientId);
-  }
+    /**
+     * Sets the [FrontierNodeVersion] of the remote analysis cache keys used in the current
+     * invocation.
+     * 
+     * 
+     * This will be used to determine invalidation during the next invocation.
+     */
+    fun setVersion(version: FrontierNodeVersion?) {
+        this.latestInvocationVersion = version
+    }
 
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("version", latestInvocationVersion)
-        .add("clientId", latestInvocationClientId)
-        .toString();
-  }
+    /** Returns the [ClientId] of the latest (previous) invocation, if any.  */
+    fun clientId(): ClientId? {
+        return latestInvocationClientId
+    }
+
+    /** Sets the [ClientId] of the current invocation.  */
+    fun setClientId(clientId: ClientId?) {
+        this.latestInvocationClientId = clientId
+    }
+
+    override fun equals(o: Any?): Boolean {
+        if (this === o) {
+            return true
+        }
+        if (o !is RemoteAnalysisCachingServerState) {
+            return false
+        }
+        return latestInvocationVersion == o.latestInvocationVersion
+                && latestInvocationClientId == o.latestInvocationClientId
+    }
+
+    override fun hashCode(): Int {
+        return java.util.Objects.hash(latestInvocationVersion, latestInvocationClientId)
+    }
+
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("version", latestInvocationVersion)
+            .add("clientId", latestInvocationClientId)
+            .toString()
+    }
+
+    companion object {
+        /** Returns a [RemoteAnalysisCachingServerState] with empty/null fields.  */
+        @kotlin.jvm.JvmStatic
+        fun initializeEmpty(): RemoteAnalysisCachingServerState {
+            return RemoteAnalysisCachingServerState( /* version= */null,  /* clientId= */null)
+        }
+    }
 }

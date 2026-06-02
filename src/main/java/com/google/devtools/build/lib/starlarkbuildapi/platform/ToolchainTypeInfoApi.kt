@@ -11,27 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.platform
 
-package com.google.devtools.build.lib.starlarkbuildapi.platform;
+import com.google.devtools.build.docgen.annot.DocCategory
+import com.google.devtools.build.lib.cmdline.Label
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.starlarkbuildapi.core.StructApi;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-
-/** Info object representing data about a specific toolchain type. */
+/** Info object representing data about a specific toolchain type.  */
 @StarlarkBuiltin(
-    name = "ToolchainTypeInfo",
-    doc =
-        "Provides access to data about a specific toolchain type. "
-            + PlatformInfoApi.EXPERIMENTAL_WARNING,
-    category = DocCategory.PROVIDER)
-public interface ToolchainTypeInfoApi extends StructApi {
-
-  @StarlarkMethod(
-      name = "type_label",
-      doc = "The label uniquely identifying this toolchain type.",
-      structField = true)
-  Label typeLabel();
+    name = "ToolchainTypeInfo", doc = ("Provides access to data about a specific toolchain type. "
+            + PlatformInfoApi.Companion.EXPERIMENTAL_WARNING), category = DocCategory.PROVIDER
+)
+interface ToolchainTypeInfoApi : StructApi {
+    @StarlarkMethod(
+        name = "type_label",
+        doc = "The label uniquely identifying this toolchain type.",
+        structField = true
+    )
+    fun typeLabel(): Label?
 }

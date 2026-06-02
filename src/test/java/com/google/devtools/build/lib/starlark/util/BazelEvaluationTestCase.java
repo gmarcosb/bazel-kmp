@@ -97,7 +97,7 @@ public final class BazelEvaluationTestCase {
    */
   public final void setSemantics(String... options) throws OptionsParsingException {
     this.semantics =
-        Options.parse(BuildLanguageOptions.class, options).getOptions().toStarlarkSemantics();
+        Options.parse(BuildLanguageOptions.class, options).options.toStarlarkSemantics();
 
     // Re-initialize the thread and module with the new semantics when needed.
     this.thread = null;
@@ -232,7 +232,7 @@ public final class BazelEvaluationTestCase {
       Mutability mu = Mutability.create("test");
       StarlarkThread thread =
           StarlarkThread.create(mu, semantics, "test", SymbolGenerator.create(threadOwner));
-      thread.setPrintHandler(Event.makeDebugPrintHandler(getEventHandler()));
+      thread.printHandler = Event.makeDebugPrintHandler(getEventHandler());
       newThread(thread);
       this.thread = thread;
     }

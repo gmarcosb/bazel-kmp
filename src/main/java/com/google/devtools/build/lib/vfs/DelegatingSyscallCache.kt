@@ -11,62 +11,61 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.vfs
 
-package com.google.devtools.build.lib.vfs;
+import com.google.devtools.build.lib.vfs.FileStatus
+import com.google.devtools.build.lib.vfs.Symlinks
+import com.google.devtools.build.lib.vfs.SyscallCache
+import com.google.devtools.build.lib.vfs.SyscallCache.DirentTypeWithSkip
+import java.io.IOException
 
-import static com.google.common.base.Preconditions.checkNotNull;
+/** [SyscallCache] that delegates to an injectable one.  */
+class DelegatingSyscallCache : SyscallCache {
+    private var delegate: SyscallCache = SyscallCache.Companion.NO_CACHE
 
-import java.io.IOException;
-import java.util.Collection;
-import javax.annotation.Nullable;
+    fun setDelegate(syscallCache: SyscallCache?) {
+        this.delegate = com.google.common.base.Preconditions.checkNotNull<SyscallCache>(syscallCache)
+    }
 
-/** {@link SyscallCache} that delegates to an injectable one. */
-public class DelegatingSyscallCache implements SyscallCache {
-  private SyscallCache delegate = SyscallCache.NO_CACHE;
+    @Throws(IOException::class)
+    override fun readdir(path: com.google.devtools.build.lib.vfs.Path?): MutableCollection<com.google.devtools.build.lib.vfs.Dirent?>? {
+        return delegate.readdir(path)
+    }
 
-  public void setDelegate(SyscallCache syscallCache) {
-    this.delegate = checkNotNull(syscallCache);
-  }
+    @Throws(IOException::class)
+    override fun statIfFound(path: com.google.devtools.build.lib.vfs.Path?, symlinks: Symlinks?): FileStatus? {
+        return delegate.statIfFound(path, symlinks)
+    }
 
-  @Override
-  public Collection<Dirent> readdir(Path path) throws IOException {
-    return delegate.readdir(path);
-  }
+    @Throws(IOException::class)
+    override fun getType(path: com.google.devtools.build.lib.vfs.Path?, symlinks: Symlinks?): DirentTypeWithSkip? {
+        return delegate.getType(path, symlinks)
+    }
 
-  @Nullable
-  @Override
-  public FileStatus statIfFound(Path path, Symlinks symlinks) throws IOException {
-    return delegate.statIfFound(path, symlinks);
-  }
+    @Throws(IOException::class)
+    override fun getFastDigest(path: com.google.devtools.build.lib.vfs.Path): ByteArray? {
+        return delegate.getFastDigest(path)
+    }
 
-  @Nullable
-  @Override
-  public DirentTypeWithSkip getType(Path path, Symlinks symlinks) throws IOException {
-    return delegate.getType(path, symlinks);
-  }
+    @Throws(IOException::class)
+    override fun getxattr(path: com.google.devtools.build.lib.vfs.Path, xattrName: String?): ByteArray? {
+        return delegate.getxattr(path, xattrName)
+    }
 
-  @Override
-  public byte[] getFastDigest(Path path) throws IOException {
-    return delegate.getFastDigest(path);
-  }
+    @Throws(IOException::class)
+    override fun getxattr(
+        path: com.google.devtools.build.lib.vfs.Path,
+        xattrName: String?,
+        followSymlinks: Symlinks?
+    ): ByteArray? {
+        return delegate.getxattr(path, xattrName, followSymlinks)
+    }
 
-  @Override
-  public byte[] getxattr(Path path, String xattrName) throws IOException {
-    return delegate.getxattr(path, xattrName);
-  }
+    override fun noteAnalysisPhaseEnded() {
+        delegate.noteAnalysisPhaseEnded()
+    }
 
-  @Override
-  public byte[] getxattr(Path path, String xattrName, Symlinks followSymlinks) throws IOException {
-    return delegate.getxattr(path, xattrName, followSymlinks);
-  }
-
-  @Override
-  public void noteAnalysisPhaseEnded() {
-    delegate.noteAnalysisPhaseEnded();
-  }
-
-  @Override
-  public void clear() {
-    delegate.clear();
-  }
+    override fun clear() {
+        delegate.clear()
+    }
 }

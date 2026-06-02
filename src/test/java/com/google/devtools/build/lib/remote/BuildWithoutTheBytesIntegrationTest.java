@@ -305,7 +305,7 @@ public class BuildWithoutTheBytesIntegrationTest extends BuildWithoutTheBytesInt
     buildTarget("//a:hello");
 
     Path outputPath = getOutputPath("a/hello");
-    assertThat(outputPath.stat(Symlinks.NOFOLLOW).isSymbolicLink()).isTrue();
+    assertThat(outputPath.stat(Symlinks.NOFOLLOW).isSymbolicLink).isTrue();
   }
 
   @Test

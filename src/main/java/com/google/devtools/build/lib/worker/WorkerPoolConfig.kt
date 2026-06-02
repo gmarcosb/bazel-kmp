@@ -11,50 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.worker;
-
-import java.util.List;
-import java.util.Map.Entry;
-import java.util.Objects;
+package com.google.devtools.build.lib.worker
 
 /**
  * Describes the configuration of worker pool, e.g. number of maximal instances and priority of the
  * workers.
  */
-public class WorkerPoolConfig {
-  private final List<Entry<String, Integer>> workerMaxInstances;
-  private final List<Entry<String, Integer>> workerMaxMultiplexInstances;
-
-  public WorkerPoolConfig(
-      List<Entry<String, Integer>> workerMaxInstances,
-      List<Entry<String, Integer>> workerMaxMultiplexInstances) {
-    this.workerMaxInstances = workerMaxInstances;
-    this.workerMaxMultiplexInstances = workerMaxMultiplexInstances;
-  }
-
-  public List<Entry<String, Integer>> getWorkerMaxInstances() {
-    return workerMaxInstances;
-  }
-
-  public List<Entry<String, Integer>> getWorkerMaxMultiplexInstances() {
-    return workerMaxMultiplexInstances;
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (this == o) {
-      return true;
+class WorkerPoolConfig(
+    val workerMaxInstances: MutableList<MutableMap.MutableEntry<String?, Int?>?>,
+    val workerMaxMultiplexInstances: MutableList<MutableMap.MutableEntry<String?, Int?>?>
+) {
+    override fun equals(o: Any?): Boolean {
+        if (this === o) {
+            return true
+        }
+        if (o !is WorkerPoolConfig) {
+            return false
+        }
+        return workerMaxInstances == o.workerMaxInstances
+                && workerMaxMultiplexInstances == o.workerMaxMultiplexInstances
     }
-    if (!(o instanceof WorkerPoolConfig that)) {
-      return false;
-    }
-    return workerMaxInstances.equals(that.workerMaxInstances)
-        && workerMaxMultiplexInstances.equals(that.workerMaxMultiplexInstances);
-  }
 
-  @Override
-  public int hashCode() {
-    return Objects.hash(workerMaxInstances, workerMaxMultiplexInstances);
-  }
+    override fun hashCode(): Int {
+        return java.util.Objects.hash(workerMaxInstances, workerMaxMultiplexInstances)
+    }
 }

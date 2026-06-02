@@ -11,92 +11,91 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
-
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.packages.PackagePiece;
-import com.google.devtools.build.lib.packages.Packageoid;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import net.starlark.java.eval.StarlarkSemantics;
+import com.google.devtools.build.lib.cmdline.RepositoryMapping
 
 /**
  * A Skyframe value representing a package piece.
- *
- * <p>The corresponding {@link com.google.devtools.build.skyframe.SkyKey} is {@link
- * com.google.devtools.build.lib.packages.PackagePieceIdentifier}. Note that different subclasses of
+ * 
+ * 
+ * The corresponding [com.google.devtools.build.skyframe.SkyKey] is [ ]. Note that different subclasses of
  * PackagePieceIdentifier are evaluated by different SkyFunctions.
  */
-public interface PackagePieceValue extends PackageoidValue {
-  /**
-   * Returns the package piece. This package piece may contain errors, in which case the caller
-   * should throw an appropriate subclass of {@link
-   * com.google.devtools.build.lib.packages.NoSuchPackagePieceException} if an error-free package
-   * piece is needed.
-   */
-  PackagePiece getPackagePiece();
+interface PackagePieceValue : PackageoidValue {
+    /**
+     * Returns the package piece. This package piece may contain errors, in which case the caller
+     * should throw an appropriate subclass of [ ] if an error-free package
+     * piece is needed.
+     */
+    @kotlin.jvm.JvmField
+    val packagePiece: PackagePiece?
 
-  @Override
-  public default Packageoid getPackageoid() {
-    return getPackagePiece();
-  }
+    val packageoid: Packageoid?
+        get() = this.packagePiece
 
-  /**
-   * A Skyframe value representing a package piece obtained by evaluating a BUILD file without
-   * expanding any symbolic macros.
-   *
-   * <p>Inlines Starlark semantics and the main repository mapping to avoid extra dependency edges
-   * in the package's package pieces for macros.
-   *
-   * <p>The corresponding {@link com.google.devtools.build.skyframe.SkyKey} is {@link
-   * com.google.devtools.build.lib.packages.PackagePieceIdentifier.ForBuildFile}.
-   */
-  @AutoCodec
-  public record ForBuildFile(
-      PackagePiece.ForBuildFile forBuildFile,
-      StarlarkSemantics starlarkSemantics,
-      RepositoryMapping mainRepositoryMapping)
-      implements PackagePieceValue {
-    public ForBuildFile {
-      checkNotNull(forBuildFile);
-      checkNotNull(starlarkSemantics);
-      checkNotNull(mainRepositoryMapping);
+    /**
+     * A Skyframe value representing a package piece obtained by evaluating a BUILD file without
+     * expanding any symbolic macros.
+     * 
+     * 
+     * Inlines Starlark semantics and the main repository mapping to avoid extra dependency edges
+     * in the package's package pieces for macros.
+     * 
+     * 
+     * The corresponding [com.google.devtools.build.skyframe.SkyKey] is [ ].
+     */
+    @AutoCodec
+    class ForBuildFile(
+        forBuildFile: ForBuildFile?,
+        starlarkSemantics: net.starlark.java.eval.StarlarkSemantics?,
+        mainRepositoryMapping: RepositoryMapping?
+    ) : PackagePieceValue {
+        override fun getPackagePiece(): ForBuildFile? {
+            return forBuildFile
+        }
+
+        override fun toString(): String {
+            return java.lang.String.format(
+                "<PackagePieceValue.ForBuildFile name=%s>",
+                forBuildFile.getIdentifier().getCanonicalFormName()
+            )
+        }
+
+        val forBuildFile: ForBuildFile?
+        val starlarkSemantics: net.starlark.java.eval.StarlarkSemantics?
+        val mainRepositoryMapping: RepositoryMapping?
+
+        init {
+            this.mainRepositoryMapping = mainRepositoryMapping
+            this.starlarkSemantics = starlarkSemantics
+            this.forBuildFile = forBuildFile
+            com.google.common.base.Preconditions.checkNotNull<Any?>(forBuildFile)
+            com.google.common.base.Preconditions.checkNotNull<net.starlark.java.eval.StarlarkSemantics?>(
+                starlarkSemantics
+            )
+            com.google.common.base.Preconditions.checkNotNull<Any?>(mainRepositoryMapping)
+        }
     }
 
-    @Override
-    public PackagePiece.ForBuildFile getPackagePiece() {
-      return forBuildFile;
+    /** A Skyframe value representing a package piece obtained by evaluating one symbolic macro.  */
+    @AutoCodec
+    @kotlin.jvm.JvmRecord
+    data class ForMacro(val forMacro: ForMacro?) : PackagePieceValue {
+        override fun getPackagePiece(): ForMacro? {
+            return forMacro
+        }
+
+        override fun toString(): String {
+            return java.lang.String.format(
+                "<PackagePieceValue.ForMacro name=%s defined_by=%s>",
+                forMacro.getIdentifier().getCanonicalFormName(), forMacro.getCanonicalFormDefinedBy()
+            )
+        }
+
+
+        init {
+            com.google.common.base.Preconditions.checkNotNull<Any?>(forMacro)
+        }
     }
-
-    @Override
-    public String toString() {
-      return String.format(
-          "<PackagePieceValue.ForBuildFile name=%s>",
-          forBuildFile.getIdentifier().getCanonicalFormName());
-    }
-  }
-
-  /** A Skyframe value representing a package piece obtained by evaluating one symbolic macro. */
-  @AutoCodec
-  public record ForMacro(PackagePiece.ForMacro forMacro) implements PackagePieceValue {
-    public ForMacro {
-      checkNotNull(forMacro);
-    }
-
-    @Override
-    public PackagePiece.ForMacro getPackagePiece() {
-      return forMacro;
-    }
-
-    @Override
-    public String toString() {
-      return String.format(
-          "<PackagePieceValue.ForMacro name=%s defined_by=%s>",
-          forMacro.getIdentifier().getCanonicalFormName(), forMacro.getCanonicalFormDefinedBy());
-    }
-
-
-  }
 }

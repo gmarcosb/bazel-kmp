@@ -11,18 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.collect.ImmutableList;
+import com.google.devtools.build.skyframe.CompoundEvaluationProgressReceiverBase
+import com.google.devtools.build.skyframe.EvaluationProgressReceiver
 
 /**
- * An {@link EvaluationProgressReceiver} that delegates to a bunch of other {@link
- * EvaluationProgressReceiver}s.
+ * An [EvaluationProgressReceiver] that delegates to a bunch of other [ ]s.
  */
-public final class CompoundEvaluationProgressReceiver
-    extends CompoundEvaluationProgressReceiverBase {
-  public CompoundEvaluationProgressReceiver(
-      ImmutableList<? extends EvaluationProgressReceiver> receivers) {
-    super(receivers);
-  }
-}
+class CompoundEvaluationProgressReceiver
+    (receivers: com.google.common.collect.ImmutableList<out EvaluationProgressReceiver?>?) :
+    CompoundEvaluationProgressReceiverBase(receivers)

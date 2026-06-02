@@ -11,64 +11,48 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.IOException;
-import java.time.Duration;
+import com.google.devtools.build.lib.vfs.PathFragment
+import java.io.IOException
 
-/** Interface to support remote execution in repository_ctx.execute(). */
-public interface RepositoryRemoteExecutor {
+/** Interface to support remote execution in repository_ctx.execute().  */
+interface RepositoryRemoteExecutor {
+    /** The result of a remotely executed command.  */
+    class ExecutionResult(private val exitCode: Int, private val stdout: ByteArray?, private val stderr: ByteArray?) {
+        fun exitCode(): Int {
+            return exitCode
+        }
 
-  /** The result of a remotely executed command. */
-  final class ExecutionResult {
+        fun stdout(): ByteArray? {
+            return stdout
+        }
 
-    private final int exitCode;
-    private final byte[] stdout;
-    private final byte[] stderr;
-
-    public ExecutionResult(int exitCode, byte[] stdout, byte[] stderr) {
-      this.exitCode = exitCode;
-      this.stdout = stdout;
-      this.stderr = stderr;
+        fun stderr(): ByteArray? {
+            return stderr
+        }
     }
 
-    public int exitCode() {
-      return exitCode;
-    }
-
-    public byte[] stdout() {
-      return stdout;
-    }
-
-    public byte[] stderr() {
-      return stderr;
-    }
-  }
-
-  /**
-   * Execute a command remotely.
-   *
-   * @param arguments the command arguments.
-   * @param inputFiles the files to upload and stage for the command. The key describes where to
-   *     stage the file on the remote machine. The value is the path of the file on the host machine
-   *     (where Bazel is running).
-   * @param executionProperties the remote platform the command should run on.
-   * @param environment any environment variables that should be set in the command's environment.
-   * @param workingDirectory the working directory to run the command under. {@code ""} means that
-   *     the remote system should choose.
-   * @param timeout execution timeout.
-   */
-  ExecutionResult execute(
-      ImmutableList<String> arguments,
-      ImmutableSortedMap<PathFragment, Path> inputFiles,
-      ImmutableMap<String, String> executionProperties,
-      ImmutableMap<String, String> environment,
-      String workingDirectory,
-      Duration timeout)
-      throws IOException, InterruptedException;
+    /**
+     * Execute a command remotely.
+     * 
+     * @param arguments the command arguments.
+     * @param inputFiles the files to upload and stage for the command. The key describes where to
+     * stage the file on the remote machine. The value is the path of the file on the host machine
+     * (where Bazel is running).
+     * @param executionProperties the remote platform the command should run on.
+     * @param environment any environment variables that should be set in the command's environment.
+     * @param workingDirectory the working directory to run the command under. `""` means that
+     * the remote system should choose.
+     * @param timeout execution timeout.
+     */
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun execute(
+        arguments: com.google.common.collect.ImmutableList<String?>?,
+        inputFiles: com.google.common.collect.ImmutableSortedMap<PathFragment?, com.google.devtools.build.lib.vfs.Path?>?,
+        executionProperties: com.google.common.collect.ImmutableMap<String?, String?>?,
+        environment: com.google.common.collect.ImmutableMap<String?, String?>?,
+        workingDirectory: String?,
+        timeout: java.time.Duration?
+    ): ExecutionResult?
 }

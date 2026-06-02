@@ -11,40 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
+import com.google.devtools.build.lib.buildeventstream.BuildEventArtifactUploader
 
-import com.google.devtools.build.lib.buildeventstream.BuildEventArtifactUploader;
-import com.google.devtools.build.lib.buildeventstream.LocalFilesArtifactUploader;
-import java.io.IOException;
+/** A factory for [BuildEventArtifactUploader].  */
+interface BuildEventArtifactUploaderFactory {
+    /**
+     * Returns a new instance of a [BuildEventArtifactUploader]. The call is responsible for
+     * calling [BuildEventArtifactUploader.release] on the returned instance.
+     */
+    @Throws(InvalidPackagePathSymlinkException::class)
+    fun create(env: CommandEnvironment?): BuildEventArtifactUploader?
 
-/** A factory for {@link BuildEventArtifactUploader}. */
-public interface BuildEventArtifactUploaderFactory {
+    /**
+     * If the factory reuses a BuildEventArtifactUploader across commands, tear down that uploader now
+     * to prepare for *blaze* shutdown.
+     */
+    fun shutdown() {}
 
-  BuildEventArtifactUploaderFactory LOCAL_FILES_UPLOADER_FACTORY =
-      (CommandEnvironment env) -> new LocalFilesArtifactUploader();
-
-  /**
-   * Returns a new instance of a {@link BuildEventArtifactUploader}. The call is responsible for
-   * calling {@link BuildEventArtifactUploader#release()} on the returned instance.
-   */
-  BuildEventArtifactUploader create(CommandEnvironment env)
-      throws InvalidPackagePathSymlinkException;
-
-  /**
-   * If the factory reuses a BuildEventArtifactUploader across commands, tear down that uploader now
-   * to prepare for <em>blaze</em> shutdown.
-   */
-  default void shutdown() {}
-
-  /**
-   * Exception thrown when initializing the BuildEventArtifactUploader fails due to the package path
-   * following invalid symlinks.
-   */
-  class InvalidPackagePathSymlinkException extends IOException {
-
-    public InvalidPackagePathSymlinkException(IOException e) {
-      super(e);
+    /**
+     * Exception thrown when initializing the BuildEventArtifactUploader fails due to the package path
+     * following invalid symlinks.
+     */
+    class InvalidPackagePathSymlinkException(e: IOException?) : IOException(e)
+    companion object {
+        @kotlin.jvm.JvmField
+        val LOCAL_FILES_UPLOADER_FACTORY: BuildEventArtifactUploaderFactory =
+            BuildEventArtifactUploaderFactory { env: CommandEnvironment? -> LocalFilesArtifactUploader() }
     }
-  }
 }

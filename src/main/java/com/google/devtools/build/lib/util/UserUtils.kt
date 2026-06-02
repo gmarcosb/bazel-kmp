@@ -11,41 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.util
 
-package com.google.devtools.build.lib.util;
-
-import static com.google.common.base.StandardSystemProperty.USER_NAME;
-
-import com.google.common.base.Strings;
+import com.google.devtools.build.lib.util.UserUtils
 
 /**
  * User information utility methods.
  */
-public final class UserUtils {
+object UserUtils {
+    val userName: String?
+        /**
+         * Returns the user name as provided by system property 'user.name'.
+         */
+        get() = com.google.devtools.build.lib.util.UserUtils.Holder.userName
 
-  private UserUtils() {
-    // prohibit instantiation
-  }
+    /**
+     * Returns the originating user for this build from the command-line or the environment.
+     */
+    fun getOriginatingUser(originatingUser: String?): String? {
+        if (!com.google.common.base.Strings.isNullOrEmpty(originatingUser)) {
+            return originatingUser
+        }
 
-  private static class Holder {
-    static final String userName = USER_NAME.value();
-  }
-
-  /**
-   * Returns the user name as provided by system property 'user.name'.
-   */
-  public static String getUserName() {
-    return Holder.userName;
-  }
-
-  /**
-   * Returns the originating user for this build from the command-line or the environment.
-   */
-  public static String getOriginatingUser(String originatingUser) {
-    if (!Strings.isNullOrEmpty(originatingUser)) {
-      return originatingUser;
+        return userName
     }
 
-    return UserUtils.getUserName();
-  }
+    private object Holder {
+        val userName: String? = com.google.common.base.StandardSystemProperty.USER_NAME.value()
+    }
 }

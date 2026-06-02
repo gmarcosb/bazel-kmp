@@ -11,37 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.analysis.ConfiguredTargetValue;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.lib.skyframe.toolchains.ToolchainContextKey;
-import com.google.devtools.build.lib.skyframe.toolchains.UnloadedToolchainContext;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.ConfiguredTargetValue
 
 /**
- * Looks up previously evaluated {@link ConfiguredTargetValue}s and {@link BuildConfigurationValue}s
+ * Looks up previously evaluated [ConfiguredTargetValue]s and [BuildConfigurationValue]s
  * without adding a dependency edge between them and the requesting node.
- *
- * <p>Mainly used by {@link AspectFunction} to look up the {@link ConfiguredTargetValue}s and {@link
- * BuildConfigurationValue} of its target dependencies.
+ * 
+ * 
+ * Mainly used by [AspectFunction] to look up the [ConfiguredTargetValue]s and [ ] of its target dependencies.
  */
-public interface BaseTargetPrerequisitesSupplier {
+interface BaseTargetPrerequisitesSupplier {
+    /** Directly retrieves configured targets from Skyframe without adding a dependency edge.  */
+    @Throws(java.lang.InterruptedException::class)
+    fun getPrerequisite(key: ConfiguredTargetKey?): ConfiguredTargetValue?
 
-  /** Directly retrieves configured targets from Skyframe without adding a dependency edge. */
-  @Nullable
-  ConfiguredTargetValue getPrerequisite(ConfiguredTargetKey key) throws InterruptedException;
+    /** Directly retrieves configuration values from Skyframe without adding a dependency edge.  */
+    @Throws(java.lang.InterruptedException::class)
+    fun getPrerequisiteConfiguration(key: BuildConfigurationKey?): BuildConfigurationValue?
 
-  /** Directly retrieves configuration values from Skyframe without adding a dependency edge. */
-  @Nullable
-  BuildConfigurationValue getPrerequisiteConfiguration(BuildConfigurationKey key)
-      throws InterruptedException;
-
-  /**
-   * Directly retrieves unloaded toolchain contexts from Skyframe without adding a dependency edge.
-   */
-  @Nullable
-  UnloadedToolchainContext getUnloadedToolchainContext(ToolchainContextKey key)
-      throws InterruptedException;
+    /**
+     * Directly retrieves unloaded toolchain contexts from Skyframe without adding a dependency edge.
+     */
+    @Throws(java.lang.InterruptedException::class)
+    fun getUnloadedToolchainContext(key: ToolchainContextKey?): UnloadedToolchainContext?
 }

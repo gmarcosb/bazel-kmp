@@ -11,294 +11,313 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.skyframe
 
-package com.google.devtools.build.skyframe;
-
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-
-import com.google.common.base.MoreObjects;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.skyframe.NonIncrementalInMemoryNodeEntry.NonIncrementalBuildingState;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Set;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.AbstractInMemoryNodeEntry
+import com.google.devtools.build.skyframe.GroupedDeps
+import com.google.devtools.build.skyframe.GroupedDeps.Compressed
+import com.google.devtools.build.skyframe.InitialBuildingState
+import com.google.devtools.build.skyframe.NodeEntry.DependencyState
+import com.google.devtools.build.skyframe.NodeEntry.DirtyType
+import com.google.devtools.build.skyframe.NodeEntry.MarkedDirtyResult
+import com.google.devtools.build.skyframe.NodeEntry.NodeValueAndRdepsToSignal
+import com.google.devtools.build.skyframe.NonIncrementalInMemoryNodeEntry.NonIncrementalBuildingState
+import com.google.devtools.build.skyframe.ReverseDepsUtility
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
 
 /**
- * An {@link InMemoryNodeEntry} that does not store edges (direct deps and reverse deps) once the
+ * An [InMemoryNodeEntry] that does not store edges (direct deps and reverse deps) once the
  * node is done. Used to save memory when the graph will not be reused for incremental builds.
- *
- * <p>Edges are stored as usual while the node is being built, but are discarded once the node is
+ * 
+ * 
+ * Edges are stored as usual while the node is being built, but are discarded once the node is
  * done.
- *
- * <p>It is illegal to access edges once the node {@link #isDone}.
+ * 
+ * 
+ * It is illegal to access edges once the node [.isDone].
  */
-public class NonIncrementalInMemoryNodeEntry
-    extends AbstractInMemoryNodeEntry<NonIncrementalBuildingState> {
-
-  public NonIncrementalInMemoryNodeEntry(SkyKey key) {
-    super(key);
-  }
-
-  @Override
-  public final boolean keepsEdges() {
-    return false;
-  }
-
-  @Override
-  @CanIgnoreReturnValue
-  public synchronized ImmutableSet<SkyKey> setValue(
-      SkyValue value, Version graphVersion, @Nullable Version maxTransitiveSourceVersion) {
-    checkArgument(
-        graphVersion.equals(Version.constant()),
-        "Non-incremental evaluations must be at a constant version: %s",
-        graphVersion);
-    checkState(!hasUnsignaledDeps(), "Has unsignaled deps (this=%s, value=%s)", this, value);
-    this.value = value;
-    ImmutableSet<SkyKey> reverseDepsToSignal = dirtyBuildingState.getReverseDeps(this);
-    dirtyBuildingState = null;
-    return reverseDepsToSignal;
-  }
-
-  @Override
-  @CanIgnoreReturnValue
-  public final DependencyState addReverseDepAndCheckIfDone(@Nullable SkyKey reverseDep) {
-    // Fast path check before locking. If this node is already done, there is nothing to do since we
-    // aren't storing reverse deps.
-    if (isDone()) {
-      return DependencyState.DONE;
+class NonIncrementalInMemoryNodeEntry
+    (key: SkyKey?) : AbstractInMemoryNodeEntry<NonIncrementalBuildingState?>(key) {
+    override fun keepsEdges(): Boolean {
+        return false
     }
 
-    synchronized (this) {
-      // Check again under a lock.
-      if (isDone()) {
-        return DependencyState.DONE;
-      }
-      if (dirtyBuildingState == null) {
-        dirtyBuildingState = new NonIncrementalBuildingState();
-      }
-      if (reverseDep != null) {
-        dirtyBuildingState.addReverseDep(reverseDep);
-      }
-      if (dirtyBuildingState.isEvaluating()) {
-        return DependencyState.ALREADY_EVALUATING;
-      }
-      dirtyBuildingState.startEvaluating();
-      return DependencyState.NEEDS_SCHEDULING;
-    }
-  }
-
-  /**
-   * {@inheritDoc}
-   *
-   * <p>A {@link NonIncrementalInMemoryNodeEntry} can only ever be at one of two versions: either
-   * {@link Version#constant} when a value is available, or {@link Version#minimal} otherwise.
-   *
-   * <p>All non-incremental evaluations must use {@link Version#constant} as the graph version. This
-   * is enforced in {@link #setValue}.
-   */
-  @Override
-  public final Version getVersion() {
-    return value != null ? Version.constant() : Version.minimal();
-  }
-
-  @Override
-  public final synchronized GroupedDeps getTemporaryDirectDeps() {
-    return checkNotNull(dirtyBuildingState, "Not evaluating: %s", this)
-        .getTemporaryDirectDeps(this);
-  }
-
-  @Override
-  public final synchronized void resetEvaluationFromScratch() {
-    checkState(!hasUnsignaledDeps(), this);
-    SkyValue rewoundValue = dirtyBuildingState.getLastBuildValue();
-    var newBuildingState =
-        rewoundValue == null
-            ? new NonIncrementalBuildingState()
-            : new RewoundNonIncrementalBuildingState(rewoundValue);
-    newBuildingState.reverseDeps = dirtyBuildingState.reverseDeps;
-    newBuildingState.markRebuilding();
-    newBuildingState.startEvaluating();
-    dirtyBuildingState = newBuildingState;
-  }
-
-  @Override
-  public final ImmutableSet<SkyKey> getResetDirectDeps() {
-    return ImmutableSet.of(); // No accounting necessary since rdeps are not stored.
-  }
-
-  @Override
-  final synchronized int getNumTemporaryDirectDeps() {
-    if (dirtyBuildingState == null) {
-      return 0;
-    }
-    GroupedDeps directDeps = dirtyBuildingState.directDeps;
-    return directDeps == null ? 0 : directDeps.numElements();
-  }
-
-  @Nullable
-  @Override
-  public final synchronized MarkedDirtyResult markDirty(DirtyType dirtyType) {
-    checkArgument(dirtyType == DirtyType.REWIND, "Unexpected dirty type: %s", dirtyType);
-    if (!isDone()) {
-      return null; // Tolerate concurrent requests to rewind.
-    }
-    if (getErrorInfo() != null) {
-      return null; // Rewinding errors is no-op.
-    }
-    dirtyBuildingState = new RewoundNonIncrementalBuildingState(value);
-    value = null;
-    return MarkedDirtyResult.forRewinding();
-  }
-
-  @Override
-  public final synchronized Set<SkyKey> getInProgressReverseDeps() {
-    checkState(!isDone(), this);
-    return dirtyBuildingState == null ? ImmutableSet.of() : dirtyBuildingState.getReverseDeps(this);
-  }
-
-  @Override
-  public final synchronized boolean signalDep(
-      Version childVersion, @Nullable SkyKey childForDebugging) {
-    checkState(
-        !isDone(), "Value must not be done in signalDep %s child=%s", this, childForDebugging);
-    checkNotNull(dirtyBuildingState, "%s %s", this, childForDebugging)
-        .signalDep(this, Version.minimal(), childVersion, childForDebugging);
-    return !hasUnsignaledDeps();
-  }
-
-  @Override
-  public final void removeReverseDep(SkyKey reverseDep) {
-    checkNotNull(dirtyBuildingState, "Not evaluating: %s", this).removeReverseDep(reverseDep);
-  }
-
-  @Override
-  public final @GroupedDeps.Compressed Object getCompressedDirectDepsForDoneEntry() {
-    throw unsupported();
-  }
-
-  @Override
-  public final Iterable<SkyKey> getDirectDeps() {
-    throw unsupported();
-  }
-
-  @Override
-  public final ImmutableSet<SkyKey> getAllDirectDepsForIncompleteNode() {
-    throw unsupported();
-  }
-
-  @Override
-  public final boolean hasAtLeastOneDep() {
-    throw unsupported();
-  }
-
-  @Override
-  public final void removeReverseDepsFromDoneEntryDueToDeletion(Set<SkyKey> deletedKeys) {
-    throw unsupported();
-  }
-
-  @Override
-  public final Collection<SkyKey> getReverseDepsForDoneEntry() {
-    throw unsupported();
-  }
-
-  @Override
-  public final Collection<SkyKey> getAllReverseDepsForNodeBeingDeleted() {
-    throw unsupported();
-  }
-
-  @Override
-  public final DependencyState checkIfDoneForDirtyReverseDep(SkyKey reverseDep) {
-    throw unsupported();
-  }
-
-  @Override
-  public final NodeValueAndRdepsToSignal markClean() {
-    throw unsupported();
-  }
-
-  @Override
-  public void forceRebuild() {
-    throw unsupported();
-  }
-
-  private UnsupportedOperationException unsupported() {
-    return new UnsupportedOperationException("Not keeping edges: " + this);
-  }
-
-  /**
-   * Specialized {@link DirtyBuildingState} for a non-incremental node.
-   *
-   * <p>The {@link #directDeps} and {@link #reverseDeps} fields are stored in this class instead of
-   * in {@link NonIncrementalInMemoryNodeEntry} since they are not needed after the node is done.
-   * This way we don't pay the memory cost of the fields for a done node.
-   */
-  static class NonIncrementalBuildingState extends InitialBuildingState {
-    @Nullable private GroupedDeps directDeps = null;
-    @Nullable private List<SkyKey> reverseDeps = null;
-
-    private NonIncrementalBuildingState() {}
-
-    final GroupedDeps getTemporaryDirectDeps(NonIncrementalInMemoryNodeEntry entry) {
-      if (directDeps == null) {
-        directDeps = entry.newGroupedDeps();
-      }
-      return directDeps;
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @kotlin.jvm.Synchronized
+    override fun setValue(
+        value: SkyValue?,
+        graphVersion: com.google.devtools.build.skyframe.Version,
+        maxTransitiveSourceVersion: com.google.devtools.build.skyframe.Version?
+    ): com.google.common.collect.ImmutableSet<SkyKey?> {
+        com.google.common.base.Preconditions.checkArgument(
+            graphVersion == com.google.devtools.build.skyframe.Version.Companion.constant(),
+            "Non-incremental evaluations must be at a constant version: %s",
+            graphVersion
+        )
+        com.google.common.base.Preconditions.checkState(
+            !hasUnsignaledDeps(),
+            "Has unsignaled deps (this=%s, value=%s)",
+            this,
+            value
+        )
+        this.value = value
+        val reverseDepsToSignal: com.google.common.collect.ImmutableSet<SkyKey?> =
+            dirtyBuildingState.getReverseDeps(this)
+        dirtyBuildingState = null
+        return reverseDepsToSignal
     }
 
-    final void addReverseDep(SkyKey reverseDep) {
-      if (reverseDeps == null) {
-        reverseDeps = new ArrayList<>();
-      }
-      reverseDeps.add(reverseDep);
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    override fun addReverseDepAndCheckIfDone(reverseDep: SkyKey?): DependencyState {
+        // Fast path check before locking. If this node is already done, there is nothing to do since we
+        // aren't storing reverse deps.
+        if (isDone()) {
+            return DependencyState.DONE
+        }
+
+        synchronized(this) {
+            // Check again under a lock.
+            if (isDone()) {
+                return DependencyState.DONE
+            }
+            if (dirtyBuildingState == null) {
+                dirtyBuildingState = NonIncrementalBuildingState()
+            }
+            if (reverseDep != null) {
+                dirtyBuildingState.addReverseDep(reverseDep)
+            }
+            if (dirtyBuildingState.isEvaluating()) {
+                return DependencyState.ALREADY_EVALUATING
+            }
+            dirtyBuildingState.startEvaluating()
+            return DependencyState.NEEDS_SCHEDULING
+        }
     }
 
-    final void removeReverseDep(SkyKey reverseDep) {
-      // Reverse dep removal on a non-incremental node is rare (only for cycles), so we can live
-      // with inefficiently calling remove on an ArrayList.
-      checkState(reverseDeps.remove(reverseDep), "Reverse dep not present: %s", reverseDep);
+    /**
+     * {@inheritDoc}
+     * 
+     * 
+     * A [NonIncrementalInMemoryNodeEntry] can only ever be at one of two versions: either
+     * [Version.constant] when a value is available, or [Version.minimal] otherwise.
+     * 
+     * 
+     * All non-incremental evaluations must use [Version.constant] as the graph version. This
+     * is enforced in [.setValue].
+     */
+    override fun getVersion(): com.google.devtools.build.skyframe.Version? {
+        return if (value != null) com.google.devtools.build.skyframe.Version.Companion.constant() else com.google.devtools.build.skyframe.Version.Companion.minimal()
     }
 
-    final ImmutableSet<SkyKey> getReverseDeps(NonIncrementalInMemoryNodeEntry entry) {
-      if (reverseDeps == null) {
-        return ImmutableSet.of();
-      }
-      ImmutableSet<SkyKey> result = ImmutableSet.copyOf(reverseDeps);
-      ReverseDepsUtility.checkForDuplicates(result, reverseDeps, entry);
-      return result;
+    @kotlin.jvm.Synchronized
+    override fun getTemporaryDirectDeps(): GroupedDeps {
+        return com.google.common.base.Preconditions.checkNotNull<NonIncrementalBuildingState?>(
+            dirtyBuildingState,
+            "Not evaluating: %s",
+            this
+        )
+            .getTemporaryDirectDeps(this)
     }
 
-    @Override
-    protected MoreObjects.ToStringHelper getStringHelper() {
-      return super.getStringHelper().add("directDeps", directDeps).add("reverseDeps", reverseDeps);
-    }
-  }
-
-  /**
-   * State for a non-incremental node that was previously {@linkplain #isDone done} but was
-   * {@linkplain com.google.devtools.build.skyframe.NodeEntry.DirtyType#REWIND rewound}. Stores the
-   * previously built value for the sole purpose of servicing {@link #toValue}.
-   */
-  private static final class RewoundNonIncrementalBuildingState
-      extends NonIncrementalBuildingState {
-    private final SkyValue rewoundValue;
-
-    RewoundNonIncrementalBuildingState(SkyValue rewoundValue) {
-      this.rewoundValue = rewoundValue;
+    @kotlin.jvm.Synchronized
+    override fun resetEvaluationFromScratch() {
+        com.google.common.base.Preconditions.checkState(!hasUnsignaledDeps(), this)
+        val rewoundValue: SkyValue? = dirtyBuildingState.getLastBuildValue()
+        val newBuildingState =
+            if (rewoundValue == null)
+                NonIncrementalBuildingState()
+            else
+                RewoundNonIncrementalBuildingState(rewoundValue)
+        newBuildingState.reverseDeps = dirtyBuildingState.reverseDeps
+        newBuildingState.markRebuilding()
+        newBuildingState.startEvaluating()
+        dirtyBuildingState = newBuildingState
     }
 
-    @Override
-    public SkyValue getLastBuildValue() {
-      return rewoundValue;
+    override fun getResetDirectDeps(): com.google.common.collect.ImmutableSet<SkyKey?> {
+        return com.google.common.collect.ImmutableSet.of<SkyKey?>() // No accounting necessary since rdeps are not stored.
     }
 
-    @Override
-    protected MoreObjects.ToStringHelper getStringHelper() {
-      return super.getStringHelper().add("rewoundValue", rewoundValue);
+    @kotlin.jvm.Synchronized
+    override fun getNumTemporaryDirectDeps(): Int {
+        if (dirtyBuildingState == null) {
+            return 0
+        }
+        val directDeps: GroupedDeps? = dirtyBuildingState.directDeps
+        return if (directDeps == null) 0 else directDeps.numElements()
     }
-  }
+
+    @kotlin.jvm.Synchronized
+    override fun markDirty(dirtyType: DirtyType?): MarkedDirtyResult? {
+        com.google.common.base.Preconditions.checkArgument(
+            dirtyType == DirtyType.REWIND,
+            "Unexpected dirty type: %s",
+            dirtyType
+        )
+        if (!isDone()) {
+            return null // Tolerate concurrent requests to rewind.
+        }
+        if (getErrorInfo() != null) {
+            return null // Rewinding errors is no-op.
+        }
+        dirtyBuildingState = RewoundNonIncrementalBuildingState(value)
+        value = null
+        return MarkedDirtyResult.Companion.forRewinding()
+    }
+
+    @kotlin.jvm.Synchronized
+    override fun getInProgressReverseDeps(): MutableSet<SkyKey?>? {
+        com.google.common.base.Preconditions.checkState(!isDone(), this)
+        return if (dirtyBuildingState == null) com.google.common.collect.ImmutableSet.of<SkyKey?>() else dirtyBuildingState.getReverseDeps(
+            this
+        )
+    }
+
+    @kotlin.jvm.Synchronized
+    override fun signalDep(
+        childVersion: com.google.devtools.build.skyframe.Version?, childForDebugging: SkyKey?
+    ): Boolean {
+        com.google.common.base.Preconditions.checkState(
+            !isDone(), "Value must not be done in signalDep %s child=%s", this, childForDebugging
+        )
+        com.google.common.base.Preconditions.checkNotNull<NonIncrementalBuildingState?>(
+            dirtyBuildingState,
+            "%s %s",
+            this,
+            childForDebugging
+        )
+            .signalDep(
+                this,
+                com.google.devtools.build.skyframe.Version.Companion.minimal(),
+                childVersion,
+                childForDebugging
+            )
+        return !hasUnsignaledDeps()
+    }
+
+    override fun removeReverseDep(reverseDep: SkyKey?) {
+        com.google.common.base.Preconditions.checkNotNull<NonIncrementalBuildingState?>(
+            dirtyBuildingState,
+            "Not evaluating: %s",
+            this
+        ).removeReverseDep(reverseDep)
+    }
+
+    override fun getCompressedDirectDepsForDoneEntry(): @Compressed Any? {
+        throw unsupported()
+    }
+
+    override fun getDirectDeps(): Iterable<SkyKey?>? {
+        throw unsupported()
+    }
+
+    override fun getAllDirectDepsForIncompleteNode(): com.google.common.collect.ImmutableSet<SkyKey?>? {
+        throw unsupported()
+    }
+
+    override fun hasAtLeastOneDep(): Boolean {
+        throw unsupported()
+    }
+
+    override fun removeReverseDepsFromDoneEntryDueToDeletion(deletedKeys: MutableSet<SkyKey?>?) {
+        throw unsupported()
+    }
+
+    override fun getReverseDepsForDoneEntry(): MutableCollection<SkyKey?>? {
+        throw unsupported()
+    }
+
+    override fun getAllReverseDepsForNodeBeingDeleted(): MutableCollection<SkyKey?>? {
+        throw unsupported()
+    }
+
+    override fun checkIfDoneForDirtyReverseDep(reverseDep: SkyKey?): DependencyState? {
+        throw unsupported()
+    }
+
+    override fun markClean(): NodeValueAndRdepsToSignal? {
+        throw unsupported()
+    }
+
+    override fun forceRebuild() {
+        throw unsupported()
+    }
+
+    private fun unsupported(): java.lang.UnsupportedOperationException {
+        return java.lang.UnsupportedOperationException("Not keeping edges: " + this)
+    }
+
+    /**
+     * Specialized [DirtyBuildingState] for a non-incremental node.
+     * 
+     * 
+     * The [.directDeps] and [.reverseDeps] fields are stored in this class instead of
+     * in [NonIncrementalInMemoryNodeEntry] since they are not needed after the node is done.
+     * This way we don't pay the memory cost of the fields for a done node.
+     */
+    internal open class NonIncrementalBuildingState private constructor() : InitialBuildingState() {
+        private var directDeps: GroupedDeps? = null
+        private var reverseDeps: MutableList<SkyKey?>? = null
+
+        fun getTemporaryDirectDeps(entry: NonIncrementalInMemoryNodeEntry): GroupedDeps {
+            if (directDeps == null) {
+                directDeps = entry.newGroupedDeps()
+            }
+            return directDeps
+        }
+
+        fun addReverseDep(reverseDep: SkyKey?) {
+            if (reverseDeps == null) {
+                reverseDeps = java.util.ArrayList<SkyKey?>()
+            }
+            reverseDeps!!.add(reverseDep)
+        }
+
+        fun removeReverseDep(reverseDep: SkyKey?) {
+            // Reverse dep removal on a non-incremental node is rare (only for cycles), so we can live
+            // with inefficiently calling remove on an ArrayList.
+            com.google.common.base.Preconditions.checkState(
+                reverseDeps!!.remove(reverseDep),
+                "Reverse dep not present: %s",
+                reverseDep
+            )
+        }
+
+        fun getReverseDeps(entry: NonIncrementalInMemoryNodeEntry?): com.google.common.collect.ImmutableSet<SkyKey?> {
+            if (reverseDeps == null) {
+                return com.google.common.collect.ImmutableSet.of<SkyKey?>()
+            }
+            val result: com.google.common.collect.ImmutableSet<SkyKey?> =
+                com.google.common.collect.ImmutableSet.copyOf<SkyKey?>(reverseDeps)
+            ReverseDepsUtility.checkForDuplicates(result, reverseDeps, entry)
+            return result
+        }
+
+        override fun getStringHelper(): com.google.common.base.MoreObjects.ToStringHelper {
+            return super.getStringHelper().add("directDeps", directDeps).add("reverseDeps", reverseDeps)
+        }
+    }
+
+    /**
+     * State for a non-incremental node that was previously [done][.isDone] but was
+     * [rewound][com.google.devtools.build.skyframe.NodeEntry.DirtyType.REWIND]. Stores the
+     * previously built value for the sole purpose of servicing [.toValue].
+     */
+    private class RewoundNonIncrementalBuildingState
+        (rewoundValue: SkyValue?) : NonIncrementalBuildingState() {
+        private val rewoundValue: SkyValue?
+
+        init {
+            this.rewoundValue = rewoundValue
+        }
+
+        override fun getLastBuildValue(): SkyValue? {
+            return rewoundValue
+        }
+
+        override fun getStringHelper(): com.google.common.base.MoreObjects.ToStringHelper {
+            return super.getStringHelper().add("rewoundValue", rewoundValue)
+        }
+    }
 }

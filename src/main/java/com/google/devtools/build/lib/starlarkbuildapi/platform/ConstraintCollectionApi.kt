@@ -11,73 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.platform
 
-package com.google.devtools.build.lib.starlarkbuildapi.platform;
+import com.google.devtools.build.docgen.annot.DocCategory
+import com.google.devtools.build.lib.packages.semantics.BuildLanguageOptions
+import net.starlark.java.annot.Param
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
+import net.starlark.java.eval.Sequence
+import net.starlark.java.eval.StarlarkIndexable
+import net.starlark.java.eval.StarlarkValue
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.packages.semantics.BuildLanguageOptions;
-import javax.annotation.Nullable;
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.Sequence;
-import net.starlark.java.eval.StarlarkIndexable;
-import net.starlark.java.eval.StarlarkValue;
-
-/** Info object representing data about a specific platform. */
+/** Info object representing data about a specific platform.  */
 @StarlarkBuiltin(
     name = "ConstraintCollection",
-    doc =
-        "Provides access to data about a collection of ConstraintValueInfo providers. "
-            + PlatformInfoApi.EXPERIMENTAL_WARNING,
-    category = DocCategory.PROVIDER)
-public interface ConstraintCollectionApi<
-        ConstraintSettingInfoT extends ConstraintSettingInfoApi,
-        ConstraintValueInfoT extends ConstraintValueInfoApi>
-    extends StarlarkIndexable, StarlarkValue {
+    doc = ("Provides access to data about a collection of ConstraintValueInfo providers. "
+            + PlatformInfoApi.Companion.EXPERIMENTAL_WARNING),
+    category = DocCategory.PROVIDER
+)
+interface ConstraintCollectionApi<ConstraintSettingInfoT : ConstraintSettingInfoApi?, ConstraintValueInfoT : ConstraintValueInfoApi?>
+    : StarlarkIndexable, StarlarkValue {
+    @StarlarkMethod(
+        name = "constraint_settings",
+        doc = "The ConstraintSettingInfo values that this collection directly references.",
+        structField = true,
+        enableOnlyWithFlag = BuildLanguageOptions.EXPERIMENTAL_PLATFORMS_API
+    )
+    fun constraintSettings(): Sequence<ConstraintSettingInfoT?>?
 
-  @StarlarkMethod(
-      name = "constraint_settings",
-      doc = "The ConstraintSettingInfo values that this collection directly references.",
-      structField = true,
-      enableOnlyWithFlag = BuildLanguageOptions.EXPERIMENTAL_PLATFORMS_API)
-  Sequence<ConstraintSettingInfoT> constraintSettings();
+    @StarlarkMethod(
+        name = "get",
+        doc = "Returns the specific ConstraintValueInfo for a specific ConstraintSettingInfo.",
+        allowReturnNones = true,
+        parameters = [Param(name = "constraint", named = true, doc = "The constraint setting to fetch the value for.")],
+        enableOnlyWithFlag = BuildLanguageOptions.EXPERIMENTAL_PLATFORMS_API
+    )
+    fun get(constraint: ConstraintSettingInfoT?): ConstraintValueInfoT?
 
-  @StarlarkMethod(
-      name = "get",
-      doc = "Returns the specific ConstraintValueInfo for a specific ConstraintSettingInfo.",
-      allowReturnNones = true,
-      parameters = {
-        @Param(
-            name = "constraint",
-            named = true,
-            doc = "The constraint setting to fetch the value for.")
-      },
-      enableOnlyWithFlag = BuildLanguageOptions.EXPERIMENTAL_PLATFORMS_API)
-  @Nullable
-  ConstraintValueInfoT get(ConstraintSettingInfoT constraint);
+    @StarlarkMethod(
+        name = "has",
+        doc = "Returns whether the specific ConstraintSettingInfo is set.",
+        parameters = [Param(name = "constraint", named = true, doc = "The constraint setting to check.")],
+        enableOnlyWithFlag = BuildLanguageOptions.EXPERIMENTAL_PLATFORMS_API
+    )
+    fun has(constraint: ConstraintSettingInfoT?): Boolean
 
-  @StarlarkMethod(
-      name = "has",
-      doc = "Returns whether the specific ConstraintSettingInfo is set.",
-      parameters = {
-        @Param(
-            name = "constraint",
-            named = true,
-            doc = "The constraint setting to check.")
-      },
-      enableOnlyWithFlag = BuildLanguageOptions.EXPERIMENTAL_PLATFORMS_API)
-  boolean has(ConstraintSettingInfoT constraint);
-
-  @StarlarkMethod(
-      name = "has_constraint_value",
-      doc = "Returns whether the specific ConstraintValueInfo is set.",
-      parameters = {
-        @Param(
-            name = "constraint_value",
-            named = true,
-            doc = "The constraint value to check.")
-      },
-      enableOnlyWithFlag = BuildLanguageOptions.EXPERIMENTAL_PLATFORMS_API)
-  boolean hasConstraintValue(ConstraintValueInfoT constraintValue);
+    @StarlarkMethod(
+        name = "has_constraint_value",
+        doc = "Returns whether the specific ConstraintValueInfo is set.",
+        parameters = [Param(name = "constraint_value", named = true, doc = "The constraint value to check.")],
+        enableOnlyWithFlag = BuildLanguageOptions.EXPERIMENTAL_PLATFORMS_API
+    )
+    fun hasConstraintValue(constraintValue: ConstraintValueInfoT?): Boolean
 }

@@ -11,11 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
 /**
  * An event that is guaranteed to be posted after every command, no matter what the command was and
  * how it terminated. Listeners on the event bus can use this event to do any final resource clean
  * up.
  */
-public class AfterCommandEvent {}
+class AfterCommandEvent 

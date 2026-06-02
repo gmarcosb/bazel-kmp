@@ -11,221 +11,217 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.vfs
 
-package com.google.devtools.build.lib.vfs;
-
-import static com.google.common.base.Preconditions.checkArgument;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.hash.HashFunction;
-import com.google.common.hash.Hashing;
-import com.google.devtools.build.lib.vfs.DigestHashFunction.DigestLength.DigestLengthImpl;
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HashMap;
-import java.util.Map.Entry;
-import java.util.stream.Collectors;
+import com.google.devtools.build.lib.supplier.InterruptibleSupplier.get
+import com.google.devtools.build.lib.vfs.DigestHashFunction.DigestLength.DigestLengthImpl
+import java.security.MessageDigest
+import java.security.NoSuchAlgorithmException
+import java.util.HashMap
+import java.util.stream.Collectors
 
 /**
  * Type of hash function to use for digesting files.
- *
- * <p>This tracks parallel {@link java.security.MessageDigest} and {@link HashFunction} interfaces
+ * 
+ * 
+ * This tracks parallel [java.security.MessageDigest] and [HashFunction] interfaces
  * for each provided hash, as Bazel uses both - MessageDigest where performance is critical and
  * HashFunctions where ease-of-use wins over.
  */
 // The underlying HashFunctions are immutable and thread safe.
-public class DigestHashFunction {
-  // This map must be declared first to make sure that calls to register() have it ready.
-  private static final HashMap<String, DigestHashFunction> hashFunctionRegistry = new HashMap<>();
-
-  /** Describes the length of a digest. */
-  public interface DigestLength {
-    /** Returns the length of a digest by inspecting its bytes. Used for variable-length digests. */
-    default int getDigestLength(byte[] bytes, int offset) {
-      return getDigestMaximumLength();
-    }
-
-    /** Returns the maximum length a digest can turn into. */
-    int getDigestMaximumLength();
-
-    /** Default implementation that simply returns a fixed length. */
-    class DigestLengthImpl implements DigestLength {
-      private final int length;
-
-      DigestLengthImpl(HashFunction hashFunction) {
-        this.length = hashFunction.bits() / 8;
-      }
-
-      @Override
-      public int getDigestMaximumLength() {
-        return length;
-      }
-    }
-  }
-
-  public static final DigestHashFunction SHA1;
-  public static final DigestHashFunction SHA256;
-
-  static {
-    SHA1 = register(Hashing.sha1(), "SHA-1", "SHA1", "sha1");
-    SHA256 = register(Hashing.sha256(), "SHA-256", "SHA256", "sha256");
-    register(Hashing.sha384(), "SHA-384", "SHA384", "sha384");
-    register(Hashing.sha512(), "SHA-512", "SHA512", "sha512");
-  }
-
-  private final HashFunction hashFunction;
-  private final DigestLength digestLength;
-  private final String name;
-  private final MessageDigest messageDigestPrototype;
-  private final boolean messageDigestPrototypeSupportsClone;
-  private final ImmutableList<String> names;
-
-  private DigestHashFunction(
-      HashFunction hashFunction, DigestLength digestLength, ImmutableList<String> names) {
-    this.hashFunction = hashFunction;
-    this.digestLength = digestLength;
-    checkArgument(!names.isEmpty());
-    this.name = names.get(0);
-    this.names = names;
-    this.messageDigestPrototype = getMessageDigestInstance();
-    this.messageDigestPrototypeSupportsClone = supportsClone(messageDigestPrototype);
-  }
-
-  public static DigestHashFunction register(
-      HashFunction hash, String hashName, String... altNames) {
-    return register(hash, new DigestLengthImpl(hash), hashName, altNames);
-  }
-
-  /**
-   * Creates a new DigestHashFunction that is registered to be recognized by its name in {@link
-   * DigestFunctionConverter}.
-   *
-   * @param hashName the canonical name for this hash function - and the name that can be used to
-   *     uncover the MessageDigest.
-   * @param altNames alternative names that will be mapped to this function by the converter but
-   *     will not serve as the canonical name for the DigestHashFunction.
-   * @param hash The {@link HashFunction} to register.
-   * @throws IllegalArgumentException if the name is already registered.
-   */
-  public static DigestHashFunction register(
-      HashFunction hash, DigestLength digestLength, String hashName, String... altNames) {
-    try {
-      MessageDigest.getInstance(hashName);
-    } catch (NoSuchAlgorithmException e) {
-      throw new IllegalArgumentException(
-          "The hash function name provided does not correspond to a valid MessageDigest: "
-              + hashName,
-          e);
-    }
-
-    ImmutableList<String> names =
-        ImmutableList.<String>builder().add(hashName).add(altNames).build();
-    DigestHashFunction hashFunction = new DigestHashFunction(hash, digestLength, names);
-    synchronized (hashFunctionRegistry) {
-      for (String name : names) {
-        if (hashFunctionRegistry.containsKey(name)) {
-          throw new IllegalArgumentException("Hash function " + name + " is already registered.");
+class DigestHashFunction private constructor(
+    hashFunction: com.google.common.hash.HashFunction?,
+    digestLength: DigestLength?,
+    names: com.google.common.collect.ImmutableList<String>
+) {
+    /** Describes the length of a digest.  */
+    interface DigestLength {
+        /** Returns the length of a digest by inspecting its bytes. Used for variable-length digests.  */
+        fun getDigestLength(bytes: ByteArray?, offset: Int): Int {
+            return this.digestMaximumLength
         }
-        hashFunctionRegistry.put(name, hashFunction);
-      }
-    }
-    return hashFunction;
-  }
 
-  /** Converts a string to its registered {@link DigestHashFunction}. */
-  public static class DigestFunctionConverter extends Converter.Contextless<DigestHashFunction> {
-    @Override
-    public DigestHashFunction convert(String input) throws OptionsParsingException {
-      for (Entry<String, DigestHashFunction> possibleFunctions : hashFunctionRegistry.entrySet()) {
-        if (possibleFunctions.getKey().equalsIgnoreCase(input)) {
-          return possibleFunctions.getValue();
+        /** Returns the maximum length a digest can turn into.  */
+        val digestMaximumLength: Int
+
+        /** Default implementation that simply returns a fixed length.  */
+        class DigestLengthImpl internal constructor(hashFunction: com.google.common.hash.HashFunction) : DigestLength {
+            private val length: Int
+
+            init {
+                this.length = hashFunction.bits() / 8
+            }
+
+            override fun getDigestMaximumLength(): Int {
+                return length
+            }
         }
-      }
-      throw new OptionsParsingException(
-          String.format(
-              "'%s' is not a valid hash function. Possible values are: %s",
-              input, getPossibleNames()));
     }
 
-    @Override
-    public String getTypeDescription() {
-      return "hash function";
+    private val hashFunction: com.google.common.hash.HashFunction?
+    val digestLength: DigestLength?
+    private val name: String
+    private val messageDigestPrototype: MessageDigest
+    private val messageDigestPrototypeSupportsClone: Boolean
+    private val names: com.google.common.collect.ImmutableList<String>
+
+    init {
+        this.hashFunction = hashFunction
+        this.digestLength = digestLength
+        com.google.common.base.Preconditions.checkArgument(!names.isEmpty())
+        this.name = names.get(0)
+        this.names = names
+        this.messageDigestPrototype = this.messageDigestInstance
+        this.messageDigestPrototypeSupportsClone = supportsClone(messageDigestPrototype)
     }
-  }
 
-  public HashFunction getHashFunction() {
-    return hashFunction;
-  }
+    /** Converts a string to its registered [DigestHashFunction].  */
+    class DigestFunctionConverter : com.google.devtools.common.options.Converter.Contextless<DigestHashFunction?>() {
+        @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+        override fun convert(input: String?): DigestHashFunction? {
+            for (possibleFunctions in hashFunctionRegistry.entrySet()) {
+                if (possibleFunctions.getKey().equalsIgnoreCase(input)) {
+                    return possibleFunctions.getValue()
+                }
+            }
+            throw com.google.devtools.common.options.OptionsParsingException(
+                java.lang.String.format(
+                    "'%s' is not a valid hash function. Possible values are: %s",
+                    input, possibleNames
+                )
+            )
+        }
 
-  /** Creates a new {@link MessageDigest} for this hash function. */
-  public MessageDigest newMessageDigest() {
-    if (messageDigestPrototypeSupportsClone) {
-      try {
-        return (MessageDigest) messageDigestPrototype.clone();
-      } catch (CloneNotSupportedException e) {
-        // We checked at initialization that this could be cloned, so this should never happen.
-        throw new IllegalStateException("Could not clone message digest", e);
-      }
-    } else {
-      return getMessageDigestInstance();
+        val typeDescription: String
+            get() = "hash function"
     }
-  }
 
-  public DigestLength getDigestLength() {
-    return digestLength;
-  }
-
-  public ImmutableList<String> getNames() {
-    return names;
-  }
-
-  @Override
-  public String toString() {
-    return name;
-  }
-
-  private MessageDigest getMessageDigestInstance() {
-    try {
-      return MessageDigest.getInstance(name);
-    } catch (NoSuchAlgorithmException e) {
-      // We check when we register() this digest function that the message digest exists. This
-      // should never happen.
-      throw new IllegalStateException("message digest " + name + " not available", e);
+    fun getHashFunction(): com.google.common.hash.HashFunction? {
+        return hashFunction
     }
-  }
 
-  private static boolean supportsClone(MessageDigest toCheck) {
-    try {
-      var unused = toCheck.clone();
-      return true;
-    } catch (CloneNotSupportedException e) {
-      return false;
+    /** Creates a new [MessageDigest] for this hash function.  */
+    fun newMessageDigest(): MessageDigest? {
+        if (messageDigestPrototypeSupportsClone) {
+            try {
+                return messageDigestPrototype.clone() as MessageDigest?
+            } catch (e: java.lang.CloneNotSupportedException) {
+                // We checked at initialization that this could be cloned, so this should never happen.
+                throw java.lang.IllegalStateException("Could not clone message digest", e)
+            }
+        } else {
+            return this.messageDigestInstance
+        }
     }
-  }
 
-  public static ImmutableSet<DigestHashFunction> getPossibleHashFunctions() {
-    return ImmutableSet.copyOf(hashFunctionRegistry.values());
-  }
-
-  private static String getPossibleNames() {
-    return hashFunctionRegistry.values().stream()
-        .map(DigestHashFunction::toString)
-        .sorted()
-        .distinct()
-        .collect(Collectors.joining(", "));
-  }
-
-  public static HashFunction getHashFunctionFromName(String hashName) {
-    var digestHashFunction = hashFunctionRegistry.get(hashName);
-    if (digestHashFunction == null) {
-      throw new IllegalArgumentException(
-          String.format(
-              "Hash function '%s' is not registered. Possible values are: %s",
-              hashName, getPossibleNames()));
+    fun getNames(): com.google.common.collect.ImmutableList<String> {
+        return names
     }
-    return digestHashFunction.getHashFunction();
-  }
+
+    override fun toString(): String {
+        return name
+    }
+
+    private val messageDigestInstance: MessageDigest
+        get() {
+            try {
+                return MessageDigest.getInstance(name)
+            } catch (e: NoSuchAlgorithmException) {
+                // We check when we register() this digest function that the message digest exists. This
+                // should never happen.
+                throw java.lang.IllegalStateException("message digest " + name + " not available", e)
+            }
+        }
+
+    companion object {
+        // This map must be declared first to make sure that calls to register() have it ready.
+        private val hashFunctionRegistry: HashMap<String?, DigestHashFunction> = HashMap<String?, DigestHashFunction>()
+
+        @kotlin.jvm.JvmField
+        val SHA1: DigestHashFunction
+        @kotlin.jvm.JvmField
+        val SHA256: DigestHashFunction
+
+        init {
+            SHA1 = register(com.google.common.hash.Hashing.sha1(), "SHA-1", "SHA1", "sha1")
+            SHA256 = register(com.google.common.hash.Hashing.sha256(), "SHA-256", "SHA256", "sha256")
+            register(com.google.common.hash.Hashing.sha384(), "SHA-384", "SHA384", "sha384")
+            register(com.google.common.hash.Hashing.sha512(), "SHA-512", "SHA512", "sha512")
+        }
+
+        fun register(
+            hash: com.google.common.hash.HashFunction, hashName: String, vararg altNames: String?
+        ): DigestHashFunction {
+            return Companion.register(hash, DigestLengthImpl(hash), hashName, *altNames)
+        }
+
+        /**
+         * Creates a new DigestHashFunction that is registered to be recognized by its name in [ ].
+         * 
+         * @param hashName the canonical name for this hash function - and the name that can be used to
+         * uncover the MessageDigest.
+         * @param altNames alternative names that will be mapped to this function by the converter but
+         * will not serve as the canonical name for the DigestHashFunction.
+         * @param hash The [HashFunction] to register.
+         * @throws IllegalArgumentException if the name is already registered.
+         */
+        fun register(
+            hash: com.google.common.hash.HashFunction?,
+            digestLength: DigestLength?,
+            hashName: String,
+            vararg altNames: String?
+        ): DigestHashFunction {
+            try {
+                MessageDigest.getInstance(hashName)
+            } catch (e: NoSuchAlgorithmException) {
+                throw java.lang.IllegalArgumentException(
+                    "The hash function name provided does not correspond to a valid MessageDigest: "
+                            + hashName,
+                    e
+                )
+            }
+
+            val names: com.google.common.collect.ImmutableList<String> =
+                com.google.common.collect.ImmutableList.builder<String?>().add(hashName).add(*altNames).build()
+            val hashFunction = DigestHashFunction(hash, digestLength, names)
+            synchronized(hashFunctionRegistry) {
+                for (name in names) {
+                    require(!hashFunctionRegistry.containsKey(name)) { "Hash function " + name + " is already registered." }
+                    hashFunctionRegistry.put(name, hashFunction)
+                }
+            }
+            return hashFunction
+        }
+
+        private fun supportsClone(toCheck: MessageDigest): Boolean {
+            try {
+                val unused: Any? = toCheck.clone()
+                return true
+            } catch (e: java.lang.CloneNotSupportedException) {
+                return false
+            }
+        }
+
+        @kotlin.jvm.JvmStatic
+        val possibleHashFunctions: com.google.common.collect.ImmutableSet<DigestHashFunction?>
+            get() = com.google.common.collect.ImmutableSet.copyOf<DigestHashFunction?>(hashFunctionRegistry.values())
+
+        private val possibleNames: String?
+            get() = hashFunctionRegistry.values().stream()
+                .map<String?>(java.util.function.Function { obj: DigestHashFunction? -> obj.toString() })
+                .sorted()
+                .distinct()
+                .collect(Collectors.joining(", "))
+
+        fun getHashFunctionFromName(hashName: String?): com.google.common.hash.HashFunction? {
+            val digestHashFunction: DigestHashFunction = hashFunctionRegistry.get(hashName)
+            requireNotNull(digestHashFunction) {
+                java.lang.String.format(
+                    "Hash function '%s' is not registered. Possible values are: %s",
+                    hashName, possibleNames
+                )
+            }
+            return digestHashFunction.getHashFunction()
+        }
+    }
 }

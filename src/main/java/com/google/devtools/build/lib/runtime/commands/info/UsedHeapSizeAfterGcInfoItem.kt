@@ -11,40 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime.commands.info
 
-package com.google.devtools.build.lib.runtime.commands.info;
+import com.google.common.base.Supplier
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue
+import com.google.devtools.build.lib.util.StringUtilities
 
-import com.google.common.base.Supplier;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.bugreport.BugReporter;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.InfoItem;
-import com.google.devtools.build.lib.runtime.MemoryPressureOptions;
-import com.google.devtools.build.lib.util.HeapOffsetHelper;
-import com.google.devtools.build.lib.util.StringUtilities;
-
-/** Info item for the used heap size after garbage collection. */
-public final class UsedHeapSizeAfterGcInfoItem extends InfoItem {
-  public UsedHeapSizeAfterGcInfoItem() {
-    super(
-        "used-heap-size-after-gc",
-        "The amount of used memory in bytes after a call to System.gc().",
-        true);
-  }
-
-  @Override
-  public byte[] get(
-      Supplier<BuildConfigurationValue> configurationSupplier, CommandEnvironment env) {
-    System.gc();
-    // TODO: b/311665999 - Remove the subtraction of FillerArray once we figure out an alternative.
-    return print(
-        StringUtilities.prettyPrintBytes(
-            InfoItemUtils.getMemoryUsage().getUsed()
-                - HeapOffsetHelper.getSizeOfFillerArrayOnHeap(
+/** Info item for the used heap size after garbage collection.  */
+class UsedHeapSizeAfterGcInfoItem : InfoItem(
+    "used-heap-size-after-gc",
+    "The amount of used memory in bytes after a call to System.gc().",
+    true
+) {
+    public override fun get(
+        configurationSupplier: Supplier<BuildConfigurationValue?>?, env: CommandEnvironment
+    ): ByteArray {
+        System.gc()
+        // TODO: b/311665999 - Remove the subtraction of FillerArray once we figure out an alternative.
+        return print(
+            StringUtilities.prettyPrintBytes(
+                InfoItemUtils.getMemoryUsage().getUsed()
+                        - HeapOffsetHelper.getSizeOfFillerArrayOnHeap(
                     env.getOptions()
-                        .getOptions(MemoryPressureOptions.class)
+                        .getOptions(MemoryPressureOptions::class.java)
                         .getJvmHeapHistogramInternalObjectPattern()
                         .regexPattern(),
-                    BugReporter.defaultInstance())));
-  }
+                    BugReporter.defaultInstance()
+                )
+            )
+        )
+    }
 }

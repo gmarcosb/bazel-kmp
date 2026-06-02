@@ -11,51 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.WorkspaceStatusAction.Factory;
-import com.google.devtools.build.lib.bugreport.BugReporter;
-import com.google.devtools.build.lib.packages.PackageFactory;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import java.util.function.Supplier;
+import com.google.devtools.build.lib.actions.ActionKeyContext
 
-/** A factory of SkyframeExecutors that returns SequencedSkyframeExecutor. */
-public final class SequencedSkyframeExecutorFactory implements SkyframeExecutorFactory {
-
-  @Override
-  public SkyframeExecutor create(
-      PackageFactory pkgFactory,
-      FileSystem fileSystem,
-      BlazeDirectories directories,
-      ActionKeyContext actionKeyContext,
-      Factory workspaceStatusActionFactory,
-      Iterable<? extends DiffAwareness.Factory> diffAwarenessFactories,
-      ImmutableMap<SkyFunctionName, SkyFunction> extraSkyFunctions,
-      SyscallCache syscallCache,
-      boolean allowExternalRepositories,
-      Supplier<Path> repoContentsCachePathSupplier,
-      SkyframeExecutor.SkyKeyStateReceiver skyKeyStateReceiver,
-      BugReporter bugReporter) {
-    return BazelSkyframeExecutorConstants.newBazelSkyframeExecutorBuilder()
-        .setPkgFactory(pkgFactory)
-        .setFileSystem(fileSystem)
-        .setDirectories(directories)
-        .setActionKeyContext(actionKeyContext)
-        .setWorkspaceStatusActionFactory(workspaceStatusActionFactory)
-        .setDiffAwarenessFactories(diffAwarenessFactories)
-        .setExtraSkyFunctions(extraSkyFunctions)
-        .setSyscallCache(syscallCache)
-        .allowExternalRepositories(allowExternalRepositories)
-        .setRepoContentsCachePathSupplier(repoContentsCachePathSupplier)
-        .setSkyKeyStateReceiver(skyKeyStateReceiver)
-        .setBugReporter(bugReporter)
-        .build();
-  }
+/** A factory of SkyframeExecutors that returns SequencedSkyframeExecutor.  */
+class SequencedSkyframeExecutorFactory : SkyframeExecutorFactory {
+    override fun create(
+        pkgFactory: PackageFactory?,
+        fileSystem: com.google.devtools.build.lib.vfs.FileSystem?,
+        directories: BlazeDirectories?,
+        actionKeyContext: ActionKeyContext?,
+        workspaceStatusActionFactory: Factory?,
+        diffAwarenessFactories: Iterable<out DiffAwareness.Factory?>?,
+        extraSkyFunctions: com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?>?,
+        syscallCache: SyscallCache?,
+        allowExternalRepositories: Boolean,
+        repoContentsCachePathSupplier: java.util.function.Supplier<com.google.devtools.build.lib.vfs.Path?>?,
+        skyKeyStateReceiver: SkyKeyStateReceiver?,
+        bugReporter: BugReporter?
+    ): SkyframeExecutor {
+        return BazelSkyframeExecutorConstants.newBazelSkyframeExecutorBuilder()
+            .setPkgFactory(pkgFactory)
+            .setFileSystem(fileSystem)
+            .setDirectories(directories)
+            .setActionKeyContext(actionKeyContext)
+            .setWorkspaceStatusActionFactory(workspaceStatusActionFactory)
+            .setDiffAwarenessFactories(diffAwarenessFactories)
+            .setExtraSkyFunctions(extraSkyFunctions)
+            .setSyscallCache(syscallCache)
+            .allowExternalRepositories(allowExternalRepositories)
+            .setRepoContentsCachePathSupplier(repoContentsCachePathSupplier)
+            .setSkyKeyStateReceiver(skyKeyStateReceiver)
+            .setBugReporter(bugReporter)
+            .build()
+    }
 }

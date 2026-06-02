@@ -11,27 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.cpp;
+package com.google.devtools.build.lib.rules.cpp
 
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.StructImpl;
-import net.starlark.java.eval.EvalException;
+import com.google.devtools.build.lib.actions.Artifact
 
-/** Value object reused by propeller configurations that has two artifacts. */
-@Immutable
-public final class PropellerOptimizeInputFile {
-  private final StructImpl propellerOptimiseInputFile;
+/** Value object reused by propeller configurations that has two artifacts.  */
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+class PropellerOptimizeInputFile(propellerOptimiseInputFile: StructImpl) {
+    private val propellerOptimiseInputFile: StructImpl
 
-  public PropellerOptimizeInputFile(StructImpl propellerOptimiseInputFile) {
-    this.propellerOptimiseInputFile = propellerOptimiseInputFile;
-  }
+    init {
+        this.propellerOptimiseInputFile = propellerOptimiseInputFile
+    }
 
-  public Artifact getCcArtifact() throws EvalException {
-    return propellerOptimiseInputFile.getNoneableValue("cc_profile", Artifact.class);
-  }
+    @get:Throws(net.starlark.java.eval.EvalException::class)
+    val ccArtifact: Artifact
+        get() = propellerOptimiseInputFile.getNoneableValue("cc_profile", Artifact::class.java)
 
-  public Artifact getLdArtifact() throws EvalException {
-    return propellerOptimiseInputFile.getNoneableValue("ld_profile", Artifact.class);
-  }
+    @get:Throws(net.starlark.java.eval.EvalException::class)
+    val ldArtifact: Artifact
+        get() = propellerOptimiseInputFile.getNoneableValue("ld_profile", Artifact::class.java)
 }

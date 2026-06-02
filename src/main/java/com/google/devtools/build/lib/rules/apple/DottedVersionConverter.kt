@@ -11,26 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.apple
 
-package com.google.devtools.build.lib.rules.apple;
+import com.google.devtools.build.lib.rules.apple.DottedVersion.InvalidDottedVersionException
+import com.google.devtools.common.options.Converter
+import com.google.devtools.common.options.OptionsParsingException
 
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.OptionsParsingException;
-
-/** Converter for options representing {@link DottedVersion} values. */
-public class DottedVersionConverter extends Converter.Contextless<DottedVersion.Option> {
-
-  @Override
-  public DottedVersion.Option convert(String input) throws OptionsParsingException {
-    try {
-      return DottedVersion.option(DottedVersion.fromString(input));
-    } catch (DottedVersion.InvalidDottedVersionException e) {
-      throw new OptionsParsingException(e.getMessage());
+/** Converter for options representing [DottedVersion] values.  */
+class DottedVersionConverter : Converter.Contextless<DottedVersion.Option?>() {
+    @Throws(OptionsParsingException::class)
+    override fun convert(input: String?): DottedVersion.Option {
+        try {
+            return DottedVersion.Companion.option(DottedVersion.Companion.fromString(input))
+        } catch (e: InvalidDottedVersionException) {
+            throw OptionsParsingException(e.message)
+        }
     }
-  }
 
-  @Override
-  public String getTypeDescription() {
-    return "a dotted version (for example '2.3' or '3.3alpha2.4')";
-  }
+    override fun getTypeDescription(): String {
+        return "a dotted version (for example '2.3' or '3.3alpha2.4')"
+    }
 }

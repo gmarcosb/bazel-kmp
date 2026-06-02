@@ -11,51 +11,41 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.base.MoreObjects;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.ConfiguredTargetValue;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.TargetData;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
 
-/** A non-rule configured target in the context of a Skyframe graph. */
-@Immutable
-@ThreadSafe
-public final class NonRuleConfiguredTargetValue
-    extends AbstractConfiguredTargetValue<ConfiguredTarget> implements ConfiguredTargetValue {
+/** A non-rule configured target in the context of a Skyframe graph.  */
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+@com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe
+class NonRuleConfiguredTargetValue
 
-  @Nullable // Non-null when this is an alias of a remotely fetched ConfiguredTarget.
-  private final TargetData targetData;
+    : AbstractConfiguredTargetValue<ConfiguredTarget?>, ConfiguredTargetValue {
+    // Non-null when this is an alias of a remotely fetched ConfiguredTarget.
+    private val targetData: TargetData?
 
-  NonRuleConfiguredTargetValue(
-      ConfiguredTarget configuredTarget, @Nullable NestedSet<Package.Metadata> transitivePackages) {
-    super(configuredTarget, transitivePackages);
-    this.targetData = null;
-  }
+    internal constructor(
+        configuredTarget: ConfiguredTarget?,
+        transitivePackages: NestedSet<Package.Metadata?>?
+    ) : super(configuredTarget, transitivePackages) {
+        this.targetData = null
+    }
 
-  NonRuleConfiguredTargetValue(
-      ConfiguredTarget configuredTarget,
-      @Nullable NestedSet<Package.Metadata> transitivePackages,
-      TargetData targetData) {
-    super(configuredTarget, transitivePackages);
-    this.targetData = targetData;
-  }
+    internal constructor(
+        configuredTarget: ConfiguredTarget?,
+        transitivePackages: NestedSet<Package.Metadata?>?,
+        targetData: TargetData?
+    ) : super(configuredTarget, transitivePackages) {
+        this.targetData = targetData
+    }
 
-  @Nullable
-  @Override
-  public TargetData getTargetData() {
-    return targetData;
-  }
+    public override fun getTargetData(): TargetData? {
+        return targetData
+    }
 
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("configuredTarget", getConfiguredTarget())
-        .toString();
-  }
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("configuredTarget", getConfiguredTarget())
+            .toString()
+    }
 }

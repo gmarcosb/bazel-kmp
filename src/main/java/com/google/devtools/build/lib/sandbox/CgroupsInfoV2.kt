@@ -11,133 +11,434 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.sandbox
 
-package com.google.devtools.build.lib.sandbox;
+import com.google.devtools.build.lib.buildtool.buildevent.BuildCompleteEvent.getResult
+import com.google.devtools.build.lib.clock.Clock.currentTimeMillis
+import com.google.devtools.build.lib.clock.Clock.nanoTime
+import com.google.devtools.build.lib.buildtool.buildevent.TestFilteringCompleteEvent.getTestTargets
+import com.google.devtools.build.lib.bugreport.BugReport.sendBugReport
+import com.google.devtools.build.lib.clock.BlazeClock.instance
+import com.google.devtools.build.lib.clock.Clock.now
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.ConcurrentHashMap
+import com.google.devtools.build.lib.runtime.UiStateTracker.StrategyIds
+import com.google.devtools.build.lib.runtime.UiStateTracker.ActionPhase
+import java.util.LinkedHashMap
+import com.google.devtools.build.lib.runtime.UiStateTracker.ActionState.ProgressState
+import com.google.devtools.build.lib.runtime.UiStateTracker
+import com.google.devtools.build.lib.runtime.UiStateTracker.ActionState
+import com.google.devtools.build.lib.runtime.UiStateTracker.DownloadData
+import com.google.devtools.build.lib.events.ExtendedEventHandler.FetchProgress
+import com.google.devtools.build.lib.skyframe.PackageProgressReceiver
+import com.google.devtools.build.lib.skyframe.AnalysisProgressReceiver
+import java.util.HashSet
+import java.time.Instant
+import com.google.devtools.build.lib.skyframe.LoadingPhaseStartedEvent
+import com.google.devtools.build.lib.skyframe.ConfigurationPhaseStartedEvent
+import com.google.devtools.build.lib.buildtool.buildevent.ExecutionProgressReceiverAvailableEvent
+import com.google.devtools.build.lib.buildtool.buildevent.BuildCompleteEvent
+import java.util.function.ToIntFunction
+import java.io.IOException
+import com.google.devtools.build.lib.util.io.AnsiTerminalWriter
+import com.google.devtools.build.lib.buildtool.buildevent.TestFilteringCompleteEvent
+import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.TestAnalyzedEvent
+import com.google.devtools.build.lib.util.io.PositionAwareAnsiTerminalWriter
+import com.google.common.flogger.GoogleLogger
+import com.google.devtools.build.lib.sandbox.SandboxOptions
+import com.google.devtools.build.lib.sandbox.SandboxedSpawn
+import com.google.devtools.build.lib.sandbox.SandboxHelpers
+import com.google.devtools.build.lib.util.CommandFailureUtils
+import com.google.devtools.build.lib.sandbox.AbstractSandboxSpawnRunner
+import com.google.devtools.build.lib.util.io.FileOutErr
+import com.google.devtools.build.lib.shell.SubprocessBuilder
+import com.google.devtools.build.lib.shell.TerminationStatus
+import com.google.devtools.build.lib.shell.Subprocess
+import java.util.stream.Collectors
+import java.nio.file.Paths
+import com.google.devtools.build.lib.sandbox.cgroups.Mount
+import com.google.auto.value.AutoValue
+import com.google.devtools.build.lib.sandbox.Cgroup
+import com.google.devtools.build.lib.sandbox.cgroups.controller.Controller.Cpu
+import com.google.devtools.build.lib.sandbox.cgroups.VirtualCgroup
+import java.util.concurrent.ConcurrentLinkedQueue
+import com.google.devtools.build.lib.sandbox.cgroups.controller.v2.UnifiedMemory
+import com.google.devtools.build.lib.sandbox.cgroups.controller.v2.UnifiedCpu
+import com.google.devtools.build.lib.sandbox.cgroups.controller.v1.LegacyMemory
+import com.google.devtools.build.lib.sandbox.cgroups.controller.v1.LegacyCpu
+import com.google.devtools.build.lib.sandbox.cgroups.VirtualCgroupFactory
+import com.google.devtools.build.lib.sandbox.cgroups.controller.v1.LegacyController
+import com.google.devtools.build.lib.sandbox.cgroups.controller.v2.UnifiedController
+import com.google.devtools.build.lib.sandbox.CgroupsInfo
+import com.google.devtools.build.lib.sandbox.CgroupsInfo.InvalidCgroupsInfo
+import com.google.devtools.build.lib.sandbox.CgroupsInfoV1
+import com.google.devtools.build.lib.sandbox.CgroupsInfoV2
+import com.google.devtools.build.lib.sandbox.DarwinSandboxedSpawnRunner
+import com.google.devtools.build.lib.util.StringEncoding
+import com.google.devtools.build.lib.sandbox.SandboxHelpers.SandboxInputs
+import com.google.devtools.build.lib.vfs.PathFragment
+import com.google.devtools.build.lib.sandbox.SandboxHelpers.SandboxOutputs
+import ProcessWrapper.CommandLineBuilder
+import com.google.devtools.build.lib.sandbox.SymlinkedSandboxedSpawn
+import java.io.PrintWriter
+import java.io.BufferedWriter
+import java.io.OutputStreamWriter
+import java.util.UUID
+import com.google.devtools.build.lib.sandbox.DockerCommandLineBuilder
+import com.google.devtools.build.lib.unix.ProcessUtilsService
+import java.util.Collections
+import com.google.devtools.build.lib.sandbox.CopyingSandboxedSpawn
+import java.util.concurrent.atomic.AtomicReference
+import com.google.devtools.build.lib.sandbox.DockerSandboxedSpawnRunner
+import java.io.ByteArrayInputStream
+import com.google.devtools.build.lib.remote.options.RemoteOptions
+import com.google.devtools.build.lib.sandbox.LinuxSandboxUtil
+import com.google.devtools.build.lib.vfs.Root
+import com.google.devtools.build.lib.sandbox.LinuxSandboxCommandLineBuilder
+import com.google.devtools.build.lib.sandbox.LinuxSandboxCommandLineBuilder.NetworkNamespace
+import com.google.devtools.build.lib.sandbox.HardlinkedSandboxedSpawn
+import java.util.TreeSet
+import java.util.SortedMap
+import java.util.TreeMap
+import com.google.devtools.build.lib.vfs.Symlinks
+import com.google.devtools.build.lib.vfs.FileStatus
+import java.util.HashMap
+import com.google.devtools.build.lib.sandbox.LinuxSandboxedSpawnRunner
+import com.google.devtools.build.lib.util.OsUtils
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import com.google.devtools.build.lib.sandbox.SandboxHelpers.DirectoryCopier
+import com.google.devtools.build.lib.vfs.FileAccessException
+import com.google.devtools.build.lib.sandbox.SandboxHelpers.SandboxContents
+import java.io.UncheckedIOException
+import com.google.devtools.build.lib.util.AbruptExitException
+import com.google.devtools.build.lib.util.DetailedExitCode
+import com.google.devtools.build.lib.sandbox.SandboxModule
+import com.google.devtools.build.lib.sandbox.AsynchronousTreeDeleter
+import com.google.devtools.build.lib.sandbox.SynchronousTreeDeleter
+import com.google.devtools.build.lib.sandbox.SandboxStash
+import com.google.devtools.build.lib.sandbox.ProcessWrapperSandboxedSpawnRunner
+import com.google.devtools.build.lib.sandbox.ProcessWrapperSandboxedStrategy
+import com.google.devtools.build.lib.sandbox.DockerSandboxedStrategy
+import com.google.devtools.build.lib.sandbox.LinuxSandboxedStrategy
+import com.google.devtools.build.lib.sandbox.DarwinSandboxedStrategy
+import com.google.devtools.build.lib.sandbox.WindowsSandboxedSpawnRunner
+import com.google.devtools.build.lib.sandbox.WindowsSandboxedStrategy
+import com.google.devtools.build.lib.runtime.commands.events.CleanStartingEvent
+import com.google.devtools.build.lib.util.Fingerprint
+import com.google.devtools.build.lib.sandbox.WindowsSandboxUtil
+import com.google.devtools.build.lib.util.OptionsUtils.AbsolutePathFragmentConverter
+import com.google.devtools.build.lib.sandbox.SandboxOptions.MountPairConverter
+import com.google.devtools.build.lib.sandbox.SandboxOptions.AsyncTreeDeletesConverter
+import com.google.devtools.build.lib.util.RamResourceConverter
+import com.google.devtools.build.lib.util.ResourceConverter
+import java.util.LinkedHashSet
+import com.google.devtools.build.lib.sandbox.AbstractContainerizingSandboxedSpawn
+import com.google.devtools.build.lib.util.CommandDescriptionForm
+import com.google.devtools.build.lib.util.DescribableExecutionUnit
+import java.io.FileNotFoundException
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.ThreadFactory
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.LinkedBlockingQueue
+import com.google.devtools.build.lib.sandbox.WindowsSandboxUtil.CommandLineBuilder
+import com.google.devtools.build.lib.sandbox.WindowsSandboxedSpawn
+import com.google.devtools.build.lib.shell.SubprocessBuilder.StreamAction
+import com.google.devtools.build.lib.server.CommandManager.RunningCommand
+import com.google.devtools.build.lib.server.IdleTaskManager
+import java.util.concurrent.atomic.AtomicLong
+import com.google.devtools.build.lib.server.CommandManager
+import com.google.devtools.build.lib.server.GrpcCommandServer
+import com.google.devtools.build.lib.server.PidFileWatcher
+import com.google.devtools.build.lib.server.GrpcCommandServer.Responder
+import com.google.devtools.build.lib.util.io.CommandExtensionReporter
+import com.google.protobuf.ByteString
+import com.google.devtools.build.lib.server.CommandServer.StreamType
+import com.google.devtools.build.lib.server.CommandServer.RpcOutputStream
+import com.google.devtools.build.lib.bugreport.BugReport
+import com.google.devtools.build.lib.server.CommandServer
+import com.google.devtools.build.lib.server.ServerWatcherRunnable
+import java.net.InetSocketAddress
+import java.net.Inet4Address
+import java.net.Inet6Address
+import com.google.protobuf.InvalidProtocolBufferException
+import com.google.devtools.build.lib.util.ExitCode
+import com.google.devtools.build.lib.util.io.OutErr
+import com.google.devtools.common.options.InvocationPolicyParser
+import com.google.devtools.build.lib.server.CommandServer.RpcCommandExtensionReporter
+import com.google.devtools.build.lib.util.InterruptedFailureDetails
+import java.security.MessageDigest
+import com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils
+import com.google.devtools.build.lib.concurrent.PooledInterner
+import com.google.devtools.build.lib.server.GcAndInternerShrinkingIdleTask
+import io.grpc.stub.ServerCallStreamObserver
+import io.grpc.stub.StreamObserver
+import io.grpc.StatusRuntimeException
+import io.grpc.netty.NettyServerBuilder
+import io.netty.channel.epoll.Epoll
+import com.google.devtools.build.lib.server.GrpcCommandServerImpl.BlockingStreamObserver
+import com.google.devtools.build.lib.runtime.BlazeService
+import com.google.devtools.build.lib.server.GrpcCommandServerService
+import com.google.devtools.build.lib.server.GrpcCommandServerImpl
+import java.util.concurrent.ScheduledThreadPoolExecutor
+import com.google.devtools.build.lib.server.IdleTaskManager.IdleTaskWrapper
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.CancellationException
+import com.google.devtools.build.lib.server.InstallBaseGarbageCollector
+import com.google.devtools.build.lib.util.FileSystemLock
+import com.google.devtools.build.lib.util.FileSystemLock.LockMode
+import com.google.devtools.build.lib.util.FileSystemLock.LockAlreadyHeldException
+import java.util.function.IntPredicate
+import com.google.devtools.build.lib.server.InstallBaseGarbageCollectorIdleTask
+import java.util.concurrent.ScheduledExecutorService
+import com.google.devtools.build.lib.server.ServerWatcherRunnable.LowMemoryChecker
+import com.google.devtools.build.lib.server.ServerWatcherRunnable.ProcMeminfoLowMemoryChecker
+import com.google.devtools.build.lib.server.ServerWatcherRunnable.ProcMeminfoLowMemoryChecker.ProcMeminfoParserSupplier
+import com.google.devtools.build.lib.server.ServerWatcherRunnable.MemoryPressureLowMemoryChecker
+import com.google.devtools.build.lib.unix.ProcMeminfoParser
+import com.google.devtools.build.lib.server.signal.InterruptSignalHandler
+import com.google.devtools.build.lib.shell.CommandResult
+import com.google.devtools.build.lib.shell.AbnormalTerminationException
+import com.google.common.flogger.LazyArgs
+import com.google.common.flogger.LazyArg
+import com.google.devtools.build.lib.shell.LogUtil
+import com.google.auto.value.AutoBuilder
+import com.google.devtools.build.lib.shell.Consumers.AccumulatorThreadFactory
+import com.google.devtools.build.lib.shell.Consumers.OutErrConsumers
+import com.google.devtools.build.lib.shell.Consumers.AccumulatingConsumer
+import com.google.devtools.build.lib.shell.Consumers.StreamingConsumer
+import com.google.devtools.build.lib.shell.Consumers.OutputConsumer
+import com.google.devtools.build.lib.shell.Consumers.FutureConsumption
+import com.google.devtools.build.lib.shell.Consumers.ClosingSink
+import com.google.devtools.build.lib.shell.InputStreamSink
+import com.google.devtools.build.lib.shell.ExecutionStatistics
+import java.io.BufferedInputStream
+import Protos.ExecutionStatistics
+import com.google.devtools.build.lib.shell.FutureCommandResult
+import com.google.devtools.build.lib.shell.BadExitStatusException
+import com.google.devtools.build.lib.shell.InputStreamSink.NullSink
+import com.google.devtools.build.lib.shell.InputStreamSink.CopySink
+import com.google.devtools.build.lib.shell.SubprocessFactory
+import java.util.concurrent.locks.ReentrantLock
+import com.google.devtools.build.lib.shell.JavaSubprocessFactory.JavaSubprocess
+import com.google.devtools.build.lib.shell.JavaSubprocessFactory
+import com.google.devtools.build.lib.shell.ExecFailedException
+import com.google.devtools.build.lib.shell.ShellUtils
+import com.google.devtools.build.lib.shell.ShellUtils.TokenizationException
+import com.google.devtools.build.lib.windows.WindowsProcesses
+import com.google.devtools.build.lib.shell.WindowsSubprocess.ProcessOutputStream
+import com.google.devtools.build.lib.shell.WindowsSubprocess.ProcessInputStream
+import com.google.devtools.build.lib.shell.WindowsSubprocess.NativeState
+import com.google.devtools.build.lib.shell.WindowsSubprocess.WaitResult
+import com.google.devtools.build.lib.util.BazelCleaner
+import com.google.devtools.build.lib.shell.WindowsSubprocess
+import com.google.devtools.build.lib.shell.WindowsSubprocessFactory
+import com.google.devtools.build.skyframe.CyclesReporter.SingleCycleReporter
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.CycleInfo
+import com.google.devtools.build.lib.skyframe.AbstractLabelCycleReporter
+import com.google.devtools.build.lib.skyframe.ActionArtifactCycleReporter
+import com.google.devtools.build.lib.skyframe.SkyFunctions
+import com.google.devtools.build.lib.skyframe.TopLevelActionLookupKeyWrapper
+import com.google.devtools.build.lib.skyframe.TestCompletionValue.TestCompletionKey
+import com.google.devtools.build.skyframe.SkyFunctionName
+import com.google.devtools.build.lib.skyframe.AspectCompletionValue.AspectCompletionKey
+import com.google.devtools.build.skyframe.SkyFunction
+import com.google.devtools.build.skyframe.SkyValue
+import com.google.devtools.build.lib.skyframe.PrecomputedValue
+import com.google.devtools.build.lib.skyframe.EnvironmentVariableValue
+import com.google.devtools.build.lib.skyframe.ClientEnvironmentFunction
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
+import com.google.devtools.build.skyframe.AbstractSkyKey
+import com.google.devtools.build.skyframe.SkyKey.SkyKeyInterner
+import com.google.devtools.build.lib.skyframe.ActionEnvironmentFunction
+import com.google.devtools.build.skyframe.SkyframeLookupResult
+import com.google.devtools.build.lib.skyframe.ActionExecutionInactivityWatchdog.InactivityMonitor
+import com.google.devtools.build.lib.skyframe.ActionExecutionInactivityWatchdog.InactivityReporter
+import com.google.devtools.build.lib.skyframe.ActionExecutionInactivityWatchdog.Sleep
+import com.google.devtools.build.lib.skyframe.ActionExecutionInactivityWatchdog.WaitTime
+import com.google.devtools.build.lib.skyframe.ActionExecutionState.ActionStepOrResult
+import com.google.devtools.build.lib.skyframe.ActionExecutionState.SharedActionCallback
+import com.google.devtools.build.lib.skyframe.ActionExecutionValue
+import com.google.devtools.build.lib.skyframe.ActionExecutionState
+import com.google.devtools.build.lib.skyframe.ActionExecutionValue.ActionTransformException
+import java.util.concurrent.ConcurrentMap
+import com.google.devtools.build.lib.skyframe.ActionExecutionState.Exceptional
+import com.google.devtools.build.lib.skyframe.TreeArtifactValue
+import com.google.devtools.build.lib.skyframe.TreeArtifactValue.ArchivedRepresentation
+import com.google.devtools.build.lib.util.HashCodes
+import com.google.devtools.build.lib.skyframe.serialization.DeserializedSkyValue
+import com.google.devtools.build.lib.skyframe.ActionExecutionValue.SingleOutputFile
+import com.google.devtools.build.lib.skyframe.ActionExecutionValue.MultiOutputFile
+import com.google.devtools.build.lib.skyframe.ActionExecutionValue.WithRichData
+import com.google.devtools.build.lib.skyframe.ActionExecutionValue.ModuleDiscovering
+import com.google.devtools.build.lib.skyframe.ActionExecutionValue.SingleTree
+import com.google.devtools.build.lib.skyframe.ActionExecutionValue.MultiTree
+import com.google.devtools.build.lib.skyframe.ActionOutputMetadataStore
+import ExtendedEventHandler.Postable
+import com.google.devtools.build.lib.skyframe.ActionInputCollectedEvent
+import com.google.devtools.build.lib.skyframe.MetadataConsumerForMetrics
+import com.google.devtools.build.lib.skyframe.ActionInputMapHelper
+import com.google.devtools.build.lib.skyframe.ActionInputMetadataProvider
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant
+import com.google.devtools.build.lib.skyframe.ActionLookupConflictFindingValue
+import com.google.devtools.build.lib.vfs.OutputPermissions
+import com.google.devtools.build.lib.vfs.XattrProvider
+import com.google.devtools.build.lib.util.io.TimestampGranularityMonitor
+import com.google.devtools.build.lib.skyframe.TreeArtifactValue.TreeArtifactVisitor
+import com.google.devtools.build.lib.vfs.FileStatusWithDigestAdapter
+import com.google.devtools.build.lib.vfs.FileStatusWithDigest
+import com.google.devtools.build.lib.skyframe.ActionOutputMetadataStore.FileArtifactStatAndValue
+import com.google.devtools.build.lib.vfs.RootedPath
+import com.google.devtools.build.lib.skyframe.ActionTemplateExpansionFunction.ActionTemplateExpansionFunctionException
+import com.google.devtools.build.lib.skyframe.ActionTemplateExpansionValue.ActionTemplateExpansionKey
+import com.google.devtools.build.lib.skyframe.ActionTemplateExpansionFunction
+import com.google.devtools.build.lib.skyframe.ActionTemplateExpansionValue
+import com.google.devtools.build.skyframe.SkyFunctionException
+import com.google.devtools.build.skyframe.SkyFunctionException.Transience
+import com.google.devtools.build.lib.skyframe.ActionTemplateExpansionFunction.MapBasedImmutableActionGraph
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static java.nio.charset.StandardCharsets.UTF_8;
+/** Represents a v2 cgroup.  */
+class CgroupsInfoV2(type: com.google.devtools.build.lib.sandbox.CgroupsInfo.Type?, cgroupDir: java.io.File?) :
+    CgroupsInfo(type, com.google.devtools.build.lib.sandbox.CgroupsInfo.Version.V2, cgroupDir) {
+    override fun createBlazeSpawnsCgroup(procSelfCgroupPath: String): CgroupsInfo {
+        com.google.common.base.Preconditions.checkArgument(
+            type == com.google.devtools.build.lib.sandbox.CgroupsInfo.Type.ROOT,
+            "Should only be creating the Blaze spawns cgroup from the root cgroup."
+        )
+        val blazeProcessCgroupDir: java.io.File?
+        val blazeSpawnsDir: java.io.File?
+        try {
+            blazeProcessCgroupDir = getBlazeProcessCgroupDir(cgroupDir, procSelfCgroupPath)
+            // In cgroups v2, we need to step back from the leaf node to make a further hierarchy.
+            blazeSpawnsDir =
+                java.io.File(
+                    blazeProcessCgroupDir.getParentFile(),
+                    "blaze_" + java.lang.ProcessHandle.current().pid() + "_spawns.slice"
+                )
+            blazeSpawnsDir.mkdirs()
+            blazeSpawnsDir.deleteOnExit()
+            setSubtreeControllers(blazeSpawnsDir)
+        } catch (e: java.lang.Exception) {
+            return InvalidCgroupsInfo(
+                com.google.devtools.build.lib.sandbox.CgroupsInfo.Type.BLAZE_SPAWNS,
+                getVersion(),
+                e
+            )
+        }
 
-import com.google.common.base.Joiner;
-import com.google.common.base.Splitter;
-import com.google.common.io.Files;
-import java.io.File;
-import java.io.IOException;
-import java.util.List;
-import javax.annotation.Nullable;
-
-/** Represents a v2 cgroup. */
-public class CgroupsInfoV2 extends CgroupsInfo {
-
-  public CgroupsInfoV2(Type type, @Nullable File cgroupDir) {
-    super(type, Version.V2, cgroupDir);
-  }
-
-  @Override
-  public CgroupsInfo createBlazeSpawnsCgroup(String procSelfCgroupPath) {
-    checkArgument(
-        type == Type.ROOT, "Should only be creating the Blaze spawns cgroup from the root cgroup.");
-    File blazeProcessCgroupDir;
-    File blazeSpawnsDir;
-    try {
-      blazeProcessCgroupDir = getBlazeProcessCgroupDir(cgroupDir, procSelfCgroupPath);
-      // In cgroups v2, we need to step back from the leaf node to make a further hierarchy.
-      blazeSpawnsDir =
-          new File(
-              blazeProcessCgroupDir.getParentFile(),
-              "blaze_" + ProcessHandle.current().pid() + "_spawns.slice");
-      blazeSpawnsDir.mkdirs();
-      blazeSpawnsDir.deleteOnExit();
-      setSubtreeControllers(blazeSpawnsDir);
-    } catch (Exception e) {
-      return new InvalidCgroupsInfo(Type.BLAZE_SPAWNS, getVersion(), e);
+        return CgroupsInfoV2(com.google.devtools.build.lib.sandbox.CgroupsInfo.Type.BLAZE_SPAWNS, blazeSpawnsDir)
     }
 
-    return new CgroupsInfoV2(Type.BLAZE_SPAWNS, blazeSpawnsDir);
-  }
+    override fun createIndividualSpawnCgroup(dirName: String?, memoryLimitMb: Int): CgroupsInfo {
+        com.google.common.base.Preconditions.checkArgument(
+            type == com.google.devtools.build.lib.sandbox.CgroupsInfo.Type.BLAZE_SPAWNS,
+            "Should only be creating the individual spawn's cgroup from the Blaze spawns cgroup."
+        )
+        if (!canWrite()) {
+            return InvalidCgroupsInfo(
+                com.google.devtools.build.lib.sandbox.CgroupsInfo.Type.SPAWN,
+                getVersion(),
+                String.format("Cgroup %s is invalid, unable to create spawn's cgroup here.", cgroupDir)
+            )
+        }
+        val spawnCgroupDir: java.io.File = java.io.File(cgroupDir, dirName + ".scope")
+        spawnCgroupDir.mkdirs()
+        spawnCgroupDir.deleteOnExit()
+        try {
+            if (memoryLimitMb > 0) {
+                // In cgroups v2, we need to propagate the controllers into new subdirs.
+                com.google.common.io.Files.asCharSink(
+                    java.io.File(spawnCgroupDir, "memory.oom.group"),
+                    java.nio.charset.StandardCharsets.UTF_8
+                ).write("1\n")
+                com.google.common.io.Files.asCharSink(
+                    java.io.File(spawnCgroupDir, "memory.max"),
+                    java.nio.charset.StandardCharsets.UTF_8
+                )
+                    .write((memoryLimitMb * 1024L * 1024L).toString())
+                // Set swap to 0 so that it doesn't unexpecedly consume more than
+                // the memory limit when swap is enabled.
+                com.google.common.io.Files.asCharSink(
+                    java.io.File(spawnCgroupDir, "memory.swap.max"),
+                    java.nio.charset.StandardCharsets.UTF_8
+                )
+                    .write(0L.toString())
+            }
+        } catch (e: java.lang.Exception) {
+            return InvalidCgroupsInfo(com.google.devtools.build.lib.sandbox.CgroupsInfo.Type.SPAWN, getVersion(), e)
+        }
+        return CgroupsInfoV2(com.google.devtools.build.lib.sandbox.CgroupsInfo.Type.SPAWN, spawnCgroupDir)
+    }
 
-  @Override
-  public CgroupsInfo createIndividualSpawnCgroup(String dirName, int memoryLimitMb) {
-    checkArgument(
-        type == Type.BLAZE_SPAWNS,
-        "Should only be creating the individual spawn's cgroup from the Blaze spawns cgroup.");
-    if (!canWrite()) {
-      return new InvalidCgroupsInfo(
-          Type.SPAWN,
-          getVersion(),
-          String.format("Cgroup %s is invalid, unable to create spawn's cgroup here.", cgroupDir));
-    }
-    File spawnCgroupDir = new File(cgroupDir, dirName + ".scope");
-    spawnCgroupDir.mkdirs();
-    spawnCgroupDir.deleteOnExit();
-    try {
-      if (memoryLimitMb > 0) {
-        // In cgroups v2, we need to propagate the controllers into new subdirs.
-        Files.asCharSink(new File(spawnCgroupDir, "memory.oom.group"), UTF_8).write("1\n");
-        Files.asCharSink(new File(spawnCgroupDir, "memory.max"), UTF_8)
-            .write(Long.toString(memoryLimitMb * 1024L * 1024L));
-        // Set swap to 0 so that it doesn't unexpecedly consume more than
-        // the memory limit when swap is enabled.
-        Files.asCharSink(new File(spawnCgroupDir, "memory.swap.max"), UTF_8)
-            .write(Long.toString(0L));
-      }
-    } catch (Exception e) {
-      return new InvalidCgroupsInfo(Type.SPAWN, getVersion(), e);
-    }
-    return new CgroupsInfoV2(Type.SPAWN, spawnCgroupDir);
-  }
+    val memoryUsageInKb: Int
+        get() = getMemoryUsageInKbFromFile("memory.current")
 
-  @Override
-  public int getMemoryUsageInKb() {
-    return getMemoryUsageInKbFromFile("memory.current");
-  }
+    companion object {
+        /**
+         * Returns the path to the cgroup containing the Blaze process.
+         * 
+         * 
+         * In v2, there is only one entry, and it looks something like this:
+         * 
+         * <pre>
+         * 0::/user.slice/user-123.slice/session-1.scope
+        </pre> * 
+         * 
+         * @param mountPoint the directory where the cgroup hierarchy is mounted.
+         * @param procSelfCgroupPath path for the /proc/self/cgroup file.
+         * @throws IOException if there are errors reading the given procs cgroup file.
+         */
+        @Throws(IOException::class)
+        private fun getBlazeProcessCgroupDir(mountPoint: java.io.File?, procSelfCgroupPath: String): java.io.File {
+            val contents: MutableList<String?> = com.google.common.io.Files.readLines(
+                java.io.File(procSelfCgroupPath),
+                java.nio.charset.StandardCharsets.UTF_8
+            )
+            check(!contents.isEmpty()) { "Found no memory cgroup entries in '" + procSelfCgroupPath + "'" }
+            val parts: MutableList<String?> =
+                com.google.common.base.Splitter.on(":").limit(3).splitToList(contents.get(0))
+            return java.io.File(mountPoint, parts.get(2))
+        }
 
-  /**
-   * Returns the path to the cgroup containing the Blaze process.
-   *
-   * <p>In v2, there is only one entry, and it looks something like this:
-   *
-   * <pre>
-   * 0::/user.slice/user-123.slice/session-1.scope
-   * </pre>
-   *
-   * @param mountPoint the directory where the cgroup hierarchy is mounted.
-   * @param procSelfCgroupPath path for the /proc/self/cgroup file.
-   * @throws IOException if there are errors reading the given procs cgroup file.
-   */
-  private static File getBlazeProcessCgroupDir(File mountPoint, String procSelfCgroupPath)
-      throws IOException {
-    List<String> contents = Files.readLines(new File(procSelfCgroupPath), UTF_8);
-    if (contents.isEmpty()) {
-      throw new IllegalStateException(
-          "Found no memory cgroup entries in '" + procSelfCgroupPath + "'");
+        /**
+         * Sets the subtree controllers we need. This also checks that the controllers are available.
+         * 
+         * @param blazeDir A directory in the cgroups hierarchy.
+         * @throws IOException If reading or writing the `cgroup.controllers` or `cgroup.subtree_control` file fails.
+         * @throws IllegalStateException if the `memory` and {code pids} controllers are either not
+         * available or cannot be set for subtrees.
+         */
+        @Throws(IOException::class)
+        private fun setSubtreeControllers(blazeDir: java.io.File?) {
+            val controllers: String =
+                com.google.common.base.Joiner.on(' ').join(
+                    com.google.common.io.Files.readLines(
+                        java.io.File(blazeDir, "cgroup.controllers"),
+                        java.nio.charset.StandardCharsets.UTF_8
+                    )
+                )
+            check(controllers.contains("memory") && controllers.contains("pids")) {
+                String.format(
+                    "Required controllers 'memory' and 'pids' not found in %s/cgroup.controllers",
+                    blazeDir
+                )
+            }
+            val subtreeControllers: String =
+                com.google.common.base.Joiner.on(' ').join(
+                    com.google.common.io.Files.readLines(
+                        java.io.File(blazeDir, "cgroup.subtree_control"),
+                        java.nio.charset.StandardCharsets.UTF_8
+                    )
+                )
+            if (!subtreeControllers.contains("memory") || !subtreeControllers.contains("pids")) {
+                com.google.common.io.Files.asCharSink(
+                    java.io.File(blazeDir, "cgroup.subtree_control"),
+                    java.nio.charset.StandardCharsets.UTF_8
+                )
+                    .write("+memory +pids\n")
+            }
+        }
     }
-    List<String> parts = Splitter.on(":").limit(3).splitToList(contents.get(0));
-    return new File(mountPoint, parts.get(2));
-  }
-
-  /**
-   * Sets the subtree controllers we need. This also checks that the controllers are available.
-   *
-   * @param blazeDir A directory in the cgroups hierarchy.
-   * @throws IOException If reading or writing the {@code cgroup.controllers} or {@code
-   *     cgroup.subtree_control} file fails.
-   * @throws IllegalStateException if the {@code memory} and {code pids} controllers are either not
-   *     available or cannot be set for subtrees.
-   */
-  private static void setSubtreeControllers(File blazeDir) throws IOException {
-    var controllers =
-        Joiner.on(' ').join(Files.readLines(new File(blazeDir, "cgroup.controllers"), UTF_8));
-    if (!(controllers.contains("memory") && controllers.contains("pids"))) {
-      throw new IllegalStateException(
-          String.format(
-              "Required controllers 'memory' and 'pids' not found in %s/cgroup.controllers",
-              blazeDir));
-    }
-    var subtreeControllers =
-        Joiner.on(' ').join(Files.readLines(new File(blazeDir, "cgroup.subtree_control"), UTF_8));
-    if (!subtreeControllers.contains("memory") || !subtreeControllers.contains("pids")) {
-      Files.asCharSink(new File(blazeDir, "cgroup.subtree_control"), UTF_8)
-          .write("+memory +pids\n");
-    }
-  }
 }

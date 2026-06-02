@@ -11,115 +11,107 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.cpp
 
-package com.google.devtools.build.lib.starlarkbuildapi.cpp;
-
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.starlarkbuildapi.FileApi;
-import javax.annotation.Nullable;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.Sequence;
-import net.starlark.java.eval.StarlarkValue;
+import com.google.devtools.build.docgen.annot.DocCategory
+import com.google.devtools.build.lib.starlarkbuildapi.FileApi
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
+import net.starlark.java.eval.StarlarkValue
 
 /**
  * A library the user can link to. This is different from a simple linker input in that it also has
  * a library identifier.
  */
-@StarlarkBuiltin(
-    name = "LibraryToLink",
-    category = DocCategory.BUILTIN,
-    doc = "A library the user can link against.")
-public interface LibraryToLinkApi extends StarlarkValue {
-  @StarlarkMethod(
-      name = "objects",
-      allowReturnNones = true,
-      doc = "<code>List</code> of object files in the library.",
-      structField = true)
-  @Nullable
-  Sequence<?> getObjectFilesForStarlark();
+@StarlarkBuiltin(name = "LibraryToLink", category = DocCategory.BUILTIN, doc = "A library the user can link against.")
+interface LibraryToLinkApi : StarlarkValue {
+    @get:StarlarkMethod(
+        name = "objects",
+        allowReturnNones = true,
+        doc = "<code>List</code> of object files in the library.",
+        structField = true
+    )
+    val objectFilesForStarlark: Sequence<*>?
 
-  @StarlarkMethod(
-      name = "pic_objects",
-      allowReturnNones = true,
-      doc = "<code>List</code> of pic object files in the library.",
-      structField = true)
-  @Nullable
-  Sequence<?> getPicObjectFilesForStarlark();
+    @get:StarlarkMethod(
+        name = "pic_objects",
+        allowReturnNones = true,
+        doc = "<code>List</code> of pic object files in the library.",
+        structField = true
+    )
+    val picObjectFilesForStarlark: Sequence<*>?
 
-  @StarlarkMethod(
-      name = "lto_bitcode_files",
-      allowReturnNones = true,
-      doc = "<code>List</code> of LTO bitcode files in the library.",
-      structField = true)
-  @Nullable
-  Sequence<?> getLtoBitcodeFilesForStarlark();
+    @get:StarlarkMethod(
+        name = "lto_bitcode_files",
+        allowReturnNones = true,
+        doc = "<code>List</code> of LTO bitcode files in the library.",
+        structField = true
+    )
+    val ltoBitcodeFilesForStarlark: Sequence<*>?
 
-  @StarlarkMethod(
-      name = "pic_lto_bitcode_files",
-      allowReturnNones = true,
-      doc = "<code>List</code> of pic LTO bitcode files in the library.",
-      structField = true)
-  @Nullable
-  Sequence<?> getPicLtoBitcodeFilesForStarlark();
+    @get:StarlarkMethod(
+        name = "pic_lto_bitcode_files",
+        allowReturnNones = true,
+        doc = "<code>List</code> of pic LTO bitcode files in the library.",
+        structField = true
+    )
+    val picLtoBitcodeFilesForStarlark: Sequence<*>?
 
-  @StarlarkMethod(
-      name = "static_library",
-      allowReturnNones = true,
-      doc = "<code>Artifact</code> of static library to be linked.",
-      structField = true)
-  @Nullable
-  FileApi getStaticLibrary();
+    @get:StarlarkMethod(
+        name = "static_library",
+        allowReturnNones = true,
+        doc = "<code>Artifact</code> of static library to be linked.",
+        structField = true
+    )
+    val staticLibrary: FileApi?
 
-  @StarlarkMethod(
-      name = "pic_static_library",
-      allowReturnNones = true,
-      doc = "<code>Artifact</code> of pic static library to be linked.",
-      structField = true)
-  @Nullable
-  FileApi getPicStaticLibrary();
+    @get:StarlarkMethod(
+        name = "pic_static_library",
+        allowReturnNones = true,
+        doc = "<code>Artifact</code> of pic static library to be linked.",
+        structField = true
+    )
+    val picStaticLibrary: FileApi?
 
-  @StarlarkMethod(
-      name = "dynamic_library",
-      doc =
-          "<code>Artifact</code> of dynamic library to be linked. Always used for runtime "
-              + "and used for linking if <code>interface_library</code> is not passed.",
-      allowReturnNones = true,
-      structField = true)
-  @Nullable
-  FileApi getDynamicLibrary();
+    @get:StarlarkMethod(
+        name = "dynamic_library",
+        doc = ("<code>Artifact</code> of dynamic library to be linked. Always used for runtime "
+                + "and used for linking if <code>interface_library</code> is not passed."),
+        allowReturnNones = true,
+        structField = true
+    )
+    val dynamicLibrary: FileApi?
 
-  @StarlarkMethod(
-      name = "resolved_symlink_dynamic_library",
-      doc =
-          "The resolved <code>Artifact</code> of the dynamic library to be linked if "
-              + "<code>dynamic_library</code> is a symlink, otherwise this is None.",
-      allowReturnNones = true,
-      structField = true)
-  @Nullable
-  FileApi getResolvedSymlinkDynamicLibrary();
+    @get:StarlarkMethod(
+        name = "resolved_symlink_dynamic_library",
+        doc = ("The resolved <code>Artifact</code> of the dynamic library to be linked if "
+                + "<code>dynamic_library</code> is a symlink, otherwise this is None."),
+        allowReturnNones = true,
+        structField = true
+    )
+    val resolvedSymlinkDynamicLibrary: FileApi?
 
-  @StarlarkMethod(
-      name = "interface_library",
-      doc = "<code>Artifact</code> of interface library to be linked.",
-      allowReturnNones = true,
-      structField = true)
-  @Nullable
-  FileApi getInterfaceLibrary();
+    @get:StarlarkMethod(
+        name = "interface_library",
+        doc = "<code>Artifact</code> of interface library to be linked.",
+        allowReturnNones = true,
+        structField = true
+    )
+    val interfaceLibrary: FileApi?
 
-  @StarlarkMethod(
-      name = "resolved_symlink_interface_library",
-      doc =
-          "The resolved <code>Artifact</code> of the interface library to be linked if "
-              + "<code>interface_library</code> is a symlink, otherwise this is None.",
-      allowReturnNones = true,
-      structField = true)
-  @Nullable
-  FileApi getResolvedSymlinkInterfaceLibrary();
+    @get:StarlarkMethod(
+        name = "resolved_symlink_interface_library",
+        doc = ("The resolved <code>Artifact</code> of the interface library to be linked if "
+                + "<code>interface_library</code> is a symlink, otherwise this is None."),
+        allowReturnNones = true,
+        structField = true
+    )
+    val resolvedSymlinkInterfaceLibrary: FileApi?
 
-  @StarlarkMethod(
-      name = "alwayslink",
-      doc = "Whether to link the static library/objects in the --whole_archive block.",
-      structField = true)
-  boolean getAlwayslink();
+    @get:StarlarkMethod(
+        name = "alwayslink",
+        doc = "Whether to link the static library/objects in the --whole_archive block.",
+        structField = true
+    )
+    val alwayslink: Boolean
 }

@@ -122,11 +122,11 @@ public class VirtualCgroupTest {
     VirtualCgroup vcg = createV1();
     assertThat(vcg.cpu()).isNotNull();
     assertThat(vcg.memory()).isNotNull();
-    assertThat(vcg.cpu().isLegacy()).isTrue();
-    assertThat(vcg.memory().isLegacy()).isTrue();
-    assertThat(vcg.cpu().getPath())
+    assertThat(vcg.cpu().isLegacy).isTrue();
+    assertThat(vcg.memory().isLegacy).isTrue();
+    assertThat(vcg.cpu().path)
         .isEqualTo(scratch.path("dev/cgroup/cpu/user.slice").getPathFile().toPath());
-    assertThat(vcg.memory().getPath())
+    assertThat(vcg.memory().path)
         .isEqualTo(scratch.path("dev/cgroup/memory/user.slice").getPathFile().toPath());
   }
 
@@ -135,11 +135,11 @@ public class VirtualCgroupTest {
     VirtualCgroup vcg = createV2();
     assertThat(vcg.cpu()).isNotNull();
     assertThat(vcg.memory()).isNotNull();
-    assertThat(vcg.cpu().isLegacy()).isFalse();
-    assertThat(vcg.memory().isLegacy()).isFalse();
-    assertThat(vcg.cpu().getPath())
+    assertThat(vcg.cpu().isLegacy).isFalse();
+    assertThat(vcg.memory().isLegacy).isFalse();
+    assertThat(vcg.cpu().path)
         .isEqualTo(scratch.path("dev/cgroup/unified").getPathFile().toPath());
-    assertThat(vcg.memory().getPath())
+    assertThat(vcg.memory().path)
         .isEqualTo(scratch.path("dev/cgroup/unified").getPathFile().toPath());
   }
 
@@ -148,11 +148,11 @@ public class VirtualCgroupTest {
     VirtualCgroup vcg = createHybrid();
     assertThat(vcg.cpu()).isNotNull();
     assertThat(vcg.memory()).isNotNull();
-    assertThat(vcg.cpu().isLegacy()).isTrue();
-    assertThat(vcg.memory().isLegacy()).isFalse();
-    assertThat(vcg.cpu().getPath())
+    assertThat(vcg.cpu().isLegacy).isTrue();
+    assertThat(vcg.memory().isLegacy).isFalse();
+    assertThat(vcg.cpu().path)
         .isEqualTo(scratch.path("dev/cgroup/cpu/user.slice").getPathFile().toPath());
-    assertThat(vcg.memory().getPath())
+    assertThat(vcg.memory().path)
         .isEqualTo(scratch.path("dev/cgroup/unified").getPathFile().toPath());
   }
 
@@ -162,11 +162,11 @@ public class VirtualCgroupTest {
     VirtualCgroup child = vcg.createChild("foo");
     assertThat(child.cpu()).isNotNull();
     assertThat(child.memory()).isNotNull();
-    assertThat(child.memory().getPath())
+    assertThat(child.memory().path)
         .isEqualTo(scratch.path("dev/cgroup/unified/foo").getPathFile().toPath());
-    assertThat(child.cpu().getPath())
+    assertThat(child.cpu().path)
         .isEqualTo(scratch.path("dev/cgroup/cpu/user.slice/foo").getPathFile().toPath());
-    File subtree = vcg.memory().getPath().resolve("cgroup.subtree_control").toFile();
+    File subtree = vcg.memory().path.resolve("cgroup.subtree_control").toFile();
     assertThat(Files.asCharSource(subtree, UTF_8).read()).isEqualTo("+memory +pids ");
   }
 
@@ -182,10 +182,10 @@ public class VirtualCgroupTest {
     VirtualCgroup vcg = createV1();
     vcg.addProcess(1234);
     assertThat(
-            Files.asCharSource(vcg.cpu().getPath().resolve("cgroup.procs").toFile(), UTF_8).read())
+            Files.asCharSource(vcg.cpu().path.resolve("cgroup.procs").toFile(), UTF_8).read())
         .isEqualTo("1234");
     assertThat(
-            Files.asCharSource(vcg.memory().getPath().resolve("cgroup.procs").toFile(), UTF_8)
+            Files.asCharSource(vcg.memory().path.resolve("cgroup.procs").toFile(), UTF_8)
                 .read())
         .isEqualTo("1234");
   }
@@ -195,10 +195,10 @@ public class VirtualCgroupTest {
     VirtualCgroup vcg = createV2();
     vcg.addProcess(1234);
     assertThat(
-            Files.asCharSource(vcg.cpu().getPath().resolve("cgroup.procs").toFile(), UTF_8).read())
+            Files.asCharSource(vcg.cpu().path.resolve("cgroup.procs").toFile(), UTF_8).read())
         .isEqualTo("1234");
     assertThat(
-            Files.asCharSource(vcg.memory().getPath().resolve("cgroup.procs").toFile(), UTF_8)
+            Files.asCharSource(vcg.memory().path.resolve("cgroup.procs").toFile(), UTF_8)
                 .read())
         .isEqualTo("1234");
   }

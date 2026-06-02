@@ -11,14 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs.bazel;
+package com.google.devtools.build.lib.vfs.bazel
 
-import java.security.Provider;
+import java.security.Provider
 
-/** A {@link Provider} for BLAKE3. */
-public final class Blake3Provider extends Provider {
-  public Blake3Provider() {
-    super("BLAKE3Provider", "1.0", "A BLAKE3 digest provider");
-    put("MessageDigest.BLAKE3", Blake3MessageDigest.class.getName());
-  }
+/** A [Provider] for BLAKE3.  */
+class Blake3Provider : Provider("BLAKE3Provider", "1.0", "A BLAKE3 digest provider") {
+    init {
+        put("MessageDigest.BLAKE3", Blake3MessageDigest::class.java.getName())
+    }
 }

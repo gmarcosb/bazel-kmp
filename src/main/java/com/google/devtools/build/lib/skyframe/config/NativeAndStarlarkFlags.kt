@@ -11,100 +11,95 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.config;
+package com.google.devtools.build.lib.skyframe.config
 
-import com.google.auto.value.AutoValue;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.common.options.OptionsParser;
-import com.google.devtools.common.options.OptionsParsingException;
-import com.google.devtools.common.options.OptionsParsingResult;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.config.FragmentOptions
 
 /**
  * Container for storing a set of native and Starlark flag settings in separate buckets.
- *
- * <p>This is necessary because native and Starlark flags are parsed with different logic.
+ * 
+ * 
+ * This is necessary because native and Starlark flags are parsed with different logic.
  */
 @AutoValue
-public abstract class NativeAndStarlarkFlags {
+abstract class NativeAndStarlarkFlags {
+    /** Builder for new [NativeAndStarlarkFlags] instances.  */
+    @AutoValue.Builder
+    abstract class Builder {
+        abstract fun nativeFlags(nativeFlags: com.google.common.collect.ImmutableList<String?>?): Builder?
 
-  public static final NativeAndStarlarkFlags EMPTY = builder().build();
+        abstract fun starlarkFlags(starlarkFlags: com.google.common.collect.ImmutableMap<String?, Any?>?): Builder?
 
-  /** Builder for new {@link NativeAndStarlarkFlags} instances. */
-  @AutoValue.Builder
-  public abstract static class Builder {
-    public abstract Builder nativeFlags(ImmutableList<String> nativeFlags);
+        abstract fun scopesAttributes(scopesAttributes: com.google.common.collect.ImmutableMap<String?, String?>?): Builder?
 
-    public abstract Builder starlarkFlags(ImmutableMap<String, Object> starlarkFlags);
+        abstract fun starlarkFlagDefaults(starlarkFlagDefaults: com.google.common.collect.ImmutableMap<String?, Any?>?): Builder?
 
-    public abstract Builder scopesAttributes(ImmutableMap<String, String> scopesAttributes);
+        abstract fun starlarkOptionAllowingMultiple(
+            starlarkOptionAllowingMultiple: com.google.common.collect.ImmutableSet<String?>?
+        ): Builder?
 
-    public abstract Builder starlarkFlagDefaults(ImmutableMap<String, Object> starlarkFlagDefaults);
+        abstract fun optionsClasses(
+            optionsClasses: com.google.common.collect.ImmutableSet<java.lang.Class<out FragmentOptions?>?>?
+        ): Builder?
 
-    public abstract Builder starlarkOptionAllowingMultiple(
-        ImmutableSet<String> starlarkOptionAllowingMultiple);
+        abstract fun repoMapping(repoMapping: RepositoryMapping?): Builder?
 
-    public abstract Builder optionsClasses(
-        ImmutableSet<Class<? extends FragmentOptions>> optionsClasses);
+        abstract fun build(): NativeAndStarlarkFlags?
+    }
 
-    public abstract Builder repoMapping(RepositoryMapping repoMapping);
+    /**
+     * The native flags from a given set of flags, in the format `[--flag=value]` or `
+     * ["--flag", "value"]`.
+     */
+    abstract fun nativeFlags(): com.google.common.collect.ImmutableList<String?>?
 
-    public abstract NativeAndStarlarkFlags build();
-  }
+    /**
+     * The Starlark flags from a given set of flags, mapped to the correct converted data type. If a
+     * Starlark flag is explicitly set to the default value it should still appear in this map so that
+     * consumers can properly handle the flag.
+     */
+    abstract fun starlarkFlags(): com.google.common.collect.ImmutableMap<String?, Any?>?
 
-  /** Returns a new {@link Builder}. */
-  public static Builder builder() {
-    return new AutoValue_NativeAndStarlarkFlags.Builder()
-        .nativeFlags(ImmutableList.of())
-        .starlarkFlags(ImmutableMap.of())
-        .starlarkFlagDefaults(ImmutableMap.of())
-        .starlarkOptionAllowingMultiple(ImmutableSet.of())
-        .scopesAttributes(ImmutableMap.of())
-        .optionsClasses(ImmutableSet.of());
-  }
+    abstract fun scopesAttributes(): com.google.common.collect.ImmutableMap<String?, String?>?
 
-  /**
-   * The native flags from a given set of flags, in the format <code>[--flag=value]</code> or <code>
-   * ["--flag", "value"]</code>.
-   */
-  public abstract ImmutableList<String> nativeFlags();
+    // TODO: https://github.com/bazelbuild/bazel/issues/22365 - Improve looking up Starlark flag
+    // option definitions and do not store this.
+    abstract fun starlarkFlagDefaults(): com.google.common.collect.ImmutableMap<String?, Any?>?
 
-  /**
-   * The Starlark flags from a given set of flags, mapped to the correct converted data type. If a
-   * Starlark flag is explicitly set to the default value it should still appear in this map so that
-   * consumers can properly handle the flag.
-   */
-  public abstract ImmutableMap<String, Object> starlarkFlags();
+    // TODO: https://github.com/bazelbuild/bazel/issues/22365 - Same as above.
+    abstract fun starlarkOptionAllowingMultiple(): com.google.common.collect.ImmutableSet<String?>?
 
-  public abstract ImmutableMap<String, String> scopesAttributes();
+    abstract fun optionsClasses(): com.google.common.collect.ImmutableSet<java.lang.Class<out FragmentOptions?>?>?
 
-  // TODO: https://github.com/bazelbuild/bazel/issues/22365 - Improve looking up Starlark flag
-  // option definitions and do not store this.
-  public abstract ImmutableMap<String, Object> starlarkFlagDefaults();
+    abstract fun repoMapping(): RepositoryMapping?
 
-  // TODO: https://github.com/bazelbuild/bazel/issues/22365 - Same as above.
-  public abstract ImmutableSet<String> starlarkOptionAllowingMultiple();
+    @Throws(com.google.devtools.common.options.OptionsParsingException::class)
+    fun parse(): com.google.devtools.common.options.OptionsParsingResult {
+        val parser: com.google.devtools.common.options.OptionsParser =
+            com.google.devtools.common.options.OptionsParser.builder()
+                .optionsClasses(this.optionsClasses()) // We need the ability to re-map internal options in the mappings file.
+                .ignoreInternalOptions(false)
+                .withConversionContext(this.repoMapping())
+                .build()
+        parser.parse(this.nativeFlags())
+        parser.setStarlarkOptions(this.starlarkFlags(), this.starlarkOptionAllowingMultiple())
+        parser.setScopesAttributes(this.scopesAttributes())
+        return parser
+    }
 
-  abstract ImmutableSet<Class<? extends FragmentOptions>> optionsClasses();
+    companion object {
+        val EMPTY: NativeAndStarlarkFlags? = builder().build()
 
-  @Nullable
-  abstract RepositoryMapping repoMapping();
-
-  public final OptionsParsingResult parse() throws OptionsParsingException {
-    OptionsParser parser =
-        OptionsParser.builder()
-            .optionsClasses(this.optionsClasses())
-            // We need the ability to re-map internal options in the mappings file.
-            .ignoreInternalOptions(false)
-            .withConversionContext(this.repoMapping())
-            .build();
-    parser.parse(this.nativeFlags());
-    parser.setStarlarkOptions(this.starlarkFlags(), this.starlarkOptionAllowingMultiple());
-    parser.setScopesAttributes(this.scopesAttributes());
-    return parser;
-  }
+        /** Returns a new [Builder].  */
+        @kotlin.jvm.JvmStatic
+        fun builder(): Builder {
+            return Builder()
+                .nativeFlags(com.google.common.collect.ImmutableList.of<E?>())
+                .starlarkFlags(com.google.common.collect.ImmutableMap.of<K?, V?>())
+                .starlarkFlagDefaults(com.google.common.collect.ImmutableMap.of<K?, V?>())
+                .starlarkOptionAllowingMultiple(com.google.common.collect.ImmutableSet.of<E?>())
+                .scopesAttributes(com.google.common.collect.ImmutableMap.of<K?, V?>())
+                .optionsClasses(com.google.common.collect.ImmutableSet.of<E?>())!!
+        }
+    }
 }

@@ -11,32 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.eval
 
-package net.starlark.java.eval;
+/** An immutable implementation of a `StarlarkList`.  */
+internal class RegularImmutableStarlarkList<E>(elems: Array<Any?>) :
+    net.starlark.java.eval.ImmutableStarlarkList<E?>() {
+    private val elems: Array<Any?>
 
-import com.google.common.base.Preconditions;
+    init {
+        com.google.common.base.Preconditions.checkArgument(elems.getClass() == Array<Any>::class.java)
+        this.elems = elems
+    }
 
-/** An immutable implementation of a {@code StarlarkList}. */
-final class RegularImmutableStarlarkList<E> extends ImmutableStarlarkList<E> {
+    override fun elems(): Array<Any?> {
+        return elems
+    }
 
-  /**
-   * A shared instance for the empty list with immutable mutability.
-   *
-   * <p>Other immutable empty list objects can exist, e.g. lists that were once mutable but whose
-   * environments were then frozen. This instance is for empty lists that were always frozen from
-   * the beginning.
-   */
-  static final StarlarkList<?> EMPTY = new RegularImmutableStarlarkList<>(EMPTY_ARRAY);
-
-  private final Object[] elems;
-
-  RegularImmutableStarlarkList(Object[] elems) {
-    Preconditions.checkArgument(elems.getClass() == Object[].class);
-    this.elems = elems;
-  }
-
-  @Override
-  Object[] elems() {
-    return elems;
-  }
+    companion object {
+        /**
+         * A shared instance for the empty list with immutable mutability.
+         * 
+         * 
+         * Other immutable empty list objects can exist, e.g. lists that were once mutable but whose
+         * environments were then frozen. This instance is for empty lists that were always frozen from
+         * the beginning.
+         */
+        val EMPTY: net.starlark.java.eval.StarlarkList<*> =
+            net.starlark.java.eval.RegularImmutableStarlarkList<Any?>(net.starlark.java.eval.StarlarkList.Companion.EMPTY_ARRAY)
+    }
 }

@@ -11,175 +11,178 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.worker;
+package com.google.devtools.build.lib.worker
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.worker.WorkerProtocol.Input;
-import com.google.devtools.build.lib.worker.WorkerProtocol.WorkRequest;
-import com.google.devtools.build.lib.worker.WorkerProtocol.WorkResponse;
-import com.google.gson.stream.JsonReader;
-import com.google.gson.stream.MalformedJsonException;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.util.JsonFormat;
-import com.google.protobuf.util.JsonFormat.Printer;
-import java.io.BufferedWriter;
-import java.io.EOFException;
-import java.io.IOException;
-import java.util.List;
+import com.google.devtools.build.lib.worker.WorkerProtocol.Input
 
-/** Implementation of the Worker Protocol using JSON to communicate with Bazel. */
-public final class JsonWorkerMessageProcessor implements WorkRequestHandler.WorkerMessageProcessor {
-  /** Reader for reading the WorkResponse. */
-  private final JsonReader reader;
-  /** Printer for printing the WorkRequest. */
-  private final Printer jsonPrinter;
-  /** Writer for writing the WorkRequest to the worker. */
-  private final BufferedWriter jsonWriter;
+/** Implementation of the Worker Protocol using JSON to communicate with Bazel.  */
+class JsonWorkerMessageProcessor(reader: JsonReader, jsonWriter: BufferedWriter) : WorkerMessageProcessor {
+    /** Reader for reading the WorkResponse.  */
+    private val reader: JsonReader
 
-  /** Constructs a {@code WorkRequestHandler} that reads and writes JSON. */
-  public JsonWorkerMessageProcessor(JsonReader reader, BufferedWriter jsonWriter) {
-    this.reader = reader;
-    reader.setLenient(true);
-    this.jsonWriter = jsonWriter;
-    jsonPrinter =
-        JsonFormat.printer().omittingInsignificantWhitespace().alwaysPrintFieldsWithNoPresence();
-  }
+    /** Printer for printing the WorkRequest.  */
+    private val jsonPrinter: Printer
 
-  private static ImmutableList<String> readArguments(JsonReader reader) throws IOException {
-    reader.beginArray();
-    ImmutableList.Builder<String> argumentsBuilder = ImmutableList.builder();
-    while (reader.hasNext()) {
-      argumentsBuilder.add(reader.nextString());
+    /** Writer for writing the WorkRequest to the worker.  */
+    private val jsonWriter: BufferedWriter
+
+    /** Constructs a `WorkRequestHandler` that reads and writes JSON.  */
+    init {
+        this.reader = reader
+        reader.setLenient(true)
+        this.jsonWriter = jsonWriter
+        jsonPrinter =
+            JsonFormat.printer().omittingInsignificantWhitespace().alwaysPrintFieldsWithNoPresence()
     }
-    reader.endArray();
-    return argumentsBuilder.build();
-  }
 
-  private static ImmutableList<Input> readInputs(JsonReader reader) throws IOException {
-    reader.beginArray();
-    ImmutableList.Builder<Input> inputsBuilder = ImmutableList.builder();
-    while (reader.hasNext()) {
-      String digest = null;
-      String path = null;
+    @Throws(IOException::class)
+    override fun readWorkRequest(): WorkRequest {
+        var arguments: MutableList<String?>? = null
+        var inputs: MutableList<Input?>? = null
+        var requestId: Int? = null
+        var verbosity: Int? = null
+        var sandboxDir: String? = null
+        try {
+            reader.beginObject()
+            while (reader.hasNext()) {
+                val name: String = reader.nextName()
+                when (name) {
+                    "arguments" -> {
+                        if (arguments != null) {
+                            throw IOException("WorkRequest cannot have more than one 'arguments' field")
+                        }
+                        arguments = readArguments(reader)
+                    }
 
-      reader.beginObject();
-      while (reader.hasNext()) {
-        String name = reader.nextName();
-        switch (name) {
-          case "digest":
-            if (digest != null) {
-              throw new IOException("Input cannot have more than one digest");
+                    "inputs" -> {
+                        if (inputs != null) {
+                            throw IOException("WorkRequest cannot have more than one 'inputs' field")
+                        }
+                        inputs = readInputs(reader)
+                    }
+
+                    "requestId" -> {
+                        if (requestId != null) {
+                            throw IOException("WorkRequest cannot have more than one requestId")
+                        }
+                        requestId = reader.nextInt()
+                    }
+
+                    "verbosity" -> {
+                        if (verbosity != null) {
+                            throw IOException("Work response cannot have more than one verbosity")
+                        }
+                        verbosity = reader.nextInt()
+                    }
+
+                    "sandboxDir" -> {
+                        if (sandboxDir != null) {
+                            throw IOException("Work response cannot have more than one sandboxDir")
+                        }
+                        sandboxDir = reader.nextString()
+                    }
+
+                    else ->             // As per https://bazel.build/docs/creating-workers#work-responses,
+                        // unknown fields are ignored.
+                        reader.skipValue()
+                }
             }
-            digest = reader.nextString();
-            break;
-          case "path":
-            if (path != null) {
-              throw new IOException("Input cannot have more than one path");
-            }
-            path = reader.nextString();
-            break;
-          default:
-            // As per https://bazel.build/docs/creating-workers#work-responses,
-            // unknown fields are ignored.
-            reader.skipValue();
-            break;
+            reader.endObject()
+        } catch (e: MalformedJsonException) {
+            throw IOException(e)
+        } catch (e: java.lang.IllegalStateException) {
+            throw IOException(e)
+        } catch (e: EOFException) {
+            throw IOException(e)
         }
-      }
-      reader.endObject();
-      Input.Builder inputBuilder = Input.newBuilder();
-      if (digest != null) {
-        inputBuilder.setDigest(ByteString.copyFromUtf8(digest));
-      }
-      if (path != null) {
-        inputBuilder.setPath(path);
-      }
-      inputsBuilder.add(inputBuilder.build());
-    }
-    reader.endArray();
-    return inputsBuilder.build();
-  }
 
-  @Override
-  public WorkRequest readWorkRequest() throws IOException {
-    List<String> arguments = null;
-    List<Input> inputs = null;
-    Integer requestId = null;
-    Integer verbosity = null;
-    String sandboxDir = null;
-    try {
-      reader.beginObject();
-      while (reader.hasNext()) {
-        String name = reader.nextName();
-        switch (name) {
-          case "arguments":
-            if (arguments != null) {
-              throw new IOException("WorkRequest cannot have more than one 'arguments' field");
-            }
-            arguments = readArguments(reader);
-            break;
-          case "inputs":
-            if (inputs != null) {
-              throw new IOException("WorkRequest cannot have more than one 'inputs' field");
-            }
-            inputs = readInputs(reader);
-            break;
-          case "requestId":
-            if (requestId != null) {
-              throw new IOException("WorkRequest cannot have more than one requestId");
-            }
-            requestId = reader.nextInt();
-            break;
-          case "verbosity":
-            if (verbosity != null) {
-              throw new IOException("Work response cannot have more than one verbosity");
-            }
-            verbosity = reader.nextInt();
-            break;
-          case "sandboxDir":
-            if (sandboxDir != null) {
-              throw new IOException("Work response cannot have more than one sandboxDir");
-            }
-            sandboxDir = reader.nextString();
-            break;
-          default:
-            // As per https://bazel.build/docs/creating-workers#work-responses,
-            // unknown fields are ignored.
-            reader.skipValue();
-            break;
+        val requestBuilder: WorkRequest.Builder = WorkRequest.newBuilder()
+        if (arguments != null) {
+            requestBuilder.addAllArguments(arguments)
         }
-      }
-      reader.endObject();
-    } catch (MalformedJsonException | IllegalStateException | EOFException e) {
-      throw new IOException(e);
+        if (inputs != null) {
+            requestBuilder.addAllInputs(inputs)
+        }
+        if (requestId != null) {
+            requestBuilder.setRequestId(requestId)
+        }
+        if (verbosity != null) {
+            requestBuilder.setVerbosity(verbosity)
+        }
+        if (sandboxDir != null) {
+            requestBuilder.setSandboxDir(sandboxDir)
+        }
+        return requestBuilder.build()
     }
 
-    WorkRequest.Builder requestBuilder = WorkRequest.newBuilder();
-    if (arguments != null) {
-      requestBuilder.addAllArguments(arguments);
+    @Throws(IOException::class)
+    override fun writeWorkResponse(response: WorkResponse?) {
+        jsonPrinter.appendTo(response, jsonWriter)
+        jsonWriter.flush()
     }
-    if (inputs != null) {
-      requestBuilder.addAllInputs(inputs);
-    }
-    if (requestId != null) {
-      requestBuilder.setRequestId(requestId);
-    }
-    if (verbosity != null) {
-      requestBuilder.setVerbosity(verbosity);
-    }
-    if (sandboxDir != null) {
-      requestBuilder.setSandboxDir(sandboxDir);
-    }
-    return requestBuilder.build();
-  }
 
-  @Override
-  public void writeWorkResponse(WorkResponse response) throws IOException {
-    jsonPrinter.appendTo(response, jsonWriter);
-    jsonWriter.flush();
-  }
+    @Throws(IOException::class)
+    override fun close() {
+        jsonWriter.close()
+    }
 
-  @Override
-  public void close() throws IOException {
-    jsonWriter.close();
-  }
+    companion object {
+        @Throws(IOException::class)
+        private fun readArguments(reader: JsonReader): com.google.common.collect.ImmutableList<String?> {
+            reader.beginArray()
+            val argumentsBuilder: com.google.common.collect.ImmutableList.Builder<String?> =
+                com.google.common.collect.ImmutableList.builder<String?>()
+            while (reader.hasNext()) {
+                argumentsBuilder.add(reader.nextString())
+            }
+            reader.endArray()
+            return argumentsBuilder.build()
+        }
+
+        @Throws(IOException::class)
+        private fun readInputs(reader: JsonReader): com.google.common.collect.ImmutableList<Input?> {
+            reader.beginArray()
+            val inputsBuilder: com.google.common.collect.ImmutableList.Builder<Input?> =
+                com.google.common.collect.ImmutableList.builder<Input?>()
+            while (reader.hasNext()) {
+                var digest: String? = null
+                var path: String? = null
+
+                reader.beginObject()
+                while (reader.hasNext()) {
+                    val name: String = reader.nextName()
+                    when (name) {
+                        "digest" -> {
+                            if (digest != null) {
+                                throw IOException("Input cannot have more than one digest")
+                            }
+                            digest = reader.nextString()
+                        }
+
+                        "path" -> {
+                            if (path != null) {
+                                throw IOException("Input cannot have more than one path")
+                            }
+                            path = reader.nextString()
+                        }
+
+                        else ->             // As per https://bazel.build/docs/creating-workers#work-responses,
+                            // unknown fields are ignored.
+                            reader.skipValue()
+                    }
+                }
+                reader.endObject()
+                val inputBuilder: Input.Builder = Input.newBuilder()
+                if (digest != null) {
+                    inputBuilder.setDigest(ByteString.copyFromUtf8(digest))
+                }
+                if (path != null) {
+                    inputBuilder.setPath(path)
+                }
+                inputsBuilder.add(inputBuilder.build())
+            }
+            reader.endArray()
+            return inputsBuilder.build()
+        }
+    }
 }

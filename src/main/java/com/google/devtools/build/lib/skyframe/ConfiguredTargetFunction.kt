@@ -11,604 +11,594 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.devtools.build.lib.analysis.config.BuildConfigurationValue.configurationIdMessage;
-import static com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil.configurationIdMessage;
-import static com.google.devtools.build.lib.skyframe.SkyValueRetrieverUtils.retrieveRemoteSkyValue;
-
-import com.google.common.base.Preconditions;
-import com.google.common.base.Stopwatch;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.actions.ActionConflictException;
-import com.google.devtools.build.lib.analysis.AnalysisRootCauseEvent;
-import com.google.devtools.build.lib.analysis.CachingAnalysisEnvironment;
-import com.google.devtools.build.lib.analysis.CachingAnalysisEnvironment.MissingDepException;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.ConfiguredTargetValue;
-import com.google.devtools.build.lib.analysis.DependencyKind;
-import com.google.devtools.build.lib.analysis.DependencyResolutionHelpers;
-import com.google.devtools.build.lib.analysis.ExecGroupCollection;
-import com.google.devtools.build.lib.analysis.ExecGroupCollection.InvalidExecGroupException;
-import com.google.devtools.build.lib.analysis.FilesToRunProvider;
-import com.google.devtools.build.lib.analysis.ResolvedToolchainContext;
-import com.google.devtools.build.lib.analysis.TargetAndConfiguration;
-import com.google.devtools.build.lib.analysis.ToolchainCollection;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.config.ConfigConditions;
-import com.google.devtools.build.lib.analysis.config.RunUnder.LabelRunUnder;
-import com.google.devtools.build.lib.analysis.config.StarlarkExecTransitionLoader.StarlarkExecTransitionLoadingException;
-import com.google.devtools.build.lib.analysis.configuredtargets.RuleConfiguredTarget;
-import com.google.devtools.build.lib.analysis.constraints.IncompatibleTargetChecker;
-import com.google.devtools.build.lib.analysis.producers.TargetAndConfigurationProducer;
-import com.google.devtools.build.lib.analysis.producers.TargetAndConfigurationProducer.TargetAndConfigurationError;
-import com.google.devtools.build.lib.analysis.test.AnalysisFailurePropagationException;
-import com.google.devtools.build.lib.causes.AnalysisFailedCause;
-import com.google.devtools.build.lib.causes.Cause;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventKind;
-import com.google.devtools.build.lib.events.StoredEventHandler;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.RuleClassProvider;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.rules.AliasConfiguredTarget;
-import com.google.devtools.build.lib.server.FailureDetails.Analysis;
-import com.google.devtools.build.lib.server.FailureDetails.Analysis.Code;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetEvaluationExceptions.DependencyException;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetEvaluationExceptions.ReportedException;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetEvaluationExceptions.UnreportedException;
-import com.google.devtools.build.lib.skyframe.SkyframeExecutor.BuildViewProvider;
-import com.google.devtools.build.lib.skyframe.serialization.SkyValueRetriever;
-import com.google.devtools.build.lib.skyframe.serialization.SkyValueRetriever.RetrievalContext;
-import com.google.devtools.build.lib.skyframe.serialization.SkyValueRetriever.SerializableSkyKeyComputeState;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCacheReaderDepsProvider;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCachingOptions.RemoteAnalysisCacheMode;
-import com.google.devtools.build.lib.skyframe.toolchains.ToolchainException;
-import com.google.devtools.build.lib.skyframe.toolchains.UnloadedToolchainContext;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.OrderedSetMultimap;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.state.Driver;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue.configurationIdMessage
 
 /**
- * SkyFunction for {@link ConfiguredTargetValue}s.
- *
- * <p>This class drives the analysis phase. For a review of the analysis phase, see {@link
- * com.google.devtools.build.lib.analysis.RuleConfiguredTargetFactory}.
- *
- * <p>This function computes a target's complete analysis: its input is a target label and
+ * SkyFunction for [ConfiguredTargetValue]s.
+ * 
+ * 
+ * This class drives the analysis phase. For a review of the analysis phase, see [ ].
+ * 
+ * 
+ * This function computes a target's complete analysis: its input is a target label and
  * configuration and its output is the target's actions. This implicitly constructs the build's
  * configured target and action graphs because a target's dependencies must be evaluated before the
  * target itself. If the build has multiple top-level targets, this is called for each one, and the
  * build-wide configured target and action graphs are the merged combination of each top-level call.
- *
- * <p>Multiple helper classes support this work, all called directly or indirectly from here:
- *
- * <ol>
- *   <li>{@link DependencyResolver}: Analysis consists of two important steps: computing the
- *       target's prerequisite dependencies and executing its rule logic. This class performs the
- *       first step. It also performs supporting computations like {@code config_setting} and
- *       toolchain resolution.
- *   <li>{@link DependencyResolutionHelpers}: Helper for {@link DependencyResolver}: figures out
- *       what this target's dependencies are and what their configurations should be.
- *   <li>{@link DependencyKind}: Structured representation of a dependency's type (e.g. rule
- *       attribute vs. toolchain dependency).
- *   <li>{@link AspectFunction}: Evaluates aspects attached to this target's dependencies.
- *   <li>{@link ConfiguredTargetFactory}: Executes this target's rule logic (and generally
- *       constructs its {@link ConfiguredTarget} once all prerequisites are ready).
- * </ol>
- *
- * <p>This list is not exhaustive.
- *
+ * 
+ * 
+ * Multiple helper classes support this work, all called directly or indirectly from here:
+ * 
+ * 
+ *  1. [DependencyResolver]: Analysis consists of two important steps: computing the
+ * target's prerequisite dependencies and executing its rule logic. This class performs the
+ * first step. It also performs supporting computations like `config_setting` and
+ * toolchain resolution.
+ *  1. [DependencyResolutionHelpers]: Helper for [DependencyResolver]: figures out
+ * what this target's dependencies are and what their configurations should be.
+ *  1. [DependencyKind]: Structured representation of a dependency's type (e.g. rule
+ * attribute vs. toolchain dependency).
+ *  1. [AspectFunction]: Evaluates aspects attached to this target's dependencies.
+ *  1. [ConfiguredTargetFactory]: Executes this target's rule logic (and generally
+ * constructs its [ConfiguredTarget] once all prerequisites are ready).
+ * 
+ * 
+ * 
+ * This list is not exhaustive.
+ * 
  * @see com.google.devtools.build.lib.analysis.RuleConfiguredTargetFactory
  */
-public final class ConfiguredTargetFunction implements SkyFunction {
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
+class ConfiguredTargetFunction internal constructor(
+    buildViewProvider: BuildViewProvider,
+    ruleClassProvider: RuleClassProvider,
+    cpuBoundSemaphore: AtomicReference<Semaphore?>,
+    storeTransitivePackages: Boolean,
+    shouldUnblockCpuWorkWhenFetchingDeps: Boolean,
+    analysisProgress: AnalysisProgressReceiver?,
+    prerequisitePackages: PrerequisitePackageFunction?,
+    cachingDependenciesSupplier: java.util.function.Supplier<RemoteAnalysisCacheReaderDepsProvider>
+) : SkyFunction {
+    private val buildViewProvider: BuildViewProvider
+    private val ruleClassProvider: RuleClassProvider
 
-  private final BuildViewProvider buildViewProvider;
-  private final RuleClassProvider ruleClassProvider;
-  // TODO(b/185987566): Remove this semaphore.
-  private final AtomicReference<Semaphore> cpuBoundSemaphore;
-  @Nullable private final AnalysisProgressReceiver analysisProgress;
-
-  /**
-   * Indicates whether the set of packages transitively loaded for a given {@link
-   * ConfiguredTargetValue} will be needed later (see {@link
-   * com.google.devtools.build.lib.analysis.ConfiguredObjectValue#getTransitivePackages}). If not,
-   * they are not collected and stored.
-   */
-  private final boolean storeTransitivePackages;
-
-  private final boolean shouldUnblockCpuWorkWhenFetchingDeps;
-
-  private final Supplier<RemoteAnalysisCacheReaderDepsProvider> cachingDependenciesSupplier;
-
-  /**
-   * Packages of prerequisites.
-   *
-   * <p>These packages are needed by {@link ConfiguredTarget}s that depend on them. Instead of
-   * declaring dependency edges on them in {@code Skyframe}, they can be looked up directly. The
-   * package dependency edge is already implied by configured target dependency edge.
-   *
-   * <p>It is only valid to use this to lookup packages of prerequisites. Using this to lookup the
-   * package of the primary configured target would cause incrementality errors because an essential
-   * dependency edge would not be registered.
-   */
-  private final PrerequisitePackageFunction prerequisitePackages;
-
-  ConfiguredTargetFunction(
-      BuildViewProvider buildViewProvider,
-      RuleClassProvider ruleClassProvider,
-      AtomicReference<Semaphore> cpuBoundSemaphore,
-      boolean storeTransitivePackages,
-      boolean shouldUnblockCpuWorkWhenFetchingDeps,
-      @Nullable AnalysisProgressReceiver analysisProgress,
-      PrerequisitePackageFunction prerequisitePackages,
-      Supplier<RemoteAnalysisCacheReaderDepsProvider> cachingDependenciesSupplier) {
-    this.buildViewProvider = buildViewProvider;
-    this.ruleClassProvider = ruleClassProvider;
-    this.cpuBoundSemaphore = cpuBoundSemaphore;
-    this.storeTransitivePackages = storeTransitivePackages;
-    this.shouldUnblockCpuWorkWhenFetchingDeps = shouldUnblockCpuWorkWhenFetchingDeps;
-    this.analysisProgress = analysisProgress;
-    this.prerequisitePackages = prerequisitePackages;
-    this.cachingDependenciesSupplier = cachingDependenciesSupplier;
-  }
-
-  private void maybeAcquireSemaphoreWithLogging(SkyKey key) throws InterruptedException {
-    if (cpuBoundSemaphore.get() == null) {
-      return;
-    }
-    Stopwatch stopwatch = Stopwatch.createStarted();
-    cpuBoundSemaphore.get().acquire();
-    long elapsedTime = stopwatch.elapsed().toMillis();
-    if (elapsedTime > 5) {
-      logger.atInfo().atMostEvery(10, TimeUnit.SECONDS).log(
-          "Spent %s milliseconds waiting for lock acquisition for %s", elapsedTime, key);
-    }
-  }
-
-  private void maybeReleaseSemaphore() {
-    if (cpuBoundSemaphore.get() != null) {
-      cpuBoundSemaphore.get().release();
-    }
-  }
-
-  private static class State
-      implements SerializableSkyKeyComputeState, TargetAndConfigurationProducer.ResultSink {
-    /**
-     * Drives a {@link TargetAndConfigurationProducer} that sets the {@link
-     * #targetAndConfigurationResult} when complete.
-     */
-    @Nullable // Non-null while in-flight.
-    private Driver targetAndConfigurationProducer;
+    // TODO(b/185987566): Remove this semaphore.
+    private val cpuBoundSemaphore: AtomicReference<Semaphore?>
+    private val analysisProgress: AnalysisProgressReceiver?
 
     /**
-     * Union-type output of {@link #targetAndConfigurationProducer}.
-     *
-     * <ul>
-     *   <li>{@link ConfiguredTargetKey}: if the result was a {@link TargetAndConfiguration}, set in
-     *       {@link DependencyResolver.State#targetAndConfiguration}.
-     *   <li>{@link ConfiguredTargetValue}: an immediate value. This occurs when applying the rule
-     *       transition to the {@link ConfiguredTargetKey} results in a previously computed key.
-     *   <li>{@link TargetAndConfigurationError}: if an error occurred.
-     * </ul>
+     * Indicates whether the set of packages transitively loaded for a given [ ] will be needed later (see [ ][com.google.devtools.build.lib.analysis.ConfiguredObjectValue.getTransitivePackages]). If not,
+     * they are not collected and stored.
      */
-    private Object targetAndConfigurationResult;
+    private val storeTransitivePackages: Boolean
 
-    final DependencyResolver.State computeDependenciesState;
+    private val shouldUnblockCpuWorkWhenFetchingDeps: Boolean
 
-    @Nullable // Initialized lazily
-    private RetrievalContext retrievalContext = null;
+    private val cachingDependenciesSupplier: java.util.function.Supplier<RemoteAnalysisCacheReaderDepsProvider>
 
-    State(boolean storeTransitivePackages, PrerequisitePackageFunction prerequisitePackages) {
-      this.computeDependenciesState =
-          new DependencyResolver.State(storeTransitivePackages, prerequisitePackages);
+    /**
+     * Packages of prerequisites.
+     * 
+     * 
+     * These packages are needed by [ConfiguredTarget]s that depend on them. Instead of
+     * declaring dependency edges on them in `Skyframe`, they can be looked up directly. The
+     * package dependency edge is already implied by configured target dependency edge.
+     * 
+     * 
+     * It is only valid to use this to lookup packages of prerequisites. Using this to lookup the
+     * package of the primary configured target would cause incrementality errors because an essential
+     * dependency edge would not be registered.
+     */
+    private val prerequisitePackages: PrerequisitePackageFunction?
+
+    init {
+        this.buildViewProvider = buildViewProvider
+        this.ruleClassProvider = ruleClassProvider
+        this.cpuBoundSemaphore = cpuBoundSemaphore
+        this.storeTransitivePackages = storeTransitivePackages
+        this.shouldUnblockCpuWorkWhenFetchingDeps = shouldUnblockCpuWorkWhenFetchingDeps
+        this.analysisProgress = analysisProgress
+        this.prerequisitePackages = prerequisitePackages
+        this.cachingDependenciesSupplier = cachingDependenciesSupplier
     }
 
-    @Override
-    public void acceptTargetAndConfiguration(
-        TargetAndConfiguration value, ConfiguredTargetKey fullKey) {
-      computeDependenciesState.targetAndConfiguration = value;
-      this.targetAndConfigurationResult = fullKey;
-    }
-
-    @Override
-    public void acceptTargetAndConfigurationDelegatedValue(ConfiguredTargetValue value) {
-      this.targetAndConfigurationResult = value;
-    }
-
-    @Override
-    public void acceptTargetAndConfigurationError(TargetAndConfigurationError error) {
-      this.targetAndConfigurationResult = error;
-    }
-
-    @Override
-    public RetrievalContext getRetrievalContext() {
-      if (retrievalContext == null) {
-        retrievalContext = new RetrievalContext();
-      }
-
-      return retrievalContext;
-    }
-  }
-
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey key, Environment env)
-      throws ReportedException, UnreportedException, DependencyException, InterruptedException {
-    Supplier<State> stateSupplier = () -> new State(storeTransitivePackages, prerequisitePackages);
-    ConfiguredTargetKey configuredTargetKey = (ConfiguredTargetKey) key.argument();
-    SkyframeBuildView view = buildViewProvider.getSkyframeBuildView();
-
-    if (shouldUnblockCpuWorkWhenFetchingDeps) {
-      // Fetching blocks on other resources, so we don't want to hold on to the semaphore meanwhile.
-      // TODO(b/194319860): remove this and DependencyResolver.SemaphoreAcquirer when we no need
-      // semaphore locking.
-      env =
-          new StateInformingSkyFunctionEnvironment(
-              env,
-              /* preFetch= */ this::maybeReleaseSemaphore,
-              /* postFetch= */ () -> maybeAcquireSemaphoreWithLogging(key));
-    }
-
-    RemoteAnalysisCacheReaderDepsProvider remoteCachingDependencies =
-        cachingDependenciesSupplier.get();
-    if (remoteCachingDependencies.mode().isRetrievalEnabled()) {
-      switch (retrieveRemoteSkyValue(
-          configuredTargetKey, env, remoteCachingDependencies, stateSupplier)) {
-        case SkyValueRetriever.Restart unused:
-          return null;
-        case SkyValueRetriever.RetrievedValue v:
-          analysisProgress.doneDownloadedConfiguredTarget();
-          return v.value();
-        case SkyValueRetriever.NoCachedData unused:
-          break;
-      }
-    }
-
-    State state = env.getState(stateSupplier);
-    var computeDependenciesState = state.computeDependenciesState;
-    if (computeDependenciesState.targetAndConfiguration == null) {
-      computeTargetAndConfiguration(env, state, configuredTargetKey);
-      // Any `TargetAndConfigurationError` has already been handled, so `result` can only
-      // be null, a `ConfiguredTargetKey` or a `ConfiguredTargetValue`.
-      Object result = state.targetAndConfigurationResult;
-      if (!(result instanceof ConfiguredTargetKey)) {
-        return (ConfiguredTargetValue) result; // Null or an immediate `ConfiguredTargetValue`.
-      }
-      // Otherwise, `result` contains a `ConfiguredTargetKey`.
-    }
-
-    configuredTargetKey = (ConfiguredTargetKey) state.targetAndConfigurationResult;
-    DependencyResolver prereqs =
-        new DependencyResolver(computeDependenciesState.targetAndConfiguration);
-    try {
-      // Perform all analysis through dependency evaluation.
-      if (!prereqs.evaluate(
-          state.computeDependenciesState,
-          configuredTargetKey,
-          ruleClassProvider,
-          view.getStarlarkTransitionCache(),
-          () -> maybeAcquireSemaphoreWithLogging(key),
-          env,
-          env.getListener())) {
-        return null;
-      }
-      Preconditions.checkNotNull(prereqs.getDepValueMap());
-
-      // If one of our dependencies is platform-incompatible with this build, so are we.
-      Optional<RuleConfiguredTargetValue> incompatibleTarget =
-          IncompatibleTargetChecker.createIndirectlyIncompatibleTarget(
-              prereqs.getTargetAndConfiguration(),
-              configuredTargetKey,
-              prereqs.getDepValueMap(),
-              prereqs.getConfigConditions(),
-              prereqs.getPlatformInfo(),
-              computeDependenciesState.transitiveState);
-      if (incompatibleTarget.isPresent()) {
-        return incompatibleTarget.get();
-      }
-
-      // IF this build has a --run_under target, check it's an executable. We have to check this at
-      // the parent: --run_under targets are configured in the exec configuration, but the
-      // --run_under build option doesn't pass to the exec config.
-      BuildConfigurationValue config = prereqs.getTargetAndConfiguration().getConfiguration();
-      if (config != null && config.getRunUnder() instanceof LabelRunUnder runUnder) {
-        Optional<ConfiguredTarget> runUnderTarget =
-            prereqs.getDepValueMap().values().stream()
-                .map(ConfiguredTargetAndData::getConfiguredTarget)
-                .filter(d -> d.getLabel().equals(runUnder.label()))
-                .findAny();
-        if (runUnderTarget.isPresent()
-            && runUnderTarget.get().getProvider(FilesToRunProvider.class).getExecutable() == null) {
-          throw new ConfiguredValueCreationException(
-              prereqs.getTargetAndConfiguration().getTarget(),
-              "run_under target " + runUnder.label() + " is not executable");
+    @Throws(java.lang.InterruptedException::class)
+    private fun maybeAcquireSemaphoreWithLogging(key: SkyKey?) {
+        if (cpuBoundSemaphore.get() == null) {
+            return
         }
-      }
-
-      // Load the requested toolchains into the ToolchainContext, now that we have dependencies.
-      ToolchainCollection<ResolvedToolchainContext> toolchainContexts = null;
-      if (prereqs.getUnloadedToolchainContexts() != null) {
-        String targetDescription = prereqs.getTargetAndConfiguration().getTarget().toString();
-        ToolchainCollection.Builder<ResolvedToolchainContext> contextsBuilder =
-            ToolchainCollection.builder();
-        for (Map.Entry<String, UnloadedToolchainContext> unloadedContext :
-            prereqs.getUnloadedToolchainContexts().contextMap().entrySet()) {
-          ImmutableSet<ConfiguredTargetAndData> toolchainDependencies =
-              ImmutableSet.copyOf(
-                  prereqs
-                      .getDepValueMap()
-                      .get(DependencyKind.forExecGroup(unloadedContext.getKey())));
-          contextsBuilder.addContext(
-              unloadedContext.getKey(),
-              ResolvedToolchainContext.load(
-                  unloadedContext.getValue(), targetDescription, toolchainDependencies));
+        val stopwatch: com.google.common.base.Stopwatch = com.google.common.base.Stopwatch.createStarted()
+        cpuBoundSemaphore.get().acquire()
+        val elapsedTime: Long = stopwatch.elapsed().toMillis()
+        if (elapsedTime > 5) {
+            logger.atInfo().atMostEvery(10, TimeUnit.SECONDS).log(
+                "Spent %s milliseconds waiting for lock acquisition for %s", elapsedTime, key
+            )
         }
-        toolchainContexts = contextsBuilder.build();
-      }
-
-      // Run this target's rule logic to create its actions and return its ConfiguredTargetValue.
-      ConfiguredTargetValue ans =
-          createConfiguredTarget(
-              view,
-              env,
-              prereqs.getTargetAndConfiguration(),
-              configuredTargetKey,
-              prereqs.getDepValueMap(),
-              prereqs.getMaterializerTargets(),
-              prereqs.getConfigConditions(),
-              toolchainContexts,
-              computeDependenciesState.execGroupCollectionBuilder,
-              state.computeDependenciesState.transitivePackages(),
-              /* crashIfExecutionPhase= */ !remoteCachingDependencies.mode().isRetrievalEnabled(),
-              remoteCachingDependencies.mode());
-      if (ans != null && analysisProgress != null) {
-        analysisProgress.doneConfigureTarget();
-      }
-      return ans;
-    } catch (IncompatibleTargetChecker.IncompatibleTargetException e) {
-      return e.target();
-    } catch (ConfiguredValueCreationException e) {
-      if (!e.getMessage().isEmpty()) {
-        // Report the error to the user.
-        env.getListener().handle(Event.error(e.getLocation(), e.getMessage()));
-      }
-      throw new ReportedException(e);
-    } catch (ToolchainException e) {
-      ConfiguredValueCreationException cvce =
-          e.asConfiguredValueCreationException(prereqs.getTargetAndConfiguration());
-      env.getListener()
-          .handle(
-              Event.error(
-                  prereqs.getTargetAndConfiguration().getTarget().getLocation(),
-                  cvce.getMessage()));
-      throw new ReportedException(cvce);
-    } catch (ActionConflictException e) {
-      // The reporting will be done when going through errors in the build.
-      throw new UnreportedException(e);
-    } finally {
-      maybeReleaseSemaphore();
-    }
-  }
-
-  @Override
-  public String extractTag(SkyKey skyKey) {
-    return Label.print(((ConfiguredTargetKey) skyKey.argument()).getLabel());
-  }
-
-  @SuppressWarnings("LenientFormatStringValidation")
-  @Nullable
-  private static ConfiguredTargetValue createConfiguredTarget(
-      SkyframeBuildView view,
-      Environment env,
-      TargetAndConfiguration ctgValue,
-      ConfiguredTargetKey configuredTargetKey,
-      OrderedSetMultimap<DependencyKind, ConfiguredTargetAndData> depValueMap,
-      @Nullable OrderedSetMultimap<DependencyKind, ConfiguredTargetAndData> materializerTargets,
-      ConfigConditions configConditions,
-      @Nullable ToolchainCollection<ResolvedToolchainContext> toolchainContexts,
-      ExecGroupCollection.Builder execGroupCollectionBuilder,
-      @Nullable NestedSet<Package.Metadata> transitivePackages,
-      boolean crashIfExecutionPhase,
-      RemoteAnalysisCacheMode remoteAnalysisCacheMode)
-      throws ConfiguredValueCreationException, InterruptedException, ActionConflictException {
-    Target target = ctgValue.getTarget();
-    BuildConfigurationValue configuration = ctgValue.getConfiguration();
-
-    // Should be successfully evaluated and cached from the loading phase.
-    StarlarkBuiltinsValue starlarkBuiltinsValue =
-        (StarlarkBuiltinsValue) env.getValue(StarlarkBuiltinsValue.key());
-    if (starlarkBuiltinsValue == null) {
-      return null;
     }
 
-    StoredEventHandler events = new StoredEventHandler();
-    CachingAnalysisEnvironment analysisEnvironment =
-        view.createAnalysisEnvironment(
-            configuredTargetKey, events, env, configuration, starlarkBuiltinsValue);
-
-    Preconditions.checkNotNull(depValueMap);
-    ConfiguredTarget configuredTarget;
-    try {
-      configuredTarget =
-          view.createConfiguredTarget(
-              target,
-              configuration,
-              analysisEnvironment,
-              configuredTargetKey,
-              depValueMap,
-              materializerTargets,
-              configConditions,
-              toolchainContexts,
-              transitivePackages,
-              execGroupCollectionBuilder,
-              crashIfExecutionPhase);
-    } catch (MissingDepException e) {
-      Preconditions.checkState(env.valuesMissing(), e.getMessage());
-      return null;
-    } catch (InvalidExecGroupException | StarlarkExecTransitionLoadingException e) {
-      throw new ConfiguredValueCreationException(ctgValue.getTarget(), e.getMessage());
-    } catch (AnalysisFailurePropagationException e) {
-      throw new ConfiguredValueCreationException(
-          ctgValue.getTarget(),
-          /* buildEventId */ null,
-          e.getMessage(),
-          /* rootCauses= */ null,
-          e.getDetailedExitCode());
-    }
-
-    events.replayOn(env.getListener());
-    if (events.hasErrors()) {
-      analysisEnvironment.disable(target);
-      NestedSet<Cause> rootCauses =
-          NestedSetBuilder.wrap(
-              Order.STABLE_ORDER,
-              events.getEvents().stream()
-                  .filter((event) -> event.getKind() == EventKind.ERROR)
-                  .map(
-                      (event) ->
-                          new AnalysisFailedCause(
-                              target.getLabel(),
-                              configurationIdMessage(configuration),
-                              createDetailedExitCode(event.getMessage())))
-                  .collect(toImmutableList()));
-      throw new ConfiguredValueCreationException(
-          ctgValue.getTarget(),
-          null,
-          "Analysis of target '%s' (config: %s) failed"
-              .formatted(
-                  target.getLabel(),
-                  configuration != null ? configuration.getOptions().shortId() : "none"),
-          rootCauses,
-          null);
-    }
-    Preconditions.checkState(
-        !analysisEnvironment.hasErrors(), "Analysis environment hasError() but no errors reported");
-    if (env.valuesMissing()) {
-      return null;
-    }
-
-    analysisEnvironment.disable(target);
-    Preconditions.checkNotNull(configuredTarget, target);
-
-    if (configuredTarget instanceof RuleConfiguredTarget ruleConfiguredTarget) {
-      return new RuleConfiguredTargetValue(ruleConfiguredTarget, transitivePackages);
-    } else {
-      // Expected 4 args, but got 3.
-      Preconditions.checkState(
-          analysisEnvironment.getRegisteredActions().isEmpty(),
-          "Non-rule can't have actions: %s %s %s",
-          configuredTargetKey,
-          analysisEnvironment.getRegisteredActions(),
-          configuredTarget);
-      // If this is a Skycache download build, we check if it's an alias. For remote values, the
-      // package isn't present but the target data is present
-      if (remoteAnalysisCacheMode == RemoteAnalysisCacheMode.DOWNLOAD
-          && configuredTarget instanceof AliasConfiguredTarget alias) {
-        ConfiguredTargetValue configuredTargetValue =
-            (ConfiguredTargetValue) env.getValue(alias.getActual().getLookupKey());
-        // TODO: b/431749743 - The actual target's ConfiguredTargetValue is not a dependency of the
-        // alias's ConfiguredTargetValue. Still need to clarify why.
-        if (configuredTargetValue == null) {
-          return null;
+    private fun maybeReleaseSemaphore() {
+        if (cpuBoundSemaphore.get() != null) {
+            cpuBoundSemaphore.get().release()
         }
-        if (configuredTargetValue
-            instanceof RemoteConfiguredTargetValue remoteConfiguredTargetValue) {
-          return new NonRuleConfiguredTargetValue(
-              configuredTarget, transitivePackages, remoteConfiguredTargetValue.getTargetData());
-        }
-      }
-      return new NonRuleConfiguredTargetValue(configuredTarget, transitivePackages);
     }
-  }
 
-  private void computeTargetAndConfiguration(
-      Environment env, State state, ConfiguredTargetKey configuredTargetKey)
-      throws DependencyException, ReportedException, InterruptedException {
-    StoredEventHandler storedEvents = state.computeDependenciesState.storedEvents;
-    Object result = null;
-    boolean completedWithoutExceptions = false;
-    try {
-      if (state.targetAndConfigurationProducer == null) {
-        state.targetAndConfigurationProducer =
-            new Driver(
-                new TargetAndConfigurationProducer(
-                    configuredTargetKey,
-                    ((ConfiguredRuleClassProvider) ruleClassProvider)
-                        .getTrimmingTransitionFactory(),
-                    ((ConfiguredRuleClassProvider) ruleClassProvider)
-                        .getToolchainTaggedTrimmingTransition(),
-                    buildViewProvider.getSkyframeBuildView().getStarlarkTransitionCache(),
-                    state.computeDependenciesState.transitiveState,
-                    (TargetAndConfigurationProducer.ResultSink) state,
-                    storedEvents));
-      }
-      if (state.targetAndConfigurationProducer.drive(env)) {
-        state.targetAndConfigurationProducer = null;
-      }
-      result = state.targetAndConfigurationResult;
-      if (result instanceof TargetAndConfigurationError error) {
-        switch (error.kind()) {
-          case CONFIGURED_VALUE_CREATION:
-            ConfiguredValueCreationException e = error.configuredValueCreation();
-            if (!e.getMessage().isEmpty()) {
-              // Reports the error to the user on storedEvents to preserve ordering. These will
-              // be immediately replayed in the finally clause.
-              storedEvents.post(
-                  // Even without an error here, the configuration key might not be turned into a
-                  // configuration value by the build because it does not include the rule
-                  // transition. It's therefore marked unavailable.
-                  AnalysisRootCauseEvent.withUnavailableConfiguration(
-                      configurationIdMessage(configuredTargetKey.getConfigurationKey()),
-                      configuredTargetKey.getLabel(),
-                      e.getMessage()));
-              storedEvents.handle(Event.error(e.getLocation(), e.getMessage()));
+    private class State
+        (storeTransitivePackages: Boolean, prerequisitePackages: PrerequisitePackageFunction?) :
+        SerializableSkyKeyComputeState, TargetAndConfigurationProducer.ResultSink {
+        /**
+         * Drives a [TargetAndConfigurationProducer] that sets the [ ][.targetAndConfigurationResult] when complete.
+         */
+        // Non-null while in-flight.
+        private var targetAndConfigurationProducer: com.google.devtools.build.skyframe.state.Driver? = null
+
+        /**
+         * Union-type output of [.targetAndConfigurationProducer].
+         * 
+         * 
+         *  * [ConfiguredTargetKey]: if the result was a [TargetAndConfiguration], set in
+         * [DependencyResolver.State.targetAndConfiguration].
+         *  * [ConfiguredTargetValue]: an immediate value. This occurs when applying the rule
+         * transition to the [ConfiguredTargetKey] results in a previously computed key.
+         *  * [TargetAndConfigurationError]: if an error occurred.
+         * 
+         */
+        private var targetAndConfigurationResult: Any? = null
+
+        val computeDependenciesState: com.google.devtools.build.lib.skyframe.DependencyResolver.State
+
+        // Initialized lazily
+        var retrievalContext: RetrievalContext? = null
+            get() {
+                if (field == null) {
+                    field = RetrievalContext()
+                }
+
+                return field
             }
-            throw new ReportedException(e);
-          case NO_SUCH_THING:
-            throw new DependencyException(error.noSuchThing());
-          case INCONSISTENT_NULL_CONFIG:
-            throw new DependencyException(error.inconsistentNullConfig());
-        }
-      }
-      completedWithoutExceptions = true; // Marks the fact that there were no exceptions.
-    } finally {
-      // If there is exception or an immediate value ...
-      if (!completedWithoutExceptions || result instanceof ConfiguredTargetValue) {
-        // ... replays events because `ConfiguredTargetFunction.compute` will promptly end.
-        storedEvents.replayOn(env.getListener());
-      }
-      // Otherwise either:
-      // 1. the result is null for a restart, so replayed events would not be used anyway; or
-      // 2. the result is a `TargetAndConfiguration` value and
-      //    `DependencyResolver.computeDependencies` takes ownership of stored events.
-    }
-  }
+            private set
 
-  private static DetailedExitCode createDetailedExitCode(String message) {
-    return DetailedExitCode.of(
-        FailureDetail.newBuilder()
-            .setMessage(message)
-            .setAnalysis(Analysis.newBuilder().setCode(Code.CONFIGURED_VALUE_CREATION_FAILED))
-            .build());
-  }
+        init {
+            this.computeDependenciesState =
+                com.google.devtools.build.lib.skyframe.DependencyResolver.State(
+                    storeTransitivePackages,
+                    prerequisitePackages
+                )
+        }
+
+        public override fun acceptTargetAndConfiguration(
+            value: TargetAndConfiguration?, fullKey: ConfiguredTargetKey?
+        ) {
+            computeDependenciesState.targetAndConfiguration = value
+            this.targetAndConfigurationResult = fullKey
+        }
+
+        public override fun acceptTargetAndConfigurationDelegatedValue(value: ConfiguredTargetValue?) {
+            this.targetAndConfigurationResult = value
+        }
+
+        public override fun acceptTargetAndConfigurationError(error: TargetAndConfigurationError?) {
+            this.targetAndConfigurationResult = error
+        }
+    }
+
+    @Throws(
+        ReportedException::class,
+        UnreportedException::class,
+        DependencyException::class,
+        java.lang.InterruptedException::class
+    )
+    override fun compute(key: SkyKey, env: SkyFunction.Environment): SkyValue? {
+        var env: SkyFunction.Environment = env
+        val stateSupplier: java.util.function.Supplier<State?> = java.util.function.Supplier {
+            com.google.devtools.build.lib.skyframe.ConfiguredTargetFunction.State(
+                storeTransitivePackages,
+                prerequisitePackages
+            )
+        }
+        var configuredTargetKey: ConfiguredTargetKey = key.argument() as ConfiguredTargetKey
+        val view: SkyframeBuildView = buildViewProvider.getSkyframeBuildView()
+
+        if (shouldUnblockCpuWorkWhenFetchingDeps) {
+            // Fetching blocks on other resources, so we don't want to hold on to the semaphore meanwhile.
+            // TODO(b/194319860): remove this and DependencyResolver.SemaphoreAcquirer when we no need
+            // semaphore locking.
+            env =
+                StateInformingSkyFunctionEnvironment(
+                    env,  /* preFetch= */
+                    Informee { this.maybeReleaseSemaphore() },  /* postFetch= */
+                    Informee { maybeAcquireSemaphoreWithLogging(key) })
+        }
+
+        val remoteCachingDependencies: RemoteAnalysisCacheReaderDepsProvider =
+            cachingDependenciesSupplier.get()
+        if (remoteCachingDependencies.mode().isRetrievalEnabled()) {
+            when (SkyValueRetrieverUtils.retrieveRemoteSkyValue(
+                configuredTargetKey, env, remoteCachingDependencies, stateSupplier
+            )) {
+                -> return null
+                -> {
+                    analysisProgress.doneDownloadedConfiguredTarget()
+                    return v.value()
+                }
+
+                -> {}
+            }
+        }
+
+        val state: State = env.getState<T>(stateSupplier)
+        val computeDependenciesState: com.google.devtools.build.lib.skyframe.DependencyResolver.State =
+            state.computeDependenciesState
+        if (computeDependenciesState.targetAndConfiguration == null) {
+            computeTargetAndConfiguration(env, state, configuredTargetKey)
+            // Any `TargetAndConfigurationError` has already been handled, so `result` can only
+            // be null, a `ConfiguredTargetKey` or a `ConfiguredTargetValue`.
+            val result = state.targetAndConfigurationResult
+            if (result !is ConfiguredTargetKey) {
+                return result as ConfiguredTargetValue? // Null or an immediate `ConfiguredTargetValue`.
+            }
+            // Otherwise, `result` contains a `ConfiguredTargetKey`.
+        }
+
+        configuredTargetKey = state.targetAndConfigurationResult as ConfiguredTargetKey
+        val prereqs: DependencyResolver =
+            DependencyResolver(computeDependenciesState.targetAndConfiguration)
+        try {
+            // Perform all analysis through dependency evaluation.
+            if (!prereqs.evaluate(
+                    state.computeDependenciesState,
+                    configuredTargetKey,
+                    ruleClassProvider,
+                    view.getStarlarkTransitionCache(),
+                    SemaphoreAcquirer { maybeAcquireSemaphoreWithLogging(key) },
+                    env,
+                    env.getListener()
+                )
+            ) {
+                return null
+            }
+            com.google.common.base.Preconditions.checkNotNull<OrderedSetMultimap<DependencyKind?, ConfiguredTargetAndData?>?>(
+                prereqs.getDepValueMap()
+            )
+
+            // If one of our dependencies is platform-incompatible with this build, so are we.
+            val incompatibleTarget: java.util.Optional<RuleConfiguredTargetValue?> =
+                IncompatibleTargetChecker.createIndirectlyIncompatibleTarget(
+                    prereqs.getTargetAndConfiguration(),
+                    configuredTargetKey,
+                    prereqs.getDepValueMap(),
+                    prereqs.getConfigConditions(),
+                    prereqs.getPlatformInfo(),
+                    computeDependenciesState.transitiveState
+                )
+            if (incompatibleTarget.isPresent()) {
+                return incompatibleTarget.get()
+            }
+
+            // IF this build has a --run_under target, check it's an executable. We have to check this at
+            // the parent: --run_under targets are configured in the exec configuration, but the
+            // --run_under build option doesn't pass to the exec config.
+            val config: BuildConfigurationValue? = prereqs.getTargetAndConfiguration().getConfiguration()
+            if (config != null && config.getRunUnder() is LabelRunUnder) {
+                val runUnderTarget: java.util.Optional<ConfiguredTarget?> =
+                    prereqs.getDepValueMap().values().stream()
+                        .map<Any?>(ConfiguredTargetAndData::getConfiguredTarget)
+                        .filter(java.util.function.Predicate { d: Any? -> d.getLabel().equals(runUnder.label()) })
+                        .findAny()
+                if (runUnderTarget.isPresent()
+                    && runUnderTarget.get().getProvider(FilesToRunProvider::class.java).getExecutable() == null
+                ) {
+                    throw ConfiguredValueCreationException(
+                        prereqs.getTargetAndConfiguration().getTarget(),
+                        "run_under target " + runUnder.label() + " is not executable"
+                    )
+                }
+            }
+
+            // Load the requested toolchains into the ToolchainContext, now that we have dependencies.
+            var toolchainContexts: ToolchainCollection<ResolvedToolchainContext?>? = null
+            if (prereqs.getUnloadedToolchainContexts() != null) {
+                val targetDescription: String? = prereqs.getTargetAndConfiguration().getTarget().toString()
+                val contextsBuilder: ToolchainCollection.Builder<ResolvedToolchainContext?> =
+                    ToolchainCollection.builder()
+                for (unloadedContext in prereqs.getUnloadedToolchainContexts().contextMap().entrySet()) {
+                    val toolchainDependencies: com.google.common.collect.ImmutableSet<ConfiguredTargetAndData?> =
+                        com.google.common.collect.ImmutableSet.copyOf<ConfiguredTargetAndData?>(
+                            prereqs
+                                .getDepValueMap()
+                                .get(DependencyKind.forExecGroup(unloadedContext.getKey()))
+                        )
+                    contextsBuilder.addContext(
+                        unloadedContext.getKey(),
+                        ResolvedToolchainContext.load(
+                            unloadedContext.getValue(), targetDescription, toolchainDependencies
+                        )
+                    )
+                }
+                toolchainContexts = contextsBuilder.build()
+            }
+
+            // Run this target's rule logic to create its actions and return its ConfiguredTargetValue.
+            val ans: ConfiguredTargetValue? =
+                createConfiguredTarget(
+                    view,
+                    env,
+                    prereqs.getTargetAndConfiguration(),
+                    configuredTargetKey,
+                    prereqs.getDepValueMap(),
+                    prereqs.getMaterializerTargets(),
+                    prereqs.getConfigConditions(),
+                    toolchainContexts,
+                    computeDependenciesState.execGroupCollectionBuilder,
+                    state.computeDependenciesState.transitivePackages(),  /* crashIfExecutionPhase= */
+                    !remoteCachingDependencies.mode().isRetrievalEnabled(),
+                    remoteCachingDependencies.mode()
+                )
+            if (ans != null && analysisProgress != null) {
+                analysisProgress.doneConfigureTarget()
+            }
+            return ans
+        } catch (e: IncompatibleTargetChecker.IncompatibleTargetException) {
+            return e.target()
+        } catch (e: ConfiguredValueCreationException) {
+            if (!e.getMessage().isEmpty()) {
+                // Report the error to the user.
+                env.getListener()
+                    .handle(com.google.devtools.build.lib.events.Event.error(e.getLocation(), e.getMessage()))
+            }
+            throw ReportedException(e)
+        } catch (e: ToolchainException) {
+            val cvce: ConfiguredValueCreationException =
+                e.asConfiguredValueCreationException(prereqs.getTargetAndConfiguration())
+            env.getListener()
+                .handle(
+                    com.google.devtools.build.lib.events.Event.error(
+                        prereqs.getTargetAndConfiguration().getTarget().getLocation(),
+                        cvce.getMessage()
+                    )
+                )
+            throw ReportedException(cvce)
+        } catch (e: ActionConflictException) {
+            // The reporting will be done when going through errors in the build.
+            throw UnreportedException(e)
+        } finally {
+            maybeReleaseSemaphore()
+        }
+    }
+
+    override fun extractTag(skyKey: SkyKey): String {
+        return Label.print((skyKey.argument() as ConfiguredTargetKey).getLabel())
+    }
+
+    @Throws(DependencyException::class, ReportedException::class, java.lang.InterruptedException::class)
+    private fun computeTargetAndConfiguration(
+        env: SkyFunction.Environment, state: State, configuredTargetKey: ConfiguredTargetKey
+    ) {
+        val storedEvents: StoredEventHandler = state.computeDependenciesState.storedEvents
+        var result: Any? = null
+        var completedWithoutExceptions = false
+        try {
+            if (state.targetAndConfigurationProducer == null) {
+                state.targetAndConfigurationProducer =
+                    com.google.devtools.build.skyframe.state.Driver(
+                        TargetAndConfigurationProducer(
+                            configuredTargetKey,
+                            (ruleClassProvider as ConfiguredRuleClassProvider)
+                                .getTrimmingTransitionFactory(),
+                            (ruleClassProvider as ConfiguredRuleClassProvider)
+                                .getToolchainTaggedTrimmingTransition(),
+                            buildViewProvider.getSkyframeBuildView().getStarlarkTransitionCache(),
+                            state.computeDependenciesState.transitiveState,
+                            state as TargetAndConfigurationProducer.ResultSink,
+                            storedEvents
+                        )
+                    )
+            }
+            if (state.targetAndConfigurationProducer.drive(env)) {
+                state.targetAndConfigurationProducer = null
+            }
+            result = state.targetAndConfigurationResult
+            if (result is TargetAndConfigurationError) {
+                when (result.kind()) {
+                    CONFIGURED_VALUE_CREATION -> {
+                        val e: ConfiguredValueCreationException = result.configuredValueCreation()
+                        if (!e.getMessage().isEmpty()) {
+                            // Reports the error to the user on storedEvents to preserve ordering. These will
+                            // be immediately replayed in the finally clause.
+                            storedEvents.post( // Even without an error here, the configuration key might not be turned into a
+                                // configuration value by the build because it does not include the rule
+                                // transition. It's therefore marked unavailable.
+                                AnalysisRootCauseEvent.withUnavailableConfiguration(
+                                    configurationIdMessage(configuredTargetKey.getConfigurationKey()),
+                                    configuredTargetKey.getLabel(),
+                                    e.getMessage()
+                                )
+                            )
+                            storedEvents.handle(
+                                com.google.devtools.build.lib.events.Event.error(
+                                    e.getLocation(),
+                                    e.getMessage()
+                                )
+                            )
+                        }
+                        throw ReportedException(e)
+                    }
+
+                    NO_SUCH_THING -> throw DependencyException(result.noSuchThing())
+                    INCONSISTENT_NULL_CONFIG -> throw DependencyException(result.inconsistentNullConfig())
+                }
+            }
+            completedWithoutExceptions = true // Marks the fact that there were no exceptions.
+        } finally {
+            // If there is exception or an immediate value ...
+            if (!completedWithoutExceptions || result is ConfiguredTargetValue) {
+                // ... replays events because `ConfiguredTargetFunction.compute` will promptly end.
+                storedEvents.replayOn(env.getListener())
+            }
+            // Otherwise either:
+            // 1. the result is null for a restart, so replayed events would not be used anyway; or
+            // 2. the result is a `TargetAndConfiguration` value and
+            //    `DependencyResolver.computeDependencies` takes ownership of stored events.
+        }
+    }
+
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+
+        @Throws(
+            ConfiguredValueCreationException::class,
+            java.lang.InterruptedException::class,
+            ActionConflictException::class
+        )
+        private fun createConfiguredTarget(
+            view: SkyframeBuildView,
+            env: SkyFunction.Environment,
+            ctgValue: TargetAndConfiguration,
+            configuredTargetKey: ConfiguredTargetKey?,
+            depValueMap: OrderedSetMultimap<DependencyKind?, ConfiguredTargetAndData?>?,
+            materializerTargets: OrderedSetMultimap<DependencyKind?, ConfiguredTargetAndData?>?,
+            configConditions: ConfigConditions?,
+            toolchainContexts: ToolchainCollection<ResolvedToolchainContext?>?,
+            execGroupCollectionBuilder: ExecGroupCollection.Builder?,
+            transitivePackages: NestedSet<Package.Metadata?>?,
+            crashIfExecutionPhase: Boolean,
+            remoteAnalysisCacheMode: RemoteAnalysisCacheMode?
+        ): ConfiguredTargetValue? {
+            val target: Target = ctgValue.getTarget()
+            val configuration: BuildConfigurationValue? = ctgValue.getConfiguration()
+
+            // Should be successfully evaluated and cached from the loading phase.
+            val starlarkBuiltinsValue: StarlarkBuiltinsValue? =
+                env.getValue(StarlarkBuiltinsValue.Companion.key()) as StarlarkBuiltinsValue?
+            if (starlarkBuiltinsValue == null) {
+                return null
+            }
+
+            val events: StoredEventHandler = StoredEventHandler()
+            val analysisEnvironment: CachingAnalysisEnvironment =
+                view.createAnalysisEnvironment(
+                    configuredTargetKey, events, env, configuration, starlarkBuiltinsValue
+                )
+
+            com.google.common.base.Preconditions.checkNotNull<OrderedSetMultimap<DependencyKind?, ConfiguredTargetAndData?>?>(
+                depValueMap
+            )
+            val configuredTarget: ConfiguredTarget?
+            try {
+                configuredTarget =
+                    view.createConfiguredTarget(
+                        target,
+                        configuration,
+                        analysisEnvironment,
+                        configuredTargetKey,
+                        depValueMap,
+                        materializerTargets,
+                        configConditions,
+                        toolchainContexts,
+                        transitivePackages,
+                        execGroupCollectionBuilder,
+                        crashIfExecutionPhase
+                    )
+            } catch (e: MissingDepException) {
+                com.google.common.base.Preconditions.checkState(env.valuesMissing(), e.getMessage())
+                return null
+            } catch (e: InvalidExecGroupException) {
+                throw ConfiguredValueCreationException(ctgValue.getTarget(), e.getMessage())
+            } catch (e: StarlarkExecTransitionLoadingException) {
+                throw ConfiguredValueCreationException(ctgValue.getTarget(), e.getMessage())
+            } catch (e: AnalysisFailurePropagationException) {
+                throw ConfiguredValueCreationException(
+                    ctgValue.getTarget(),  /* buildEventId */
+                    null,
+                    e.getMessage(),  /* rootCauses= */
+                    null,
+                    e.getDetailedExitCode()
+                )
+            }
+
+            events.replayOn(env.getListener())
+            if (events.hasErrors()) {
+                analysisEnvironment.disable(target)
+                val rootCauses: NestedSet<com.google.devtools.build.lib.causes.Cause?>? =
+                    NestedSetBuilder.wrap(
+                        Order.STABLE_ORDER,
+                        events.getEvents().stream()
+                            .filter(java.util.function.Predicate { event: com.google.devtools.build.lib.events.Event? -> event.getKind() == com.google.devtools.build.lib.events.EventKind.ERROR })
+                            .map<AnalysisFailedCause?>(
+                                java.util.function.Function { event: com.google.devtools.build.lib.events.Event? ->
+                                    AnalysisFailedCause(
+                                        target.getLabel(),
+                                        configurationIdMessage(configuration),
+                                        createDetailedExitCode(event.getMessage())
+                                    )
+                                })
+                            .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+                    )
+                throw ConfiguredValueCreationException(
+                    ctgValue.getTarget(),
+                    null,
+                    "Analysis of target '%s' (config: %s) failed"
+                        .formatted(
+                            target.getLabel(),
+                            if (configuration != null) configuration.getOptions().shortId() else "none"
+                        ),
+                    rootCauses,
+                    null
+                )
+            }
+            com.google.common.base.Preconditions.checkState(
+                !analysisEnvironment.hasErrors(), "Analysis environment hasError() but no errors reported"
+            )
+            if (env.valuesMissing()) {
+                return null
+            }
+
+            analysisEnvironment.disable(target)
+            com.google.common.base.Preconditions.checkNotNull<Any?>(configuredTarget, target)
+
+            if (configuredTarget is RuleConfiguredTarget) {
+                return RuleConfiguredTargetValue(configuredTarget, transitivePackages)
+            } else {
+                // Expected 4 args, but got 3.
+                com.google.common.base.Preconditions.checkState(
+                    analysisEnvironment.getRegisteredActions().isEmpty(),
+                    "Non-rule can't have actions: %s %s %s",
+                    configuredTargetKey,
+                    analysisEnvironment.getRegisteredActions(),
+                    configuredTarget
+                )
+                // If this is a Skycache download build, we check if it's an alias. For remote values, the
+                // package isn't present but the target data is present
+                if (remoteAnalysisCacheMode === RemoteAnalysisCacheMode.DOWNLOAD
+                    && configuredTarget is AliasConfiguredTarget
+                ) {
+                    val configuredTargetValue: ConfiguredTargetValue? =
+                        env.getValue(configuredTarget.getActual().getLookupKey()) as ConfiguredTargetValue?
+                    // TODO: b/431749743 - The actual target's ConfiguredTargetValue is not a dependency of the
+                    // alias's ConfiguredTargetValue. Still need to clarify why.
+                    if (configuredTargetValue == null) {
+                        return null
+                    }
+                    if (configuredTargetValue
+                                is RemoteConfiguredTargetValue
+                    ) {
+                        return NonRuleConfiguredTargetValue(
+                            configuredTarget, transitivePackages, configuredTargetValue.getTargetData()
+                        )
+                    }
+                }
+                return NonRuleConfiguredTargetValue(configuredTarget, transitivePackages)
+            }
+        }
+
+        private fun createDetailedExitCode(message: String?): DetailedExitCode {
+            return DetailedExitCode.of(
+                FailureDetail.newBuilder()
+                    .setMessage(message)
+                    .setAnalysis(Analysis.newBuilder().setCode(Code.CONFIGURED_VALUE_CREATION_FAILED))
+                    .build()
+            )
+        }
+    }
 }

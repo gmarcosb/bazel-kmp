@@ -11,37 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi
 
-package com.google.devtools.build.lib.starlarkbuildapi;
+import com.google.devtools.build.lib.collect.nestedset.Depset
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkValue;
-
-/** A representation of the concept "this builds these files". */
-@StarlarkBuiltin(
+/** A representation of the concept "this builds these files".  */
+@net.starlark.java.annot.StarlarkBuiltin(
     name = "file_provider",
     doc = "An interface for rules that provide files.",
-    category = DocCategory.PROVIDER)
-public interface FileProviderApi extends StarlarkValue {
-
-  /**
-   * Returns the set of files that are the "output" of this rule.
-   *
-   * <p>The term "output" is somewhat hazily defined; it is vaguely the set of files that are passed
-   * on to dependent rules that list the rule in their {@code srcs} attribute and the set of files
-   * that are built when a rule is mentioned on the command line. It does <b>not</b> include the
-   * runfiles.
-   *
-   * <p>Note that the above definition is somewhat imprecise; in particular, when a rule is
-   * mentioned on the command line, some other files are also built and dependent rules are free to
-   * filter this set of files e.g. based on their extension.
-   *
-   * <p>Also, some rules may generate files that are not listed here by way of defining other
-   * implicit targets, for example, deploy jars.
-   */
-  @StarlarkMethod(name = "files_to_build", documented = false, structField = true)
-  Depset /*<? extends FileApi>*/ getFilesToBuildForStarlark();
+    category = com.google.devtools.build.docgen.annot.DocCategory.PROVIDER
+)
+interface FileProviderApi : net.starlark.java.eval.StarlarkValue {
+    @get:net.starlark.java.annot.StarlarkMethod(name = "files_to_build", documented = false, structField = true)
+    val filesToBuildForStarlark: Depset?
 }

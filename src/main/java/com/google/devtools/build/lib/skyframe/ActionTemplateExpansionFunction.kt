@@ -11,258 +11,244 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Maps;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.ActionConflictException;
-import com.google.devtools.build.lib.actions.ActionExecutionException;
-import com.google.devtools.build.lib.actions.ActionGraph;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.ActionLookupValue;
-import com.google.devtools.build.lib.actions.ActionTemplate;
-import com.google.devtools.build.lib.actions.Actions;
-import com.google.devtools.build.lib.actions.AlreadyReportedActionExecutionException;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifact;
-import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
-import com.google.devtools.build.lib.bugreport.BugReport;
-import com.google.devtools.build.lib.collect.nestedset.ArtifactNestedSetKey;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.skyframe.ActionTemplateExpansionValue.ActionTemplateExpansionKey;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.SkyframeLookupResult;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.Action
 
 /**
- * The SkyFunction for {@link ActionTemplateExpansionValue}.
- *
- * <p>Given an action template, this function resolves its input TreeArtifact, then expands the
- * action template into a list of actions using the expanded {@link TreeFileArtifact}s under the
+ * The SkyFunction for [ActionTemplateExpansionValue].
+ * 
+ * 
+ * Given an action template, this function resolves its input TreeArtifact, then expands the
+ * action template into a list of actions using the expanded [TreeFileArtifact]s under the
  * input TreeArtifact.
  */
-public class ActionTemplateExpansionFunction implements SkyFunction {
-  private final ActionKeyContext actionKeyContext;
+class ActionTemplateExpansionFunction @com.google.common.annotations.VisibleForTesting internal constructor(
+    actionKeyContext: ActionKeyContext?
+) : SkyFunction {
+    private val actionKeyContext: ActionKeyContext?
 
-  @VisibleForTesting
-  ActionTemplateExpansionFunction(ActionKeyContext actionKeyContext) {
-    this.actionKeyContext = actionKeyContext;
-  }
-
-  @Nullable
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env)
-      throws ActionTemplateExpansionFunctionException, InterruptedException {
-    ActionTemplateExpansionKey key = (ActionTemplateExpansionKey) skyKey.argument();
-    ActionLookupValue value = (ActionLookupValue) env.getValue(key.getActionLookupKey());
-    if (value == null) {
-      // Because of the phase boundary separating analysis and execution, all needed
-      // ActionLookupValues must have already been evaluated, so a missing ActionLookupValue is
-      // unexpected. However, we tolerate this case.
-      BugReport.sendBugReport(new IllegalStateException("Unexpected absent value for " + key));
-      return null;
-    }
-    ActionTemplate<?> actionTemplate = value.getActionTemplate(key.getActionIndex());
-
-    ImmutableList.Builder<SkyKey> inputKeys =
-        ImmutableList.<SkyKey>builder().addAll(actionTemplate.getInputTreeArtifacts());
-
-    // Following b/143205147, we unwrap the top layer of the NestedSet and evaluate the first layer
-    // of the NestedSet as direct Artifact(s) and transitive NestedSet(s).
-    if (!actionTemplate.getInputs().isEmpty()) {
-      for (Artifact leaf : actionTemplate.getInputs().getLeaves()) {
-        inputKeys.add(Artifact.key(leaf));
-      }
-      for (NestedSet<Artifact> nonLeaf : actionTemplate.getInputs().getNonLeaves()) {
-        inputKeys.add(ArtifactNestedSetKey.create(nonLeaf));
-      }
+    init {
+        this.actionKeyContext = actionKeyContext
     }
 
-    SkyframeLookupResult result = env.getValuesAndExceptions(inputKeys.build());
-
-    // Input TreeArtifact is not ready yet.
-    if (env.valuesMissing()) {
-      return null;
-    }
-    ImmutableList<ActionAnalysisMetadata> actions;
-    try {
-      ImmutableList.Builder<TreeFileArtifact> inputTreeFileArtifacts = ImmutableList.builder();
-      for (SpecialArtifact inputTreeArtifact : actionTemplate.getInputTreeArtifacts()) {
-        TreeArtifactValue treeArtifactValue =
-            (TreeArtifactValue)
-                result.getOrThrow(inputTreeArtifact, ActionExecutionException.class);
-        // b/507424770#comment10: To handle the case of a wrongly bubbled up exception causing a
-        // null value, we return null here so that we don't crash with an NPE.
-        if (treeArtifactValue == null) {
-          return null;
+    @Throws(ActionTemplateExpansionFunctionException::class, java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey, env: SkyFunction.Environment): SkyValue? {
+        val key: ActionTemplateExpansionKey = skyKey.argument() as ActionTemplateExpansionKey
+        val value: ActionLookupValue? = env.getValue(key.getActionLookupKey()) as ActionLookupValue?
+        if (value == null) {
+            // Because of the phase boundary separating analysis and execution, all needed
+            // ActionLookupValues must have already been evaluated, so a missing ActionLookupValue is
+            // unexpected. However, we tolerate this case.
+            BugReport.sendBugReport(java.lang.IllegalStateException("Unexpected absent value for " + key))
+            return null
         }
-        inputTreeFileArtifacts.addAll(treeArtifactValue.getChildren());
-      }
-      // Expand the action template using the list of expanded input TreeFileArtifacts.
-      // TODO(rduan): Add a check to verify the inputs of expanded actions are subsets of inputs
-      // of the ActionTemplate.
-      actions =
-          generateAndValidateActionsFromTemplate(
-              actionTemplate, inputTreeFileArtifacts.build(), key, env.getListener());
-    } catch (ActionExecutionException e) {
-      env.getListener()
-          .handle(
-              Event.error(
-                  actionTemplate.getOwner().getLocation(),
-                  actionTemplate.describe() + " failed: " + e.getMessage()));
-      throw new ActionTemplateExpansionFunctionException(
-          new AlreadyReportedActionExecutionException(e));
-    } catch (ActionConflictException e) {
-      e.reportTo(env.getListener());
-      throw new ActionTemplateExpansionFunctionException(e);
-    }
-    try {
-      checkActionAndArtifactConflicts(actions, key);
-    } catch (ActionConflictException e) {
-      e.reportTo(env.getListener());
-      throw new ActionTemplateExpansionFunctionException(e);
-    } catch (Actions.ArtifactGeneratedByOtherRuleException e) {
-      throw new IllegalStateException(
-          "Actions generated by template "
-              + actionTemplate.describe()
-              + " did not all output tree file artifacts belonging to the correct output tree"
-              + " artifact + ("
-              + skyKey
-              + ")",
-          e);
-    }
+        val actionTemplate: ActionTemplate<*> = value.getActionTemplate(key.getActionIndex())
 
-    return new ActionTemplateExpansionValue(actions);
-  }
+        val inputKeys: com.google.common.collect.ImmutableList.Builder<SkyKey?> =
+            com.google.common.collect.ImmutableList.builder<SkyKey?>().addAll(actionTemplate.getInputTreeArtifacts())
 
-  /** Exception thrown by {@link ActionTemplateExpansionFunction}. */
-  private static final class ActionTemplateExpansionFunctionException extends SkyFunctionException {
-    ActionTemplateExpansionFunctionException(ActionConflictException e) {
-      super(e, Transience.PERSISTENT);
-    }
+        // Following b/143205147, we unwrap the top layer of the NestedSet and evaluate the first layer
+        // of the NestedSet as direct Artifact(s) and transitive NestedSet(s).
+        if (!actionTemplate.getInputs().isEmpty()) {
+            for (leaf in actionTemplate.getInputs().getLeaves()) {
+                inputKeys.add(Artifact.key(leaf))
+            }
+            for (nonLeaf in actionTemplate.getInputs().getNonLeaves()) {
+                inputKeys.add(ArtifactNestedSetKey.create(nonLeaf))
+            }
+        }
 
-    ActionTemplateExpansionFunctionException(ActionExecutionException e) {
-      super(e, Transience.PERSISTENT);
-    }
-  }
+        val result: SkyframeLookupResult = env.getValuesAndExceptions(inputKeys.build())
 
-  private static ImmutableList<ActionAnalysisMetadata> generateAndValidateActionsFromTemplate(
-      ActionTemplate<?> actionTemplate,
-      ImmutableList<TreeFileArtifact> inputTreeFileArtifacts,
-      ActionTemplateExpansionKey key,
-      EventHandler eventHandler)
-      throws ActionConflictException, ActionExecutionException, InterruptedException {
-    Collection<Artifact> outputs = actionTemplate.getOutputs();
-    for (Artifact output : outputs) {
-      Preconditions.checkState(
-          output.isTreeArtifact(),
-          "%s declares an output which is not a tree artifact: %s",
-          actionTemplate,
-          output);
-    }
-    ImmutableList<? extends Action> actions =
-        actionTemplate.generateActionsForInputArtifacts(inputTreeFileArtifacts, key, eventHandler);
-    for (Action action : actions) {
-      for (Artifact output : action.getOutputs()) {
-        Preconditions.checkState(
-            output.getArtifactOwner().equals(key),
-            "%s generated an action with an output owned by the wrong owner %s not %s (%s)",
-            actionTemplate,
-            output.getArtifactOwner(),
-            key,
-            action);
-        Preconditions.checkState(
-            output.hasParent(),
-            "%s generated an action which outputs a non-TreeFileArtifact %s (%s)",
-            actionTemplate,
-            output,
-            action);
-        SpecialArtifact outputTree =
-            output.getParent().isSubTreeArtifact()
-                ? output.getParent().getParent()
-                : output.getParent();
-        Preconditions.checkState(
-            outputs.contains(outputTree),
-            "%s generated an action with an output %s under an undeclared tree not in %s (%s)",
-            actionTemplate,
-            output,
-            outputs,
-            action);
-      }
-    }
-    return ImmutableList.copyOf(actions); // Just a cast, no copy performed.
-  }
+        // Input TreeArtifact is not ready yet.
+        if (env.valuesMissing()) {
+            return null
+        }
+        val actions: com.google.common.collect.ImmutableList<ActionAnalysisMetadata>
+        try {
+            val inputTreeFileArtifacts: com.google.common.collect.ImmutableList.Builder<TreeFileArtifact?> =
+                com.google.common.collect.ImmutableList.builder<TreeFileArtifact?>()
+            for (inputTreeArtifact in actionTemplate.getInputTreeArtifacts()) {
+                val treeArtifactValue: TreeArtifactValue? =
+                    result.getOrThrow<E?>(inputTreeArtifact, ActionExecutionException::class.java) as TreeArtifactValue?
+                // b/507424770#comment10: To handle the case of a wrongly bubbled up exception causing a
+                // null value, we return null here so that we don't crash with an NPE.
+                if (treeArtifactValue == null) {
+                    return null
+                }
+                inputTreeFileArtifacts.addAll(treeArtifactValue.getChildren())
+            }
+            // Expand the action template using the list of expanded input TreeFileArtifacts.
+            // TODO(rduan): Add a check to verify the inputs of expanded actions are subsets of inputs
+            // of the ActionTemplate.
+            actions =
+                generateAndValidateActionsFromTemplate(
+                    actionTemplate, inputTreeFileArtifacts.build(), key, env.getListener()
+                )
+        } catch (e: ActionExecutionException) {
+            env.getListener()
+                .handle(
+                    Event.error(
+                        actionTemplate.getOwner().getLocation(),
+                        actionTemplate.describe() + " failed: " + e.getMessage()
+                    )
+                )
+            throw ActionTemplateExpansionFunctionException(
+                AlreadyReportedActionExecutionException(e)
+            )
+        } catch (e: ActionConflictException) {
+            e.reportTo(env.getListener())
+            throw ActionTemplateExpansionFunctionException(e)
+        }
+        try {
+            checkActionAndArtifactConflicts(actions, key)
+        } catch (e: ActionConflictException) {
+            e.reportTo(env.getListener())
+            throw ActionTemplateExpansionFunctionException(e)
+        } catch (e: Actions.ArtifactGeneratedByOtherRuleException) {
+            throw java.lang.IllegalStateException(
+                ("Actions generated by template "
+                        + actionTemplate.describe()
+                        + " did not all output tree file artifacts belonging to the correct output tree"
+                        + " artifact + ("
+                        + skyKey
+                        + ")"),
+                e
+            )
+        }
 
-  private void checkActionAndArtifactConflicts(
-      ImmutableList<ActionAnalysisMetadata> actions, ActionTemplateExpansionKey key)
-      throws ActionConflictException,
-          InterruptedException,
-          Actions.ArtifactGeneratedByOtherRuleException {
-    Actions.assignOwnersAndThrowIfConflict(actionKeyContext, actions, key);
-    Map<ActionAnalysisMetadata, ActionConflictException> artifactPrefixConflictMap =
-        findArtifactPrefixConflicts(getMapForConsistencyCheck(actions));
-
-    if (!artifactPrefixConflictMap.isEmpty()) {
-      throw artifactPrefixConflictMap.values().iterator().next();
-    }
-  }
-
-  private static ImmutableMap<Artifact, ActionAnalysisMetadata> getMapForConsistencyCheck(
-      List<? extends ActionAnalysisMetadata> actions) {
-    if (actions.isEmpty()) {
-      return ImmutableMap.of();
-    }
-    HashMap<Artifact, ActionAnalysisMetadata> result =
-        Maps.newHashMapWithExpectedSize(actions.size() * actions.get(0).getOutputs().size());
-    for (ActionAnalysisMetadata action : actions) {
-      for (Artifact output : action.getOutputs()) {
-        result.put(output, action);
-      }
-    }
-    return ImmutableMap.copyOf(result);
-  }
-
-  /**
-   * Finds Artifact prefix conflicts between generated artifacts. An artifact prefix conflict
-   * happens if one action generates an artifact whose path is a prefix of another artifact's path.
-   * Those two artifacts cannot exist simultaneously in the output tree.
-   *
-   * @param generatingActions a map between generated artifacts and their associated generating
-   *     actions.
-   * @return a map between actions that generated the conflicting artifacts and their associated
-   *     {@link ActionConflictException}.
-   */
-  private static Map<ActionAnalysisMetadata, ActionConflictException> findArtifactPrefixConflicts(
-      Map<Artifact, ActionAnalysisMetadata> generatingActions) {
-    return Actions.findArtifactPrefixConflicts(
-        new MapBasedImmutableActionGraph(generatingActions), generatingActions.keySet());
-  }
-
-  private static class MapBasedImmutableActionGraph implements ActionGraph {
-    private final Map<Artifact, ActionAnalysisMetadata> generatingActions;
-
-    MapBasedImmutableActionGraph(Map<Artifact, ActionAnalysisMetadata> generatingActions) {
-      this.generatingActions = ImmutableMap.copyOf(generatingActions);
+        return ActionTemplateExpansionValue(actions)
     }
 
-    @Nullable
-    @Override
-    public ActionAnalysisMetadata getGeneratingAction(Artifact artifact) {
-      return generatingActions.get(artifact);
+    /** Exception thrown by [ActionTemplateExpansionFunction].  */
+    private class ActionTemplateExpansionFunctionException : SkyFunctionException {
+        internal constructor(e: ActionConflictException?) : super(e, Transience.PERSISTENT)
+
+        internal constructor(e: ActionExecutionException?) : super(e, Transience.PERSISTENT)
     }
-  }
+
+    @Throws(
+        ActionConflictException::class,
+        java.lang.InterruptedException::class,
+        Actions.ArtifactGeneratedByOtherRuleException::class
+    )
+    private fun checkActionAndArtifactConflicts(
+        actions: com.google.common.collect.ImmutableList<ActionAnalysisMetadata>, key: ActionTemplateExpansionKey?
+    ) {
+        Actions.assignOwnersAndThrowIfConflict(actionKeyContext, actions, key)
+        val artifactPrefixConflictMap: MutableMap<ActionAnalysisMetadata?, ActionConflictException?> =
+            findArtifactPrefixConflicts(getMapForConsistencyCheck(actions))
+
+        if (!artifactPrefixConflictMap.isEmpty()) {
+            throw artifactPrefixConflictMap.values().iterator().next()
+        }
+    }
+
+    private class MapBasedImmutableActionGraph(generatingActions: MutableMap<Artifact?, ActionAnalysisMetadata?>) :
+        ActionGraph {
+        private val generatingActions: MutableMap<Artifact?, ActionAnalysisMetadata?>
+
+        init {
+            this.generatingActions =
+                com.google.common.collect.ImmutableMap.copyOf<Artifact?, ActionAnalysisMetadata?>(generatingActions)
+        }
+
+        public override fun getGeneratingAction(artifact: Artifact?): ActionAnalysisMetadata? {
+            return generatingActions.get(artifact)
+        }
+    }
+
+    companion object {
+        @Throws(ActionConflictException::class, ActionExecutionException::class, java.lang.InterruptedException::class)
+        private fun generateAndValidateActionsFromTemplate(
+            actionTemplate: ActionTemplate<*>,
+            inputTreeFileArtifacts: com.google.common.collect.ImmutableList<TreeFileArtifact?>?,
+            key: ActionTemplateExpansionKey?,
+            eventHandler: EventHandler?
+        ): com.google.common.collect.ImmutableList<ActionAnalysisMetadata> {
+            val outputs: MutableCollection<Artifact> = actionTemplate.getOutputs()
+            for (output in outputs) {
+                com.google.common.base.Preconditions.checkState(
+                    output.isTreeArtifact(),
+                    "%s declares an output which is not a tree artifact: %s",
+                    actionTemplate,
+                    output
+                )
+            }
+            val actions: com.google.common.collect.ImmutableList<out Action> =
+                actionTemplate.generateActionsForInputArtifacts(inputTreeFileArtifacts, key, eventHandler)
+            for (action in actions) {
+                for (output in action.getOutputs()) {
+                    com.google.common.base.Preconditions.checkState(
+                        output.getArtifactOwner().equals(key),
+                        "%s generated an action with an output owned by the wrong owner %s not %s (%s)",
+                        actionTemplate,
+                        output.getArtifactOwner(),
+                        key,
+                        action
+                    )
+                    com.google.common.base.Preconditions.checkState(
+                        output.hasParent(),
+                        "%s generated an action which outputs a non-TreeFileArtifact %s (%s)",
+                        actionTemplate,
+                        output,
+                        action
+                    )
+                    val outputTree: SpecialArtifact? =
+                        if (output.getParent().isSubTreeArtifact())
+                            output.getParent().getParent()
+                        else
+                            output.getParent()
+                    com.google.common.base.Preconditions.checkState(
+                        outputs.contains(outputTree),
+                        "%s generated an action with an output %s under an undeclared tree not in %s (%s)",
+                        actionTemplate,
+                        output,
+                        outputs,
+                        action
+                    )
+                }
+            }
+            return com.google.common.collect.ImmutableList.< E > copyOf < E >(actions) // Just a cast, no copy performed.
+        }
+
+        private fun getMapForConsistencyCheck(
+            actions: MutableList<out ActionAnalysisMetadata>
+        ): com.google.common.collect.ImmutableMap<Artifact?, ActionAnalysisMetadata?> {
+            if (actions.isEmpty()) {
+                return com.google.common.collect.ImmutableMap.of<Artifact?, ActionAnalysisMetadata?>()
+            }
+            val result: HashMap<Artifact?, ActionAnalysisMetadata?> =
+                com.google.common.collect.Maps.newHashMapWithExpectedSize<Artifact?, ActionAnalysisMetadata?>(
+                    actions.size() * actions.get(
+                        0
+                    ).getOutputs().size()
+                )
+            for (action in actions) {
+                for (output in action.getOutputs()) {
+                    result.put(output, action)
+                }
+            }
+            return com.google.common.collect.ImmutableMap.copyOf<Artifact?, ActionAnalysisMetadata?>(result)
+        }
+
+        /**
+         * Finds Artifact prefix conflicts between generated artifacts. An artifact prefix conflict
+         * happens if one action generates an artifact whose path is a prefix of another artifact's path.
+         * Those two artifacts cannot exist simultaneously in the output tree.
+         * 
+         * @param generatingActions a map between generated artifacts and their associated generating
+         * actions.
+         * @return a map between actions that generated the conflicting artifacts and their associated
+         * [ActionConflictException].
+         */
+        private fun findArtifactPrefixConflicts(
+            generatingActions: MutableMap<Artifact?, ActionAnalysisMetadata?>
+        ): MutableMap<ActionAnalysisMetadata?, ActionConflictException?> {
+            return Actions.findArtifactPrefixConflicts(
+                MapBasedImmutableActionGraph(generatingActions), generatingActions.keySet()
+            )
+        }
+    }
 }

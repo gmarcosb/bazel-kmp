@@ -11,171 +11,158 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import com.google.devtools.common.options.OptionsBase;
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
+import com.google.devtools.build.lib.runtime.BlazeCommand
+import kotlin.reflect.KClass
 
 /**
  * An annotation that lets blaze commands specify their options and their help.
- * The annotations are processed by {@link BlazeCommand}.
+ * The annotations are processed by [BlazeCommand].
  */
-@Target(ElementType.TYPE)
-@Retention(RetentionPolicy.RUNTIME)
-public @interface Command {
-  /**
-   * The name of the command, as the user would type it.
-   */
-  String name();
-
-  /**
-   * Options processed by the command, indicated by options interfaces. These interfaces must
-   * contain methods annotated with {@link com.google.devtools.common.options.Option}.
-   */
-  Class<? extends OptionsBase>[] options() default {};
-
-  /**
-   * The set of other Blaze commands that this annotation's command "inherits" options from. These
-   * classes must be annotated with {@link Command}.
-   */
-  Class<? extends BlazeCommand>[] inheritsOptionsFrom() default {};
-
-  /**
-   * A short description, which appears in 'blaze help'.
-   */
-  String shortDescription();
-
-  /**
-   * True if the configuration-specific options should be available for this command.
-   */
-  boolean usesConfigurationOptions() default false;
-
-  /**
-   * The build phase associated with this command.
-   *
-   * <p>Use the enum helper methods to check the hierarchical effects of each command, like {@link
-   * BuildPhase#executes()}, {@link BuildPhase#loads()}, instead of checking the enum value
-   * directly.
-   */
-  BuildPhase buildPhase() default BuildPhase.NONE;
-
-  /**
-   * Build phases that can be associated with a command.
-   *
-   * <p>The effects are hierarchical: {@code EXECUTES} implies {@code ANALYZES}, but {@code LOADS}
-   * does not imply {@code ANALYZES}. Use the helper methods to check this hierarchy.
-   */
-  enum BuildPhase {
+@Target(AnnotationTarget.CLASS)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Command(
     /**
-     * Use when this command does not have a build phase. Can also be used for commands that resets
-     * state. Commands may produce effects to the terminal or output files, e.g. writing logs or
-     * printing the help message.
+     * The name of the command, as the user would type it.
      */
-    NONE,
-
+    val name: String,
     /**
-     * Use when this command loads BUILD and bzl files to produce the target graph, or MODULE.bazel
-     * and WORKSPACE files for external dependencies.
+     * Options processed by the command, indicated by options interfaces. These interfaces must
+     * contain methods annotated with [com.google.devtools.common.options.Option].
      */
-    LOADS,
-
+    val options: Array<KClass<out com.google.devtools.common.options.OptionsBase?>> = [],
     /**
-     * Use when this command produces the configured target/aspect/action graphs.
-     *
-     * <p>Implies LOADS.
+     * The set of other Blaze commands that this annotation's command "inherits" options from. These
+     * classes must be annotated with [Command].
      */
-    ANALYZES,
-
+    val inheritsOptionsFrom: Array<KClass<out BlazeCommand?>> = [],
     /**
-     * Use when this command executes actions.
-     *
-     * <p>Implies LOADS, ANALYZES.
+     * A short description, which appears in 'blaze help'.
      */
-    EXECUTES;
+    val shortDescription: String,
+    /**
+     * True if the configuration-specific options should be available for this command.
+     */
+    val usesConfigurationOptions: Boolean = false,
+    /**
+     * The build phase associated with this command.
+     * 
+     * 
+     * Use the enum helper methods to check the hierarchical effects of each command, like [ ][BuildPhase.executes], [BuildPhase.loads], instead of checking the enum value
+     * directly.
+     */
+    val buildPhase: BuildPhase = BuildPhase.NONE,
+    /**
+     * True if the command should not be shown in the output of 'blaze help'.
+     */
+    val hidden: Boolean = false,
+    /**
+     * Specifies whether this command allows a residue after the parsed options.
+     * For example, a command might expect a list of targets to build in the
+     * residue.
+     */
+    val allowResidue: Boolean = false,
+    /**
+     * Specifies whether the command line residue might have sensitive data, or arbitrary command
+     * line values.
+     */
+    val hasSensitiveResidue: Boolean = false,
+    /**
+     * Returns true if this command wants to write binary data to stdout.
+     * Enabling this flag will disable ANSI escape stripping for this command.
+     * This should be used in conjunction with `Reporter#switchToAnsiAllowingHandler`.
+     * See [RunCommand] for example usage.
+     */
+    val binaryStdOut: Boolean = false,
+    /**
+     * Returns true if this command wants to write binary data to stderr.
+     * Enabling this flag will disable ANSI escape stripping for this command.
+     * This should be used in conjunction with `Reporter#switchToAnsiAllowingHandler`.
+     * See [RunCommand] for example usage.
+     */
+    val binaryStdErr: Boolean = false,
+    /**
+     * Returns true if this command may want to write to the command.log.
+     * 
+     * 
+     * The clean command would typically set this to false so it can delete the command.log.
+     */
+    val writeCommandLog: Boolean = true,
+    /**
+     * The help message for this command.  If the value starts with "resource:",
+     * the remainder is interpreted as the name of a text file resource (in the
+     * .jar file that provides the Command implementation class).
+     */
+    val help: String,
+    /**
+     * Returns true iff this command may only be run from within a Blaze workspace. Broadly, this
+     * should be true for any command that interprets the package-path, since it's potentially
+     * confusing otherwise.
+     */
+    val mustRunInWorkspace: Boolean = true,
+    /**
+     * Returns the type completion help for this command, that is the type arguments that this command
+     * expects. It can be a whitespace separated list if the command take several arguments. The type
+     * of each arguments can be `label`, `path`, `string`, ... It can
+     * also be a comma separated list of values, e.g. `{value1,value2}`. If a command
+     * accept several argument types, they can be combined with |, e.g `label|path`.
+     */
+    val completion: String = ""
+) {
+    /**
+     * Build phases that can be associated with a command.
+     * 
+     * 
+     * The effects are hierarchical: `EXECUTES` implies `ANALYZES`, but `LOADS`
+     * does not imply `ANALYZES`. Use the helper methods to check this hierarchy.
+     */
+    enum class BuildPhase {
+        /**
+         * Use when this command does not have a build phase. Can also be used for commands that resets
+         * state. Commands may produce effects to the terminal or output files, e.g. writing logs or
+         * printing the help message.
+         */
+        NONE,
 
-    /* True if this command executes actions. */
-    public final boolean executes() {
-      return this == EXECUTES;
+        /**
+         * Use when this command loads BUILD and bzl files to produce the target graph, or MODULE.bazel
+         * and WORKSPACE files for external dependencies.
+         */
+        LOADS,
+
+        /**
+         * Use when this command produces the configured target/aspect/action graphs.
+         * 
+         * 
+         * Implies LOADS.
+         */
+        ANALYZES,
+
+        /**
+         * Use when this command executes actions.
+         * 
+         * 
+         * Implies LOADS, ANALYZES.
+         */
+        EXECUTES;
+
+        /* True if this command executes actions. */
+        fun executes(): Boolean {
+            return this == BuildPhase.EXECUTES
+        }
+
+        /* True if this command analyzes and creates the configured target and action graphs. */
+        fun analyzes(): Boolean {
+            return this == BuildPhase.ANALYZES || this == BuildPhase.EXECUTES
+        }
+
+        /**
+         * Use when this command loads BUILD and bzl files to produce the target graph, or MODULE.bazel
+         * and WORKSPACE files for external dependencies.
+         */
+        fun loads(): Boolean {
+            return this == BuildPhase.LOADS || this == BuildPhase.ANALYZES || this == BuildPhase.EXECUTES
+        }
     }
-
-    /* True if this command analyzes and creates the configured target and action graphs. */
-    public final boolean analyzes() {
-      return this == ANALYZES || this == EXECUTES;
-    }
-
-    /**
-     * Use when this command loads BUILD and bzl files to produce the target graph, or MODULE.bazel
-     * and WORKSPACE files for external dependencies.
-     */
-    public final boolean loads() {
-      return this == LOADS || this == ANALYZES || this == EXECUTES;
-    }
-  }
-
-  /**
-   * True if the command should not be shown in the output of 'blaze help'.
-   */
-  boolean hidden() default false;
-
-  /**
-   * Specifies whether this command allows a residue after the parsed options.
-   * For example, a command might expect a list of targets to build in the
-   * residue.
-   */
-  boolean allowResidue() default false;
-
-  /**
-   * Specifies whether the command line residue might have sensitive data, or arbitrary command
-   * line values.
-   */
-  boolean hasSensitiveResidue() default false;
-
-  /**
-   * Returns true if this command wants to write binary data to stdout.
-   * Enabling this flag will disable ANSI escape stripping for this command.
-   * This should be used in conjunction with {@code Reporter#switchToAnsiAllowingHandler}.
-   * See {@link RunCommand} for example usage.
-   */
-  boolean binaryStdOut() default false;
-
-  /**
-   * Returns true if this command wants to write binary data to stderr.
-   * Enabling this flag will disable ANSI escape stripping for this command.
-   * This should be used in conjunction with {@code Reporter#switchToAnsiAllowingHandler}.
-   * See {@link RunCommand} for example usage.
-   */
-  boolean binaryStdErr() default false;
-
-  /**
-   * Returns true if this command may want to write to the command.log.
-   *
-   * <p>The clean command would typically set this to false so it can delete the command.log.
-   */
-  boolean writeCommandLog() default true;
-
-  /**
-   * The help message for this command.  If the value starts with "resource:",
-   * the remainder is interpreted as the name of a text file resource (in the
-   * .jar file that provides the Command implementation class).
-   */
-  String help();
-
-  /**
-   * Returns true iff this command may only be run from within a Blaze workspace. Broadly, this
-   * should be true for any command that interprets the package-path, since it's potentially
-   * confusing otherwise.
-   */
-  boolean mustRunInWorkspace() default true;
-
-  /**
-   * Returns the type completion help for this command, that is the type arguments that this command
-   * expects. It can be a whitespace separated list if the command take several arguments. The type
-   * of each arguments can be <code>label</code>, <code>path</code>, <code>string</code>, ... It can
-   * also be a comma separated list of values, e.g. <code>{value1,value2}</code>. If a command
-   * accept several argument types, they can be combined with |, e.g <code>label|path</code>.
-   */
-  String completion() default "";
 }

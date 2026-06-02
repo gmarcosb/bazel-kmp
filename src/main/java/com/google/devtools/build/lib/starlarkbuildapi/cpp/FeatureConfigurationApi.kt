@@ -11,16 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.cpp
 
-package com.google.devtools.build.lib.starlarkbuildapi.cpp;
+import com.google.devtools.build.docgen.annot.DocCategory
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.eval.StarlarkValue
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.eval.StarlarkValue;
-
-/** Class used to construct command lines from CROSSTOOL features. */
+/** Class used to construct command lines from CROSSTOOL features.  */
 @StarlarkBuiltin(
     name = "FeatureConfiguration",
     category = DocCategory.BUILTIN,
-    doc = "Class used to construct command lines from CROSSTOOL features.")
-public interface FeatureConfigurationApi extends StarlarkValue {}
+    doc = "Class used to construct command lines from CROSSTOOL features."
+)
+interface FeatureConfigurationApi : StarlarkValue

@@ -1439,7 +1439,7 @@ public class CcCommonTest extends BuildViewTestCase {
             TestConstants.PLATFORM_LABEL));
     CppCompileAction cppCompileAction = getCppCompileAction("//a:foo");
     assertThat(
-            cppCompileAction.getArgumentsForExecute(PathMapper.NOOP).arguments().stream()
+            cppCompileAction.getArgumentsForExecute(PathMapper.NOOP).arguments.stream()
                 .map(x -> removeOutDirectory(x))
                 .collect(ImmutableList.toImmutableList()))
         .containsExactly("/usr/bin/mock-gcc", "@/k8-fastbuild/bin/a/_objs/foo/foo.o.params");
@@ -1492,7 +1492,7 @@ public class CcCommonTest extends BuildViewTestCase {
     CppCompileAction cppCompileAction = getCppCompileAction("//a:foo");
     // It should NOT use the param file because it's on-demand and command line is short.
     assertThat(
-            cppCompileAction.getArgumentsForExecute(PathMapper.NOOP).arguments().stream()
+            cppCompileAction.getArgumentsForExecute(PathMapper.NOOP).arguments.stream()
                 .map(x -> removeOutDirectory(x)))
         .containsAtLeast(
             "/usr/bin/mock-gcc",
@@ -1533,7 +1533,7 @@ public class CcCommonTest extends BuildViewTestCase {
     CppCompileAction cppCompileAction = getCppCompileAction("//a:foo");
     // With min_param_file_size=0, it should dynamically decide to use the param file
     assertThat(
-            cppCompileAction.getArgumentsForExecute(PathMapper.NOOP).arguments().stream()
+            cppCompileAction.getArgumentsForExecute(PathMapper.NOOP).arguments.stream()
                 .map(x -> removeOutDirectory(x)))
         .containsExactly("/usr/bin/mock-gcc", "@/k8-fastbuild/bin/a/_objs/foo/foo.o.params");
   }

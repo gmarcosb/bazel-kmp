@@ -11,32 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime.commands.info
 
-package com.google.devtools.build.lib.runtime.commands.info;
+import com.google.common.base.Supplier
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue
+import java.lang.String
+import java.nio.charset.Charset
+import kotlin.ByteArray
 
-import com.google.common.base.Supplier;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.InfoItem;
-import java.nio.charset.Charset;
-
-/** Info item for the current character encoding settings. */
-public final class CharacterEncodingInfoItem extends InfoItem {
-  public CharacterEncodingInfoItem() {
-    super(
-        "character-encoding",
-        "Information about the character encoding used by the running JVM.",
-        false);
-  }
-
-  @Override
-  public byte[] get(
-      Supplier<BuildConfigurationValue> configurationSupplier, CommandEnvironment env) {
-    return print(
-        String.format(
-            "file.encoding = %s, defaultCharset = %s, sun.jnu.encoding = %s",
-            System.getProperty("file.encoding", "unknown"),
-            Charset.defaultCharset().name(),
-            System.getProperty("sun.jnu.encoding", "unknown")));
-  }
+/** Info item for the current character encoding settings.  */
+class CharacterEncodingInfoItem : InfoItem(
+    "character-encoding",
+    "Information about the character encoding used by the running JVM.",
+    false
+) {
+    public override fun get(
+        configurationSupplier: Supplier<BuildConfigurationValue?>?, env: CommandEnvironment?
+    ): ByteArray {
+        return print(
+            String.format(
+                "file.encoding = %s, defaultCharset = %s, sun.jnu.encoding = %s",
+                System.getProperty("file.encoding", "unknown"),
+                Charset.defaultCharset().name(),
+                System.getProperty("sun.jnu.encoding", "unknown")
+            )
+        )
+    }
 }

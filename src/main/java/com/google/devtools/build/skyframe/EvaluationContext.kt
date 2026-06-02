@@ -11,230 +11,209 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.skyframe
 
-package com.google.devtools.build.skyframe;
-
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.concurrent.QuiescingExecutor;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.skyframe.WalkableGraph.WalkableGraphFactory;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.Optional;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.concurrent.QuiescingExecutor
 
 /**
- * Includes options and states used by {@link MemoizingEvaluator#evaluate}, {@link
- * MemoizingEvaluator#evaluate} and {@link WalkableGraphFactory#prepareAndGet}
+ * Includes options and states used by [MemoizingEvaluator.evaluate], [ ][MemoizingEvaluator.evaluate] and [WalkableGraphFactory.prepareAndGet]
  */
-public class EvaluationContext {
-  private final int parallelism;
-  @Nullable private final QuiescingExecutor executor;
-  private final boolean keepGoing;
-  private final ExtendedEventHandler eventHandler;
-  private final boolean isExecutionPhase;
-  private final boolean mergingSkyframeAnalysisExecutionPhases;
-  private final boolean storeExactCycles;
-  private final UnnecessaryTemporaryStateDropperReceiver unnecessaryTemporaryStateDropperReceiver;
+class EvaluationContext protected constructor(
+    val parallelism: Int,
+    executor: QuiescingExecutor?,
+    keepGoing: Boolean,
+    eventHandler: ExtendedEventHandler?,
+    isExecutionPhase: Boolean,
+    mergingSkyframeAnalysisExecutionPhases: Boolean,
+    storeExactCycles: Boolean,
+    unnecessaryTemporaryStateDropperReceiver: UnnecessaryTemporaryStateDropperReceiver?,
+    detectCycles: Boolean
+) {
+    private val executor: QuiescingExecutor?
+    val keepGoing: Boolean
+    private val eventHandler: ExtendedEventHandler
+    val isExecutionPhase: Boolean
+    private val mergingSkyframeAnalysisExecutionPhases: Boolean
+    private val storeExactCycles: Boolean
+    val unnecessaryTemporaryStateDropperReceiver: UnnecessaryTemporaryStateDropperReceiver?
 
-  private final boolean detectCycles;
+    private val detectCycles: Boolean
 
-  protected EvaluationContext(
-      int parallelism,
-      @Nullable QuiescingExecutor executor,
-      boolean keepGoing,
-      ExtendedEventHandler eventHandler,
-      boolean isExecutionPhase,
-      boolean mergingSkyframeAnalysisExecutionPhases,
-      boolean storeExactCycles,
-      UnnecessaryTemporaryStateDropperReceiver unnecessaryTemporaryStateDropperReceiver,
-      boolean detectCycles) {
-    this.parallelism = parallelism;
-    this.executor = executor;
-    this.keepGoing = keepGoing;
-    this.eventHandler = Preconditions.checkNotNull(eventHandler);
-    this.isExecutionPhase = isExecutionPhase;
-    this.mergingSkyframeAnalysisExecutionPhases = mergingSkyframeAnalysisExecutionPhases;
-    this.storeExactCycles = storeExactCycles;
-    this.unnecessaryTemporaryStateDropperReceiver = unnecessaryTemporaryStateDropperReceiver;
-    this.detectCycles = detectCycles;
-  }
-
-  public int getParallelism() {
-    return parallelism;
-  }
-
-  public Optional<QuiescingExecutor> getExecutor() {
-    return Optional.ofNullable(executor);
-  }
-
-  public boolean getKeepGoing() {
-    return keepGoing;
-  }
-
-  public ExtendedEventHandler getEventHandler() {
-    return eventHandler;
-  }
-
-  public boolean isExecutionPhase() {
-    return isExecutionPhase;
-  }
-
-  public boolean mergingSkyframeAnalysisExecutionPhases() {
-    return mergingSkyframeAnalysisExecutionPhases;
-  }
-
-  public boolean storeExactCycles() {
-    return storeExactCycles;
-  }
-
-  /**
-   * Drops unnecessary temporary state used internally by the current evaluation.
-   *
-   * <p>If the current evaluation is slow because of GC thrashing, and the GC thrashing is partially
-   * caused by this temporary state, dropping it may reduce the wall time of the current evaluation.
-   * On the other hand, if the current evaluation is not GC thrashing, then dropping this temporary
-   * state will probably increase the wall time.
-   */
-  public interface UnnecessaryTemporaryStateDropper {
-    @ThreadSafe
-    void drop();
-  }
-
-  /**
-   * A receiver of a {@link UnnecessaryTemporaryStateDropper} instance tied to the current
-   * evaluation.
-   */
-  public interface UnnecessaryTemporaryStateDropperReceiver {
-    UnnecessaryTemporaryStateDropperReceiver NULL =
-        new UnnecessaryTemporaryStateDropperReceiver() {
-          @Override
-          public void onEvaluationStarted(UnnecessaryTemporaryStateDropper dropper) {}
-
-          @Override
-          public void onEvaluationFinished() {}
-        };
-
-    void onEvaluationStarted(UnnecessaryTemporaryStateDropper dropper);
-
-    void onEvaluationFinished();
-  }
-
-  public UnnecessaryTemporaryStateDropperReceiver getUnnecessaryTemporaryStateDropperReceiver() {
-    return unnecessaryTemporaryStateDropperReceiver;
-  }
-
-  public boolean detectCycles() {
-    return detectCycles;
-  }
-
-  public Builder builder() {
-    return newBuilder().copyFrom(this);
-  }
-
-  public static Builder newBuilder() {
-    return new Builder();
-  }
-
-  /** Builder for {@link EvaluationContext}. */
-  public static class Builder {
-    protected int parallelism;
-    protected QuiescingExecutor executor;
-    protected boolean keepGoing;
-    protected ExtendedEventHandler eventHandler;
-    protected boolean isExecutionPhase = false;
-    protected boolean mergingSkyframeAnalysisExecutionPhases;
-    protected boolean storeExactCycles = true;
-    protected UnnecessaryTemporaryStateDropperReceiver unnecessaryTemporaryStateDropperReceiver =
-        UnnecessaryTemporaryStateDropperReceiver.NULL;
-
-    protected boolean detectCycles = true;
-
-    protected Builder() {}
-
-    @CanIgnoreReturnValue
-    protected Builder copyFrom(EvaluationContext evaluationContext) {
-      this.parallelism = evaluationContext.parallelism;
-      this.executor = evaluationContext.executor;
-      this.keepGoing = evaluationContext.keepGoing;
-      this.eventHandler = evaluationContext.eventHandler;
-      this.isExecutionPhase = evaluationContext.isExecutionPhase;
-      this.mergingSkyframeAnalysisExecutionPhases =
-          evaluationContext.mergingSkyframeAnalysisExecutionPhases;
-      this.storeExactCycles = evaluationContext.storeExactCycles;
-      this.unnecessaryTemporaryStateDropperReceiver =
-          evaluationContext.unnecessaryTemporaryStateDropperReceiver;
-      this.detectCycles = evaluationContext.detectCycles;
-      return this;
+    init {
+        this.executor = executor
+        this.keepGoing = keepGoing
+        this.eventHandler = com.google.common.base.Preconditions.checkNotNull<ExtendedEventHandler>(eventHandler)
+        this.isExecutionPhase = isExecutionPhase
+        this.mergingSkyframeAnalysisExecutionPhases = mergingSkyframeAnalysisExecutionPhases
+        this.storeExactCycles = storeExactCycles
+        this.unnecessaryTemporaryStateDropperReceiver = unnecessaryTemporaryStateDropperReceiver
+        this.detectCycles = detectCycles
     }
 
-    @CanIgnoreReturnValue
-    public Builder setParallelism(int parallelism) {
-      this.parallelism = parallelism;
-      return this;
+    fun getExecutor(): java.util.Optional<QuiescingExecutor?> {
+        return java.util.Optional.ofNullable<QuiescingExecutor?>(executor)
     }
 
-    @CanIgnoreReturnValue
-    public Builder setExecutor(QuiescingExecutor executor) {
-      this.executor = executor;
-      return this;
+    fun getEventHandler(): ExtendedEventHandler {
+        return eventHandler
     }
 
-    @CanIgnoreReturnValue
-    public Builder setKeepGoing(boolean keepGoing) {
-      this.keepGoing = keepGoing;
-      return this;
+    fun mergingSkyframeAnalysisExecutionPhases(): Boolean {
+        return mergingSkyframeAnalysisExecutionPhases
     }
 
-    @CanIgnoreReturnValue
-    public Builder setEventHandler(ExtendedEventHandler eventHandler) {
-      this.eventHandler = eventHandler;
-      return this;
+    fun storeExactCycles(): Boolean {
+        return storeExactCycles
     }
 
-    @CanIgnoreReturnValue
-    public Builder setExecutionPhase() {
-      this.isExecutionPhase = true;
-      return this;
+    /**
+     * Drops unnecessary temporary state used internally by the current evaluation.
+     * 
+     * 
+     * If the current evaluation is slow because of GC thrashing, and the GC thrashing is partially
+     * caused by this temporary state, dropping it may reduce the wall time of the current evaluation.
+     * On the other hand, if the current evaluation is not GC thrashing, then dropping this temporary
+     * state will probably increase the wall time.
+     */
+    interface UnnecessaryTemporaryStateDropper {
+        @ThreadSafe
+        fun drop()
     }
 
-    @CanIgnoreReturnValue
-    public Builder setMergingSkyframeAnalysisExecutionPhases(
-        boolean mergingSkyframeAnalysisExecutionPhases) {
-      this.mergingSkyframeAnalysisExecutionPhases = mergingSkyframeAnalysisExecutionPhases;
-      return this;
+    /**
+     * A receiver of a [UnnecessaryTemporaryStateDropper] instance tied to the current
+     * evaluation.
+     */
+    interface UnnecessaryTemporaryStateDropperReceiver {
+        fun onEvaluationStarted(dropper: UnnecessaryTemporaryStateDropper?)
+
+        fun onEvaluationFinished()
+
+        companion object {
+            @kotlin.jvm.JvmField
+            val NULL: UnnecessaryTemporaryStateDropperReceiver = object : UnnecessaryTemporaryStateDropperReceiver {
+                override fun onEvaluationStarted(dropper: UnnecessaryTemporaryStateDropper?) {}
+
+                override fun onEvaluationFinished() {}
+            }
+        }
     }
 
-    @CanIgnoreReturnValue
-    public Builder setUnnecessaryTemporaryStateDropperReceiver(
-        UnnecessaryTemporaryStateDropperReceiver unnecessaryTemporaryStateDropperReceiver) {
-      this.unnecessaryTemporaryStateDropperReceiver = unnecessaryTemporaryStateDropperReceiver;
-      return this;
+    fun detectCycles(): Boolean {
+        return detectCycles
     }
 
-    @CanIgnoreReturnValue
-    public Builder setStoreExactCycles(boolean storeExactCycles) {
-      this.storeExactCycles = storeExactCycles;
-      return this;
+    fun builder(): Builder {
+        return com.google.devtools.build.skyframe.EvaluationContext.Companion.newBuilder().copyFrom(this)
     }
 
-    @CanIgnoreReturnValue
-    public Builder setDetectCycles(boolean detectCycles) {
-      this.detectCycles = detectCycles;
-      return this;
+    /** Builder for [EvaluationContext].  */
+    class Builder {
+        protected var parallelism: Int = 0
+        protected var executor: QuiescingExecutor? = null
+        protected var keepGoing: Boolean = false
+        protected var eventHandler: ExtendedEventHandler? = null
+        protected var isExecutionPhase: Boolean = false
+        protected var mergingSkyframeAnalysisExecutionPhases: Boolean = false
+        protected var storeExactCycles: Boolean = true
+        protected var unnecessaryTemporaryStateDropperReceiver: UnnecessaryTemporaryStateDropperReceiver? =
+            UnnecessaryTemporaryStateDropperReceiver.Companion.NULL
+
+        protected var detectCycles: Boolean = true
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun copyFrom(evaluationContext: EvaluationContext): Builder {
+            this.parallelism = evaluationContext.parallelism
+            this.executor = evaluationContext.executor
+            this.keepGoing = evaluationContext.keepGoing
+            this.eventHandler = evaluationContext.eventHandler
+            this.isExecutionPhase = evaluationContext.isExecutionPhase
+            this.mergingSkyframeAnalysisExecutionPhases =
+                evaluationContext.mergingSkyframeAnalysisExecutionPhases
+            this.storeExactCycles = evaluationContext.storeExactCycles
+            this.unnecessaryTemporaryStateDropperReceiver =
+                evaluationContext.unnecessaryTemporaryStateDropperReceiver
+            this.detectCycles = evaluationContext.detectCycles
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setParallelism(parallelism: Int): Builder {
+            this.parallelism = parallelism
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setExecutor(executor: QuiescingExecutor?): Builder {
+            this.executor = executor
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setKeepGoing(keepGoing: Boolean): Builder {
+            this.keepGoing = keepGoing
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setEventHandler(eventHandler: ExtendedEventHandler?): Builder {
+            this.eventHandler = eventHandler
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setExecutionPhase(): Builder {
+            this.isExecutionPhase = true
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setMergingSkyframeAnalysisExecutionPhases(
+            mergingSkyframeAnalysisExecutionPhases: Boolean
+        ): Builder {
+            this.mergingSkyframeAnalysisExecutionPhases = mergingSkyframeAnalysisExecutionPhases
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setUnnecessaryTemporaryStateDropperReceiver(
+            unnecessaryTemporaryStateDropperReceiver: UnnecessaryTemporaryStateDropperReceiver?
+        ): Builder {
+            this.unnecessaryTemporaryStateDropperReceiver = unnecessaryTemporaryStateDropperReceiver
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setStoreExactCycles(storeExactCycles: Boolean): Builder {
+            this.storeExactCycles = storeExactCycles
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setDetectCycles(detectCycles: Boolean): Builder {
+            this.detectCycles = detectCycles
+            return this
+        }
+
+        fun build(): EvaluationContext {
+            return com.google.devtools.build.skyframe.EvaluationContext(
+                parallelism,
+                executor,
+                keepGoing,
+                eventHandler,
+                isExecutionPhase,
+                mergingSkyframeAnalysisExecutionPhases,
+                storeExactCycles,
+                unnecessaryTemporaryStateDropperReceiver,
+                detectCycles
+            )
+        }
     }
 
-    public EvaluationContext build() {
-      return new EvaluationContext(
-          parallelism,
-          executor,
-          keepGoing,
-          eventHandler,
-          isExecutionPhase,
-          mergingSkyframeAnalysisExecutionPhases,
-          storeExactCycles,
-          unnecessaryTemporaryStateDropperReceiver,
-          detectCycles);
+    companion object {
+        @kotlin.jvm.JvmStatic
+        fun newBuilder(): Builder {
+            return com.google.devtools.build.skyframe.EvaluationContext.Builder()
+        }
     }
-  }
 }

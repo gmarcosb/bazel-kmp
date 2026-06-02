@@ -11,101 +11,95 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.channels.SeekableByteChannel;
+import com.google.devtools.build.lib.vfs.DigestHashFunction
+import com.google.devtools.build.lib.vfs.PathFragment
+import com.google.devtools.build.lib.vfs.SymlinkTargetType
+import java.io.IOException
+import java.nio.channels.SeekableByteChannel
 
-/** Functionally like a read-only {@link FileSystem}. */
-public abstract class ReadonlyFileSystem extends FileSystem {
-  public ReadonlyFileSystem(DigestHashFunction hashFunction) {
-    super(hashFunction);
-  }
+/** Functionally like a read-only [FileSystem].  */
+abstract class ReadonlyFileSystem(hashFunction: DigestHashFunction?) :
+    com.google.devtools.build.lib.vfs.FileSystem(hashFunction) {
+    protected fun modificationException(): IOException {
+        val longname: String = this.getClass().getName()
+        val shortname: String = longname.substring(longname.lastIndexOf('.'.code) + 1)
+        return IOException(
+            shortname + " does not support mutating operations"
+        )
+    }
 
-  protected IOException modificationException() {
-    String longname = this.getClass().getName();
-    String shortname = longname.substring(longname.lastIndexOf('.') + 1);
-    return new IOException(
-        shortname + " does not support mutating operations");
-  }
+    @Throws(IOException::class)
+    override fun getOutputStream(path: PathFragment?, append: Boolean, internal: Boolean): java.io.OutputStream? {
+        throw modificationException()
+    }
 
-  @Override
-  public OutputStream getOutputStream(PathFragment path, boolean append, boolean internal)
-      throws IOException {
-    throw modificationException();
-  }
+    @Throws(IOException::class)
+    override fun createReadWriteByteChannel(path: PathFragment?): SeekableByteChannel? {
+        throw modificationException()
+    }
 
-  @Override
-  public SeekableByteChannel createReadWriteByteChannel(PathFragment path) throws IOException {
-    throw modificationException();
-  }
+    @Throws(IOException::class)
+    override fun setReadable(path: PathFragment?, readable: Boolean) {
+        throw modificationException()
+    }
 
-  @Override
-  public void setReadable(PathFragment path, boolean readable) throws IOException {
-    throw modificationException();
-  }
+    @Throws(IOException::class)
+    override fun setWritable(path: PathFragment?, writable: Boolean) {
+        throw modificationException()
+    }
 
-  @Override
-  public void setWritable(PathFragment path, boolean writable) throws IOException {
-    throw modificationException();
-  }
+    override fun setExecutable(path: PathFragment?, executable: Boolean) {
+        throw java.lang.UnsupportedOperationException("setExecutable")
+    }
 
-  @Override
-  public void setExecutable(PathFragment path, boolean executable) {
-    throw new UnsupportedOperationException("setExecutable");
-  }
+    override fun supportsModifications(path: PathFragment?): Boolean {
+        return false
+    }
 
-  @Override
-  public boolean supportsModifications(PathFragment path) {
-    return false;
-  }
+    override fun supportsSymbolicLinksNatively(path: PathFragment?): Boolean {
+        return false
+    }
 
-  @Override
-  public boolean supportsSymbolicLinksNatively(PathFragment path) {
-    return false;
-  }
+    override fun supportsHardLinksNatively(path: PathFragment?): Boolean {
+        return false
+    }
 
-  @Override
-  public boolean supportsHardLinksNatively(PathFragment path) {
-    return false;
-  }
+    @Throws(IOException::class)
+    override fun createDirectory(path: PathFragment?): Boolean {
+        throw modificationException()
+    }
 
-  @Override
-  public boolean createDirectory(PathFragment path) throws IOException {
-    throw modificationException();
-  }
+    @Throws(IOException::class)
+    override fun createDirectoryAndParents(path: PathFragment?) {
+        throw modificationException()
+    }
 
-  @Override
-  public void createDirectoryAndParents(PathFragment path) throws IOException {
-    throw modificationException();
-  }
+    @Throws(IOException::class)
+    override fun createSymbolicLink(
+        linkPath: PathFragment?, targetFragment: PathFragment?, type: SymlinkTargetType?
+    ) {
+        throw modificationException()
+    }
 
-  @Override
-  public void createSymbolicLink(
-      PathFragment linkPath, PathFragment targetFragment, SymlinkTargetType type)
-      throws IOException {
-    throw modificationException();
-  }
+    @Throws(IOException::class)
+    override fun createFSDependentHardLink(linkPath: PathFragment?, originalPath: PathFragment?) {
+        throw modificationException()
+    }
 
-  @Override
-  public void createFSDependentHardLink(PathFragment linkPath, PathFragment originalPath)
-      throws IOException {
-    throw modificationException();
-  }
+    @Throws(IOException::class)
+    override fun renameTo(sourcePath: PathFragment?, targetPath: PathFragment?) {
+        throw modificationException()
+    }
 
-  @Override
-  public void renameTo(PathFragment sourcePath, PathFragment targetPath) throws IOException {
-    throw modificationException();
-  }
+    @Throws(IOException::class)
+    override fun delete(path: PathFragment?): Boolean {
+        throw modificationException()
+    }
 
-  @Override
-  public boolean delete(PathFragment path) throws IOException {
-    throw modificationException();
-  }
-
-  @Override
-  public void setLastModifiedTime(PathFragment path, long newTime) throws IOException {
-    throw modificationException();
-  }
+    @Throws(IOException::class)
+    override fun setLastModifiedTime(path: PathFragment?, newTime: Long) {
+        throw modificationException()
+    }
 }

@@ -11,17 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
+
+import com.google.devtools.build.skyframe.EvaluationResult
+import com.google.devtools.build.skyframe.ParallelEvaluatorContext
+import com.google.devtools.build.skyframe.SkyKey
 
 /**
- * Detects cycles after a {@link ParallelEvaluator} evaluation that did not complete due to cycles.
- *
- * <p>Public only for the benefit of alternative graph implementations outside the skyframe package.
+ * Detects cycles after a [ParallelEvaluator] evaluation that did not complete due to cycles.
+ * 
+ * 
+ * Public only for the benefit of alternative graph implementations outside the skyframe package.
  */
-public interface CycleDetector {
-  void checkForCycles(
-      Iterable<SkyKey> badRoots,
-      EvaluationResult.Builder<?> result,
-      ParallelEvaluatorContext evaluatorContext)
-      throws InterruptedException;
+interface CycleDetector {
+    @Throws(java.lang.InterruptedException::class)
+    fun checkForCycles(
+        badRoots: Iterable<SkyKey?>?,
+        result: com.google.devtools.build.skyframe.EvaluationResult.Builder<*>?,
+        evaluatorContext: ParallelEvaluatorContext?
+    )
 }

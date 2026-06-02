@@ -90,7 +90,7 @@ public abstract class MockCcSupport {
       ImmutableList.of("static_library", "lib", ".a");
 
   public static final String EMPTY_EXECUTABLE_ACTION_CONFIG =
-      emptyActionConfigFor(LinkTargetType.EXECUTABLE.getActionName());
+      emptyActionConfigFor(LinkTargetType.EXECUTABLE.actionName);
 
   public static final String EMPTY_CC_TOOLCHAIN =
       Joiner.on("\n")

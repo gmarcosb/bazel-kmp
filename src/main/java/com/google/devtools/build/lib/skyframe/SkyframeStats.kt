@@ -11,30 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMultiset;
-import com.google.devtools.build.lib.packages.StarlarkProvider;
+import com.google.devtools.build.lib.packages.StarlarkProvider
 
 /**
  * Container for Stats we want to generate for BEP, `blaze dump --rules` and `blaze dump
  * --skyframe=count` which extracts information from a SkyframeExecutor.
- *
- * <p>{@link #ruleStats()} and {@link #aspectStats} are expected to be sorted by {@link
- * SkyKeyStats#getName}. {@link #starlarkProviders()} is expected to be sorted in descending order
+ * 
+ * 
+ * [.ruleStats] and [.aspectStats] are expected to be sorted by [ ][SkyKeyStats.getName]. [.starlarkProviders] is expected to be sorted in descending order
  * by count.
  */
-public record SkyframeStats(
-    ImmutableList<SkyKeyStats> ruleStats,
-    ImmutableList<SkyKeyStats> aspectStats,
-    ImmutableMultiset<StarlarkProvider> starlarkProviders) {
+class SkyframeStats(
+    ruleStats: com.google.common.collect.ImmutableList<SkyKeyStats?>?,
+    aspectStats: com.google.common.collect.ImmutableList<SkyKeyStats?>?,
+    starlarkProviders: com.google.common.collect.ImmutableMultiset<StarlarkProvider?>?
+) {
+    val ruleStats: com.google.common.collect.ImmutableList<SkyKeyStats?>?
+    val aspectStats: com.google.common.collect.ImmutableList<SkyKeyStats?>?
+    val starlarkProviders: com.google.common.collect.ImmutableMultiset<StarlarkProvider?>?
 
-  public SkyframeStats {
-    checkNotNull(ruleStats);
-    checkNotNull(aspectStats);
-    checkNotNull(starlarkProviders);
-  }
+    init {
+        this.starlarkProviders = starlarkProviders
+        this.aspectStats = aspectStats
+        this.ruleStats = ruleStats
+        com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableList<SkyKeyStats?>?>(
+            ruleStats
+        )
+        com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableList<SkyKeyStats?>?>(
+            aspectStats
+        )
+        com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableMultiset<StarlarkProvider?>?>(
+            starlarkProviders
+        )
+    }
 }

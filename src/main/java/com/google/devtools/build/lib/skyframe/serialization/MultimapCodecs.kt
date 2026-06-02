@@ -11,223 +11,184 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.devtools.build.lib.skyframe.serialization.ArrayProcessor.deserializeObjectArray;
-
-import com.google.common.collect.ImmutableListMultimap;
-import com.google.common.collect.ImmutableSetMultimap;
-import com.google.common.collect.LinkedHashMultimap;
-import com.google.common.collect.Multimap;
-import com.google.devtools.build.lib.skyframe.serialization.DeferredObjectCodec.DeferredValue;
-import com.google.errorprone.annotations.Keep;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Map;
+import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.DeferredObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.DeferredObjectCodec.DeferredValue
+import com.google.devtools.build.lib.skyframe.serialization.SerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
 /**
- * Codecs for {@link Multimap}. Handles {@link ImmutableListMultimap}, {@link ImmutableSetMultimap}
- * and {@link LinkedHashMultimap}.
+ * Codecs for [Multimap]. Handles [ImmutableListMultimap], [ImmutableSetMultimap]
+ * and [LinkedHashMultimap].
  */
-@SuppressWarnings({"unchecked", "rawtypes", "NonApiType"})
-public final class MultimapCodecs {
-  @Keep // used reflectively
-  private static class ImmutableListMultimapCodec
-      extends DeferredObjectCodec<ImmutableListMultimap> {
-    @Override
-    public Class<ImmutableListMultimap> getEncodedClass() {
-      return ImmutableListMultimap.class;
+object MultimapCodecs {
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    private fun serializeMultimap(
+        context: SerializationContext, obj: com.google.common.collect.Multimap<*, *>, codedOut: CodedOutputStream
+    ) {
+        val map: MutableMap<*, *> = obj.asMap()
+        codedOut.writeInt32NoTag(map.size())
+        for (next in map.entrySet()) {
+            val entry = next as MutableMap.MutableEntry<*, *>
+
+            context.serialize(entry.getKey(), codedOut)
+
+            val values = entry.getValue() as MutableCollection<*>
+            codedOut.writeInt32NoTag(values.size())
+            for (value in values) {
+                context.serialize(value, codedOut)
+            }
+        }
     }
 
-    @Override
-    public void serialize(
-        SerializationContext context, ImmutableListMultimap obj, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      serializeMultimap(context, obj, codedOut);
+    /** Takes care to fully deserialize all keys and values as they will be used in sets.  */
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    private fun deserializeSetMultimap(
+        context: AsyncDeserializationContext, codedIn: CodedInputStream, buffer: MultimapBuffer
+    ) {
+        /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
     }
 
-    @Override
-    public DeferredValue<ImmutableListMultimap> deserializeDeferred(
-        AsyncDeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      int size = codedIn.readInt32();
-      if (size == 0) {
-        return ImmutableListMultimap::of;
-      }
+    @com.google.errorprone.annotations.Keep // used reflectively
+    private class ImmutableListMultimapCodec
 
-      ImmutableListMultimapBuffer buffer = new ImmutableListMultimapBuffer(size);
-      for (int i = 0; i < size; i++) {
-        context.deserializeArrayElement(codedIn, buffer.keys, i);
-        int valuesCount = codedIn.readInt32();
-        Object[] values = new Object[valuesCount];
-        buffer.values[i] = values;
-        // The builder merely collects these references in an ArrayList, so (unlike the set-type
-        // multimaps) these values do not need to be fully deserialized.
-        deserializeObjectArray(context, codedIn, buffer.values[i], valuesCount);
-      }
-      return buffer;
-    }
-  }
+        : DeferredObjectCodec<com.google.common.collect.ImmutableListMultimap<*, *>?>() {
+        override fun getEncodedClass(): java.lang.Class<com.google.common.collect.ImmutableListMultimap<*, *>?> {
+            return com.google.common.collect.ImmutableListMultimap::class.java
+        }
 
-  @Keep // used reflectively
-  private static class ImmutableSetMultimapCodec extends DeferredObjectCodec<ImmutableSetMultimap> {
-    @Override
-    public Class<ImmutableSetMultimap> getEncodedClass() {
-      return ImmutableSetMultimap.class;
-    }
+        @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+        override fun serialize(
+            context: SerializationContext,
+            obj: com.google.common.collect.ImmutableListMultimap<*, *>,
+            codedOut: CodedOutputStream
+        ) {
+            serializeMultimap(context, obj, codedOut)
+        }
 
-    @Override
-    public void serialize(
-        SerializationContext context, ImmutableSetMultimap obj, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      serializeMultimap(context, obj, codedOut);
+        @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+        override fun deserializeDeferred(
+            context: AsyncDeserializationContext, codedIn: CodedInputStream
+        ): DeferredValue<com.google.common.collect.ImmutableListMultimap<*, *>?> {
+            val size: Int = codedIn.readInt32()
+            if (size == 0) {
+                return DeferredValue { com.google.common.collect.ImmutableListMultimap.of() }
+            }
+
+            val buffer = ImmutableListMultimapBuffer(size)
+            /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
+            return buffer
+        }
     }
 
-    @Override
-    public DeferredValue<ImmutableSetMultimap> deserializeDeferred(
-        AsyncDeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      int size = codedIn.readInt32();
-      if (size == 0) {
-        return ImmutableSetMultimap::of;
-      }
+    @com.google.errorprone.annotations.Keep // used reflectively
+    private class ImmutableSetMultimapCodec :
+        DeferredObjectCodec<com.google.common.collect.ImmutableSetMultimap<*, *>?>() {
+        override fun getEncodedClass(): java.lang.Class<com.google.common.collect.ImmutableSetMultimap<*, *>?> {
+            return com.google.common.collect.ImmutableSetMultimap::class.java
+        }
 
-      ImmutableSetMultimapBuffer buffer = new ImmutableSetMultimapBuffer(size);
-      deserializeSetMultimap(context, codedIn, buffer);
-      return buffer;
-    }
-  }
+        @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+        override fun serialize(
+            context: SerializationContext,
+            obj: com.google.common.collect.ImmutableSetMultimap<*, *>,
+            codedOut: CodedOutputStream
+        ) {
+            serializeMultimap(context, obj, codedOut)
+        }
 
-  @Keep // used reflectively
-  private static class LinkedHashMultimapCodec extends DeferredObjectCodec<LinkedHashMultimap> {
-    @Override
-    public Class<LinkedHashMultimap> getEncodedClass() {
-      return LinkedHashMultimap.class;
-    }
+        @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+        override fun deserializeDeferred(
+            context: AsyncDeserializationContext, codedIn: CodedInputStream
+        ): DeferredValue<com.google.common.collect.ImmutableSetMultimap<*, *>?> {
+            val size: Int = codedIn.readInt32()
+            if (size == 0) {
+                return DeferredValue { com.google.common.collect.ImmutableSetMultimap.of() }
+            }
 
-    @Override
-    public void serialize(
-        SerializationContext context, LinkedHashMultimap obj, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      serializeMultimap(context, obj, codedOut);
-    }
-
-    @Override
-    public DeferredValue<LinkedHashMultimap> deserializeDeferred(
-        AsyncDeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      int size = codedIn.readInt32();
-      if (size == 0) {
-        return LinkedHashMultimap::create;
-      }
-
-      LinkedHashMultimapBuffer buffer = new LinkedHashMultimapBuffer(size);
-      deserializeSetMultimap(context, codedIn, buffer);
-      return buffer;
-    }
-  }
-
-  private static void serializeMultimap(
-      SerializationContext context, Multimap obj, CodedOutputStream codedOut)
-      throws SerializationException, IOException {
-    Map map = obj.asMap();
-    codedOut.writeInt32NoTag(map.size());
-    for (Object next : map.entrySet()) {
-      Map.Entry entry = (Map.Entry) next;
-
-      context.serialize(entry.getKey(), codedOut);
-
-      Collection values = (Collection) entry.getValue();
-      codedOut.writeInt32NoTag(values.size());
-      for (Object value : values) {
-        context.serialize(value, codedOut);
-      }
-    }
-  }
-
-  /** Takes care to fully deserialize all keys and values as they will be used in sets. */
-  private static void deserializeSetMultimap(
-      AsyncDeserializationContext context, CodedInputStream codedIn, MultimapBuffer buffer)
-      throws SerializationException, IOException {
-    for (int i = 0; i < buffer.size(); i++) {
-      context.deserializeArrayElement(codedIn, buffer.keys, i);
-
-      int valuesCount = codedIn.readInt32();
-      Object[] values = new Object[valuesCount];
-      buffer.values[i] = values;
-      // The builder uses a set to collect the values so they must be complete.
-      deserializeObjectArray(context, codedIn, values, valuesCount);
-    }
-  }
-
-  private static class MultimapBuffer {
-    final Object[] keys;
-    final Object[][] values;
-
-    private MultimapBuffer(int size) {
-      this.keys = new Object[size];
-      this.values = new Object[size][];
+            val buffer = ImmutableSetMultimapBuffer(size)
+            deserializeSetMultimap(context, codedIn, buffer)
+            return buffer
+        }
     }
 
-    int size() {
-      return keys.length;
-    }
-  }
+    @com.google.errorprone.annotations.Keep // used reflectively
+    private class LinkedHashMultimapCodec : DeferredObjectCodec<com.google.common.collect.LinkedHashMultimap<*, *>?>() {
+        override fun getEncodedClass(): java.lang.Class<com.google.common.collect.LinkedHashMultimap<*, *>?> {
+            return com.google.common.collect.LinkedHashMultimap::class.java
+        }
 
-  private static class ImmutableListMultimapBuffer extends MultimapBuffer
-      implements DeferredValue<ImmutableListMultimap> {
-    private ImmutableListMultimapBuffer(int size) {
-      super(size);
-    }
+        @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+        override fun serialize(
+            context: SerializationContext,
+            obj: com.google.common.collect.LinkedHashMultimap<*, *>,
+            codedOut: CodedOutputStream
+        ) {
+            serializeMultimap(context, obj, codedOut)
+        }
 
-    @Override
-    public ImmutableListMultimap call() {
-      ImmutableListMultimap.Builder builder = ImmutableListMultimap.builder();
-      for (int i = 0; i < size(); i++) {
-        builder.putAll(keys[i], values[i]);
-      }
-      return builder.build();
-    }
-  }
+        @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+        override fun deserializeDeferred(
+            context: AsyncDeserializationContext, codedIn: CodedInputStream
+        ): DeferredValue<com.google.common.collect.LinkedHashMultimap<*, *>?> {
+            val size: Int = codedIn.readInt32()
+            if (size == 0) {
+                return DeferredValue { com.google.common.collect.LinkedHashMultimap.create() }
+            }
 
-  private static class ImmutableSetMultimapBuffer extends MultimapBuffer
-      implements DeferredValue<ImmutableSetMultimap> {
-    private ImmutableSetMultimapBuffer(int size) {
-      super(size);
-    }
-
-    @Override
-    public ImmutableSetMultimap call() {
-      ImmutableSetMultimap.Builder builder = ImmutableSetMultimap.builder();
-      for (int i = 0; i < size(); i++) {
-        builder.putAll(keys[i], values[i]);
-      }
-      return builder.build();
-    }
-  }
-
-  private static class LinkedHashMultimapBuffer extends MultimapBuffer
-      implements DeferredValue<LinkedHashMultimap> {
-    private LinkedHashMultimapBuffer(int size) {
-      super(size);
+            val buffer = LinkedHashMultimapBuffer(size)
+            deserializeSetMultimap(context, codedIn, buffer)
+            return buffer
+        }
     }
 
-    @Override
-    public LinkedHashMultimap call() {
-      int totalValues = 0;
-      for (int i = 0; i < size(); i++) {
-        totalValues += values[i].length;
-      }
-      LinkedHashMultimap result = LinkedHashMultimap.create(size(), totalValues / size());
-      for (int i = 0; i < size(); i++) {
-        result.putAll(keys[i], Arrays.asList(values[i]));
-      }
-      return result;
-    }
-  }
+    private open class MultimapBuffer(size: Int) {
+        val keys: Array<Any?>
+        val values: Array<Array<Any?>?>
 
-  private MultimapCodecs() {}
+        init {
+            this.keys = arrayOfNulls<Any>(size)
+            this.values = arrayOfNulls<Array<Any?>>(size)
+        }
+
+        fun size(): Int {
+            return keys.size
+        }
+    }
+
+    private class ImmutableListMultimapBuffer(size: Int) : MultimapBuffer(size),
+        DeferredValue<com.google.common.collect.ImmutableListMultimap<*, *>?> {
+        override fun call(): com.google.common.collect.ImmutableListMultimap<*, *> {
+            val builder: com.google.common.collect.ImmutableListMultimap.Builder<*, *> =
+                com.google.common.collect.ImmutableListMultimap.builder<Any?, Any?>()
+            /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
+            return builder.build()
+        }
+    }
+
+    private class ImmutableSetMultimapBuffer(size: Int) : MultimapBuffer(size),
+        DeferredValue<com.google.common.collect.ImmutableSetMultimap<*, *>?> {
+        override fun call(): com.google.common.collect.ImmutableSetMultimap<*, *> {
+            val builder: com.google.common.collect.ImmutableSetMultimap.Builder<*, *> =
+                com.google.common.collect.ImmutableSetMultimap.builder<Any?, Any?>()
+            /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
+            return builder.build()
+        }
+    }
+
+    private class LinkedHashMultimapBuffer(size: Int) : MultimapBuffer(size),
+        DeferredValue<com.google.common.collect.LinkedHashMultimap<*, *>?> {
+        override fun call(): com.google.common.collect.LinkedHashMultimap<*, *> {
+            var totalValues = 0
+            /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
+            val result: com.google.common.collect.LinkedHashMultimap<*, *> =
+                com.google.common.collect.LinkedHashMultimap.create<Any?, Any?>(size(), totalValues / size())
+            /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
+            return result
+        }
+    }
 }

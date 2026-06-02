@@ -11,23 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
+import com.google.devtools.build.skyframe.SkyFunction
+import com.google.devtools.build.skyframe.SkyFunctionException
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
 
 /**
- * Builder for {@link PrecomputedValue}s.
- *
- * <p>Always throws an error, because the values aren't computed inside the skyframe framework.
+ * Builder for [PrecomputedValue]s.
+ * 
+ * 
+ * Always throws an error, because the values aren't computed inside the skyframe framework.
  */
-public class PrecomputedFunction implements SkyFunction {
-
-  @Override
-  public SkyValue compute(SkyKey skyKey, Environment env) throws SkyFunctionException,
-      InterruptedException {
-    throw new IllegalStateException(skyKey + " not set");
-  }
+class PrecomputedFunction : SkyFunction {
+    @Throws(SkyFunctionException::class, java.lang.InterruptedException::class)
+    override fun compute(skyKey: SkyKey?, env: SkyFunction.Environment?): SkyValue? {
+        throw java.lang.IllegalStateException(skyKey.toString() + " not set")
+    }
 }

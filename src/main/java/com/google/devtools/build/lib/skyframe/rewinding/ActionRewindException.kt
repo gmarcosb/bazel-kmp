@@ -11,51 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.rewinding;
+package com.google.devtools.build.lib.skyframe.rewinding
 
-import com.google.devtools.build.lib.server.FailureDetails.ActionRewinding;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.Spawn;
-import com.google.devtools.build.lib.skyframe.DetailedException;
-import com.google.devtools.build.lib.util.DetailedExitCode;
+import com.google.devtools.build.lib.server.FailureDetails.ActionRewinding
 
-/** Exception thrown by {@link ActionRewindStrategy} when it cannot compute a rewind plan. */
-public abstract sealed class ActionRewindException extends Exception implements DetailedException {
+/** Exception thrown by [ActionRewindStrategy] when it cannot compute a rewind plan.  */
+abstract class ActionRewindException internal constructor(message: String?) : java.lang.Exception(message),
+    DetailedException {
+    internal class GenericActionRewindException(message: String?, code: ActionRewinding.Code?) :
+        ActionRewindException(message) {
+        private val code: ActionRewinding.Code?
 
-  ActionRewindException(String message) {
-    super(message);
-  }
+        init {
+            this.code = code
+        }
 
-  static final class GenericActionRewindException extends ActionRewindException {
-    private final ActionRewinding.Code code;
-
-    GenericActionRewindException(String message, ActionRewinding.Code code) {
-      super(message);
-      this.code = code;
+        val detailedExitCode: DetailedExitCode
+            get() = DetailedExitCode.of(
+                FailureDetail.newBuilder()
+                    .setMessage(getMessage())
+                    .setActionRewinding(ActionRewinding.newBuilder().setCode(code))
+                    .build()
+            )
     }
 
-    @Override
-    public DetailedExitCode getDetailedExitCode() {
-      return DetailedExitCode.of(
-          FailureDetail.newBuilder()
-              .setMessage(getMessage())
-              .setActionRewinding(ActionRewinding.newBuilder().setCode(code))
-              .build());
+    internal class FallbackToBuildRewindingException(message: String?) : ActionRewindException(message) {
+        val detailedExitCode: DetailedExitCode
+            get() = DetailedExitCode.of(
+                FailureDetail.newBuilder()
+                    .setMessage(getMessage())
+                    .setSpawn(Spawn.newBuilder().setCode(Spawn.Code.REMOTE_CACHE_EVICTED))
+                    .build()
+            )
     }
-  }
-
-  static final class FallbackToBuildRewindingException extends ActionRewindException {
-    FallbackToBuildRewindingException(String message) {
-      super(message);
-    }
-
-    @Override
-    public DetailedExitCode getDetailedExitCode() {
-      return DetailedExitCode.of(
-          FailureDetail.newBuilder()
-              .setMessage(getMessage())
-              .setSpawn(Spawn.newBuilder().setCode(Spawn.Code.REMOTE_CACHE_EVICTED))
-              .build());
-    }
-  }
 }

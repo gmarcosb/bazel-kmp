@@ -310,12 +310,12 @@ public abstract class AbstractPackageLoaderTest {
     }
     assertThat(modules.keySet()).containsExactly(fooLabel, barLabel);
 
-    assertThat(modules.get(fooLabel).isPresent()).isTrue();
-    assertThat(modules.get(fooLabel).get().getDocumentation()).isEqualTo("Module foo");
+    assertThat(modules.get(fooLabel).isPresent).isTrue();
+    assertThat(modules.get(fooLabel).get().documentation).isEqualTo("Module foo");
     assertThat(modules.get(fooLabel).get()).isSameInstanceAs(modules.get(fooLabel).getUnchecked());
 
-    assertThat(modules.get(barLabel).isPresent()).isTrue();
-    assertThat(modules.get(barLabel).get().getDocumentation()).isEqualTo("Module bar");
+    assertThat(modules.get(barLabel).isPresent).isTrue();
+    assertThat(modules.get(barLabel).get().documentation).isEqualTo("Module bar");
     assertThat(modules.get(barLabel).get()).isSameInstanceAs(modules.get(barLabel).getUnchecked());
 
     assertNoEvents(events);
@@ -339,7 +339,7 @@ public abstract class AbstractPackageLoaderTest {
 
     ValueOrException<Module, StarlarkModuleLoadingException> valueOrException =
         modules.get(fooLabel);
-    assertThat(valueOrException.isPresent()).isFalse();
+    assertThat(valueOrException.isPresent).isFalse();
     StarlarkModuleLoadingException exception =
         assertThrows(StarlarkModuleLoadingException.class, valueOrException::get);
     assertThat(exception).hasMessageThat().contains("compilation of module 'x/foo.bzl' failed");
@@ -387,7 +387,7 @@ public abstract class AbstractPackageLoaderTest {
 
     ValueOrException<Module, StarlarkModuleLoadingException> valueOrException =
         modules.get(fooLabel);
-    assertThat(valueOrException.isPresent()).isFalse();
+    assertThat(valueOrException.isPresent).isFalse();
     StarlarkModuleLoadingException exception =
         assertThrows(StarlarkModuleLoadingException.class, valueOrException::get);
     assertThat(exception).hasMessageThat().contains("Cycle encountered while loading //x:foo.bzl");
@@ -462,7 +462,7 @@ public abstract class AbstractPackageLoaderTest {
     RepositoryMapping repositoryMapping;
     try (PackageLoader pkgLoader = newPackageLoader()) {
       LoadingContext loadingContext = pkgLoader.makeLoadingContext();
-      repositoryMapping = loadingContext.getRepositoryMapping();
+      repositoryMapping = loadingContext.repositoryMapping;
     }
     assertThat(repositoryMapping.get("")).isEqualTo(RepositoryName.MAIN);
     assertNoEvents(handler.getEvents());

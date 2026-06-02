@@ -11,109 +11,102 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.collect.Sets;
-import com.google.devtools.build.skyframe.NodeEntry.DirtyType;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.Set;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.EvaluationProgressReceiver
+import com.google.devtools.build.skyframe.EvaluationProgressReceiver.EvaluationState
+import com.google.devtools.build.skyframe.EvaluationProgressReceiver.NodeState
+import com.google.devtools.build.skyframe.GroupedDeps
+import com.google.devtools.build.skyframe.InflightTrackingProgressReceiver
+import com.google.devtools.build.skyframe.NodeEntry.DirtyType
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
 
 /**
- * A delegating {@link InflightTrackingProgressReceiver} that tracks inflight keys but not dirty
+ * A delegating [InflightTrackingProgressReceiver] that tracks inflight keys but not dirty
  * keys.
- *
- * <p>Suitable for non-incremental evaluations or evaluators that do not support deletion of dirty
+ * 
+ * 
+ * Suitable for non-incremental evaluations or evaluators that do not support deletion of dirty
  * nodes.
  */
-public class InflightOnlyTrackingProgressReceiver implements InflightTrackingProgressReceiver {
+class InflightOnlyTrackingProgressReceiver(progressReceiver: EvaluationProgressReceiver?) :
+    InflightTrackingProgressReceiver {
+    protected val progressReceiver: EvaluationProgressReceiver
+    private var inflightKeys: MutableSet<SkyKey?> = com.google.common.collect.Sets.newConcurrentHashSet<SkyKey?>()
 
-  protected final EvaluationProgressReceiver progressReceiver;
-  private Set<SkyKey> inflightKeys = Sets.newConcurrentHashSet();
-
-  public InflightOnlyTrackingProgressReceiver(EvaluationProgressReceiver progressReceiver) {
-    this.progressReceiver = checkNotNull(progressReceiver);
-  }
-
-  /** Called when a node is injected into the graph, and not evaluated. */
-  @Override
-  public final void injected(SkyKey skyKey) {
-    // This node was never evaluated, but is now clean and need not be re-evaluated.
-    inflightKeys.remove(skyKey);
-  }
-
-  @Override
-  public final void dirtied(SkyKey skyKey, DirtyType dirtyType) {
-    progressReceiver.dirtied(skyKey, dirtyType);
-  }
-
-  @Override
-  public final void deleted(SkyKey skyKey) {
-    progressReceiver.deleted(skyKey);
-  }
-
-  @Override
-  public final void enqueueing(SkyKey skyKey) {
-    if (inflightKeys.add(skyKey)) {
-      // Only tell the external listener the node was enqueued if no there was neither an error
-      // nor interrupt.
-      progressReceiver.enqueueing(skyKey);
+    init {
+        this.progressReceiver =
+            com.google.common.base.Preconditions.checkNotNull<EvaluationProgressReceiver>(progressReceiver)
     }
-  }
 
-  @Override
-  public final void enqueueAfterError(SkyKey skyKey) {
-    inflightKeys.add(skyKey);
-  }
+    /** Called when a node is injected into the graph, and not evaluated.  */
+    override fun injected(skyKey: SkyKey?) {
+        // This node was never evaluated, but is now clean and need not be re-evaluated.
+        inflightKeys.remove(skyKey)
+    }
 
-  @Override
-  public final void stateStarting(SkyKey skyKey, NodeState nodeState) {
-    progressReceiver.stateStarting(skyKey, nodeState);
-  }
+    override fun dirtied(skyKey: SkyKey?, dirtyType: DirtyType?) {
+        progressReceiver.dirtied(skyKey, dirtyType)
+    }
 
-  @Override
-  public final void stateEnding(SkyKey skyKey, NodeState nodeState) {
-    progressReceiver.stateEnding(skyKey, nodeState);
-  }
+    override fun deleted(skyKey: SkyKey?) {
+        progressReceiver.deleted(skyKey)
+    }
 
-  @Override
-  public final void evaluated(
-      SkyKey skyKey,
-      EvaluationState state,
-      @Nullable SkyValue newValue,
-      @Nullable ErrorInfo newError,
-      @Nullable GroupedDeps directDeps) {
-    progressReceiver.evaluated(skyKey, state, newValue, newError, directDeps);
+    override fun enqueueing(skyKey: SkyKey?) {
+        if (inflightKeys.add(skyKey)) {
+            // Only tell the external listener the node was enqueued if no there was neither an error
+            // nor interrupt.
+            progressReceiver.enqueueing(skyKey)
+        }
+    }
 
-    // This key was either built or marked clean, so we can remove it from both the dirty and
-    // inflight nodes.
-    inflightKeys.remove(skyKey);
-  }
+    override fun enqueueAfterError(skyKey: SkyKey?) {
+        inflightKeys.add(skyKey)
+    }
 
-  @Override
-  public void changePruned(SkyKey skyKey) {
-    progressReceiver.changePruned(skyKey);
-  }
+    override fun stateStarting(skyKey: SkyKey?, nodeState: NodeState?) {
+        progressReceiver.stateStarting(skyKey, nodeState)
+    }
 
-  /** Returns if the key is enqueued for evaluation. */
-  @Override
-  public final boolean isInflight(SkyKey skyKey) {
-    return inflightKeys.contains(skyKey);
-  }
+    override fun stateEnding(skyKey: SkyKey?, nodeState: NodeState?) {
+        progressReceiver.stateEnding(skyKey, nodeState)
+    }
 
-  @Override
-  public final void removeFromInflight(SkyKey skyKey) {
-    inflightKeys.remove(skyKey);
-  }
+    override fun evaluated(
+        skyKey: SkyKey?,
+        state: EvaluationState?,
+        newValue: SkyValue?,
+        newError: com.google.devtools.build.skyframe.ErrorInfo?,
+        directDeps: GroupedDeps?
+    ) {
+        progressReceiver.evaluated(skyKey, state, newValue, newError, directDeps)
 
-  /** Returns the set of all keys that are enqueued for evaluation, and resets the set to empty. */
-  @Override
-  @CanIgnoreReturnValue
-  public final Set<SkyKey> getAndClearInflightKeys() {
-    Set<SkyKey> keys = inflightKeys;
-    inflightKeys = Sets.newConcurrentHashSet();
-    return keys;
-  }
+        // This key was either built or marked clean, so we can remove it from both the dirty and
+        // inflight nodes.
+        inflightKeys.remove(skyKey)
+    }
+
+    override fun changePruned(skyKey: SkyKey?) {
+        progressReceiver.changePruned(skyKey)
+    }
+
+    /** Returns if the key is enqueued for evaluation.  */
+    override fun isInflight(skyKey: SkyKey?): Boolean {
+        return inflightKeys.contains(skyKey)
+    }
+
+    override fun removeFromInflight(skyKey: SkyKey?) {
+        inflightKeys.remove(skyKey)
+    }
+
+    @get:com.google.errorprone.annotations.CanIgnoreReturnValue
+    val andClearInflightKeys: MutableSet<SkyKey>?
+        /** Returns the set of all keys that are enqueued for evaluation, and resets the set to empty.  */
+        get() {
+            val keys: MutableSet<SkyKey?>? = inflightKeys
+            inflightKeys = com.google.common.collect.Sets.newConcurrentHashSet<SkyKey?>()
+            return keys
+        }
 }

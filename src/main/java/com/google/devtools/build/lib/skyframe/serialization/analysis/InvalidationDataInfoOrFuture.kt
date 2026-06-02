@@ -11,179 +11,159 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import com.google.devtools.build.lib.concurrent.SettableFutureKeyedValue;
-import com.google.devtools.build.lib.skyframe.AbstractNestedFileOpNodes;
-import com.google.devtools.build.lib.skyframe.DirectoryListingKey;
-import com.google.devtools.build.lib.skyframe.FileKey;
-import com.google.devtools.build.lib.skyframe.serialization.PackedFingerprint;
-import com.google.devtools.build.lib.skyframe.serialization.WriteStatuses.WriteStatus;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import java.util.function.BiConsumer;
+import com.google.devtools.build.lib.concurrent.SettableFutureKeyedValue
 
 /**
  * Information about remotely stored invalidation data.
- *
- * <p>There are 3 distinct type families, associated with files, directory listings and nodes
+ * 
+ * 
+ * There are 3 distinct type families, associated with files, directory listings and nodes
  * (nested sets of files and directory listings).
- *
- * <p>Each family has 3 types, a constant type (no persisted data), information about stored
+ * 
+ * 
+ * Each family has 3 types, a constant type (no persisted data), information about stored
  * invalidation data or a future. Information about stored invalidation data always includes a cache
  * key and a write status.
- *
- * <p>In the case of {@link FileInvalidationData}, a Max Transitive Source Version (MTSV) and fully
+ * 
+ * 
+ * In the case of [FileInvalidationData], a Max Transitive Source Version (MTSV) and fully
  * resolved path is also included. These fields are used for ancestor resolution.
  */
-@SuppressWarnings("InterfaceWithOnlyStatics") // sealed hierarchy root
-sealed interface InvalidationDataInfoOrFuture
-    permits InvalidationDataInfoOrFuture.InvalidationDataInfo,
-        InvalidationDataInfoOrFuture.FileDataInfoOrFuture,
-        InvalidationDataInfoOrFuture.ListingDataInfoOrFuture,
-        InvalidationDataInfoOrFuture.NodeDataInfoOrFuture {
+internal interface InvalidationDataInfoOrFuture {
+    /** Non-future, immediate value sub-types of [InvalidationDataInfoOrFuture].  */
+    interface InvalidationDataInfo : InvalidationDataInfoOrFuture
 
-  /** Non-future, immediate value sub-types of {@link InvalidationDataInfoOrFuture}. */
-  sealed interface InvalidationDataInfo extends InvalidationDataInfoOrFuture
-      permits FileDataInfo, ListingDataInfo, NodeDataInfo {}
 
-  /** Base implementation of a {@link InvalidationDataInfoOrFuture} value. */
-  abstract static sealed class BaseInvalidationDataInfo<T> {
-    private final T cacheKey;
-    private final WriteStatus writeStatus;
+    /** Base implementation of a [InvalidationDataInfoOrFuture] value.  */
+    class BaseInvalidationDataInfo<T> internal constructor(private val cacheKey: T?, writeStatus: WriteStatus?) {
+        private val writeStatus: WriteStatus?
 
-    BaseInvalidationDataInfo(T cacheKey, WriteStatus writeStatus) {
-      this.cacheKey = cacheKey;
-      this.writeStatus = writeStatus;
+        init {
+            this.writeStatus = writeStatus
+        }
+
+        /** Key for [com.google.devtools.build.lib.serialization.FingerprintValueService].  */
+        fun cacheKey(): T? {
+            return cacheKey
+        }
+
+        /** Transitively inclusive status of writing this data to the cache.  */
+        fun writeStatus(): WriteStatus? {
+            return writeStatus
+        }
     }
 
-    /** Key for {@link com.google.devtools.build.lib.serialization.FingerprintValueService}. */
-    final T cacheKey() {
-      return cacheKey;
+    interface FileDataInfoOrFuture : InvalidationDataInfoOrFuture
+
+
+    interface FileDataInfo : FileDataInfoOrFuture, InvalidationDataInfo
+
+
+    /** The file doesn't change and isn't associated with any invalidation data.  */
+    enum class ConstantFileData : FileDataInfo {
+        CONSTANT_FILE
     }
 
-    /** Transitively inclusive status of writing this data to the cache. */
-    final WriteStatus writeStatus() {
-      return writeStatus;
+    /** Information about transitive upload of invalidation data for a certain [FileKey].  */
+    class FileInvalidationDataInfo internal constructor(
+        cacheKey: String?,
+        writeStatus: WriteStatus?,
+        private val exists: Boolean,
+        private val mtsv: Long,
+        realPath: RootedPath?
+    ) : BaseInvalidationDataInfo<String?>(cacheKey, writeStatus), FileDataInfo {
+        private val realPath: RootedPath?
+
+        init {
+            this.realPath = realPath
+        }
+
+        /** True if the file exists.  */
+        fun exists(): Boolean {
+            return exists
+        }
+
+        /**
+         * The MTSV.
+         * 
+         * 
+         * Used by dependents to create parent references. This information is already incorporated
+         * into the [.cacheKey] value.
+         */
+        fun mtsv(): Long {
+            return mtsv
+        }
+
+        /**
+         * The resolved real path.
+         * 
+         * 
+         * Used for symlink resolution.
+         */
+        fun realPath(): RootedPath? {
+            return realPath
+        }
     }
-  }
 
-  sealed interface FileDataInfoOrFuture extends InvalidationDataInfoOrFuture
-      permits FileDataInfo, FutureFileDataInfo {}
+    class FutureFileDataInfo
+    internal constructor(
+        key: com.google.devtools.build.lib.skyframe.FileKey?,
+        consumer: java.util.function.BiConsumer<com.google.devtools.build.lib.skyframe.FileKey?, FileDataInfo?>?
+    ) : SettableFutureKeyedValue<FutureFileDataInfo?, com.google.devtools.build.lib.skyframe.FileKey?, FileDataInfo?>(
+        key,
+        consumer
+    ), FileDataInfoOrFuture
 
-  sealed interface FileDataInfo extends FileDataInfoOrFuture, InvalidationDataInfo
-      permits ConstantFileData, FileInvalidationDataInfo {}
+    interface ListingDataInfoOrFuture : InvalidationDataInfoOrFuture
 
-  /** The file doesn't change and isn't associated with any invalidation data. */
-  enum ConstantFileData implements FileDataInfo {
-    CONSTANT_FILE;
-  }
 
-  /** Information about transitive upload of invalidation data for a certain {@link FileKey}. */
-  static final class FileInvalidationDataInfo extends BaseInvalidationDataInfo<String>
-      implements FileDataInfo {
-    private final boolean exists;
-    private final long mtsv;
-    private final RootedPath realPath;
+    interface ListingDataInfo : ListingDataInfoOrFuture, InvalidationDataInfo
 
-    FileInvalidationDataInfo(
-        String cacheKey, WriteStatus writeStatus, boolean exists, long mtsv, RootedPath realPath) {
-      super(cacheKey, writeStatus);
-      this.exists = exists;
-      this.mtsv = mtsv;
-      this.realPath = realPath;
-    }
 
-    /** True if the file exists. */
-    boolean exists() {
-      return exists;
+    /** This listing doesn't change and isn't associated with invalidation data.  */
+    enum class ConstantListingData : ListingDataInfo {
+        CONSTANT_LISTING
     }
 
     /**
-     * The MTSV.
-     *
-     * <p>Used by dependents to create parent references. This information is already incorporated
-     * into the {@link #cacheKey} value.
+     * Information about transitive upload of invalidation data for a certain [ ].
      */
-    long mtsv() {
-      return mtsv;
+    class ListingInvalidationDataInfo internal constructor(cacheKey: String?, writeStatus: WriteStatus?) :
+        BaseInvalidationDataInfo<String?>(cacheKey, writeStatus), ListingDataInfo
+
+    class FutureListingDataInfo
+    internal constructor(
+        key: DirectoryListingKey?,
+        consumer: java.util.function.BiConsumer<DirectoryListingKey?, ListingDataInfo?>?
+    ) : SettableFutureKeyedValue<FutureListingDataInfo?, DirectoryListingKey?, ListingDataInfo?>(key, consumer),
+        ListingDataInfoOrFuture
+
+    interface NodeDataInfoOrFuture : InvalidationDataInfoOrFuture
+
+
+    interface NodeDataInfo : NodeDataInfoOrFuture, InvalidationDataInfo
+
+
+    enum class ConstantNodeData : NodeDataInfo {
+        CONSTANT_NODE
     }
 
-    /**
-     * The resolved real path.
-     *
-     * <p>Used for symlink resolution.
-     */
-    RootedPath realPath() {
-      return realPath;
+    /** Information about remotely persisted [AbstractNestedFileOpNodes].  */
+    class NodeInvalidationDataInfo internal constructor(key: PackedFingerprint?, writeStatus: WriteStatus?) :
+        BaseInvalidationDataInfo<PackedFingerprint?>(key, writeStatus), NodeDataInfo
+
+    class FutureNodeDataInfo
+    internal constructor(key: AbstractNestedFileOpNodes?) :
+        SettableFutureKeyedValue<FutureNodeDataInfo?, AbstractNestedFileOpNodes?, NodeDataInfo?>(
+            key,
+            { key: AbstractNestedFileOpNodes, value: NodeDataInfo? -> setNodeDataInfo(key, value) }),
+        NodeDataInfoOrFuture {
+        companion object {
+            private fun setNodeDataInfo(key: AbstractNestedFileOpNodes, value: NodeDataInfo?) {
+                key.setSerializationScratch(value)
+            }
+        }
     }
-  }
-
-  static final class FutureFileDataInfo
-      extends SettableFutureKeyedValue<FutureFileDataInfo, FileKey, FileDataInfo>
-      implements FileDataInfoOrFuture {
-    FutureFileDataInfo(FileKey key, BiConsumer<FileKey, FileDataInfo> consumer) {
-      super(key, consumer);
-    }
-  }
-
-  sealed interface ListingDataInfoOrFuture extends InvalidationDataInfoOrFuture
-      permits ListingDataInfo, FutureListingDataInfo {}
-
-  sealed interface ListingDataInfo extends ListingDataInfoOrFuture, InvalidationDataInfo
-      permits ConstantListingData, ListingInvalidationDataInfo {}
-
-  /** This listing doesn't change and isn't associated with invalidation data. */
-  enum ConstantListingData implements ListingDataInfo {
-    CONSTANT_LISTING;
-  }
-
-  /**
-   * Information about transitive upload of invalidation data for a certain {@link
-   * DirectoryListingKey}.
-   */
-  static final class ListingInvalidationDataInfo extends BaseInvalidationDataInfo<String>
-      implements ListingDataInfo {
-    ListingInvalidationDataInfo(String cacheKey, WriteStatus writeStatus) {
-      super(cacheKey, writeStatus);
-    }
-  }
-
-  static final class FutureListingDataInfo
-      extends SettableFutureKeyedValue<FutureListingDataInfo, DirectoryListingKey, ListingDataInfo>
-      implements ListingDataInfoOrFuture {
-    FutureListingDataInfo(
-        DirectoryListingKey key, BiConsumer<DirectoryListingKey, ListingDataInfo> consumer) {
-      super(key, consumer);
-    }
-  }
-
-  sealed interface NodeDataInfoOrFuture extends InvalidationDataInfoOrFuture
-      permits NodeDataInfo, FutureNodeDataInfo {}
-
-  sealed interface NodeDataInfo extends NodeDataInfoOrFuture, InvalidationDataInfo
-      permits ConstantNodeData, NodeInvalidationDataInfo {}
-
-  enum ConstantNodeData implements NodeDataInfo {
-    CONSTANT_NODE;
-  }
-
-  /** Information about remotely persisted {@link AbstractNestedFileOpNodes}. */
-  static final class NodeInvalidationDataInfo extends BaseInvalidationDataInfo<PackedFingerprint>
-      implements NodeDataInfo {
-    NodeInvalidationDataInfo(PackedFingerprint key, WriteStatus writeStatus) {
-      super(key, writeStatus);
-    }
-  }
-
-  static final class FutureNodeDataInfo
-      extends SettableFutureKeyedValue<FutureNodeDataInfo, AbstractNestedFileOpNodes, NodeDataInfo>
-      implements NodeDataInfoOrFuture {
-    FutureNodeDataInfo(AbstractNestedFileOpNodes key) {
-      super(key, FutureNodeDataInfo::setNodeDataInfo);
-    }
-
-    private static void setNodeDataInfo(AbstractNestedFileOpNodes key, NodeDataInfo value) {
-      key.setSerializationScratch(value);
-    }
-  }
 }

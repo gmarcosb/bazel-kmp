@@ -11,127 +11,100 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.actiongraph.v2;
+package com.google.devtools.build.lib.skyframe.actiongraph.v2
 
-import com.google.auto.value.AutoValue;
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.Action;
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.ActionGraphContainer;
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.Artifact;
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.AspectDescriptor;
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.Configuration;
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.DepSetOfFiles;
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.PathFragment;
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.RuleClass;
-import com.google.devtools.build.lib.analysis.AnalysisProtosV2.Target;
-import com.google.protobuf.CodedOutputStream;
-import com.google.protobuf.Message;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.PrintStream;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.AnalysisProtosV2.Action
+import java.io.OutputStream
 
 /**
- * Represent a task to be consumed by a {@link AqueryConsumingOutputHandler}.
- *
- * <p>We have separate Proto/TextProto subclasses to reduce some memory waste: we'll never need both
+ * Represent a task to be consumed by a [AqueryConsumingOutputHandler].
+ * 
+ * 
+ * We have separate Proto/TextProto subclasses to reduce some memory waste: we'll never need both
  * the fieldNumber and the messageLabel in a PrintTask.
  */
-@SuppressWarnings("InterfaceWithOnlyStatics")
-public interface PrintTask {
+interface PrintTask {
+    /** A task for the proto format.  */
+    @AutoValue
+    class ProtoPrintTask : PrintTask {
+        abstract fun message(): Message?
 
-  /** A task for the proto format. */
-  @AutoValue
-  abstract class ProtoPrintTask implements PrintTask {
-    @Nullable
-    abstract Message message();
+        abstract fun fieldNumber(): Int
 
-    abstract int fieldNumber();
+        companion object {
+            fun create(message: Message?, fieldNumber: Int): ProtoPrintTask {
+                return AutoValue_PrintTask_ProtoPrintTask(message, fieldNumber)
+            }
 
-    public static ProtoPrintTask create(Message message, int fieldNumber) {
-      return new AutoValue_PrintTask_ProtoPrintTask(message, fieldNumber);
+            @Throws(IOException::class)
+            fun print(codedOutputStream: CodedOutputStream, task: ProtoPrintTask) {
+                print(codedOutputStream, task.message(), task.fieldNumber())
+            }
+
+            @Throws(IOException::class)
+            fun print(codedOutputStream: CodedOutputStream, message: Message?, fieldNumber: Int) {
+                codedOutputStream.writeMessage(fieldNumber, message)
+            }
+        }
     }
 
-    public static void print(CodedOutputStream codedOutputStream, ProtoPrintTask task)
-        throws IOException {
-      print(codedOutputStream, task.message(), task.fieldNumber());
+    /** A task for the streamed_proto format.  */
+    @AutoValue
+    class StreamedProtoPrintTask : PrintTask {
+        abstract fun message(): Message?
+
+        abstract fun fieldNumber(): Int
+
+        companion object {
+            fun create(message: Message?, fieldNumber: Int): StreamedProtoPrintTask {
+                return AutoValue_PrintTask_StreamedProtoPrintTask(message, fieldNumber)
+            }
+
+            @Throws(IOException::class)
+            fun print(out: OutputStream?, task: StreamedProtoPrintTask) {
+                print(out, task.message(), task.fieldNumber())
+            }
+
+            @Throws(IOException::class)
+            fun print(out: OutputStream?, message: Message?, fieldNumber: Int) {
+                val builder: ActionGraphContainer.Builder = ActionGraphContainer.newBuilder()
+                when (fieldNumber) {
+                    ActionGraphContainer.ARTIFACTS_FIELD_NUMBER -> builder.addArtifacts(message as Artifact?)
+                    ActionGraphContainer.ACTIONS_FIELD_NUMBER -> builder.addActions(message as Action?)
+                    ActionGraphContainer.TARGETS_FIELD_NUMBER -> builder.addTargets(message as Target?)
+                    ActionGraphContainer.DEP_SET_OF_FILES_FIELD_NUMBER -> builder.addDepSetOfFiles(message as DepSetOfFiles?)
+                    ActionGraphContainer.CONFIGURATION_FIELD_NUMBER -> builder.addConfiguration(message as Configuration?)
+                    ActionGraphContainer.ASPECT_DESCRIPTORS_FIELD_NUMBER -> builder.addAspectDescriptors(message as AspectDescriptor?)
+                    ActionGraphContainer.RULE_CLASSES_FIELD_NUMBER -> builder.addRuleClasses(message as RuleClass?)
+                    ActionGraphContainer.PATH_FRAGMENTS_FIELD_NUMBER -> builder.addPathFragments(message as PathFragment?)
+                    else -> throw IllegalStateException(
+                        "Unknown ActionGraphContainer field number " + fieldNumber
+                    )
+                }
+                builder.build().writeDelimitedTo(out)
+            }
+        }
     }
 
-    public static void print(CodedOutputStream codedOutputStream, Message message, int fieldNumber)
-        throws IOException {
-      codedOutputStream.writeMessage(fieldNumber, message);
+    /** A task for the textproto format.  */
+    @AutoValue
+    class TextProtoPrintTask : PrintTask {
+        abstract fun message(): Message?
+
+        abstract fun messageLabel(): String?
+
+        companion object {
+            fun create(message: Message?, messageLabel: String?): TextProtoPrintTask {
+                return AutoValue_PrintTask_TextProtoPrintTask(message, messageLabel)
+            }
+
+            fun print(printStream: PrintStream, task: TextProtoPrintTask) {
+                print(printStream, task.message(), task.messageLabel())
+            }
+
+            fun print(printStream: PrintStream, message: Message?, messageLabel: String?) {
+                printStream.print(messageLabel + " {\n" + message + "}\n")
+            }
+        }
     }
-  }
-
-  /** A task for the streamed_proto format. */
-  @AutoValue
-  abstract class StreamedProtoPrintTask implements PrintTask {
-    @Nullable
-    abstract Message message();
-
-    abstract int fieldNumber();
-
-    public static StreamedProtoPrintTask create(Message message, int fieldNumber) {
-      return new AutoValue_PrintTask_StreamedProtoPrintTask(message, fieldNumber);
-    }
-
-    public static void print(OutputStream out, StreamedProtoPrintTask task) throws IOException {
-      print(out, task.message(), task.fieldNumber());
-    }
-
-    public static void print(OutputStream out, Message message, int fieldNumber)
-        throws IOException {
-      ActionGraphContainer.Builder builder = ActionGraphContainer.newBuilder();
-      switch (fieldNumber) {
-        case ActionGraphContainer.ARTIFACTS_FIELD_NUMBER:
-          builder.addArtifacts((Artifact) message);
-          break;
-        case ActionGraphContainer.ACTIONS_FIELD_NUMBER:
-          builder.addActions((Action) message);
-          break;
-        case ActionGraphContainer.TARGETS_FIELD_NUMBER:
-          builder.addTargets((Target) message);
-          break;
-        case ActionGraphContainer.DEP_SET_OF_FILES_FIELD_NUMBER:
-          builder.addDepSetOfFiles((DepSetOfFiles) message);
-          break;
-        case ActionGraphContainer.CONFIGURATION_FIELD_NUMBER:
-          builder.addConfiguration((Configuration) message);
-          break;
-        case ActionGraphContainer.ASPECT_DESCRIPTORS_FIELD_NUMBER:
-          builder.addAspectDescriptors((AspectDescriptor) message);
-          break;
-        case ActionGraphContainer.RULE_CLASSES_FIELD_NUMBER:
-          builder.addRuleClasses((RuleClass) message);
-          break;
-        case ActionGraphContainer.PATH_FRAGMENTS_FIELD_NUMBER:
-          builder.addPathFragments((PathFragment) message);
-          break;
-        default:
-          throw new IllegalStateException(
-              "Unknown ActionGraphContainer field number " + fieldNumber);
-      }
-      builder.build().writeDelimitedTo(out);
-    }
-  }
-
-  /** A task for the textproto format. */
-  @AutoValue
-  abstract class TextProtoPrintTask implements PrintTask {
-    @Nullable
-    abstract Message message();
-
-    abstract String messageLabel();
-
-    public static TextProtoPrintTask create(Message message, String messageLabel) {
-      return new AutoValue_PrintTask_TextProtoPrintTask(message, messageLabel);
-    }
-
-    public static void print(PrintStream printStream, TextProtoPrintTask task) {
-      print(printStream, task.message(), task.messageLabel());
-    }
-
-    public static void print(PrintStream printStream, Message message, String messageLabel) {
-      printStream.print(messageLabel + " {\n" + message + "}\n");
-    }
-  }
 }

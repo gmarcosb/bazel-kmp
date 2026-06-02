@@ -11,31 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import java.math.BigInteger;
+import com.google.devtools.build.lib.skyframe.serialization.LeafDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.LeafObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.LeafSerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
+import java.math.BigInteger
 
-/** Codec for {@link BigInteger}. */
-public final class BigIntegerCodec extends LeafObjectCodec<BigInteger> {
+/** Codec for [BigInteger].  */
+class BigIntegerCodec : LeafObjectCodec<BigInteger?>() {
+    val encodedClass: java.lang.Class<out BigInteger?>
+        get() = BigInteger::class.java
 
-  @Override
-  public Class<? extends BigInteger> getEncodedClass() {
-    return BigInteger.class;
-  }
+    @Throws(IOException::class)
+    override fun serialize(
+        context: LeafSerializationContext?, obj: BigInteger, codedOut: CodedOutputStream
+    ) {
+        codedOut.writeByteArrayNoTag(obj.toByteArray())
+    }
 
-  @Override
-  public void serialize(
-      LeafSerializationContext context, BigInteger obj, CodedOutputStream codedOut)
-      throws IOException {
-    codedOut.writeByteArrayNoTag(obj.toByteArray());
-  }
-
-  @Override
-  public BigInteger deserialize(LeafDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    return new BigInteger(codedIn.readByteArray());
-  }
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun deserialize(context: LeafDeserializationContext?, codedIn: CodedInputStream): BigInteger {
+        return BigInteger(codedIn.readByteArray())
+    }
 }

@@ -92,11 +92,11 @@ public class WorkerProcessMetricsCollectorTest {
       Instant expectedCollectedTime) {
     assertThat(workerMetric).isNotNull();
     assertThat(workerMetric.getWorkerIds()).containsExactlyElementsIn(expectedWorkerIds);
-    assertThat(workerMetric.getProcessId()).isEqualTo(expectedProcessId);
-    assertThat(workerMetric.getMnemonic()).isEqualTo(expectedMnemonic);
-    assertThat(workerMetric.isMultiplex()).isEqualTo(expectedIsMultiplex);
+    assertThat(workerMetric.processId).isEqualTo(expectedProcessId);
+    assertThat(workerMetric.mnemonic).isEqualTo(expectedMnemonic);
+    assertThat(workerMetric.isMultiplex).isEqualTo(expectedIsMultiplex);
     assertThat(workerMetric.isSandboxed()).isEqualTo(expectedIsSandboxed);
-    assertThat(workerMetric.getWorkerKeyHash()).isEqualTo(expectedWorkerKeyHash);
+    assertThat(workerMetric.workerKeyHash).isEqualTo(expectedWorkerKeyHash);
     assertThat(workerMetric.getActionsExecuted()).isEqualTo(expectedActionsExecuted);
     assertThat(workerMetric.isMeasurable()).isEqualTo(expectedIsMeasurable);
     assertThat(workerMetric.getLastCallTime().get()).isEqualTo(expectedLastCallTime);

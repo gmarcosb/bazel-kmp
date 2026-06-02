@@ -11,115 +11,107 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.Scope;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.concurrent.ThreadSafety;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Objects;
+import com.google.devtools.build.lib.analysis.config.BuildOptions
 
-/** SkyValue returned by {@link BuildOptionsScopeFunction}. */
-public final class BuildOptionsScopeValue implements SkyValue {
+/** SkyValue returned by [BuildOptionsScopeFunction].  */
+class BuildOptionsScopeValue(
+    resolvedBuildOptionsWithScopeTypes: BuildOptions?,
+    scopedFlags: MutableList<Label?>?,
+    fullyResolvedScopes: LinkedHashMap<Label?, Scope?>?
+) : SkyValue {
+    var resolvedBuildOptionsWithScopeTypes: BuildOptions?
+    var scopedFlags: MutableList<Label?>?
+    var fullyResolvedScopes: LinkedHashMap<Label?, Scope?>?
 
-  BuildOptions resolvedBuildOptionsWithScopeTypes;
-  List<Label> scopedFlags;
-  LinkedHashMap<Label, Scope> fullyResolvedScopes;
+    /** Key for [BuildOptionsScopeValue].  */
+    @ThreadSafety.Immutable
+    @AutoCodec
+    class Key(buildOptions: BuildOptions?, flagsWithIncompleteScopeInfo: MutableList<Label?>?) : SkyKey {
+        private val buildOptions: BuildOptions?
+        private val flagsWithIncompleteScopeInfo: MutableList<Label?>?
 
-  /** Key for {@link BuildOptionsScopeValue}. */
-  @ThreadSafety.Immutable
-  @AutoCodec
-  public static final class Key implements SkyKey {
-    private static final SkyKeyInterner<Key> interner = SkyKey.newInterner();
-    private final BuildOptions buildOptions;
-    private final List<Label> flagsWithIncompleteScopeInfo;
+        init {
+            this.buildOptions = buildOptions
+            this.flagsWithIncompleteScopeInfo = flagsWithIncompleteScopeInfo
+        }
 
-    public Key(BuildOptions buildOptions, List<Label> flagsWithIncompleteScopeInfo) {
-      this.buildOptions = buildOptions;
-      this.flagsWithIncompleteScopeInfo = flagsWithIncompleteScopeInfo;
+        fun getBuildOptions(): BuildOptions? {
+            return buildOptions
+        }
+
+        /**
+         * Returns the list of flags that are either project scoped or their scopes are not yet
+         * resolved.
+         */
+        fun getFlagsWithIncompleteScopeInfo(): MutableList<Label?>? {
+            return flagsWithIncompleteScopeInfo
+        }
+
+        val skyKeyInterner: SkyKeyInterner<*>
+            get() = com.google.devtools.build.lib.skyframe.BuildOptionsScopeValue.Key.Companion.interner
+
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.BUILD_OPTIONS_SCOPE
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false
+            }
+            val key = o as Key
+            return buildOptions == key.buildOptions
+                    && flagsWithIncompleteScopeInfo == key.flagsWithIncompleteScopeInfo
+        }
+
+        override fun hashCode(): Int {
+            return java.util.Objects.hash(buildOptions, flagsWithIncompleteScopeInfo)
+        }
+
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
+            fun create(buildOptions: BuildOptions?, flagsWithIncompleteScopeInfo: MutableList<Label?>?): Key {
+                return com.google.devtools.build.lib.skyframe.BuildOptionsScopeValue.Key.Companion.interner.intern(
+                    com.google.devtools.build.lib.skyframe.BuildOptionsScopeValue.Key(
+                        buildOptions,
+                        flagsWithIncompleteScopeInfo
+                    )
+                )
+            }
+        }
     }
 
-    public static Key create(BuildOptions buildOptions, List<Label> flagsWithIncompleteScopeInfo) {
-      return interner.intern(new Key(buildOptions, flagsWithIncompleteScopeInfo));
-    }
-
-    public BuildOptions getBuildOptions() {
-      return buildOptions;
+    init {
+        this.resolvedBuildOptionsWithScopeTypes = resolvedBuildOptionsWithScopeTypes
+        this.scopedFlags = scopedFlags
+        this.fullyResolvedScopes = fullyResolvedScopes
     }
 
     /**
-     * Returns the list of flags that are either project scoped or their scopes are not yet
-     * resolved.
+     * Returns the [BuildOptions] with the all starlark flags having their [ ] resolved.
      */
-    public List<Label> getFlagsWithIncompleteScopeInfo() {
-      return flagsWithIncompleteScopeInfo;
+    fun getResolvedBuildOptionsWithScopeTypes(): BuildOptions? {
+        return resolvedBuildOptionsWithScopeTypes
     }
 
-    @Override
-    public SkyKeyInterner<?> getSkyKeyInterner() {
-      return interner;
+    /**
+     * Returns the map of [Label] of scoped flags to their [Scope] including both [ ] and [Scope.ScopeDefinition].
+     */
+    fun getFullyResolvedScopes(): LinkedHashMap<Label?, Scope?>? {
+        return fullyResolvedScopes
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.BUILD_OPTIONS_SCOPE;
+    companion object {
+        fun create(
+            inputBuildOptions: BuildOptions?,  // BuildOptions buildOptionsWithScopes,
+            scopedFlags: MutableList<Label?>?,
+            fullyResolvedScopes: LinkedHashMap<Label?, Scope?>?
+        ): BuildOptionsScopeValue {
+            return BuildOptionsScopeValue(inputBuildOptions, scopedFlags, fullyResolvedScopes)
+        }
     }
-
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (o == null || getClass() != o.getClass()) {
-        return false;
-      }
-      Key key = (Key) o;
-      return Objects.equals(buildOptions, key.buildOptions)
-          && Objects.equals(flagsWithIncompleteScopeInfo, key.flagsWithIncompleteScopeInfo);
-    }
-
-    @Override
-    public int hashCode() {
-      return Objects.hash(buildOptions, flagsWithIncompleteScopeInfo);
-    }
-  }
-
-  public static BuildOptionsScopeValue create(
-      BuildOptions inputBuildOptions,
-      // BuildOptions buildOptionsWithScopes,
-      List<Label> scopedFlags,
-      LinkedHashMap<Label, Scope> fullyResolvedScopes) {
-    return new BuildOptionsScopeValue(inputBuildOptions, scopedFlags, fullyResolvedScopes);
-  }
-
-  public BuildOptionsScopeValue(
-      BuildOptions resolvedBuildOptionsWithScopeTypes,
-      List<Label> scopedFlags,
-      LinkedHashMap<Label, Scope> fullyResolvedScopes) {
-    this.resolvedBuildOptionsWithScopeTypes = resolvedBuildOptionsWithScopeTypes;
-    this.scopedFlags = scopedFlags;
-    this.fullyResolvedScopes = fullyResolvedScopes;
-  }
-
-  /**
-   * Returns the {@link BuildOptions} with the all starlark flags having their {@link
-   * Scope.ScopeType} resolved.
-   */
-  public BuildOptions getResolvedBuildOptionsWithScopeTypes() {
-    return resolvedBuildOptionsWithScopeTypes;
-  }
-
-  /**
-   * Returns the map of {@link Label} of scoped flags to their {@link Scope} including both {@link
-   * Scope.ScopeType} and {@link Scope.ScopeDefinition}.
-   */
-  public LinkedHashMap<Label, Scope> getFullyResolvedScopes() {
-    return fullyResolvedScopes;
-  }
 }

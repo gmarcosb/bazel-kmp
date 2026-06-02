@@ -1471,7 +1471,7 @@ public abstract class BuildWithoutTheBytesIntegrationTestBase extends BuildInteg
     for (var artifact : getArtifacts(target)) {
       var value = evaluator.getExistingValue(Artifact.key(artifact));
       if (value instanceof ActionExecutionValue actionExecutionValue) {
-        result.putAll(actionExecutionValue.getAllFileValues());
+        result.putAll(actionExecutionValue.allFileValues);
       } else if (value instanceof TreeArtifactValue treeArtifactValue) {
         result.putAll(treeArtifactValue.getChildValues());
       }
@@ -1498,7 +1498,7 @@ public abstract class BuildWithoutTheBytesIntegrationTestBase extends BuildInteg
     var evaluator = getRuntimeWrapper().getSkyframeExecutor().getEvaluator();
     var value = evaluator.getExistingValue(Artifact.key(output));
     if (value instanceof ActionExecutionValue actionExecutionValue) {
-      return actionExecutionValue.getAllFileValues().get(output);
+      return actionExecutionValue.allFileValues.get(output);
     } else if (value instanceof TreeArtifactValue treeArtifactValue) {
       return treeArtifactValue.getChildValues().get(output);
     }

@@ -11,90 +11,89 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Maps;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.cmdline.ResolvedTargets;
-import com.google.devtools.build.lib.collect.compacthashset.CompactHashSet;
-import com.google.devtools.build.lib.packages.NoSuchTargetException;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.skyframe.WalkableGraph;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
  * This class encapsulates logic behind computing final target set based on separate results from a
  * list of target patterns (eg, //foo:all -//bar/... //foo:test).
  */
-class TargetPatternsResultBuilder {
-  private final Set<Label> resolvedLabelsBuilder = CompactHashSet.create();
-  private Map<PackageIdentifier, Package> packages;
+internal class TargetPatternsResultBuilder {
+    private val resolvedLabelsBuilder: MutableSet<Label> = CompactHashSet.create()
+    private var packages: MutableMap<PackageIdentifier?, Package?>? = null
 
-  /** Returns final set of targets and sets error flag if required. */
-  public Collection<Target> build(WalkableGraph walkableGraph) throws InterruptedException {
-    precomputePackages(walkableGraph);
-    return transformLabelsIntoTargets(resolvedLabelsBuilder);
-  }
-
-  /**
-   * Transforms {@code ResolvedTargets<Label>} to {@code ResolvedTargets<Target>}. Note that this
-   * method is using information about packages, so {@link #precomputePackages} has to be called
-   * before this method.
-   */
-  private Collection<Target> transformLabelsIntoTargets(Set<Label> resolvedLabels) {
-    // precomputePackages has to be called before this method.
-    Set<Target> targets = CompactHashSet.create();
-    Preconditions.checkNotNull(packages);
-    for (Label label : resolvedLabels) {
-      targets.add(getExistingTarget(label));
+    /** Returns final set of targets and sets error flag if required.  */
+    @Throws(java.lang.InterruptedException::class)
+    fun build(walkableGraph: WalkableGraph): MutableCollection<Target?> {
+        precomputePackages(walkableGraph)
+        return transformLabelsIntoTargets(resolvedLabelsBuilder)
     }
-    return targets;
-  }
 
-  private void precomputePackages(WalkableGraph walkableGraph) throws InterruptedException {
-    Set<PackageIdentifier> packagesToRequest = getPackagesIdentifiers();      
-    packages = Maps.newHashMapWithExpectedSize(packagesToRequest.size());
-    for (PackageIdentifier pkgIdentifier : packagesToRequest) {
-      packages.put(pkgIdentifier, findPackageInGraph(pkgIdentifier, walkableGraph));
+    /**
+     * Transforms `ResolvedTargets<Label>` to `ResolvedTargets<Target>`. Note that this
+     * method is using information about packages, so [.precomputePackages] has to be called
+     * before this method.
+     */
+    private fun transformLabelsIntoTargets(resolvedLabels: MutableSet<Label>): MutableCollection<Target?> {
+        // precomputePackages has to be called before this method.
+        val targets: MutableSet<Target?> = CompactHashSet.create()
+        com.google.common.base.Preconditions.checkNotNull<MutableMap<PackageIdentifier?, Package?>?>(packages)
+        for (label in resolvedLabels) {
+            targets.add(getExistingTarget(label))
+        }
+        return targets
     }
-  }
 
-  private Target getExistingTarget(Label label) {
-    Package pkg = Preconditions.checkNotNull(packages.get(label.getPackageIdentifier()), label);
-    try {
-      return pkg.getTarget(label.name);
-    } catch (NoSuchTargetException e) {
-      // This exception should not raise, because we are processing it during TargetPatternValues
-      // evaluation in SkyframeTargetPatternEvaluator#parseTargetPatternKeys and values with errors
-      // are not added to final result.
-      throw new IllegalStateException(e);
+    @Throws(java.lang.InterruptedException::class)
+    private fun precomputePackages(walkableGraph: WalkableGraph) {
+        val packagesToRequest: MutableSet<PackageIdentifier?> = this.packagesIdentifiers
+        packages =
+            com.google.common.collect.Maps.newHashMapWithExpectedSize<PackageIdentifier?, Package?>(packagesToRequest.size())
+        for (pkgIdentifier in packagesToRequest) {
+            packages!!.put(pkgIdentifier, findPackageInGraph(pkgIdentifier, walkableGraph))
+        }
     }
-  }
 
-  private Set<PackageIdentifier> getPackagesIdentifiers() {
-    Set<PackageIdentifier> packagesIdentifiers = new HashSet<>();
-    for (Label label : resolvedLabelsBuilder) {
-      packagesIdentifiers.add(label.getPackageIdentifier());
+    private fun getExistingTarget(label: Label): Target {
+        val pkg: Package = com.google.common.base.Preconditions.checkNotNull<Package>(
+            packages!!.get(label.getPackageIdentifier()),
+            label
+        )
+        try {
+            return pkg.getTarget(label.name)
+        } catch (e: NoSuchTargetException) {
+            // This exception should not raise, because we are processing it during TargetPatternValues
+            // evaluation in SkyframeTargetPatternEvaluator#parseTargetPatternKeys and values with errors
+            // are not added to final result.
+            throw java.lang.IllegalStateException(e)
+        }
     }
-    return packagesIdentifiers;
-  }
 
-  private static Package findPackageInGraph(
-      PackageIdentifier pkgIdentifier, WalkableGraph walkableGraph) throws InterruptedException {
-    return Preconditions.checkNotNull(
-            (PackageValue) walkableGraph.getValue(pkgIdentifier), pkgIdentifier)
-        .getPackage();
-  }
+    private val packagesIdentifiers: MutableSet<PackageIdentifier>
+        get() {
+            val packagesIdentifiers: MutableSet<PackageIdentifier?> = HashSet<PackageIdentifier?>()
+            for (label in resolvedLabelsBuilder) {
+                packagesIdentifiers.add(label.getPackageIdentifier())
+            }
+            return packagesIdentifiers
+        }
 
-  /** Adds the result from expansion of negative target pattern (eg, "-//foo:all"). */
-  void addLabelsOfPositivePattern(ResolvedTargets<Label> labels) {
-    Preconditions.checkArgument(labels.getFilteredTargets().isEmpty());
-    resolvedLabelsBuilder.addAll(labels.getTargets());
-  }
+    /** Adds the result from expansion of negative target pattern (eg, "-//foo:all").  */
+    fun addLabelsOfPositivePattern(labels: ResolvedTargets<Label?>) {
+        com.google.common.base.Preconditions.checkArgument(labels.getFilteredTargets().isEmpty())
+        resolvedLabelsBuilder.addAll(labels.getTargets())
+    }
+
+    companion object {
+        @Throws(java.lang.InterruptedException::class)
+        private fun findPackageInGraph(
+            pkgIdentifier: PackageIdentifier?, walkableGraph: WalkableGraph
+        ): Package {
+            return com.google.common.base.Preconditions.checkNotNull<Any?>(
+                walkableGraph.getValue(pkgIdentifier) as PackageValue?, pkgIdentifier
+            )
+                .getPackage()
+        }
+    }
 }

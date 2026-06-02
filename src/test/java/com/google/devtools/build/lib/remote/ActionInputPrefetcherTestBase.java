@@ -377,8 +377,8 @@ public abstract class ActionInputPrefetcherTestBase {
                 "file1", "content1", "nested_dir/file2", "content2"),
             metadata,
             cas);
-    SpecialArtifact tree = treeAndChildren.getFirst();
-    ImmutableList<TreeFileArtifact> children = treeAndChildren.getSecond();
+    SpecialArtifact tree = treeAndChildren.first;
+    ImmutableList<TreeFileArtifact> children = treeAndChildren.second;
     Artifact firstChild = children.get(0);
     Artifact secondChild = children.get(1);
 
@@ -409,8 +409,8 @@ public abstract class ActionInputPrefetcherTestBase {
             /* remoteContentMap= */ ImmutableMap.of("file2", "content2"),
             metadata,
             cas);
-    SpecialArtifact tree = treeAndChildren.getFirst();
-    ImmutableList<TreeFileArtifact> children = treeAndChildren.getSecond();
+    SpecialArtifact tree = treeAndChildren.first;
+    ImmutableList<TreeFileArtifact> children = treeAndChildren.second;
     Artifact firstChild = children.get(0);
     Artifact secondChild = children.get(1);
 
@@ -444,8 +444,8 @@ public abstract class ActionInputPrefetcherTestBase {
             resolvedPath,
             metadata,
             cas);
-    SpecialArtifact tree = treeAndChildren.getFirst();
-    ImmutableList<TreeFileArtifact> children = treeAndChildren.getSecond();
+    SpecialArtifact tree = treeAndChildren.first;
+    ImmutableList<TreeFileArtifact> children = treeAndChildren.second;
     Artifact firstChild = children.get(0);
     Artifact secondChild = children.get(1);
 
@@ -482,8 +482,8 @@ public abstract class ActionInputPrefetcherTestBase {
                 "subdir/file1", "content1", "subdir/file2", "content2"),
             metadata,
             cas);
-    SpecialArtifact tree = treeAndChildren.getFirst();
-    ImmutableList<TreeFileArtifact> children = treeAndChildren.getSecond();
+    SpecialArtifact tree = treeAndChildren.first;
+    ImmutableList<TreeFileArtifact> children = treeAndChildren.second;
     Artifact firstChild = children.get(0);
     Artifact secondChild = children.get(1);
 
@@ -551,8 +551,8 @@ public abstract class ActionInputPrefetcherTestBase {
             ImmutableMap.of("file2", "content2"),
             metadata,
             cas);
-    SpecialArtifact tree = treeAndChildren.getFirst();
-    ImmutableList<TreeFileArtifact> children = treeAndChildren.getSecond();
+    SpecialArtifact tree = treeAndChildren.first;
+    ImmutableList<TreeFileArtifact> children = treeAndChildren.second;
     Artifact firstChild = children.get(0);
     Artifact secondChild = children.get(1);
 
@@ -580,10 +580,10 @@ public abstract class ActionInputPrefetcherTestBase {
                 "subdir/file1", "content1", "subdir/file2", "content2"),
             metadata,
             cas);
-    SpecialArtifact tree = treeAndChildren.getFirst();
+    SpecialArtifact tree = treeAndChildren.first;
     PathFragment root = tree.getPath().asFragment();
     PathFragment subdir = tree.getPath().getChild("subdir").asFragment();
-    ImmutableList<TreeFileArtifact> children = treeAndChildren.getSecond();
+    ImmutableList<TreeFileArtifact> children = treeAndChildren.second;
     Artifact firstChild = children.get(0);
     Artifact secondChild = children.get(1);
 
@@ -631,8 +631,8 @@ public abstract class ActionInputPrefetcherTestBase {
             /* remoteContentMap= */ ImmutableMap.of("subdir/file", "content"),
             metadata,
             cas);
-    SpecialArtifact tree = treeAndChildren.getFirst();
-    Artifact child = Iterables.getOnlyElement(treeAndChildren.getSecond());
+    SpecialArtifact tree = treeAndChildren.first;
+    Artifact child = Iterables.getOnlyElement(treeAndChildren.second);
 
     AbstractActionInputPrefetcher prefetcher = createPrefetcher(cas);
 
@@ -933,8 +933,8 @@ public abstract class ActionInputPrefetcherTestBase {
     checkState(path.isDirectory());
     assertReadableNonWritableAndExecutable(path);
     for (Dirent dirent : path.readdir(Symlinks.NOFOLLOW)) {
-      if (dirent.getType().equals(Dirent.Type.DIRECTORY)) {
-        assertTreeReadableNonWritableAndExecutable(path.getChild(dirent.getName()));
+      if (dirent.type.equals(Dirent.Type.DIRECTORY)) {
+        assertTreeReadableNonWritableAndExecutable(path.getChild(dirent.name));
       }
     }
   }
@@ -949,8 +949,8 @@ public abstract class ActionInputPrefetcherTestBase {
     checkState(path.isDirectory());
     assertReadableWritableAndExecutable(path);
     for (Dirent dirent : path.readdir(Symlinks.NOFOLLOW)) {
-      if (dirent.getType().equals(Dirent.Type.DIRECTORY)) {
-        assertTreeReadableWritableAndExecutable(path.getChild(dirent.getName()));
+      if (dirent.type.equals(Dirent.Type.DIRECTORY)) {
+        assertTreeReadableWritableAndExecutable(path.getChild(dirent.name));
       }
     }
   }

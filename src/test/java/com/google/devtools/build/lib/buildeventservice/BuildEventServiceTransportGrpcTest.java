@@ -157,10 +157,10 @@ public class BuildEventServiceTransportGrpcTest extends AbstractBuildEventServic
               }
               Pair<Status, Collection<PublishBuildToolEventStreamResponse>> response =
                   computeStreamResponse(request);
-              Status status = response.getFirst();
+              Status status = response.first;
               if (status == null || status.isOk()) {
                 successfulStreamEvents.put(request.getOrderedBuildEvent().getStreamId(), request);
-                for (PublishBuildToolEventStreamResponse messages : response.getSecond()) {
+                for (PublishBuildToolEventStreamResponse messages : response.second) {
                   stream.onNext(messages);
                 }
                 if (status != null && status.isOk()) {

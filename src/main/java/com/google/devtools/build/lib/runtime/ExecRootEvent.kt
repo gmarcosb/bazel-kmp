@@ -11,46 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
+import com.google.devtools.build.lib.buildeventstream.BuildEvent
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventContext;
-import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.vfs.Path;
-import java.util.Collection;
+/** An event that receives the execRoot of this blaze invocation.  */
+class ExecRootEvent(execRoot: com.google.devtools.build.lib.vfs.Path) : BuildEvent {
+    private val execRoot: com.google.devtools.build.lib.vfs.Path
 
-/** An event that receives the execRoot of this blaze invocation. */
-public class ExecRootEvent implements BuildEvent {
+    init {
+        this.execRoot = execRoot
+    }
 
-  private final Path execRoot;
+    public override fun asStreamProto(context: BuildEventContext?): BuildEventStreamProtos.BuildEvent {
+        val workspaceConfigEvent: BuildEventStreamProtos.WorkspaceConfig? =
+            BuildEventStreamProtos.WorkspaceConfig.newBuilder()
+                .setLocalExecRoot(execRoot.getPathString())
+                .build()
+        return BuildEventStreamProtos.BuildEvent.newBuilder()
+            .setId(this.eventId)
+            .setWorkspaceInfo(workspaceConfigEvent)
+            .build()
+    }
 
-  public ExecRootEvent(Path execRoot) {
-    this.execRoot = execRoot;
-  }
+    val eventId: BuildEventId
+        get() = BuildEventIdUtil.workspaceConfigId()
 
-  @Override
-  public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext context) {
-    BuildEventStreamProtos.WorkspaceConfig workspaceConfigEvent =
-        BuildEventStreamProtos.WorkspaceConfig.newBuilder()
-            .setLocalExecRoot(execRoot.getPathString())
-            .build();
-    return BuildEventStreamProtos.BuildEvent.newBuilder()
-        .setId(getEventId())
-        .setWorkspaceInfo(workspaceConfigEvent)
-        .build();
-  }
-
-  @Override
-  public BuildEventId getEventId() {
-    return BuildEventIdUtil.workspaceConfigId();
-  }
-
-  @Override
-  public Collection<BuildEventId> getChildrenEvents() {
-    return ImmutableList.of();
-  }
+    val childrenEvents: MutableCollection<BuildEventId>
+        get() = com.google.common.collect.ImmutableList.of<BuildEventId?>()
 }

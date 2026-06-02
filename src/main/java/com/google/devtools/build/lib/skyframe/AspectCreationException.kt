@@ -11,92 +11,85 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.devtools.build.lib.analysis.config.BuildConfigurationValue.configurationIdMessage;
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue.configurationIdMessage
 
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.causes.AnalysisFailedCause;
-import com.google.devtools.build.lib.causes.Cause;
-import com.google.devtools.build.lib.causes.LabelCause;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.server.FailureDetails.Analysis;
-import com.google.devtools.build.lib.server.FailureDetails.Analysis.Code;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import javax.annotation.Nullable;
+/** An exception indicating that there was a problem creating an aspect.  */
+class AspectCreationException(
+    message: String?,
+    causes: NestedSet<com.google.devtools.build.lib.causes.Cause?>?,
+    detailedExitCode: DetailedExitCode?
+) : AbstractSaneAnalysisException(message) {
+    private val causes: NestedSet<com.google.devtools.build.lib.causes.Cause?>?
 
-/** An exception indicating that there was a problem creating an aspect. */
-public final class AspectCreationException extends AbstractSaneAnalysisException {
-  private final NestedSet<Cause> causes;
-  // TODO(b/138456686): if warranted by a need for finer-grained details, replace the constructors
-  //  that specify the general Code.ASPECT_CREATION_FAILED
-  private final DetailedExitCode detailedExitCode;
+    // TODO(b/138456686): if warranted by a need for finer-grained details, replace the constructors
+    //  that specify the general Code.ASPECT_CREATION_FAILED
+    private val detailedExitCode: DetailedExitCode?
 
-  public AspectCreationException(
-      String message, NestedSet<Cause> causes, DetailedExitCode detailedExitCode) {
-    super(message);
-    this.causes = causes;
-    this.detailedExitCode = detailedExitCode;
-  }
+    init {
+        this.causes = causes
+        this.detailedExitCode = detailedExitCode
+    }
 
-  public AspectCreationException(
-      String message,
-      Label currentTarget,
-      @Nullable BuildConfigurationValue configuration,
-      DetailedExitCode detailedExitCode) {
-    this(
+    constructor(
+        message: String?,
+        currentTarget: Label,
+        configuration: BuildConfigurationValue?,
+        detailedExitCode: DetailedExitCode
+    ) : this(
         message,
-        NestedSetBuilder.<Cause>stableOrder()
+        NestedSetBuilder.< Cause > stableOrder < com . google . devtools . build . lib . causes . Cause ? > ()
             .add(
-                new AnalysisFailedCause(
-                    currentTarget, configurationIdMessage(configuration), detailedExitCode))
+                AnalysisFailedCause(
+                    currentTarget, configurationIdMessage(configuration), detailedExitCode
+                )
+            )
             .build(),
-        detailedExitCode);
-  }
+        detailedExitCode
+    )
 
-  public AspectCreationException(
-      String message, Label currentTarget, @Nullable BuildConfigurationValue configuration) {
-    this(
+    constructor(message: String?, currentTarget: Label, configuration: BuildConfigurationValue?) : this(
         message,
         currentTarget,
         configuration,
-        createDetailedExitCode(message, Code.ASPECT_CREATION_FAILED));
-  }
+        createDetailedExitCode(message, Code.ASPECT_CREATION_FAILED)
+    )
 
-  public AspectCreationException(
-      String message, Label currentTarget, DetailedExitCode detailedExitCode) {
-    this(message, currentTarget, null, detailedExitCode);
-  }
-
-  public AspectCreationException(String message, Label currentTarget) {
-    this(
-        message, currentTarget, null, createDetailedExitCode(message, Code.ASPECT_CREATION_FAILED));
-  }
-
-  public AspectCreationException(String message, LabelCause cause) {
-    this(
+    constructor(message: String?, currentTarget: Label, detailedExitCode: DetailedExitCode) : this(
         message,
-        NestedSetBuilder.<Cause>stableOrder().add(cause).build(),
-        cause.getDetailedExitCode());
-  }
+        currentTarget,
+        null,
+        detailedExitCode
+    )
 
-  public NestedSet<Cause> getCauses() {
-    return causes;
-  }
+    constructor(message: String?, currentTarget: Label) : this(
+        message, currentTarget, null, createDetailedExitCode(message, Code.ASPECT_CREATION_FAILED)
+    )
 
-  @Override
-  public DetailedExitCode getDetailedExitCode() {
-    return detailedExitCode;
-  }
+    constructor(message: String?, cause: LabelCause) : this(
+        message,
+        NestedSetBuilder.< Cause > stableOrder < com . google . devtools . build . lib . causes . Cause ? > ().add(cause)
+            .build(),
+        cause.getDetailedExitCode()
+    )
 
-  private static DetailedExitCode createDetailedExitCode(String message, Code code) {
-    return DetailedExitCode.of(
-        FailureDetail.newBuilder()
-            .setMessage(message)
-            .setAnalysis(Analysis.newBuilder().setCode(code))
-            .build());
-  }
+    fun getCauses(): NestedSet<com.google.devtools.build.lib.causes.Cause?>? {
+        return causes
+    }
+
+    override fun getDetailedExitCode(): DetailedExitCode? {
+        return detailedExitCode
+    }
+
+    companion object {
+        private fun createDetailedExitCode(message: String?, code: Code?): DetailedExitCode {
+            return DetailedExitCode.of(
+                FailureDetail.newBuilder()
+                    .setMessage(message)
+                    .setAnalysis(Analysis.newBuilder().setCode(code))
+                    .build()
+            )
+        }
+    }
 }

@@ -11,65 +11,76 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.devtools.build.lib.skyframe.BzlLoadValue.bzlLoadKeyCodec;
-import static com.google.devtools.build.lib.skyframe.serialization.strings.UnsafeStringCodec.stringCodec;
+import com.google.devtools.build.lib.skyframe.BzlLoadValue.bzlLoadKeyCodec
 
-import com.google.devtools.build.lib.skyframe.BzlLoadValue;
-import com.google.devtools.build.lib.skyframe.serialization.DeferredObjectCodec.DeferredValue;
-import com.google.errorprone.annotations.ForOverride;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import net.starlark.java.eval.Module;
+/** Base codec for exported Starlark symbols.  */
+abstract class AbstractExportedStarlarkSymbolCodec<T> : DeferredObjectCodec<T?>() {
+    @com.google.errorprone.annotations.ForOverride
+    protected abstract fun getBzlLoadKey(obj: T?): BzlLoadValue.Key?
 
-/** Base codec for exported Starlark symbols. */
-public abstract class AbstractExportedStarlarkSymbolCodec<T> extends DeferredObjectCodec<T> {
-  @ForOverride
-  protected abstract BzlLoadValue.Key getBzlLoadKey(T obj);
+    @com.google.errorprone.annotations.ForOverride
+    protected abstract fun getExportedName(obj: T?): String?
 
-  @ForOverride
-  protected abstract String getExportedName(T obj);
-
-  @Override
-  public final void serialize(SerializationContext context, T obj, CodedOutputStream codedOut)
-      throws SerializationException, IOException {
-    context.serializeLeaf(getBzlLoadKey(obj), bzlLoadKeyCodec(), codedOut);
-    context.serializeLeaf(getExportedName(obj), stringCodec(), codedOut);
-  }
-
-  @Override
-  public final DeferredValue<? extends T> deserializeDeferred(
-      AsyncDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    BzlLoadValue.Key bzlLoadKey = context.deserializeLeaf(codedIn, bzlLoadKeyCodec());
-    String name = context.deserializeLeaf(codedIn, stringCodec());
-
-    var builder = new DeserializationBuilder<>(getEncodedClass(), name);
-    context.getSkyValue(bzlLoadKey, builder, DeserializationBuilder::setBzlLoadValue);
-    return builder;
-  }
-
-  private static final class DeserializationBuilder<T> implements DeferredValue<T> {
-    private final Class<T> type;
-    private final String name;
-    private BzlLoadValue loadValue;
-
-    private DeserializationBuilder(Class<T> type, String name) {
-      this.type = type;
-      this.name = name;
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun serialize(context: SerializationContext, obj: T?, codedOut: CodedOutputStream?) {
+        context.serializeLeaf<T?>(getBzlLoadKey(obj), bzlLoadKeyCodec(), codedOut)
+        context.serializeLeaf<String?>(getExportedName(obj), UnsafeStringCodec.stringCodec(), codedOut)
     }
 
-    @Override
-    public T call() {
-      Module module = checkNotNull(loadValue, "Skyframe lookup value not set").getModule();
-      return type.cast(checkNotNull(module.getGlobal(name), "%s not found in %s", name, module));
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun deserializeDeferred(
+        context: AsyncDeserializationContext, codedIn: CodedInputStream?
+    ): DeferredValue<out T?> {
+        val bzlLoadKey: BzlLoadValue.Key? = context.deserializeLeaf<T?>(codedIn, bzlLoadKeyCodec())
+        val name: String? = context.deserializeLeaf<String?>(codedIn, UnsafeStringCodec.stringCodec())
+
+        val builder: DeserializationBuilder<out T?> =
+            com.google.devtools.build.lib.skyframe.serialization.AbstractExportedStarlarkSymbolCodec.DeserializationBuilder<T?>(
+                getEncodedClass(),
+                name
+            )
+        context.getSkyValue<T?>(
+            bzlLoadKey,
+            builder,
+            AsyncDeserializationContext.FieldSetter { builder: T?, value: Any? ->
+                com.google.devtools.build.lib.skyframe.serialization.AbstractExportedStarlarkSymbolCodec.DeserializationBuilder.Companion.setBzlLoadValue(
+                    builder,
+                    value
+                )
+            })
+        return builder
     }
 
-    private static void setBzlLoadValue(DeserializationBuilder<?> builder, Object value) {
-      builder.loadValue = (BzlLoadValue) value;
+    private class DeserializationBuilder<T>(type: java.lang.Class<T?>, name: String?) : DeferredValue<T?> {
+        private val type: java.lang.Class<T?>
+        private val name: String?
+        private var loadValue: BzlLoadValue? = null
+
+        init {
+            this.type = type
+            this.name = name
+        }
+
+        override fun call(): T? {
+            val module: net.starlark.java.eval.Module =
+                com.google.common.base.Preconditions.checkNotNull<Any?>(loadValue, "Skyframe lookup value not set")
+                    .getModule()
+            return type.cast(
+                com.google.common.base.Preconditions.checkNotNull<Any?>(
+                    module.getGlobal(name),
+                    "%s not found in %s",
+                    name,
+                    module
+                )
+            )
+        }
+
+        companion object {
+            private fun setBzlLoadValue(builder: DeserializationBuilder<*>, value: Any?) {
+                builder.loadValue = value as BzlLoadValue?
+            }
+        }
     }
-  }
 }

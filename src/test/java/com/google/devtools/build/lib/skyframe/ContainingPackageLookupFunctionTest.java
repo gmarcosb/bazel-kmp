@@ -195,8 +195,8 @@ public class ContainingPackageLookupFunctionTest extends FoundationTestCase {
     scratch.file("a/BUILD");
     ContainingPackageLookupValue value = lookupContainingPackage("a/b");
     assertThat(value.hasContainingPackage()).isTrue();
-    assertThat(value.getContainingPackageName()).isEqualTo(PackageIdentifier.createInMainRepo("a"));
-    assertThat(value.getContainingPackageRoot()).isEqualTo(Root.fromPath(rootDirectory));
+    assertThat(value.containingPackageName).isEqualTo(PackageIdentifier.createInMainRepo("a"));
+    assertThat(value.containingPackageRoot).isEqualTo(Root.fromPath(rootDirectory));
   }
 
   @Test
@@ -204,9 +204,9 @@ public class ContainingPackageLookupFunctionTest extends FoundationTestCase {
     scratch.file("a/b/BUILD");
     ContainingPackageLookupValue value = lookupContainingPackage("a/b");
     assertThat(value.hasContainingPackage()).isTrue();
-    assertThat(value.getContainingPackageName())
+    assertThat(value.containingPackageName)
         .isEqualTo(PackageIdentifier.createInMainRepo("a/b"));
-    assertThat(value.getContainingPackageRoot()).isEqualTo(Root.fromPath(rootDirectory));
+    assertThat(value.containingPackageRoot).isEqualTo(Root.fromPath(rootDirectory));
   }
 
   @Test
@@ -266,13 +266,13 @@ public class ContainingPackageLookupFunctionTest extends FoundationTestCase {
 
     PackageLookupValue packageLookupValue = lookupPackage(identifier);
     assertThat(packageLookupValue.packageExists()).isFalse();
-    assertThat(packageLookupValue.getErrorReason()).isEqualTo(ErrorReason.DELETED_PACKAGE);
-    assertThat(packageLookupValue.getErrorMsg())
+    assertThat(packageLookupValue.errorReason).isEqualTo(ErrorReason.DELETED_PACKAGE);
+    assertThat(packageLookupValue.errorMsg)
         .isEqualTo("Package is considered deleted due to --deleted_packages");
 
     ContainingPackageLookupValue value = lookupContainingPackage(identifier);
     assertThat(value.hasContainingPackage()).isTrue();
-    assertThat(value.getContainingPackageName().toString()).isEmpty();
+    assertThat(value.containingPackageName.toString()).isEmpty();
     assertThat(value.getClass()).isEqualTo(ContainingPackage.class);
   }
 

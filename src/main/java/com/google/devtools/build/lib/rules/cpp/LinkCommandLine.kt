@@ -11,219 +11,210 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.cpp
 
-package com.google.devtools.build.lib.rules.cpp;
-
-import static com.google.common.collect.ImmutableList.toImmutableList;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.AbstractCommandLine;
-import com.google.devtools.build.lib.actions.CommandLineExpansionException;
-import com.google.devtools.build.lib.actions.CommandLines;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.ParamFileInfo;
-import com.google.devtools.build.lib.actions.ParameterFile.ParameterFileType;
-import com.google.devtools.build.lib.actions.PathMapper;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.FeatureConfiguration;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.List;
-import java.util.Optional;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Starlark;
+import com.google.devtools.build.lib.actions.AbstractCommandLine
 
 /**
  * Represents the command line of a linker invocation. It supports executables and dynamic libraries
  * as well as static libraries.
  */
-@Immutable
-public final class LinkCommandLine extends AbstractCommandLine {
-  private static final String LINKER_PARAM_FILE = "linker_param_file";
-  private final String actionName;
-  private final String forcedToolPath;
-  private final CcToolchainVariables variables;
-  // The feature config can be null for tests.
-  @Nullable private final FeatureConfiguration featureConfiguration;
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+class LinkCommandLine private constructor(
+    val actionName: String?,
+    private val forcedToolPath: String?,
+    splitCommandLine: Boolean,
+    parameterFileType: ParameterFileType?,
+    variables: CcToolchainVariables,
+    featureConfiguration: FeatureConfiguration?
+) : AbstractCommandLine() {
+    private val variables: CcToolchainVariables
 
-  private final boolean splitCommandLine;
-  private final ParameterFileType parameterFileType;
+    // The feature config can be null for tests.
+    private val featureConfiguration: FeatureConfiguration?
 
-  private LinkCommandLine(
-      String actionName,
-      String forcedToolPath,
-      boolean splitCommandLine,
-      ParameterFileType parameterFileType,
-      CcToolchainVariables variables,
-      @Nullable FeatureConfiguration featureConfiguration) {
+    private val splitCommandLine: Boolean
+    private val parameterFileType: ParameterFileType?
 
-    this.actionName = actionName;
-    this.forcedToolPath = forcedToolPath;
-    this.variables = variables;
-    this.featureConfiguration = featureConfiguration;
-    this.splitCommandLine = splitCommandLine;
-    this.parameterFileType = parameterFileType;
-  }
-
-  public String getActionName() {
-    return actionName;
-  }
-
-  /** Returns the path to the linker. */
-  public String getLinkerPathString() throws EvalException {
-    if (forcedToolPath != null) {
-      return forcedToolPath;
-    } else {
-      if (!featureConfiguration.actionIsConfigured(actionName)) {
-        throw Starlark.errorf("Expected action_config for '%s' to be configured", actionName);
-      }
-      return featureConfiguration.getToolPathForAction(actionName);
+    init {
+        this.variables = variables
+        this.featureConfiguration = featureConfiguration
+        this.splitCommandLine = splitCommandLine
+        this.parameterFileType = parameterFileType
     }
-  }
 
-  /** Returns the build variables used to template the crosstool for this linker invocation. */
-  @VisibleForTesting
-  public CcToolchainVariables getBuildVariables() {
-    return this.variables;
-  }
-
-  public ImmutableList<String> getParamCommandLine(
-      @Nullable InputMetadataProvider inputMetadataProvider, PathMapper pathMapper)
-      throws CommandLineExpansionException {
-    ImmutableList.Builder<String> argv = ImmutableList.builder();
-    try {
-      if (variables.isAvailable(LINKER_PARAM_FILE)) {
-        // Filter out linker_param_file
-        String linkerParamFile =
-            variables
-                .getVariable(LINKER_PARAM_FILE, pathMapper)
-                .getStringValue(LINKER_PARAM_FILE, pathMapper);
-        argv.addAll(
-            featureConfiguration
-                .getCommandLine(actionName, variables, inputMetadataProvider, pathMapper)
-                .stream()
-                .filter(s -> !s.contains(linkerParamFile))
-                .collect(toImmutableList()));
-      } else {
-        argv.addAll(
-            featureConfiguration.getCommandLine(
-                actionName, variables, inputMetadataProvider, pathMapper));
-      }
-    } catch (ExpansionException e) {
-      throw new CommandLineExpansionException(e.getMessage());
-    }
-    return argv.build();
-  }
-
-  CommandLines getCommandLines() throws EvalException {
-    CommandLines.Builder builder = CommandLines.builder();
-    builder.addSingleArgument(getLinkerPathString());
-    builder.addCommandLine(this, getParamFileInfo());
-    return builder.build();
-  }
-
-  @Nullable
-  ParamFileInfo getParamFileInfo() throws EvalException {
-    ParamFileInfo paramFileInfo = null;
-    if (splitCommandLine) {
-      try {
-        Optional<String> formatString =
-            featureConfiguration
-                .getCommandLine(actionName, variables, null, PathMapper.NOOP)
-                .stream()
-                .filter(s -> s.contains("LINKER_PARAM_FILE_PLACEHOLDER"))
-                .findAny();
-        if (formatString.isPresent()) {
-          paramFileInfo =
-              ParamFileInfo.builder(parameterFileType)
-                  .setFlagFormatString(
-                      formatString
-                          .get()
-                          .replace("%", "%%")
-                          .replace("LINKER_PARAM_FILE_PLACEHOLDER", "%s"))
-                  .setUseAlways(true)
-                  .build();
+    @get:Throws(net.starlark.java.eval.EvalException::class)
+    val linkerPathString: String?
+        /** Returns the path to the linker.  */
+        get() {
+            if (forcedToolPath != null) {
+                return forcedToolPath
+            } else {
+                if (!featureConfiguration.actionIsConfigured(actionName)) {
+                    throw net.starlark.java.eval.Starlark.errorf(
+                        "Expected action_config for '%s' to be configured",
+                        actionName
+                    )
+                }
+                return featureConfiguration.getToolPathForAction(actionName)
+            }
         }
-      } catch (ExpansionException e) {
-        throw new EvalException(e);
-      }
-    }
-    return paramFileInfo;
-  }
 
-  @Override
-  public List<String> arguments() throws CommandLineExpansionException {
-    return arguments(null, PathMapper.NOOP);
-  }
+    @get:com.google.common.annotations.VisibleForTesting
+    val buildVariables: CcToolchainVariables
+        /** Returns the build variables used to template the crosstool for this linker invocation.  */
+        get() = this.variables
 
-  @Override
-  public List<String> arguments(InputMetadataProvider inputMetadataProvider, PathMapper pathMapper)
-      throws CommandLineExpansionException {
-    return getParamCommandLine(inputMetadataProvider, pathMapper);
-  }
-
-  /** A builder for a {@link LinkCommandLine}. */
-  public static final class Builder {
-
-    private String forcedToolPath;
-    private boolean splitCommandLine;
-    private ParameterFileType parameterFileType = ParameterFileType.UNQUOTED;
-    private CcToolchainVariables variables;
-    private FeatureConfiguration featureConfiguration;
-    private String actionName;
-
-    public LinkCommandLine build() {
-      if (variables == null) {
-        variables = CcToolchainVariables.empty();
-      }
-
-      return new LinkCommandLine(
-          actionName,
-          forcedToolPath,
-          splitCommandLine,
-          parameterFileType,
-          variables,
-          featureConfiguration);
+    @Throws(CommandLineExpansionException::class)
+    fun getParamCommandLine(
+        inputMetadataProvider: InputMetadataProvider?, pathMapper: PathMapper?
+    ): com.google.common.collect.ImmutableList<String?> {
+        val argv: com.google.common.collect.ImmutableList.Builder<String?> =
+            com.google.common.collect.ImmutableList.builder<String?>()
+        try {
+            if (variables.isAvailable(LINKER_PARAM_FILE)) {
+                // Filter out linker_param_file
+                val linkerParamFile: String? =
+                    variables
+                        .getVariable(LINKER_PARAM_FILE, pathMapper)
+                        .getStringValue(LINKER_PARAM_FILE, pathMapper)
+                argv.addAll(
+                    featureConfiguration
+                        .getCommandLine(actionName, variables, inputMetadataProvider, pathMapper)
+                        .stream()
+                        .filter(java.util.function.Predicate { s: String? -> !s.contains(linkerParamFile) })
+                        .collect(com.google.common.collect.ImmutableList.toImmutableList<String?>())
+                )
+            } else {
+                argv.addAll(
+                    featureConfiguration.getCommandLine(
+                        actionName, variables, inputMetadataProvider, pathMapper
+                    )
+                )
+            }
+        } catch (e: com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException) {
+            throw CommandLineExpansionException(e.getMessage())
+        }
+        return argv.build()
     }
 
-    /** Use given tool path instead of the one from feature configuration */
-    @CanIgnoreReturnValue
-    public Builder forceToolPath(String forcedToolPath) {
-      this.forcedToolPath = forcedToolPath;
-      return this;
+    @get:Throws(net.starlark.java.eval.EvalException::class)
+    val commandLines: CommandLines
+        get() {
+            val builder: CommandLines.Builder = CommandLines.builder()
+            builder.addSingleArgument(this.linkerPathString)
+            builder.addCommandLine(this, this.paramFileInfo)
+            return builder.build()
+        }
+
+    @get:Throws(net.starlark.java.eval.EvalException::class)
+    val paramFileInfo: ParamFileInfo?
+        get() {
+            var paramFileInfo: ParamFileInfo? = null
+            if (splitCommandLine) {
+                try {
+                    val formatString: java.util.Optional<String?> =
+                        featureConfiguration
+                            .getCommandLine(actionName, variables, null, PathMapper.NOOP)
+                            .stream()
+                            .filter(java.util.function.Predicate { s: String? -> s.contains("LINKER_PARAM_FILE_PLACEHOLDER") })
+                            .findAny()
+                    if (formatString.isPresent()) {
+                        paramFileInfo =
+                            ParamFileInfo.builder(parameterFileType)
+                                .setFlagFormatString(
+                                    formatString
+                                        .get()
+                                        .replace("%", "%%")
+                                        .replace("LINKER_PARAM_FILE_PLACEHOLDER", "%s")
+                                )
+                                .setUseAlways(true)
+                                .build()
+                    }
+                } catch (e: com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException) {
+                    throw net.starlark.java.eval.EvalException(e)
+                }
+            }
+            return paramFileInfo
+        }
+
+    @Throws(CommandLineExpansionException::class)
+    public override fun arguments(): MutableList<String?> {
+        return arguments(null, PathMapper.NOOP)
     }
 
-    /** Sets the feature configuration for this link action. */
-    @CanIgnoreReturnValue
-    public Builder setFeatureConfiguration(FeatureConfiguration featureConfiguration) {
-      this.featureConfiguration = featureConfiguration;
-      return this;
+    @Throws(CommandLineExpansionException::class)
+    public override fun arguments(
+        inputMetadataProvider: InputMetadataProvider?,
+        pathMapper: PathMapper?
+    ): MutableList<String?> {
+        return getParamCommandLine(inputMetadataProvider, pathMapper)
     }
 
-    @CanIgnoreReturnValue
-    public Builder setSplitCommandLine(boolean splitCommandLine) {
-      this.splitCommandLine = splitCommandLine;
-      return this;
+    /** A builder for a [LinkCommandLine].  */
+    class Builder {
+        private var forcedToolPath: String? = null
+        private var splitCommandLine = false
+        private var parameterFileType: ParameterFileType? = ParameterFileType.UNQUOTED
+        private var variables: CcToolchainVariables? = null
+        private var featureConfiguration: FeatureConfiguration? = null
+        private var actionName: String? = null
+
+        fun build(): LinkCommandLine {
+            if (variables == null) {
+                variables = CcToolchainVariables.Companion.empty()
+            }
+
+            return LinkCommandLine(
+                actionName,
+                forcedToolPath,
+                splitCommandLine,
+                parameterFileType,
+                variables,
+                featureConfiguration
+            )
+        }
+
+        /** Use given tool path instead of the one from feature configuration  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun forceToolPath(forcedToolPath: String?): Builder {
+            this.forcedToolPath = forcedToolPath
+            return this
+        }
+
+        /** Sets the feature configuration for this link action.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setFeatureConfiguration(featureConfiguration: FeatureConfiguration?): Builder {
+            this.featureConfiguration = featureConfiguration
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setSplitCommandLine(splitCommandLine: Boolean): Builder {
+            this.splitCommandLine = splitCommandLine
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setParameterFileType(parameterFileType: ParameterFileType?): Builder {
+            this.parameterFileType = parameterFileType
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setBuildVariables(variables: CcToolchainVariables?): Builder {
+            this.variables = variables
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setActionName(actionName: String?): Builder {
+            this.actionName = actionName
+            return this
+        }
     }
 
-    @CanIgnoreReturnValue
-    public Builder setParameterFileType(ParameterFileType parameterFileType) {
-      this.parameterFileType = parameterFileType;
-      return this;
+    companion object {
+        private const val LINKER_PARAM_FILE = "linker_param_file"
     }
-
-    @CanIgnoreReturnValue
-    public Builder setBuildVariables(CcToolchainVariables variables) {
-      this.variables = variables;
-      return this;
-    }
-
-    @CanIgnoreReturnValue
-    public Builder setActionName(String actionName) {
-      this.actionName = actionName;
-      return this;
-    }
-  }
 }

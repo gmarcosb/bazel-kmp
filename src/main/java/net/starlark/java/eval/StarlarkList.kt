@@ -11,66 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.eval
 
-package net.starlark.java.eval;
-
-import static com.google.common.collect.ImmutableSet.toImmutableSet;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import java.io.Serializable;
-import java.util.AbstractCollection;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.List;
-import java.util.ListIterator;
-import java.util.NoSuchElementException;
-import java.util.function.Supplier;
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.ParamType;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.syntax.StarlarkType;
-import net.starlark.java.syntax.SyntaxUtils;
-import net.starlark.java.syntax.TypeConstructor;
-import net.starlark.java.syntax.Types;
+import com.google.devtools.build.lib.supplier.InterruptibleSupplier.get
+import java.util.AbstractCollection
 
 /**
  * A StarlarkList is a mutable finite sequence of values.
- *
- * <p>Starlark operations on lists, including element update and the {@code append}, {@code insert},
- * and {@code extend} methods, may insert arbitrary Starlark values as list elements, regardless of
+ * 
+ * 
+ * Starlark operations on lists, including element update and the `append`, `insert`,
+ * and `extend` methods, may insert arbitrary Starlark values as list elements, regardless of
  * the type argument used to reference to the list from Java code. Therefore, as long as a list is
- * mutable, Java code should refer to it only through a type such as {@code StarlarkList<Object>} or
- * {@code StarlarkList<?>} to avoid undermining the type-safety of the Java application. Once the
- * list becomes frozen, it is safe to {@link #cast} it to a more specific type that accurately
- * reflects its elements, such as {@code StarlarkList<String>}.
- *
- * <p>The following List methods, by inheriting their implementations from AbstractList, are
+ * mutable, Java code should refer to it only through a type such as `StarlarkList<Object>` or
+ * `StarlarkList<?>` to avoid undermining the type-safety of the Java application. Once the
+ * list becomes frozen, it is safe to [.cast] it to a more specific type that accurately
+ * reflects its elements, such as `StarlarkList<String>`.
+ * 
+ * 
+ * The following List methods, by inheriting their implementations from AbstractList, are
  * effectively disabled. Use the corresponding methods with "element" in their name; they may report
  * mutation failure by throwing a checked exception.
- *
+ * 
  * <pre>
- *   boolean add(E)                    -- use addElement
- *   boolean remove(Object)            -- use removeElement
- *   boolean addAll(Collection)        -- use addElements
- *   boolean addAll(int, Collection)
- *   boolean removeAll(Collection)     -- use removeElements
- *   boolean retainAll(Collection)
- *   void clear()                      -- use clearElements
- *   E set(int, E)                     -- use setElementAt
- *   void add(int, E)                  -- use addElementAt
- *   E remove(int)                     -- use removeElementAt
- * </pre>
+ * boolean add(E)                    -- use addElement
+ * boolean remove(Object)            -- use removeElement
+ * boolean addAll(Collection)        -- use addElements
+ * boolean addAll(int, Collection)
+ * boolean removeAll(Collection)     -- use removeElements
+ * boolean retainAll(Collection)
+ * void clear()                      -- use clearElements
+ * E set(int, E)                     -- use setElementAt
+ * void add(int, E)                  -- use addElementAt
+ * E remove(int)                     -- use removeElementAt
+</pre> * 
  */
-@StarlarkBuiltin(
-    name = "list",
-    category = "core",
-    doc =
-        "The built-in list type. Example list expressions:<br>"
+@net.starlark.java.annot.StarlarkBuiltin(
+    name = "list", category = "core", doc = ("The built-in list type. Example list expressions:<br>"
             + "<pre class=language-python>x = [1, 2, 3]</pre>"
             + "Accessing elements is possible using indexing (starts from <code>0</code>):<br>"
             + "<pre class=language-python>e = x[1]   # e == 2</pre>"
@@ -83,468 +60,523 @@ import net.starlark.java.syntax.Types;
             + "['a', 'b', 'c', 'd'][::2]  # ['a', 'c']\n"
             + "['a', 'b', 'c', 'd'][3:0:-1]  # ['d', 'c', 'b']</pre>"
             + "Lists are mutable, as in Python.")
-public abstract class StarlarkList<E> extends AbstractCollection<E>
-    implements Sequence<E>, StarlarkValue, Mutability.Freezable, Comparable<StarlarkList<?>> {
-
-  public static TypeConstructor getAssociatedTypeConstructor() {
-    return Types.LIST_CONSTRUCTOR;
-  }
-
-  // It's always possible to overeat in small bites but we'll
-  // try to stop someone swallowing the world in one gulp.
-  static final int MAX_ALLOC = 1 << 30;
-
-  static final Object[] EMPTY_ARRAY = {};
-
-  // Prohibit instantiation outside of package.
-  StarlarkList() {}
-
-  @Override
-  public StarlarkType getStarlarkType(StarlarkSemantics semantics) {
-    // TODO(ilist@): store the type for non-homogeneous lists
-    // Current implementation traverses the list and computes union of all elements - same as most
-    // of the native calls. This is correct, but could be expensive. Proposed optimization is
-    // to store and update list's type when elements are added to it.
-    if (isEmpty()) {
-      return mutability().isFrozen() ? Types.list(Types.NEVER) : Types.list(Types.ANY);
-    }
-    return Types.list(
-        Types.union(
-            stream().map(e -> Starlark.getStarlarkType(e, semantics)).collect(toImmutableSet())));
-  }
-
-  /**
-   * Takes ownership of the supplied array of class Object[].class, and returns a new StarlarkList
-   * instance that initially wraps the array. The caller must not subsequently modify the array, but
-   * the StarlarkList instance may do so.
-   */
-  static <T> StarlarkList<T> wrap(@Nullable Mutability mutability, Object[] elems) {
-    if (mutability == null || mutability.isFrozen()) {
-      return switch (elems.length) {
-        case 0 -> empty();
-        case 1 -> new ImmutableSingletonStarlarkList<>(elems[0]);
-        default -> new RegularImmutableStarlarkList<>(elems);
-      };
-    }
-    return new MutableStarlarkList<>(mutability, elems);
-  }
-
-  @Override
-  public void checkHashable() throws EvalException {
-    // Even a frozen list is unhashable.
-    throw Starlark.errorf("unhashable type: 'list'");
-  }
-
-  /** Returns an empty frozen list of the desired type. */
-  @SuppressWarnings("unchecked")
-  public static <T> StarlarkList<T> empty() {
-    return (StarlarkList<T>) RegularImmutableStarlarkList.EMPTY;
-  }
-
-  /** Returns a new, empty list with the specified Mutability. */
-  public static <T> StarlarkList<T> newList(Mutability mutability) {
-    return wrap(mutability, EMPTY_ARRAY);
-  }
-
-  /**
-   * Returns a {@code StarlarkList} whose items are given by an iterable and which has the given
-   * {@link Mutability}. If {@code mutability} is null, the list is immutable.
-   */
-  public static <T> StarlarkList<T> copyOf(
-      @Nullable Mutability mutability, Iterable<? extends T> elems) {
-    if (mutability == null
-        && elems instanceof StarlarkList
-        && ((StarlarkList) elems).isImmutable()) {
-      @SuppressWarnings("unchecked")
-      StarlarkList<T> list = (StarlarkList<T>) elems; // safe
-      return list;
+)
+abstract class StarlarkList<E>  // Prohibit instantiation outside of package.
+internal constructor() : AbstractCollection<E?>(), net.starlark.java.eval.Sequence<E?>,
+    net.starlark.java.eval.StarlarkValue, net.starlark.java.eval.Mutability.Freezable, Comparable<StarlarkList<*>?> {
+    override fun getStarlarkType(semantics: net.starlark.java.eval.StarlarkSemantics?): net.starlark.java.syntax.StarlarkType? {
+        // TODO(ilist@): store the type for non-homogeneous lists
+        // Current implementation traverses the list and computes union of all elements - same as most
+        // of the native calls. This is correct, but could be expensive. Proposed optimization is
+        // to store and update list's type when elements are added to it.
+        if (isEmpty()) {
+            return if (mutability().isFrozen()) net.starlark.java.syntax.Types.list(net.starlark.java.syntax.Types.NEVER) else net.starlark.java.syntax.Types.list(
+                net.starlark.java.syntax.Types.ANY
+            )
+        }
+        return net.starlark.java.syntax.Types.list(
+            net.starlark.java.syntax.Types.union(
+                stream().map<net.starlark.java.syntax.StarlarkType?>(java.util.function.Function { e: E? ->
+                    net.starlark.java.eval.Starlark.Companion.getStarlarkType(
+                        e,
+                        semantics
+                    )
+                })
+                    .collect(com.google.common.collect.ImmutableSet.toImmutableSet<net.starlark.java.syntax.StarlarkType?>())
+            )
+        )
     }
 
-    Object[] array = Iterables.toArray(elems, Object.class);
-    checkElemsValid(array);
-    return wrap(mutability, array);
-  }
-
-  private static void checkElemsValid(Object[] elems) {
-    for (Object elem : elems) {
-      Starlark.checkValid(elem);
-    }
-  }
-
-  /**
-   * Returns an immutable list with the given elements. Equivalent to {@code copyOf(null, elems)}.
-   */
-  public static <T> StarlarkList<T> immutableCopyOf(Iterable<? extends T> elems) {
-    return copyOf(null, elems);
-  }
-
-  /**
-   * Creates an immutable {@link StarlarkList} with lazily supplied elements.
-   *
-   * <p>The given supplier is not invoked until the list is accessed and is invoked at most once.
-   * This can be used to create a {@link StarlarkList} while deferring an expensive computation
-   * until the list is actually accessed.
-   */
-  public static <T> StarlarkList<T> lazyImmutable(SerializableListSupplier<T> supplier) {
-    return new LazyImmutableStarlarkList<>(supplier);
-  }
-
-  /** An associated convenience type for LazyImmutableStarlarkLists */
-  public interface SerializableListSupplier<T> extends Supplier<ImmutableList<T>>, Serializable {}
-
-  /**
-   * Returns a {@code StarlarkList} with the given items and the {@link Mutability}. If {@code
-   * mutability} is null, the list is immutable.
-   */
-  public static <T> StarlarkList<T> of(@Nullable Mutability mutability, T... elems) {
-    if (elems.length == 0) {
-      return newList(mutability);
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun checkHashable() {
+        // Even a frozen list is unhashable.
+        throw net.starlark.java.eval.Starlark.Companion.errorf("unhashable type: 'list'")
     }
 
-    checkElemsValid(elems);
-    return wrap(mutability, Arrays.copyOf(elems, elems.length, Object[].class));
-  }
+    /** An associated convenience type for LazyImmutableStarlarkLists  */
+    interface SerializableListSupplier<T> : java.util.function.Supplier<com.google.common.collect.ImmutableList<T?>?>,
+        java.io.Serializable
 
-  /** Returns an immutable {@code StarlarkList} with the given items. */
-  public static <T> StarlarkList<T> immutableOf(T... elems) {
-    checkElemsValid(elems);
-    return wrap(null, Arrays.copyOf(elems, elems.length, Object[].class));
-  }
+    abstract fun elems(): Array<Any?>
 
-  abstract Object[] elems();
-
-  /**
-   * Returns a new {@code StarlarkList} that is the concatenation of two {@code StarlarkList}s. The
-   * new list will have the given {@link Mutability}.
-   *
-   * @throws EvalException if the resulting list would be too large
-   */
-  public static <T> StarlarkList<T> concat(
-      StarlarkList<? extends T> x, StarlarkList<? extends T> y, Mutability mutability)
-      throws EvalException {
-    int xsize = x.size();
-    int ysize = y.size();
-    Object[] res = new Object[addSizesAndFailIfExcessive(xsize, ysize)];
-    System.arraycopy(x.elems(), 0, res, 0, xsize);
-    System.arraycopy(y.elems(), 0, res, xsize, ysize);
-    return wrap(mutability, res);
-  }
-
-  protected static int addSizesAndFailIfExcessive(int xsize, int ysize) throws EvalException {
-    int sum = xsize + ysize;
-    if (sum < 0 || sum > MAX_ALLOC) {
-      throw Starlark.errorf("excessive capacity requested (%d + %d elements)", xsize, ysize);
-    }
-    return sum;
-  }
-
-  @Nonnull
-  @Override
-  public Iterator<E> iterator() {
-    return new Itr();
-  }
-
-  @Override
-  public int compareTo(StarlarkList<?> that) {
-    return Sequence.compare(this, that);
-  }
-
-  @Override
-  public boolean equals(Object that) {
-    // This slightly violates the java.util.List equivalence contract
-    // because it considers the class, not just the elements.
-    // This is needed because in Starlark lists are never equal to tuples, however in Java they both
-    // implement List interface.
-    return this == that
-        || (that instanceof StarlarkList && Sequence.sameElems(this, ((StarlarkList) that)));
-  }
-
-  @Override
-  public int hashCode() {
-    // Hash the elements elems[0:size].
-    int result = 1;
-    int size = size();
-    Object[] elems = elems();
-    for (int i = 0; i < size; i++) {
-      result = 31 * result + elems[i].hashCode();
-    }
-    return 6047 + 4673 * result;
-  }
-
-  @Override
-  public void repr(Printer printer, StarlarkSemantics semantics) {
-    printer.printList(this, "[", ", ", "]", semantics);
-  }
-
-  // TODO(adonovan): StarlarkValue has 3 String methods yet still we need this fourth. Why?
-  @Override
-  public String toString() {
-    return Starlark.repr(this, StarlarkSemantics.DEFAULT);
-  }
-
-  /** Returns a new StarlarkList containing n consecutive repeats of this tuple. */
-  public StarlarkList<E> repeat(StarlarkInt n, Mutability mutability) throws EvalException {
-    if (n.signum() <= 0) {
-      return wrap(mutability, EMPTY_ARRAY);
+    @javax.annotation.Nonnull
+    override fun iterator(): MutableIterator<E?> {
+        return net.starlark.java.eval.StarlarkList.Itr()
     }
 
-    int ni = n.toInt("repeat");
-    int size = size();
-    long sz = (long) ni * size;
-    if (sz > MAX_ALLOC) {
-      throw Starlark.errorf("excessive repeat (%d * %d elements)", size, ni);
+    override fun compareTo(that: StarlarkList<*>): Int {
+        return net.starlark.java.eval.Sequence.Companion.compare(this, that)
     }
-    Object[] res = new Object[(int) sz];
-    for (int i = 0; i < ni; i++) {
-      System.arraycopy(elems(), 0, res, i * size, size);
+
+    override fun equals(that: Any?): Boolean {
+        // This slightly violates the java.util.List equivalence contract
+        // because it considers the class, not just the elements.
+        // This is needed because in Starlark lists are never equal to tuples, however in Java they both
+        // implement List interface.
+        return this === that
+                || (that is StarlarkList<*> && net.starlark.java.eval.Sequence.Companion.sameElems(this, that))
     }
-    return wrap(mutability, res);
-  }
 
-  @Override
-  public StarlarkList<E> getSlice(Mutability mu, int start, int stop, int step)
-      throws EvalException {
-    RangeList indices = new RangeList(start, stop, step);
-    int n = indices.size();
-    Object[] res = new Object[n];
-    if (step == 1) { // common case
-      System.arraycopy(elems(), indices.at(0), res, 0, n);
-    } else {
-      Object[] elems = elems();
-      for (int i = 0; i < n; ++i) {
-        res[i] = elems[indices.at(i)];
-      }
+    override fun hashCode(): Int {
+        // Hash the elements elems[0:size].
+        var result = 1
+        val size: Int = size()
+        val elems = elems()
+        for (i in 0..<size) {
+            result = 31 * result + elems[i]!!.hashCode()
+        }
+        return 6047 + 4673 * result
     }
-    return wrap(mu, res);
-  }
 
-  /**
-   * Appends an element to the end of the list, after validating that mutation is allowed.
-   *
-   * @param element the element to add
-   */
-  public abstract void addElement(E element) throws EvalException;
-
-  /**
-   * Inserts an element at a given position to the list.
-   *
-   * @param index the new element's index
-   * @param element the element to add
-   */
-  public abstract void addElementAt(int index, E element) throws EvalException;
-
-  /**
-   * Appends all the elements to the end of the list.
-   *
-   * @param elements the elements to add
-   */
-  public abstract void addElements(Iterable<? extends E> elements) throws EvalException;
-
-  /**
-   * Removes the element at a given index. The index must already have been validated to be in
-   * range.
-   *
-   * @param index the index of the element to remove
-   */
-  public abstract void removeElementAt(int index) throws EvalException;
-
-  /**
-   * Sets the position at the given index to contain the given value. Precondition: {@code 0 <=
-   * index < size()}.
-   */
-  public abstract void setElementAt(int index, E value) throws EvalException;
-
-  @StarlarkMethod(
-      name = "remove",
-      doc =
-          "Removes the first item from the list whose value is x. "
-              + "It is an error if there is no such item.",
-      parameters = {@Param(name = "x", doc = "The object to remove.")})
-  public void removeElement(E x) throws EvalException {
-    int size = size();
-    Object[] elems = elems();
-    for (int i = 0; i < size; i++) {
-      if (elems[i].equals(x)) {
-        removeElementAt(i);
-        return;
-      }
+    override fun repr(printer: net.starlark.java.eval.Printer, semantics: net.starlark.java.eval.StarlarkSemantics?) {
+        printer.printList(this, "[", ", ", "]", semantics)
     }
-    throw Starlark.errorf("item %s not found in list", Starlark.repr(x, StarlarkSemantics.DEFAULT));
-  }
 
-  @StarlarkMethod(
-      name = "append",
-      doc = "Adds an item to the end of the list.",
-      parameters = {@Param(name = "item", doc = "Item to add at the end.")})
-  public void append(E item) throws EvalException {
-    addElement(item);
-  }
+    // TODO(adonovan): StarlarkValue has 3 String methods yet still we need this fourth. Why?
+    override fun toString(): String {
+        return net.starlark.java.eval.Starlark.Companion.repr(
+            this,
+            net.starlark.java.eval.StarlarkSemantics.Companion.DEFAULT
+        )
+    }
 
-  @StarlarkMethod(name = "clear", doc = "Removes all the elements of the list.")
-  public abstract void clearElements() throws EvalException;
+    /** Returns a new StarlarkList containing n consecutive repeats of this tuple.  */
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun repeat(
+        n: net.starlark.java.eval.StarlarkInt,
+        mutability: net.starlark.java.eval.Mutability?
+    ): StarlarkList<E?>? {
+        if (n.signum() <= 0) {
+            return net.starlark.java.eval.StarlarkList.Companion.wrap<E?>(
+                mutability,
+                net.starlark.java.eval.StarlarkList.Companion.EMPTY_ARRAY
+            )
+        }
 
-  @StarlarkMethod(
-      name = "insert",
-      doc = "Inserts an item at a given position.",
-      parameters = {
-        @Param(
-            name = "index",
-            doc =
-                "The index the item will be at after insertion. If the index is out of range, it's"
+        val ni: Int = n.toInt("repeat")
+        val size: Int = size()
+        val sz = ni.toLong() * size
+        if (sz > net.starlark.java.eval.StarlarkList.Companion.MAX_ALLOC) {
+            throw net.starlark.java.eval.Starlark.Companion.errorf("excessive repeat (%d * %d elements)", size, ni)
+        }
+        val res = arrayOfNulls<Any>(sz.toInt())
+        for (i in 0..<ni) {
+            java.lang.System.arraycopy(elems(), 0, res, i * size, size)
+        }
+        return net.starlark.java.eval.StarlarkList.Companion.wrap<E?>(mutability, res)
+    }
+
+    @Throws(net.starlark.java.eval.EvalException::class)
+    override fun getSlice(mu: net.starlark.java.eval.Mutability?, start: Int, stop: Int, step: Int): StarlarkList<E?>? {
+        val indices: net.starlark.java.eval.RangeList = net.starlark.java.eval.RangeList(start, stop, step)
+        val n: Int = indices.size()
+        val res = arrayOfNulls<Any>(n)
+        if (step == 1) { // common case
+            java.lang.System.arraycopy(elems(), indices.at(0), res, 0, n)
+        } else {
+            val elems = elems()
+            for (i in 0..<n) {
+                res[i] = elems[indices.at(i)]
+            }
+        }
+        return net.starlark.java.eval.StarlarkList.Companion.wrap<E?>(mu, res)
+    }
+
+    /**
+     * Appends an element to the end of the list, after validating that mutation is allowed.
+     * 
+     * @param element the element to add
+     */
+    @Throws(net.starlark.java.eval.EvalException::class)
+    abstract fun addElement(element: E?)
+
+    /**
+     * Inserts an element at a given position to the list.
+     * 
+     * @param index the new element's index
+     * @param element the element to add
+     */
+    @Throws(net.starlark.java.eval.EvalException::class)
+    abstract fun addElementAt(index: Int, element: E?)
+
+    /**
+     * Appends all the elements to the end of the list.
+     * 
+     * @param elements the elements to add
+     */
+    @Throws(net.starlark.java.eval.EvalException::class)
+    abstract fun addElements(elements: Iterable<out E?>?)
+
+    /**
+     * Removes the element at a given index. The index must already have been validated to be in
+     * range.
+     * 
+     * @param index the index of the element to remove
+     */
+    @Throws(net.starlark.java.eval.EvalException::class)
+    abstract fun removeElementAt(index: Int)
+
+    /**
+     * Sets the position at the given index to contain the given value. Precondition: `0 <= index < size()`.
+     */
+    @Throws(net.starlark.java.eval.EvalException::class)
+    abstract fun setElementAt(index: Int, value: E?)
+
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "remove",
+        doc = ("Removes the first item from the list whose value is x. "
+                + "It is an error if there is no such item."),
+        parameters = [net.starlark.java.annot.Param(name = "x", doc = "The object to remove.")]
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun removeElement(x: E?) {
+        val size: Int = size()
+        val elems = elems()
+        for (i in 0..<size) {
+            if (elems[i] == x) {
+                removeElementAt(i)
+                return
+            }
+        }
+        throw net.starlark.java.eval.Starlark.Companion.errorf(
+            "item %s not found in list",
+            net.starlark.java.eval.Starlark.Companion.repr(
+                x,
+                net.starlark.java.eval.StarlarkSemantics.Companion.DEFAULT
+            )
+        )
+    }
+
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "append",
+        doc = "Adds an item to the end of the list.",
+        parameters = [net.starlark.java.annot.Param(name = "item", doc = "Item to add at the end.")]
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun append(item: E?) {
+        addElement(item)
+    }
+
+    @net.starlark.java.annot.StarlarkMethod(name = "clear", doc = "Removes all the elements of the list.")
+    @Throws(net.starlark.java.eval.EvalException::class)
+    abstract fun clearElements()
+
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "insert", doc = "Inserts an item at a given position.", parameters = [net.starlark.java.annot.Param(
+            name = "index", doc = ("The index the item will be at after insertion. If the index is out of range, it's"
                     + " transformed into an effective index in the range from 0 to the list's"
                     + " previous length, inclusive, in the same manner as for the start index of a"
-                    + " slice operator."),
-        @Param(name = "item", doc = "The item.")
-      })
-  public void insert(StarlarkInt index, E item) throws EvalException {
-    addElementAt(SyntaxUtils.toSliceBound(index.toInt("index"), size()), item); // unchecked
-  }
+                    + " slice operator.")
+        ), net.starlark.java.annot.Param(name = "item", doc = "The item.")]
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun insert(index: net.starlark.java.eval.StarlarkInt, item: E?) {
+        addElementAt(net.starlark.java.syntax.SyntaxUtils.toSliceBound(index.toInt("index"), size()), item) // unchecked
+    }
 
-  @StarlarkMethod(
-      name = "extend",
-      doc = "Adds all items to the end of the list.",
-      parameters = {@Param(name = "items", doc = "Items to add at the end.")})
-  public void extend(StarlarkIterable<? extends E> items) throws EvalException {
-    addElements(items);
-  }
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "extend",
+        doc = "Adds all items to the end of the list.",
+        parameters = [net.starlark.java.annot.Param(name = "items", doc = "Items to add at the end.")]
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun extend(items: net.starlark.java.eval.StarlarkIterable<out E?>?) {
+        addElements(items)
+    }
 
-  @StarlarkMethod(
-      name = "index",
-      doc =
-          "Returns the index in the list of the first item whose value is x. It is an error if"
-              + " there is no such item. If <code>start</code> and <code>end</code> are given,"
-              + " they restrict the range searched in the same manner as slicing.",
-      parameters = {
-        @Param(name = "x", doc = "The object to search."),
-        @Param(
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "index",
+        doc = ("Returns the index in the list of the first item whose value is x. It is an error if"
+                + " there is no such item. If <code>start</code> and <code>end</code> are given,"
+                + " they restrict the range searched in the same manner as slicing."),
+        parameters = [net.starlark.java.annot.Param(
+            name = "x",
+            doc = "The object to search."
+        ), net.starlark.java.annot.Param(
             name = "start",
-            allowedTypes = {@ParamType(type = StarlarkInt.class)},
+            allowedTypes = [net.starlark.java.annot.ParamType(type = net.starlark.java.eval.StarlarkInt::class)],
             defaultValue = "unbound",
-            doc = "The start index of the list portion to inspect."),
-        @Param(
+            doc = "The start index of the list portion to inspect."
+        ), net.starlark.java.annot.Param(
             name = "end",
-            allowedTypes = {@ParamType(type = StarlarkInt.class)},
+            allowedTypes = [net.starlark.java.annot.ParamType(type = net.starlark.java.eval.StarlarkInt::class)],
             defaultValue = "unbound",
-            doc = "The end index of the list portion to inspect.")
-      })
-  public int index(E x, Object start, Object end) throws EvalException {
-    int size = size();
-    Object[] elems = elems();
-    int i =
-        start == Starlark.UNBOUND
-            ? 0
-            : SyntaxUtils.toSliceBound(Starlark.toInt(start, "start"), size);
-    int j =
-        end == Starlark.UNBOUND ? size : SyntaxUtils.toSliceBound(Starlark.toInt(end, "end"), size);
-    for (; i < j; i++) {
-      if (elems[i].equals(x)) {
-        return i;
-      }
-    }
-    throw Starlark.errorf("item %s not found in list", Starlark.repr(x, StarlarkSemantics.DEFAULT));
-  }
-
-  @StarlarkMethod(
-      name = "pop",
-      doc =
-          "Removes the item at the given position in the list, and returns it. "
-              + "If no <code>index</code> is specified, "
-              + "it removes and returns the last item in the list.",
-      parameters = {@Param(name = "i", defaultValue = "-1", doc = "The index of the item.")})
-  public E pop(StarlarkInt arg) throws EvalException {
-    int size = size();
-    @SuppressWarnings("unchecked") // safe by specification
-    E[] elems = (E[]) elems();
-    int index = EvalUtils.getSequenceIndex(arg.toInt("i"), size);
-    E result = elems[index];
-    removeElementAt(index);
-    return result;
-  }
-
-  /**
-   * Mutates this list in-place to reduce memory usage, and returns an optimized list (which might
-   * be the same as this instance).
-   *
-   * <p>This operation is not protected by the mutability mechanism. It is the caller's
-   * responsibility to ensure this list is not concurrently accessed during this method's execution.
-   *
-   * <p>The mutated list and the returned list are both equivalent to the original list.
-   *
-   * <p>The mutability must be frozen prior to calling this method.
-   */
-  public StarlarkList<E> unsafeOptimizeMemoryLayout() {
-    return this;
-  }
-
-  private class Itr implements Iterator<E> {
-    private int cursor = 0;
-
-    @Override
-    public boolean hasNext() {
-      return cursor != size();
+            doc = "The end index of the list portion to inspect."
+        )]
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun index(x: E?, start: Any?, end: Any?): Int {
+        val size: Int = size()
+        val elems = elems()
+        var i =
+            if (start === net.starlark.java.eval.Starlark.Companion.UNBOUND)
+                0
+            else
+                net.starlark.java.syntax.SyntaxUtils.toSliceBound(
+                    net.starlark.java.eval.Starlark.Companion.toInt(
+                        start,
+                        "start"
+                    ), size
+                )
+        val j =
+            if (end === net.starlark.java.eval.Starlark.Companion.UNBOUND) size else net.starlark.java.syntax.SyntaxUtils.toSliceBound(
+                net.starlark.java.eval.Starlark.Companion.toInt(end, "end"),
+                size
+            )
+        while (i < j) {
+            if (elems[i] == x) {
+                return i
+            }
+            i++
+        }
+        throw net.starlark.java.eval.Starlark.Companion.errorf(
+            "item %s not found in list",
+            net.starlark.java.eval.Starlark.Companion.repr(
+                x,
+                net.starlark.java.eval.StarlarkSemantics.Companion.DEFAULT
+            )
+        )
     }
 
-    @Override
-    public E next() {
-      try {
-        int i = cursor;
-        E next = get(i);
-        cursor = i + 1;
-        return next;
-      } catch (IndexOutOfBoundsException e) {
-        throw new NoSuchElementException(e.getMessage());
-      }
+    @net.starlark.java.annot.StarlarkMethod(
+        name = "pop",
+        doc = ("Removes the item at the given position in the list, and returns it. "
+                + "If no <code>index</code> is specified, "
+                + "it removes and returns the last item in the list."),
+        parameters = [net.starlark.java.annot.Param(name = "i", defaultValue = "-1", doc = "The index of the item.")]
+    )
+    @Throws(net.starlark.java.eval.EvalException::class)
+    fun pop(arg: net.starlark.java.eval.StarlarkInt): E? {
+        val size: Int = size()
+        val elems// safe by specification
+                = elems() as Array<E?>
+        val index: Int = net.starlark.java.eval.EvalUtils.getSequenceIndex(arg.toInt("i"), size)
+        val result = elems[index]
+        removeElementAt(index)
+        return result
     }
-  }
 
-  // the following List methods are deliberately left unsupported for now, but could be implemented
-  // if the need ever arises
+    /**
+     * Mutates this list in-place to reduce memory usage, and returns an optimized list (which might
+     * be the same as this instance).
+     * 
+     * 
+     * This operation is not protected by the mutability mechanism. It is the caller's
+     * responsibility to ensure this list is not concurrently accessed during this method's execution.
+     * 
+     * 
+     * The mutated list and the returned list are both equivalent to the original list.
+     * 
+     * 
+     * The mutability must be frozen prior to calling this method.
+     */
+    open fun unsafeOptimizeMemoryLayout(): StarlarkList<E?>? {
+        return this
+    }
 
-  @Override
-  @Nonnull
-  public List<E> subList(int fromIndex, int toIndex) {
-    throw new UnsupportedOperationException();
-  }
+    private inner class Itr : MutableIterator<E?> {
+        private var cursor = 0
 
-  @Override
-  @Nonnull
-  public ListIterator<E> listIterator() {
-    throw new UnsupportedOperationException();
-  }
+        override fun hasNext(): Boolean {
+            return cursor != size()
+        }
 
-  @Override
-  @Nonnull
-  public ListIterator<E> listIterator(int index) {
-    throw new UnsupportedOperationException();
-  }
+        override fun next(): E? {
+            try {
+                val i = cursor
+                val next: E? = get(i)
+                cursor = i + 1
+                return next
+            } catch (e: java.lang.IndexOutOfBoundsException) {
+                throw java.util.NoSuchElementException(e.getMessage())
+            }
+        }
+    }
 
-  @Override
-  public int lastIndexOf(Object o) {
-    throw new UnsupportedOperationException();
-  }
+    // the following List methods are deliberately left unsupported for now, but could be implemented
+    // if the need ever arises
+    @javax.annotation.Nonnull
+    override fun subList(fromIndex: Int, toIndex: Int): MutableList<E?>? {
+        throw java.lang.UnsupportedOperationException()
+    }
 
-  @Override
-  public int indexOf(Object o) {
-    throw new UnsupportedOperationException();
-  }
+    @javax.annotation.Nonnull
+    override fun listIterator(): MutableListIterator<E?>? {
+        throw java.lang.UnsupportedOperationException()
+    }
 
-  @Override
-  public E set(int index, E element) {
-    throw new UnsupportedOperationException();
-  }
+    @javax.annotation.Nonnull
+    override fun listIterator(index: Int): MutableListIterator<E?>? {
+        throw java.lang.UnsupportedOperationException()
+    }
 
-  @Override
-  public void add(int index, E element) {
-    throw new UnsupportedOperationException();
-  }
+    override fun lastIndexOf(o: Any?): Int {
+        throw java.lang.UnsupportedOperationException()
+    }
 
-  @Override
-  public E remove(int index) {
-    throw new UnsupportedOperationException();
-  }
+    override fun indexOf(o: Any?): Int {
+        throw java.lang.UnsupportedOperationException()
+    }
 
-  @Override
-  public boolean addAll(int index, @Nonnull Collection<? extends E> c) {
-    throw new UnsupportedOperationException();
-  }
+    override fun set(index: Int, element: E?): E? {
+        throw java.lang.UnsupportedOperationException()
+    }
+
+    override fun add(index: Int, element: E?) {
+        throw java.lang.UnsupportedOperationException()
+    }
+
+    override fun remove(index: Int): E? {
+        throw java.lang.UnsupportedOperationException()
+    }
+
+    override fun addAll(index: Int, @javax.annotation.Nonnull c: MutableCollection<out E?>): Boolean {
+        throw java.lang.UnsupportedOperationException()
+    }
+
+    companion object {
+        fun getAssociatedTypeConstructor(): net.starlark.java.syntax.TypeConstructor {
+            return net.starlark.java.syntax.Types.LIST_CONSTRUCTOR
+        }
+
+        // It's always possible to overeat in small bites but we'll
+        // try to stop someone swallowing the world in one gulp.
+        val MAX_ALLOC: Int = 1 shl 30
+
+        val EMPTY_ARRAY: Array<Any?> = arrayOf<Any?>()
+
+        /**
+         * Takes ownership of the supplied array of class Object[].class, and returns a new StarlarkList
+         * instance that initially wraps the array. The caller must not subsequently modify the array, but
+         * the StarlarkList instance may do so.
+         */
+        fun <T> wrap(mutability: net.starlark.java.eval.Mutability?, elems: Array<Any?>): StarlarkList<T?>? {
+            if (mutability == null || mutability.isFrozen()) {
+                return when (elems.size) {
+                    0 -> net.starlark.java.eval.StarlarkList.Companion.empty<T?>()
+                    1 -> net.starlark.java.eval.ImmutableSingletonStarlarkList<T?>(elems[0])
+                    else -> net.starlark.java.eval.RegularImmutableStarlarkList<T?>(elems)
+                }
+            }
+            return net.starlark.java.eval.MutableStarlarkList<T?>(mutability, elems)
+        }
+
+        /** Returns an empty frozen list of the desired type.  */
+        @kotlin.jvm.JvmStatic
+        fun <T> empty(): StarlarkList<T?> {
+            return net.starlark.java.eval.RegularImmutableStarlarkList.Companion.EMPTY as StarlarkList<T?>
+        }
+
+        /** Returns a new, empty list with the specified Mutability.  */
+        fun <T> newList(mutability: net.starlark.java.eval.Mutability?): StarlarkList<T?>? {
+            return net.starlark.java.eval.StarlarkList.Companion.wrap<T?>(
+                mutability,
+                net.starlark.java.eval.StarlarkList.Companion.EMPTY_ARRAY
+            )
+        }
+
+        /**
+         * Returns a `StarlarkList` whose items are given by an iterable and which has the given
+         * [Mutability]. If `mutability` is null, the list is immutable.
+         */
+        fun <T> copyOf(
+            mutability: net.starlark.java.eval.Mutability?, elems: Iterable<out T?>
+        ): StarlarkList<T?>? {
+            if (mutability == null && elems is StarlarkList<*>
+                && (elems as StarlarkList<*>).isImmutable()
+            ) {
+                val list = elems as StarlarkList<T?> // safe
+                return list
+            }
+
+            val array: Array<Any?> = com.google.common.collect.Iterables.toArray<Any?>(elems, Any::class.java)
+            net.starlark.java.eval.StarlarkList.Companion.checkElemsValid(array)
+            return net.starlark.java.eval.StarlarkList.Companion.wrap<T?>(mutability, array)
+        }
+
+        private fun checkElemsValid(elems: Array<Any?>) {
+            for (elem in elems) {
+                net.starlark.java.eval.Starlark.Companion.checkValid<Any?>(elem)
+            }
+        }
+
+        /**
+         * Returns an immutable list with the given elements. Equivalent to `copyOf(null, elems)`.
+         */
+        fun <T> immutableCopyOf(elems: Iterable<out T?>): StarlarkList<T?>? {
+            return net.starlark.java.eval.StarlarkList.Companion.copyOf<T?>(null, elems)
+        }
+
+        /**
+         * Creates an immutable [StarlarkList] with lazily supplied elements.
+         * 
+         * 
+         * The given supplier is not invoked until the list is accessed and is invoked at most once.
+         * This can be used to create a [StarlarkList] while deferring an expensive computation
+         * until the list is actually accessed.
+         */
+        fun <T> lazyImmutable(supplier: SerializableListSupplier<T?>?): StarlarkList<T?> {
+            return net.starlark.java.eval.LazyImmutableStarlarkList<T?>(supplier)
+        }
+
+        /**
+         * Returns a `StarlarkList` with the given items and the [Mutability]. If `mutability` is null, the list is immutable.
+         */
+        fun <T> of(mutability: net.starlark.java.eval.Mutability?, vararg elems: T?): StarlarkList<T?>? {
+            if (elems.size == 0) {
+                return net.starlark.java.eval.StarlarkList.Companion.newList<T?>(mutability)
+            }
+
+            net.starlark.java.eval.StarlarkList.Companion.checkElemsValid(elems)
+            return net.starlark.java.eval.StarlarkList.Companion.wrap<T?>(
+                mutability,
+                java.util.Arrays.copyOf<Any?, T?>(elems, elems.size, Array<Any>::class.java)
+            )
+        }
+
+        /** Returns an immutable `StarlarkList` with the given items.  */
+        fun <T> immutableOf(vararg elems: T?): StarlarkList<T?>? {
+            net.starlark.java.eval.StarlarkList.Companion.checkElemsValid(elems)
+            return net.starlark.java.eval.StarlarkList.Companion.wrap<T?>(
+                null,
+                java.util.Arrays.copyOf<Any?, T?>(elems, elems.size, Array<Any>::class.java)
+            )
+        }
+
+        /**
+         * Returns a new `StarlarkList` that is the concatenation of two `StarlarkList`s. The
+         * new list will have the given [Mutability].
+         * 
+         * @throws EvalException if the resulting list would be too large
+         */
+        @Throws(net.starlark.java.eval.EvalException::class)
+        fun <T> concat(
+            x: StarlarkList<out T?>, y: StarlarkList<out T?>, mutability: net.starlark.java.eval.Mutability?
+        ): StarlarkList<T?>? {
+            val xsize: Int = x.size()
+            val ysize: Int = y.size()
+            val res = arrayOfNulls<Any>(
+                net.starlark.java.eval.StarlarkList.Companion.addSizesAndFailIfExcessive(
+                    xsize,
+                    ysize
+                )
+            )
+            java.lang.System.arraycopy(x.elems(), 0, res, 0, xsize)
+            java.lang.System.arraycopy(y.elems(), 0, res, xsize, ysize)
+            return net.starlark.java.eval.StarlarkList.Companion.wrap<T?>(mutability, res)
+        }
+
+        @Throws(net.starlark.java.eval.EvalException::class)
+        protected fun addSizesAndFailIfExcessive(xsize: Int, ysize: Int): Int {
+            val sum = xsize + ysize
+            if (sum < 0 || sum > net.starlark.java.eval.StarlarkList.Companion.MAX_ALLOC) {
+                throw net.starlark.java.eval.Starlark.Companion.errorf(
+                    "excessive capacity requested (%d + %d elements)",
+                    xsize,
+                    ysize
+                )
+            }
+            return sum
+        }
+    }
 }

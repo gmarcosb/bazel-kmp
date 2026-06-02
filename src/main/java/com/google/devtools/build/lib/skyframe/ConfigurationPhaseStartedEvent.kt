@@ -11,26 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable
+import com.google.devtools.build.lib.skyframe.AnalysisProgressReceiver
 
-/** This event is fired at the beginning of the configuration phase. */
-public final class ConfigurationPhaseStartedEvent implements ExtendedEventHandler.Postable {
+/** This event is fired at the beginning of the configuration phase.  */
+class ConfigurationPhaseStartedEvent(analysisProgress: AnalysisProgressReceiver?) : Postable {
+    val analysisProgress: AnalysisProgressReceiver?
 
-  final AnalysisProgressReceiver analysisProgress;
+    /**
+     * Construct the event.
+     * 
+     * @param analysisProgress a receiver that gets updated about the progress of target and aspect
+     * configuration.
+     */
+    init {
+        this.analysisProgress = analysisProgress
+    }
 
-  /**
-   * Construct the event.
-   *
-   * @param analysisProgress a receiver that gets updated about the progress of target and aspect
-   *     configuration.
-   */
-  public ConfigurationPhaseStartedEvent(AnalysisProgressReceiver analysisProgress) {
-    this.analysisProgress = analysisProgress;
-  }
-
-  public AnalysisProgressReceiver getAnalysisProgressReceiver() {
-    return analysisProgress;
-  }
+    val analysisProgressReceiver: AnalysisProgressReceiver?
+        get() = analysisProgress
 }

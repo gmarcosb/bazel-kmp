@@ -11,516 +11,456 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.genquery
 
-package com.google.devtools.build.lib.rules.genquery;
+import com.google.devtools.build.lib.actions.ActionConflictException
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Maps;
-import com.google.common.flogger.GoogleLogger;
-import com.google.common.hash.HashFunction;
-import com.google.devtools.build.lib.actions.ActionConflictException;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.OutputGroupInfo;
-import com.google.devtools.build.lib.analysis.RuleConfiguredTargetBuilder;
-import com.google.devtools.build.lib.analysis.RuleConfiguredTargetFactory;
-import com.google.devtools.build.lib.analysis.RuleContext;
-import com.google.devtools.build.lib.analysis.Runfiles;
-import com.google.devtools.build.lib.analysis.RunfilesProvider;
-import com.google.devtools.build.lib.analysis.actions.AbstractFileWriteAction;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.cmdline.ResolvedTargets;
-import com.google.devtools.build.lib.cmdline.SignedTargetPattern;
-import com.google.devtools.build.lib.cmdline.TargetParsingException;
-import com.google.devtools.build.lib.cmdline.TargetPattern;
-import com.google.devtools.build.lib.collect.compacthashset.CompactHashSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.packages.BuildType;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.NoSuchTargetException;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.packages.Type;
-import com.google.devtools.build.lib.packages.Types;
-import com.google.devtools.build.lib.pkgcache.FilteringPolicies;
-import com.google.devtools.build.lib.pkgcache.TargetPatternPreloader;
-import com.google.devtools.build.lib.profiler.Profiler;
-import com.google.devtools.build.lib.profiler.SilentCloseable;
-import com.google.devtools.build.lib.query2.QueryEnvironmentFactory;
-import com.google.devtools.build.lib.query2.common.AbstractBlazeQueryEnvironment;
-import com.google.devtools.build.lib.query2.common.UniverseScope;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting;
-import com.google.devtools.build.lib.query2.engine.QueryEvalResult;
-import com.google.devtools.build.lib.query2.engine.QueryException;
-import com.google.devtools.build.lib.query2.engine.QueryExpression;
-import com.google.devtools.build.lib.query2.engine.QuerySyntaxException;
-import com.google.devtools.build.lib.query2.engine.QueryUtil;
-import com.google.devtools.build.lib.query2.engine.QueryUtil.AggregateAllOutputFormatterCallback;
-import com.google.devtools.build.lib.query2.engine.SkyframeRestartQueryException;
-import com.google.devtools.build.lib.query2.query.output.OutputFormatter;
-import com.google.devtools.build.lib.query2.query.output.OutputFormatters;
-import com.google.devtools.build.lib.query2.query.output.QueryOptions;
-import com.google.devtools.build.lib.query2.query.output.QueryOptions.OrderOutput;
-import com.google.devtools.build.lib.query2.query.output.QueryOutputUtils;
-import com.google.devtools.build.lib.query2.query.output.StreamedFormatter;
-import com.google.devtools.build.lib.rules.genquery.GenQueryOutputStream.GenQueryResult;
-import com.google.devtools.build.lib.runtime.KeepGoingOption;
-import com.google.devtools.build.lib.server.FailureDetails.TargetPatterns;
-import com.google.devtools.build.lib.skyframe.PackageValue;
-import com.google.devtools.build.lib.skyframe.TargetPatternValue;
-import com.google.devtools.build.lib.skyframe.TargetPatternValue.TargetPatternKey;
-import com.google.devtools.build.lib.util.DeterministicWriter;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyframeLookupResult;
-import com.google.devtools.common.options.OptionsParser;
-import com.google.devtools.common.options.OptionsParsingException;
-import com.google.devtools.common.options.TriState;
-import com.google.protobuf.ByteString;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.channels.ClosedByInterruptException;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
-import javax.annotation.Nullable;
+/** An implementation of the 'genquery' rule.  */
+class GenQuery : RuleConfiguredTargetFactory {
+    @Throws(java.lang.InterruptedException::class, RuleErrorException::class, ActionConflictException::class)
+    public override fun create(ruleContext: RuleContext): ConfiguredTarget? {
+        val outputArtifact: Artifact = ruleContext.createOutputArtifact()
 
-/** An implementation of the 'genquery' rule. */
-public class GenQuery implements RuleConfiguredTargetFactory {
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
-  private static final QueryEnvironmentFactory QUERY_ENVIRONMENT_FACTORY =
-      new QueryEnvironmentFactory();
+        // The query string
+        val query: String? = ruleContext.attributes().get("expression", Type.STRING)
 
-  @Override
-  @Nullable
-  public ConfiguredTarget create(RuleContext ruleContext)
-      throws InterruptedException, RuleErrorException, ActionConflictException {
-    Artifact outputArtifact = ruleContext.createOutputArtifact();
+        val optionsParser: com.google.devtools.common.options.OptionsParser =
+            com.google.devtools.common.options.OptionsParser.builder()
+                .optionsClasses(QueryOptions::class.java, KeepGoingOption::class.java)
+                .allowResidue(false)
+                .withConversionContext(
+                    Label.RepoContext.of(
+                        ruleContext.getRepository(),
+                        ruleContext.getRule().getPackageMetadata().repositoryMapping()
+                    )
+                )
+                .build()
+        try {
+            optionsParser.parse(ruleContext.attributes().get("opts", Types.STRING_LIST))
+        } catch (e: com.google.devtools.common.options.OptionsParsingException) {
+            ruleContext.attributeError("opts", "error while parsing query options: " + e.getMessage())
+            return null
+        }
 
-    // The query string
-    final String query = ruleContext.attributes().get("expression", Type.STRING);
+        // Parsed query options
+        val queryOptions: QueryOptions? = optionsParser.getOptions<O?>(QueryOptions::class.java)
+        // If you change the list of options here, also change the documentation of genquery.opts in
+        // GenQueryRule.java .
+        if (optionsParser.getOptions<KeepGoingOption?>(KeepGoingOption::class.java).getKeepGoing()) {
+            ruleContext.attributeError("opts", "option --keep_going is not allowed")
+            return null
+        }
+        if (!queryOptions.getUniverseScope().isEmpty()) {
+            ruleContext.attributeError("opts", "option --universe_scope is not allowed")
+            return null
+        }
+        if (optionsParser.containsExplicitOption("order_results")) {
+            ruleContext.attributeError("opts", "option --order_results is not allowed")
+            return null
+        }
+        if (optionsParser.containsExplicitOption("noorder_results")) {
+            ruleContext.attributeError("opts", "option --noorder_results is not allowed")
+            return null
+        }
+        if (optionsParser.containsExplicitOption("order_output")) {
+            ruleContext.attributeError("opts", "option --order_output is not allowed")
+            return null
+        }
+        if (optionsParser.containsExplicitOption("experimental_graphless_query")) {
+            ruleContext.attributeError("opts", "option --experimental_graphless_query is not allowed")
+            return null
+        }
+        // Genquery should always use AUTO, while build isn't affected by query options, .
+        queryOptions.useGraphlessQuery = com.google.devtools.common.options.TriState.AUTO
 
-    OptionsParser optionsParser =
-        OptionsParser.builder()
-            .optionsClasses(QueryOptions.class, KeepGoingOption.class)
-            .allowResidue(false)
-            .withConversionContext(
-                Label.RepoContext.of(
-                    ruleContext.getRepository(),
-                    ruleContext.getRule().getPackageMetadata().repositoryMapping()))
-            .build();
-    try {
-      optionsParser.parse(ruleContext.attributes().get("opts", Types.STRING_LIST));
-    } catch (OptionsParsingException e) {
-      ruleContext.attributeError("opts", "error while parsing query options: " + e.getMessage());
-      return null;
+        // force relative_locations to true so it has a deterministic output across machines.
+        queryOptions.setRelativeLocations(true)
+
+        if (!optionsParser.containsExplicitOption("nodep_deps")) {
+            // Have GenQuery *not* include "nodep" deps by default. This is an unfortunate divergence from
+            // `query` which is necessary to maintain legacy behavior.
+            // TODO(b/123122592): Complete the migration and remove this divergence.
+            queryOptions.setIncludeNoDepDeps(false)
+        }
+
+        val result: GenQueryResult?
+        Profiler.instance().profile("GenQuery.executeQuery " + ruleContext.getLabel()).use { c ->
+            val scope: MutableList<Label?>? = ruleContext.attributes().get("scope", BuildType.GENQUERY_SCOPE_TYPE_LIST)
+            result =
+                executeQuery(
+                    ruleContext,
+                    queryOptions,
+                    if (scope != null) com.google.common.collect.ImmutableList.copyOf<Label?>(scope) else com.google.common.collect.ImmutableList.of<Label?>(),
+                    query,
+                    outputArtifact.getPath().getFileSystem().getDigestFunction().getHashFunction()
+                )
+        }
+        if (result == null || ruleContext.hasErrors()) {
+            return null
+        }
+
+        if (result.size() > 50000000) {
+            logger.atInfo().atMostEvery(1, TimeUnit.SECONDS).log(
+                "Genquery %s had large output %s", ruleContext.getLabel(), result.size()
+            )
+        }
+        ruleContext.registerAction(
+            QueryResultAction(ruleContext.getActionOwner(), outputArtifact, result)
+        )
+
+        val filesToBuild: NestedSet<Artifact?>? = NestedSetBuilder.create(Order.STABLE_ORDER, outputArtifact)
+        return RuleConfiguredTargetBuilder(ruleContext)
+            .setFilesToBuild(filesToBuild)
+            .addProvider(
+                RunfilesProvider::class.java,
+                RunfilesProvider.simple(
+                    Builder(ruleContext.getWorkspaceName())
+                        .addTransitiveArtifacts(filesToBuild)
+                        .build()
+                )
+            )
+            .addOutputGroup(
+                OutputGroupInfo.VALIDATION_TRANSITIVE, NestedSetBuilder.emptySet(Order.STABLE_ORDER)
+            )
+            .build()
     }
 
-    // Parsed query options
-    QueryOptions queryOptions = optionsParser.getOptions(QueryOptions.class);
-    // If you change the list of options here, also change the documentation of genquery.opts in
-    // GenQueryRule.java .
-    if (optionsParser.getOptions(KeepGoingOption.class).getKeepGoing()) {
-      ruleContext.attributeError("opts", "option --keep_going is not allowed");
-      return null;
-    }
-    if (!queryOptions.getUniverseScope().isEmpty()) {
-      ruleContext.attributeError("opts", "option --universe_scope is not allowed");
-      return null;
-    }
-    if (optionsParser.containsExplicitOption("order_results")) {
-      ruleContext.attributeError("opts", "option --order_results is not allowed");
-      return null;
-    }
-    if (optionsParser.containsExplicitOption("noorder_results")) {
-      ruleContext.attributeError("opts", "option --noorder_results is not allowed");
-      return null;
-    }
-    if (optionsParser.containsExplicitOption("order_output")) {
-      ruleContext.attributeError("opts", "option --order_output is not allowed");
-      return null;
-    }
-    if (optionsParser.containsExplicitOption("experimental_graphless_query")) {
-      ruleContext.attributeError("opts", "option --experimental_graphless_query is not allowed");
-      return null;
-    }
-    // Genquery should always use AUTO, while build isn't affected by query options, .
-    queryOptions.setUseGraphlessQuery(TriState.AUTO);
+    @com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable // assuming no other reference to result
+    private class QueryResultAction(owner: ActionOwner?, output: Artifact?, result: GenQueryResult) :
+        AbstractFileWriteAction(owner, NestedSetBuilder.emptySet(Order.STABLE_ORDER), output) {
+        private val result: GenQueryResult
 
-    // force relative_locations to true so it has a deterministic output across machines.
-    queryOptions.setRelativeLocations(true);
+        init {
+            this.result = result
+        }
 
-    if (!optionsParser.containsExplicitOption("nodep_deps")) {
-      // Have GenQuery *not* include "nodep" deps by default. This is an unfortunate divergence from
-      // `query` which is necessary to maintain legacy behavior.
-      // TODO(b/123122592): Complete the migration and remove this divergence.
-      queryOptions.setIncludeNoDepDeps(false);
+        public override fun newDeterministicWriter(ctx: ActionExecutionContext?): DeterministicWriter {
+            return GenQueryResultWriter(result)
+        }
+
+        protected override fun computeKey(
+            actionKeyContext: ActionKeyContext?,
+            inputMetadataProvider: InputMetadataProvider?,
+            fp: Fingerprint?
+        ) {
+            result.fingerprint(fp)
+        }
     }
 
-    GenQueryResult result;
-    try (SilentCloseable c =
-        Profiler.instance().profile("GenQuery.executeQuery " + ruleContext.getLabel())) {
-      List<Label> scope = ruleContext.attributes().get("scope", BuildType.GENQUERY_SCOPE_TYPE_LIST);
-      result =
-          executeQuery(
-              ruleContext,
-              queryOptions,
-              scope != null ? ImmutableList.copyOf(scope) : ImmutableList.of(),
-              query,
-              outputArtifact.getPath().getFileSystem().getDigestFunction().getHashFunction());
-    }
-    if (result == null || ruleContext.hasErrors()) {
-      return null;
-    }
+    /**
+     * Provide target pattern evaluation to the query operations using Skyframe dep lookup. For thread
+     * safety, we must synchronize access to the SkyFunction.Environment.
+     */
+    private class SkyframeEnvTargetPatternEvaluator(env: SkyFunction.Environment) : TargetPatternPreloader {
+        private val env: SkyFunction.Environment
 
-    if (result.size() > 50_000_000) {
-      logger.atInfo().atMostEvery(1, TimeUnit.SECONDS).log(
-          "Genquery %s had large output %s", ruleContext.getLabel(), result.size());
-    }
-    ruleContext.registerAction(
-        new QueryResultAction(ruleContext.getActionOwner(), outputArtifact, result));
+        init {
+            this.env = env
+        }
 
-    NestedSet<Artifact> filesToBuild = NestedSetBuilder.create(Order.STABLE_ORDER, outputArtifact);
-    return new RuleConfiguredTargetBuilder(ruleContext)
-        .setFilesToBuild(filesToBuild)
-        .addProvider(
-            RunfilesProvider.class,
-            RunfilesProvider.simple(
-                new Runfiles.Builder(ruleContext.getWorkspaceName())
-                    .addTransitiveArtifacts(filesToBuild)
-                    .build()))
-        .addOutputGroup(
-            OutputGroupInfo.VALIDATION_TRANSITIVE, NestedSetBuilder.emptySet(Order.STABLE_ORDER))
-        .build();
-  }
-
-  /**
-   * DO NOT USE! We should get rid of this method: errors reported directly to this object don't set
-   * the error flag in {@link ConfiguredTarget}.
-   */
-  private static ExtendedEventHandler getEventHandler(RuleContext ruleContext) {
-    return ruleContext.getAnalysisEnvironment().getEventHandler();
-  }
-
-  @Nullable
-  private static GenQueryResult executeQuery(
-      RuleContext ruleContext,
-      QueryOptions queryOptions,
-      ImmutableList<Label> scope,
-      String query,
-      HashFunction hashFunction)
-      throws InterruptedException {
-    SkyFunction.Environment env = ruleContext.getAnalysisEnvironment().getSkyframeEnv();
-
-    GenQueryPackageProvider packageProvider;
-    try {
-      packageProvider = GenQueryPackageProviderFactory.constructPackageMap(env, scope);
-      if (packageProvider == null) {
-        return null;
-      }
-    } catch (GenQueryPackageProviderFactory.BrokenQueryScopeException e) {
-      ruleContext.ruleError(e.getMessage());
-      return null;
-    }
-
-    return doQuery(
-        queryOptions,
-        packageProvider,
-        new SkyframeEnvTargetPatternEvaluator(env),
-        query,
-        ruleContext,
-        hashFunction);
-  }
-
-  @Nullable
-  private static GenQueryResult doQuery(
-      QueryOptions queryOptions,
-      GenQueryPackageProvider packageProvider,
-      TargetPatternPreloader preloader,
-      String query,
-      RuleContext ruleContext,
-      HashFunction hashFunction)
-      throws InterruptedException {
-
-    QueryEvalResult queryResult;
-    OutputFormatter formatter;
-    AggregateAllOutputFormatterCallback<Target, ?> targets;
-    boolean graphlessQuery;
-    AbstractBlazeQueryEnvironment<Target> queryEnvironment;
-    try {
-      Set<Setting> settings = queryOptions.toSettings();
-
-      formatter =
-          OutputFormatters.getFormatter(
-              OutputFormatters.getDefaultFormatters(), queryOptions.getOutputFormat());
-      if (formatter == null) {
-        ruleContext.ruleError(
-            String.format(
-                "Invalid output format '%s'. Valid values are: %s",
-                queryOptions.getOutputFormat(),
-                OutputFormatters.formatterNames(OutputFormatters.getDefaultFormatters())));
-        return null;
-      }
-      graphlessQuery = formatter instanceof StreamedFormatter;
-      if (graphlessQuery) {
-        queryOptions.setOrderOutput(OrderOutput.NO);
-      } else {
-        // Force results to be deterministic.
-        queryOptions.setOrderOutput(OrderOutput.FULL);
-      }
-
-      queryEnvironment =
-          QUERY_ENVIRONMENT_FACTORY.create(
-              /* queryTransitivePackagePreloader= */ null,
-              /* graphFactory= */ null,
-              packageProvider,
-              packageProvider,
-              preloader,
-              new TargetPattern.Parser(
-                  PathFragment.EMPTY_FRAGMENT,
-                  ruleContext.getRepository(),
-                  ruleContext.getRule().getPackageMetadata().repositoryMapping()),
-              PathFragment.EMPTY_FRAGMENT,
-              /* keepGoing= */ false,
-              ruleContext.attributes().get("strict", Type.BOOLEAN),
-              /* orderedResults= */ !graphlessQuery,
-              UniverseScope.EMPTY,
-              // Use a single thread to prevent race conditions causing nondeterministic output
-              // (b/127644784). All the packages are already loaded at this point, so there is
-              // no need to start up multiple threads anyway.
-              /* loadingPhaseThreads= */ 1,
-              // Passing true is safe because GenQuery passes UniverseScope.EMPTY.
-              /* trackIncrementalState= */ true,
-              packageProvider.getValidTargetPredicate(),
-              getEventHandler(ruleContext),
-              settings,
-              /* extraFunctions= */ ImmutableList.of(),
-              /* packagePath= */ null,
-              /* useGraphlessQuery= */ graphlessQuery,
-              queryOptions.getLabelPrinterLegacy(
-                  ruleContext.getAnalysisEnvironment().getStarlarkSemantics()));
-      QueryExpression expr = QueryExpression.parse(query, queryEnvironment);
-      formatter.verifyCompatible(queryEnvironment, expr);
-      targets =
-          graphlessQuery && !expr.isTopLevelSomePathFunction()
-              ? QueryUtil.newLexicographicallySortedTargetAggregator()
-              : QueryUtil.newOrderedAggregateAllOutputFormatterCallback(queryEnvironment);
-      queryResult = queryEnvironment.evaluateQuery(expr, targets);
-    } catch (SkyframeRestartQueryException e) {
-      // Do not emit errors for skyframe restarts. They make output of the ConfiguredTargetFunction
-      // inconsistent from run to run, and make detecting legitimate errors more difficult.
-      return null;
-    } catch (QuerySyntaxException e) {
-      ruleContext.ruleError("query syntax error: " + e.getMessage());
-      return null;
-    } catch (QueryException e) {
-      ruleContext.ruleError("query failed: " + e.getMessage());
-      return null;
-    } catch (IOException e) {
-      throw new RuntimeException(e);
-    }
-
-    try {
-      boolean compressedOutputRequested =
-          ruleContext.attributes().get("compressed_output", Type.BOOLEAN);
-      GenQueryOutputStream outputStream = new GenQueryOutputStream(compressedOutputRequested);
-      Set<Target> result = targets.getResult();
-      QueryOutputUtils.output(
-          queryOptions,
-          queryResult,
-          result,
-          formatter,
-          outputStream,
-          queryOptions
-              .getAspectDeps()
-              .createResolver(packageProvider, getEventHandler(ruleContext)),
-          getEventHandler(ruleContext),
-          hashFunction,
-          queryEnvironment.getLabelPrinter());
-      outputStream.close();
-      return outputStream.getResult();
-    } catch (ClosedByInterruptException e) {
-      throw new InterruptedException(e.getMessage());
-    } catch (IOException e) {
-      throw new RuntimeException(e);
-    }
-  }
-
-  @Immutable // assuming no other reference to result
-  private static final class QueryResultAction extends AbstractFileWriteAction {
-    private final GenQueryResult result;
-
-    private QueryResultAction(ActionOwner owner, Artifact output, GenQueryResult result) {
-      super(owner, NestedSetBuilder.emptySet(Order.STABLE_ORDER), output);
-      this.result = result;
-    }
-
-    @Override
-    public DeterministicWriter newDeterministicWriter(ActionExecutionContext ctx) {
-      return new GenQueryResultWriter(result);
-    }
-
-    @Override
-    protected void computeKey(
-        ActionKeyContext actionKeyContext,
-        @Nullable InputMetadataProvider inputMetadataProvider,
-        Fingerprint fp) {
-      result.fingerprint(fp);
-    }
-  }
-
-  /**
-   * Provide target pattern evaluation to the query operations using Skyframe dep lookup. For thread
-   * safety, we must synchronize access to the SkyFunction.Environment.
-   */
-  private static final class SkyframeEnvTargetPatternEvaluator implements TargetPatternPreloader {
-    private final SkyFunction.Environment env;
-
-    public SkyframeEnvTargetPatternEvaluator(SkyFunction.Environment env) {
-      this.env = env;
-    }
-
-    private static Target getExistingTarget(Label label, Map<PackageIdentifier, Package> packages) {
-      try {
-        return packages.get(label.getPackageIdentifier()).getTarget(label.name);
-      } catch (NoSuchTargetException e) {
-        // Unexpected since the label was part of the TargetPatternValue.
-        throw new IllegalStateException(e);
-      }
-    }
-
-    @Override
-    public Map<String, Collection<Target>> preloadTargetPatterns(
-        ExtendedEventHandler eventHandler,
-        TargetPattern.Parser targetParser,
-        Collection<String> patterns,
-        boolean keepGoing)
-        throws TargetParsingException, InterruptedException {
-      Preconditions.checkArgument(!keepGoing);
-      Preconditions.checkArgument(targetParser.getRelativeDirectory().isEmpty());
-      boolean ok = true;
-      Map<String, Collection<Target>> preloadedPatterns =
-          Maps.newHashMapWithExpectedSize(patterns.size());
-      ImmutableMap.Builder<TargetPatternKey, String> targetBuilder =
-          ImmutableMap.builderWithExpectedSize(patterns.size());
-      for (String pattern : patterns) {
-        checkValidPatternType(pattern, targetParser);
-        targetBuilder.put(
-            TargetPatternValue.key(
-                SignedTargetPattern.parse(pattern, targetParser), FilteringPolicies.NO_FILTER),
-            pattern);
-      }
-      ImmutableMap<TargetPatternKey, String> patternKeys = targetBuilder.buildOrThrow();
-      Set<SkyKey> packageKeys = new HashSet<>();
-      Map<String, ResolvedTargets<Label>> resolvedLabelsMap =
-          Maps.newHashMapWithExpectedSize(patterns.size());
-      synchronized (this) {
-        SkyframeLookupResult patternKeysResult = env.getValuesAndExceptions(patternKeys.keySet());
-        for (Map.Entry<TargetPatternKey, String> entry : patternKeys.entrySet()) {
-          TargetPatternValue patternValue =
-              (TargetPatternValue)
-                  patternKeysResult.getOrThrow(entry.getKey(), TargetParsingException.class);
-          if (patternValue == null) {
-            ok = false;
-          } else {
-            ResolvedTargets<Label> resolvedLabels = patternValue.getTargets();
-            resolvedLabelsMap.put(entry.getValue(), resolvedLabels);
-            for (Label label :
-                Iterables.concat(
-                    resolvedLabels.getTargets(), resolvedLabels.getFilteredTargets())) {
-              packageKeys.add(label.getPackageIdentifier());
+        @Throws(TargetParsingException::class, java.lang.InterruptedException::class)
+        public override fun preloadTargetPatterns(
+            eventHandler: ExtendedEventHandler?,
+            targetParser: TargetPattern.Parser,
+            patterns: MutableCollection<String?>,
+            keepGoing: Boolean
+        ): MutableMap<String?, MutableCollection<Target?>?> {
+            com.google.common.base.Preconditions.checkArgument(!keepGoing)
+            com.google.common.base.Preconditions.checkArgument(targetParser.getRelativeDirectory().isEmpty())
+            var ok = true
+            val preloadedPatterns: MutableMap<String?, MutableCollection<Target?>?> =
+                com.google.common.collect.Maps.newHashMapWithExpectedSize<String?, MutableCollection<Target?>?>(patterns.size())
+            val targetBuilder: com.google.common.collect.ImmutableMap.Builder<TargetPatternKey?, String?> =
+                com.google.common.collect.ImmutableMap.builderWithExpectedSize<TargetPatternKey?, String?>(patterns.size())
+            for (pattern in patterns) {
+                checkValidPatternType(pattern, targetParser)
+                targetBuilder.put(
+                    TargetPatternValue.key(
+                        SignedTargetPattern.parse(pattern, targetParser), FilteringPolicies.NO_FILTER
+                    ),
+                    pattern
+                )
             }
-          }
-        }
-      }
-      if (!ok) {
-        throw new SkyframeRestartQueryException();
-      }
-      Map<PackageIdentifier, Package> packages =
-          Maps.newHashMapWithExpectedSize(packageKeys.size());
-      synchronized (this) {
-        SkyframeLookupResult packageKeysResult = env.getValuesAndExceptions(packageKeys);
-        // packageKeys is not mutated, the iteration order is the same.
-        for (SkyKey depKey : packageKeys) {
-          PackageIdentifier pkgName = (PackageIdentifier) depKey.argument();
-          Package pkg;
-          try {
-            PackageValue packageValue =
-                (PackageValue) packageKeysResult.getOrThrow(depKey, NoSuchPackageException.class);
-            if (packageValue == null) {
-              ok = false;
-              continue;
+            val patternKeys: com.google.common.collect.ImmutableMap<TargetPatternKey?, String?> =
+                targetBuilder.buildOrThrow()
+            val packageKeys: MutableSet<SkyKey> = HashSet<SkyKey>()
+            val resolvedLabelsMap: MutableMap<String?, ResolvedTargets<Label?>> =
+                com.google.common.collect.Maps.newHashMapWithExpectedSize<String?, ResolvedTargets<Label?>>(patterns.size())
+            synchronized(this) {
+                val patternKeysResult: SkyframeLookupResult = env.getValuesAndExceptions(patternKeys.keySet())
+                for (entry in patternKeys.entrySet()) {
+                    val patternValue: TargetPatternValue? =
+                        patternKeysResult.getOrThrow<E?>(
+                            entry.getKey(),
+                            TargetParsingException::class.java
+                        ) as TargetPatternValue?
+                    if (patternValue == null) {
+                        ok = false
+                    } else {
+                        val resolvedLabels: ResolvedTargets<Label?> = patternValue.getTargets()
+                        resolvedLabelsMap.put(entry.getValue(), resolvedLabels)
+                        for (label in com.google.common.collect.Iterables.concat(
+                            resolvedLabels.getTargets(), resolvedLabels.getFilteredTargets()
+                        )) {
+                            packageKeys.add(label.getPackageIdentifier())
+                        }
+                    }
+                }
             }
-            pkg = packageValue.getPackage();
-          } catch (NoSuchPackageException nspe) {
-            continue;
-          }
-          Preconditions.checkNotNull(pkg, pkgName);
-          packages.put(pkgName, pkg);
+            if (!ok) {
+                throw SkyframeRestartQueryException()
+            }
+            val packages: MutableMap<PackageIdentifier?, Package?> =
+                com.google.common.collect.Maps.newHashMapWithExpectedSize<PackageIdentifier?, Package?>(packageKeys.size())
+            synchronized(this) {
+                val packageKeysResult: SkyframeLookupResult = env.getValuesAndExceptions(packageKeys)
+                // packageKeys is not mutated, the iteration order is the same.
+                for (depKey in packageKeys) {
+                    val pkgName: PackageIdentifier? = depKey.argument() as PackageIdentifier?
+                    val pkg: Package?
+                    try {
+                        val packageValue: PackageValue? =
+                            packageKeysResult.getOrThrow<E?>(
+                                depKey,
+                                NoSuchPackageException::class.java
+                            ) as PackageValue?
+                        if (packageValue == null) {
+                            ok = false
+                            continue
+                        }
+                        pkg = packageValue.getPackage()
+                    } catch (nspe: NoSuchPackageException) {
+                        continue
+                    }
+                    com.google.common.base.Preconditions.checkNotNull<Any?>(pkg, pkgName)
+                    packages.put(pkgName, pkg)
+                }
+            }
+            if (!ok) {
+                throw SkyframeRestartQueryException()
+            }
+            for (entry in resolvedLabelsMap.entrySet()) {
+                val pattern: String? = entry.getKey()
+                val resolvedLabels: ResolvedTargets<Label?> = resolvedLabelsMap.get(pattern)
+                val builder: MutableSet<Target?> =
+                    com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.create<Target?>()
+                for (label in resolvedLabels.getTargets()) {
+                    builder.add(getExistingTarget(label, packages))
+                }
+                preloadedPatterns.put(pattern, builder)
+            }
+            return preloadedPatterns
         }
-      }
-      if (!ok) {
-        throw new SkyframeRestartQueryException();
-      }
-      for (Map.Entry<String, ResolvedTargets<Label>> entry : resolvedLabelsMap.entrySet()) {
-        String pattern = entry.getKey();
-        ResolvedTargets<Label> resolvedLabels = resolvedLabelsMap.get(pattern);
-        Set<Target> builder = CompactHashSet.create();
-        for (Label label : resolvedLabels.getTargets()) {
-          builder.add(getExistingTarget(label, packages));
+
+        companion object {
+            private fun getExistingTarget(label: Label, packages: MutableMap<PackageIdentifier?, Package?>): Target {
+                try {
+                    return packages.get(label.getPackageIdentifier()).getTarget(label.name)
+                } catch (e: NoSuchTargetException) {
+                    // Unexpected since the label was part of the TargetPatternValue.
+                    throw java.lang.IllegalStateException(e)
+                }
+            }
+
+            @Throws(TargetParsingException::class)
+            private fun checkValidPatternType(pattern: String?, parser: TargetPattern.Parser) {
+                val type: TargetPattern.Type? = parser.parse(pattern).type
+                if (type === TargetPattern.Type.PATH_AS_TARGET) {
+                    throw TargetParsingException(
+                        java.lang.String.format("couldn't determine target from filename '%s'", pattern),
+                        TargetPatterns.Code.CANNOT_DETERMINE_TARGET_FROM_FILENAME
+                    )
+                } else if (type === TargetPattern.Type.TARGETS_BELOW_DIRECTORY) {
+                    throw TargetParsingException(
+                        java.lang.String.format("recursive target patterns are not permitted: '%s'", pattern),
+                        TargetPatterns.Code.RECURSIVE_TARGET_PATTERNS_NOT_ALLOWED
+                    )
+                }
+            }
         }
-        preloadedPatterns.put(pattern, builder);
-      }
-      return preloadedPatterns;
     }
 
-    private static void checkValidPatternType(String pattern, TargetPattern.Parser parser)
-        throws TargetParsingException {
-      TargetPattern.Type type = parser.parse(pattern).type;
-      if (type == TargetPattern.Type.PATH_AS_TARGET) {
-        throw new TargetParsingException(
-            String.format("couldn't determine target from filename '%s'", pattern),
-            TargetPatterns.Code.CANNOT_DETERMINE_TARGET_FROM_FILENAME);
-      } else if (type == TargetPattern.Type.TARGETS_BELOW_DIRECTORY) {
-        throw new TargetParsingException(
-            String.format("recursive target patterns are not permitted: '%s'", pattern),
-            TargetPatterns.Code.RECURSIVE_TARGET_PATTERNS_NOT_ALLOWED);
-      }
-    }
-  }
+    private class GenQueryResultWriter(genQueryResult: GenQueryResult) : DeterministicWriter {
+        private val genQueryResult: GenQueryResult
 
-  private static class GenQueryResultWriter implements DeterministicWriter {
-    private final GenQueryResult genQueryResult;
+        init {
+            this.genQueryResult = genQueryResult
+        }
 
-    GenQueryResultWriter(GenQueryResult genQueryResult) {
-      this.genQueryResult = genQueryResult;
+        @Throws(IOException::class)
+        override fun writeTo(out: java.io.OutputStream?) {
+            genQueryResult.writeTo(out)
+        }
+
+        @get:Throws(IOException::class)
+        val bytes: ByteString?
+            get() = genQueryResult.getBytes()
     }
 
-    @Override
-    public void writeTo(OutputStream out) throws IOException {
-      genQueryResult.writeTo(out);
-    }
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+        private val QUERY_ENVIRONMENT_FACTORY: QueryEnvironmentFactory = QueryEnvironmentFactory()
 
-    @Override
-    public ByteString getBytes() throws IOException {
-      return genQueryResult.getBytes();
+        /**
+         * DO NOT USE! We should get rid of this method: errors reported directly to this object don't set
+         * the error flag in [ConfiguredTarget].
+         */
+        private fun getEventHandler(ruleContext: RuleContext): ExtendedEventHandler {
+            return ruleContext.getAnalysisEnvironment().getEventHandler()
+        }
+
+        @Throws(java.lang.InterruptedException::class)
+        private fun executeQuery(
+            ruleContext: RuleContext,
+            queryOptions: QueryOptions,
+            scope: com.google.common.collect.ImmutableList<Label?>?,
+            query: String?,
+            hashFunction: com.google.common.hash.HashFunction?
+        ): GenQueryResult? {
+            val env: SkyFunction.Environment = ruleContext.getAnalysisEnvironment().getSkyframeEnv()
+
+            val packageProvider: GenQueryPackageProvider?
+            try {
+                packageProvider = GenQueryPackageProviderFactory.constructPackageMap(env, scope)
+                if (packageProvider == null) {
+                    return null
+                }
+            } catch (e: BrokenQueryScopeException) {
+                ruleContext.ruleError(e.getMessage())
+                return null
+            }
+
+            return doQuery(
+                queryOptions,
+                packageProvider,
+                SkyframeEnvTargetPatternEvaluator(env),
+                query,
+                ruleContext,
+                hashFunction
+            )
+        }
+
+        @Throws(java.lang.InterruptedException::class)
+        private fun doQuery(
+            queryOptions: QueryOptions,
+            packageProvider: GenQueryPackageProvider,
+            preloader: TargetPatternPreloader?,
+            query: String?,
+            ruleContext: RuleContext,
+            hashFunction: com.google.common.hash.HashFunction?
+        ): GenQueryResult? {
+            val queryResult: QueryEvalResult
+            val formatter: com.google.devtools.build.lib.query2.query.output.OutputFormatter?
+            val targets: AggregateAllOutputFormatterCallback<Target?, *>?
+            val graphlessQuery: Boolean
+            val queryEnvironment: AbstractBlazeQueryEnvironment<Target?>
+            try {
+                val settings: MutableSet<com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting?> =
+                    queryOptions.toSettings()
+
+                formatter =
+                    com.google.devtools.build.lib.query2.query.output.OutputFormatters.getFormatter(
+                        com.google.devtools.build.lib.query2.query.output.OutputFormatters.defaultFormatters,
+                        queryOptions.outputFormat
+                    )
+                if (formatter == null) {
+                    ruleContext.ruleError(
+                        java.lang.String.format(
+                            "Invalid output format '%s'. Valid values are: %s",
+                            queryOptions.outputFormat,
+                            com.google.devtools.build.lib.query2.query.output.OutputFormatters.formatterNames(com.google.devtools.build.lib.query2.query.output.OutputFormatters.defaultFormatters)
+                        )
+                    )
+                    return null
+                }
+                graphlessQuery = formatter is StreamedFormatter
+                if (graphlessQuery) {
+                    queryOptions.orderOutput = OrderOutput.NO
+                } else {
+                    // Force results to be deterministic.
+                    queryOptions.orderOutput = OrderOutput.FULL
+                }
+
+                queryEnvironment =
+                    QUERY_ENVIRONMENT_FACTORY.create( /* queryTransitivePackagePreloader= */
+                        null,  /* graphFactory= */
+                        null,
+                        packageProvider,
+                        packageProvider,
+                        preloader,
+                        Parser(
+                            PathFragment.EMPTY_FRAGMENT,
+                            ruleContext.getRepository(),
+                            ruleContext.getRule().getPackageMetadata().repositoryMapping()
+                        ),
+                        PathFragment.EMPTY_FRAGMENT,  /* keepGoing= */
+                        false,
+                        ruleContext.attributes().get("strict", Type.BOOLEAN),  /* orderedResults= */
+                        !graphlessQuery,
+                        UniverseScope.EMPTY,  // Use a single thread to prevent race conditions causing nondeterministic output
+                        // (b/127644784). All the packages are already loaded at this point, so there is
+                        // no need to start up multiple threads anyway.
+                        /* loadingPhaseThreads= */
+                        1,  // Passing true is safe because GenQuery passes UniverseScope.EMPTY.
+                        /* trackIncrementalState= */
+                        true,
+                        packageProvider.getValidTargetPredicate(),
+                        getEventHandler(ruleContext),
+                        settings,  /* extraFunctions= */
+                        com.google.common.collect.ImmutableList.of<E?>(),  /* packagePath= */
+                        null,  /* useGraphlessQuery= */
+                        graphlessQuery,
+                        queryOptions.getLabelPrinterLegacy(
+                            ruleContext.getAnalysisEnvironment().getStarlarkSemantics()
+                        )
+                    )
+                val expr: QueryExpression = QueryExpression.parse(query, queryEnvironment)
+                formatter.verifyCompatible(queryEnvironment, expr)
+                targets =
+                    if (graphlessQuery && !expr.isTopLevelSomePathFunction)
+                        QueryUtil.newLexicographicallySortedTargetAggregator()
+                    else
+                        QueryUtil.newOrderedAggregateAllOutputFormatterCallback<Target?>(queryEnvironment)
+                queryResult = queryEnvironment.evaluateQuery(expr, targets)
+            } catch (e: SkyframeRestartQueryException) {
+                // Do not emit errors for skyframe restarts. They make output of the ConfiguredTargetFunction
+                // inconsistent from run to run, and make detecting legitimate errors more difficult.
+                return null
+            } catch (e: com.google.devtools.build.lib.query2.engine.QuerySyntaxException) {
+                ruleContext.ruleError("query syntax error: " + e.getMessage())
+                return null
+            } catch (e: com.google.devtools.build.lib.query2.engine.QueryException) {
+                ruleContext.ruleError("query failed: " + e.getMessage())
+                return null
+            } catch (e: IOException) {
+                throw java.lang.RuntimeException(e)
+            }
+
+            try {
+                val compressedOutputRequested: Boolean =
+                    ruleContext.attributes().get("compressed_output", Type.BOOLEAN)
+                val outputStream: GenQueryOutputStream = GenQueryOutputStream(compressedOutputRequested)
+                val result: MutableSet<Target?>? = targets.result
+                QueryOutputUtils.output(
+                    queryOptions,
+                    queryResult,
+                    result,
+                    formatter,
+                    outputStream,
+                    queryOptions
+                        .getAspectDeps()
+                        .createResolver(packageProvider, getEventHandler(ruleContext)),
+                    getEventHandler(ruleContext),
+                    hashFunction,
+                    queryEnvironment.getLabelPrinter()
+                )
+                outputStream.close()
+                return outputStream.getResult()
+            } catch (e: ClosedByInterruptException) {
+                throw java.lang.InterruptedException(e.getMessage())
+            } catch (e: IOException) {
+                throw java.lang.RuntimeException(e)
+            }
+        }
     }
-  }
 }

@@ -11,190 +11,184 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.common.options.testing
 
-package com.google.devtools.common.options.testing;
-
-import static com.google.common.truth.Truth.assertWithMessage;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.testing.EqualsTester;
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.OptionsParsingException;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
+import com.google.common.collect.ImmutableList
+import com.google.common.testing.EqualsTester
+import com.google.common.truth.Truth
+import com.google.devtools.common.options.Converter
+import com.google.devtools.common.options.OptionsParsingException
+import com.google.errorprone.annotations.CanIgnoreReturnValue
+import java.lang.String
+import kotlin.Any
+import kotlin.AssertionError
+import kotlin.Boolean
+import kotlin.Int
+import kotlin.collections.ArrayList
+import kotlin.collections.LinkedHashSet
 
 /**
- * A tester to confirm that {@link Converter} instances produce equal results on multiple calls with
+ * A tester to confirm that [Converter] instances produce equal results on multiple calls with
  * the same input.
  */
-public final class ConverterTester {
+class ConverterTester(@kotlin.jvm.JvmField private val converterClass: Class<out Converter<*>>, conversionContext: Any?) {
+    private val converter: Converter<*>
+    private val conversionContext: Any?
+    private val tester = EqualsTester()
+    private val testedInputs = LinkedHashSet<String?>()
+    private val inputLists = ArrayList<ImmutableList<String?>>()
 
-  private final Converter<?> converter;
-  private final Class<? extends Converter<?>> converterClass;
-  private final Object conversionContext;
-  private final EqualsTester tester = new EqualsTester();
-  private final LinkedHashSet<String> testedInputs = new LinkedHashSet<>();
-  private final ArrayList<ImmutableList<String>> inputLists = new ArrayList<>();
-
-  /** Creates a new ConverterTester which will test the given Converter class. */
-  public ConverterTester(Class<? extends Converter<?>> converterClass, Object conversionContext) {
-    this.converterClass = converterClass;
-    this.converter = createConverter();
-    this.conversionContext = conversionContext;
-  }
-
-  private Converter<?> createConverter() {
-    try {
-      return converterClass.getDeclaredConstructor().newInstance();
-    } catch (ReflectiveOperationException ex) {
-      throw new AssertionError("Failed to create converter", ex);
+    /** Creates a new ConverterTester which will test the given Converter class.  */
+    init {
+        this.converter = createConverter()
+        this.conversionContext = conversionContext
     }
-  }
 
-  /** Returns the class this ConverterTester is testing. */
-  public Class<? extends Converter<?>> getConverterClass() {
-    return converterClass;
-  }
-
-  /**
-   * Returns whether this ConverterTester has a test for the given input, i.e., addEqualityGroup
-   * was called with the given string.
-   */
-  public boolean hasTestForInput(String input) {
-    return testedInputs.contains(input);
-  }
-
-  /**
-   * Adds a set of valid inputs which are expected to convert to equal values.
-   *
-   * <p>The inputs added here will be converted to values using the Converter class passed to the
-   * constructor of this instance; the resulting values must be equal (and have equal hashCodes):
-   *
-   * <ul>
-   *   <li>to themselves
-   *   <li>to another copy of themselves generated from the same Converter instance
-   *   <li>to another copy of themselves generated from a different Converter instance
-   *   <li>to the other values converted from inputs in the same addEqualityGroup call
-   * </ul>
-   *
-   * <p>They must NOT be equal:
-   *
-   * <ul>
-   *   <li>to null
-   *   <li>to an instance of an arbitrary class
-   *   <li>to any values converted from inputs in a different addEqualityGroup call
-   * </ul>
-   *
-   * @throws AssertionError if an {@link OptionsParsingException} is thrown from the {@link
-   *     Converter#convert} method when converting any of the inputs.
-   * @see EqualsTester#addEqualityGroup
-   */
-  @CanIgnoreReturnValue
-  public ConverterTester addEqualityGroup(String... inputs) {
-    ImmutableList.Builder<WrappedItem> wrapped = ImmutableList.builder();
-    ImmutableList<String> inputList = ImmutableList.copyOf(inputs);
-    inputLists.add(inputList);
-    for (String input : inputList) {
-      testedInputs.add(input);
-      try {
-        wrapped.add(new WrappedItem(input, converter.convert(input, conversionContext)));
-      } catch (OptionsParsingException ex) {
-        throw new AssertionError("Failed to parse input: \"" + input + "\"", ex);
-      }
-    }
-    tester.addEqualityGroup(wrapped.build().toArray());
-    return this;
-  }
-
-  /**
-   * Tests the convert method of the wrapped Converter class, verifying the properties listed in the
-   * Javadoc listed for {@link #addEqualityGroup}.
-   *
-   * @throws AssertionError if one of the expected properties did not hold up
-   * @see EqualsTester#testEquals
-   */
-  @CanIgnoreReturnValue
-  public ConverterTester testConvert() {
-    tester.testEquals();
-    testItems();
-    return this;
-  }
-
-  private void testItems() {
-    for (ImmutableList<String> inputList : inputLists) {
-      for (String input : inputList) {
-        Converter<?> converter = createConverter();
-        Converter<?> converter2 = createConverter();
-
-        Object converted;
-        Object convertedAgain;
-        Object convertedDifferentConverterInstance;
+    private fun createConverter(): Converter<*> {
         try {
-          converted = converter.convert(input, conversionContext);
-          convertedAgain = converter.convert(input, conversionContext);
-          convertedDifferentConverterInstance = converter2.convert(input, conversionContext);
-        } catch (OptionsParsingException ex) {
-          throw new AssertionError("Failed to parse input: \"" + input + "\"", ex);
+            return converterClass.getDeclaredConstructor().newInstance()
+        } catch (ex: ReflectiveOperationException) {
+            throw AssertionError("Failed to create converter", ex)
+        }
+    }
+
+    /** Returns the class this ConverterTester is testing.  */
+    fun getConverterClass(): Class<out Converter<*>> {
+        return converterClass
+    }
+
+    /**
+     * Returns whether this ConverterTester has a test for the given input, i.e., addEqualityGroup
+     * was called with the given string.
+     */
+    fun hasTestForInput(input: String?): Boolean {
+        return testedInputs.contains(input)
+    }
+
+    /**
+     * Adds a set of valid inputs which are expected to convert to equal values.
+     * 
+     * 
+     * The inputs added here will be converted to values using the Converter class passed to the
+     * constructor of this instance; the resulting values must be equal (and have equal hashCodes):
+     * 
+     * 
+     *  * to themselves
+     *  * to another copy of themselves generated from the same Converter instance
+     *  * to another copy of themselves generated from a different Converter instance
+     *  * to the other values converted from inputs in the same addEqualityGroup call
+     * 
+     * 
+     * 
+     * They must NOT be equal:
+     * 
+     * 
+     *  * to null
+     *  * to an instance of an arbitrary class
+     *  * to any values converted from inputs in a different addEqualityGroup call
+     * 
+     * 
+     * @throws AssertionError if an [OptionsParsingException] is thrown from the [     ][Converter.convert] method when converting any of the inputs.
+     * @see EqualsTester.addEqualityGroup
+     */
+    @CanIgnoreReturnValue
+    fun addEqualityGroup(vararg inputs: String?): ConverterTester {
+        val wrapped: ImmutableList.Builder<WrappedItem?> = ImmutableList.builder<WrappedItem?>()
+        val inputList = ImmutableList.copyOf<String?>(inputs)
+        inputLists.add(inputList)
+        for (input in inputList) {
+            testedInputs.add(input)
+            try {
+                wrapped.add(WrappedItem(input, converter.convert(input, conversionContext)))
+            } catch (ex: OptionsParsingException) {
+                throw AssertionError("Failed to parse input: \"" + input + "\"", ex)
+            }
+        }
+        tester.addEqualityGroup(*wrapped.build().toArray())
+        return this
+    }
+
+    /**
+     * Tests the convert method of the wrapped Converter class, verifying the properties listed in the
+     * Javadoc listed for [.addEqualityGroup].
+     * 
+     * @throws AssertionError if one of the expected properties did not hold up
+     * @see EqualsTester.testEquals
+     */
+    @CanIgnoreReturnValue
+    fun testConvert(): ConverterTester {
+        tester.testEquals()
+        testItems()
+        return this
+    }
+
+    private fun testItems() {
+        for (inputList in inputLists) {
+            for (input in inputList) {
+                val converter = createConverter()
+                val converter2 = createConverter()
+
+                val converted: Any
+                val convertedAgain: Any
+                val convertedDifferentConverterInstance: Any
+                try {
+                    converted = converter.convert(input, conversionContext)
+                    convertedAgain = converter.convert(input, conversionContext)
+                    convertedDifferentConverterInstance = converter2.convert(input, conversionContext)
+                } catch (ex: OptionsParsingException) {
+                    throw AssertionError("Failed to parse input: \"" + input + "\"", ex)
+                }
+
+                Truth.assertWithMessage(
+                    "Input \"%s\" was not equal to itself when converted twice by the same Converter",
+                    input
+                )
+                    .that(convertedAgain)
+                    .isEqualTo(converted)
+                Truth.assertWithMessage(
+                    "Input \"%s\" did not have a consistent hashCode when converted twice "
+                            + "by the same Converter",
+                    input
+                )
+                    .that(convertedAgain.hashCode())
+                    .isEqualTo(converted.hashCode())
+                Truth.assertWithMessage(
+                    "Input \"%s\" was not equal to itself when converted twice by a different"
+                            + " Converter",
+                    input
+                )
+                    .that(convertedDifferentConverterInstance)
+                    .isEqualTo(converted)
+                Truth.assertWithMessage(
+                    "Input \"%s\" did not have a consistent hashCode when converted twice "
+                            + "by a different Converter",
+                    input
+                )
+                    .that(convertedDifferentConverterInstance.hashCode())
+                    .isEqualTo(converted.hashCode())
+            }
+        }
+    }
+
+    /**
+     * A wrapper around the objects passed to EqualsTester to give them a more useful toString() so
+     * that the mapping between the input text which actually appears in the source file and the
+     * object produced from parsing it is more obvious.
+     */
+    private class WrappedItem(private val argument: String?, private val wrapped: Any) {
+        override fun toString(): String {
+            return String.format("Converted input \"%s\" => [%s]", argument, wrapped)
         }
 
-        assertWithMessage(
-                "Input \"%s\" was not equal to itself when converted twice by the same Converter",
-                input)
-            .that(convertedAgain)
-            .isEqualTo(converted);
-        assertWithMessage(
-                "Input \"%s\" did not have a consistent hashCode when converted twice "
-                    + "by the same Converter",
-                input)
-            .that(convertedAgain.hashCode())
-            .isEqualTo(converted.hashCode());
-        assertWithMessage(
-                "Input \"%s\" was not equal to itself when converted twice by a different"
-                    + " Converter",
-                input)
-            .that(convertedDifferentConverterInstance)
-            .isEqualTo(converted);
-        assertWithMessage(
-                "Input \"%s\" did not have a consistent hashCode when converted twice "
-                    + "by a different Converter",
-                input)
-            .that(convertedDifferentConverterInstance.hashCode())
-            .isEqualTo(converted.hashCode());
-      }
-    }
-  }
+        override fun hashCode(): Int {
+            return wrapped.hashCode()
+        }
 
-  /**
-   * A wrapper around the objects passed to EqualsTester to give them a more useful toString() so
-   * that the mapping between the input text which actually appears in the source file and the
-   * object produced from parsing it is more obvious.
-   */
-  private static final class WrappedItem {
-    private final String argument;
-    private final Object wrapped;
-
-    private WrappedItem(String argument, Object wrapped) {
-      this.argument = argument;
-      this.wrapped = wrapped;
+        override fun equals(other: Any?): Boolean {
+            if (other is WrappedItem) {
+                return this.wrapped == other.wrapped
+            }
+            return this.wrapped == other
+        }
     }
-
-    @Override
-    public String toString() {
-      return String.format("Converted input \"%s\" => [%s]", argument, wrapped);
-    }
-
-    @Override
-    public int hashCode() {
-      return wrapped.hashCode();
-    }
-
-    @Override
-    public boolean equals(Object other) {
-      if (other instanceof WrappedItem wrappedItem) {
-        return this.wrapped.equals(wrappedItem.wrapped);
-      }
-      return this.wrapped.equals(other);
-    }
-  }
 }

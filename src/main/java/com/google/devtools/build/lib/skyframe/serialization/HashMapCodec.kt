@@ -11,83 +11,84 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.devtools.build.lib.skyframe.serialization.MapHelpers.deserializeMapEntries;
-import static com.google.devtools.build.lib.skyframe.serialization.MapHelpers.serializeMapEntries;
-
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
+import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.AsyncObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.HashMapCodec
+import com.google.devtools.build.lib.skyframe.serialization.MapHelpers
+import com.google.devtools.build.lib.skyframe.serialization.SerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
+import java.util.HashMap
+import java.util.LinkedHashMap
 
 /**
- * {@link ObjectCodec} for {@link HashMap} that returns {@link LinkedHashMap} for determinism.
- *
- * <p>This type transformation is safe because {@link LinkedHashMap} is a subclass of {@link
- * HashMap}.
+ * [ObjectCodec] for [HashMap] that returns [LinkedHashMap] for determinism.
+ * 
+ * 
+ * This type transformation is safe because [LinkedHashMap] is a subclass of [ ].
  */
-@SuppressWarnings({"unchecked", "rawtypes", "NonApiType"})
-final class HashMapCodec extends AsyncObjectCodec<HashMap> {
-  @Override
-  public Class<HashMap> getEncodedClass() {
-    return HashMap.class;
-  }
-
-  @Override
-  public void serialize(SerializationContext context, HashMap obj, CodedOutputStream codedOut)
-      throws SerializationException, IOException {
-    codedOut.writeInt32NoTag(obj.size());
-    serializeMapEntries(context, obj, codedOut);
-  }
-
-  @Override
-  public HashMap deserializeAsync(AsyncDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    int size = codedIn.readInt32();
-    // Load factor is 0.75, so we need an initial capacity of 4/3 actual size to avoid rehashing.
-    LinkedHashMap result = new LinkedHashMap(4 * size / 3);
-
-    context.registerInitialValue(result);
-    if (size == 0) {
-      return result;
+internal class HashMapCodec : AsyncObjectCodec<HashMap<*, *>?>() {
+    override fun getEncodedClass(): java.lang.Class<HashMap<*, *>?> {
+        return HashMap::class.java
     }
 
-    populateMap(context, codedIn, result, size);
-
-    return result;
-  }
-
-  static void populateMap(
-      AsyncDeserializationContext context, CodedInputStream codedIn, LinkedHashMap map, int size)
-      throws SerializationException, IOException {
-    EntryBuffer buffer = new EntryBuffer(map, size);
-    deserializeMapEntries(
-        context, codedIn, buffer.keys, buffer.values, /* done= */ (Runnable) buffer);
-  }
-
-  /**
-   * Buffers the keys and values until all are available, then populates the map.
-   *
-   * <p>This approach is thread-safe.
-   */
-  private static class EntryBuffer implements Runnable {
-    private final LinkedHashMap result;
-    private final Object[] keys;
-    private final Object[] values;
-
-    private EntryBuffer(LinkedHashMap result, int size) {
-      this.result = result;
-      this.keys = new Object[size];
-      this.values = new Object[size];
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun serialize(context: SerializationContext?, obj: HashMap<*, *>, codedOut: CodedOutputStream) {
+        codedOut.writeInt32NoTag(obj.size())
+        MapHelpers.serializeMapEntries(context, obj, codedOut)
     }
 
-    @Override
-    public void run() {
-      for (int i = 0; i < keys.length; i++) {
-        result.put(keys[i], values[i]);
-      }
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun deserializeAsync(context: AsyncDeserializationContext, codedIn: CodedInputStream): HashMap<*, *> {
+        val size: Int = codedIn.readInt32()
+        // Load factor is 0.75, so we need an initial capacity of 4/3 actual size to avoid rehashing.
+        val result: LinkedHashMap<*, *> = LinkedHashMap<Any?, Any?>(4 * size / 3)
+
+        context.registerInitialValue(result)
+        if (size == 0) {
+            return result
+        }
+
+        populateMap(context, codedIn, result, size)
+
+        return result
     }
-  }
+
+    /**
+     * Buffers the keys and values until all are available, then populates the map.
+     * 
+     * 
+     * This approach is thread-safe.
+     */
+    private class EntryBuffer(result: LinkedHashMap<*, *>, size: Int) : java.lang.Runnable {
+        private val result: LinkedHashMap<*, *>
+        private val keys: Array<Any?>
+        private val values: Array<Any?>
+
+        init {
+            this.result = result
+            this.keys = arrayOfNulls<Any>(size)
+            this.values = arrayOfNulls<Any>(size)
+        }
+
+        override fun run() {
+            /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
+        }
+    }
+
+    companion object {
+        @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+        fun populateMap(
+            context: AsyncDeserializationContext?, codedIn: CodedInputStream?, map: LinkedHashMap<*, *>, size: Int
+        ) {
+            val buffer: EntryBuffer =
+                com.google.devtools.build.lib.skyframe.serialization.HashMapCodec.EntryBuffer(map, size)
+            MapHelpers.deserializeMapEntries(
+                context, codedIn, buffer.keys, buffer.values,  /* done= */buffer as java.lang.Runnable
+            )
+        }
+    }
 }

@@ -810,8 +810,8 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
 
     var aspectOnTarget =
         Iterables.getOnlyElement(getAspectKeys("//test:t1", "//test:defs.bzl%toolchain_aspect_1"));
-    assertThat(aspectOnTarget.getBaseKeys()).hasSize(1);
-    assertThat(aspectOnTarget.getBaseKeys().get(0).getAspectName())
+    assertThat(aspectOnTarget.baseKeys).hasSize(1);
+    assertThat(aspectOnTarget.baseKeys.get(0).getAspectName())
         .isEqualTo("//test:defs.bzl%no_toolchain_aspect");
 
     var aspectOnTargetNode =
@@ -843,7 +843,7 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
                         && k.getLabel().toString().equals("//toolchain:foo")));
     // Since `toolchain_aspect_1` only depends on `no_toolchain_aspect`, it will have no base keys
     // when applied on the toolchain.
-    assertThat(toolchainAspect1.getBaseKeys()).isEmpty();
+    assertThat(toolchainAspect1.baseKeys).isEmpty();
   }
 
   @Test
@@ -944,7 +944,7 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
                     k.getAspectName().equals("//test:defs.bzl%toolchain_aspect_0")
                         && k.getLabel().toString().equals("//toolchain:foo")));
     // Since `toolchain_aspect_0` depends on `toolchain_aspect_2` when applied on //toolchain:foo,
-    assertThat(Iterables.getOnlyElement(toolchainAspect1.getBaseKeys()).getAspectName())
+    assertThat(Iterables.getOnlyElement(toolchainAspect1.baseKeys).getAspectName())
         .isEqualTo("//test:defs.bzl%toolchain_aspect_2");
   }
 

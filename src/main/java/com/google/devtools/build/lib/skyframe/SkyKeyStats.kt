@@ -11,52 +11,46 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import java.util.Comparator;
+/** Used with dump --rules and BEP SkyFrameMetrics.  */
+class SkyKeyStats(private val key: String?, @kotlin.jvm.JvmField private val name: String?) {
+    private var count: Long = 0
+    private var actionCount: Long = 0
 
-/** Used with dump --rules and BEP SkyFrameMetrics. */
-public class SkyKeyStats {
+    fun countWithActions(actionCount: Long) {
+        this.count++
+        this.actionCount += actionCount
+    }
 
-  public static final Comparator<SkyKeyStats> BY_COUNT_DESC =
-      Comparator.comparing(SkyKeyStats::getCount).reversed();
+    fun count() {
+        this.count++
+    }
 
-  private final String key;
-  private final String name;
-  private long count;
-  private long actionCount;
+    /** Returns a key that uniquely identifies this rule or aspect.  */
+    fun getKey(): String? {
+        return key
+    }
 
-  public SkyKeyStats(String key, String name) {
-    this.key = key;
-    this.name = name;
-  }
+    /** Returns a name for the rule or aspect.  */
+    fun getName(): String? {
+        return name
+    }
 
-  public void countWithActions(long actionCount) {
-    this.count++;
-    this.actionCount += actionCount;
-  }
+    /** Returns the instance count of this rule or aspect class.  */
+    fun getCount(): Long {
+        return count
+    }
 
-  public void count() {
-    this.count++;
-  }
+    /** Returns the total action count of all instance of this rule or aspect class.  */
+    fun getActionCount(): Long {
+        return actionCount
+    }
 
-  /** Returns a key that uniquely identifies this rule or aspect. */
-  public String getKey() {
-    return key;
-  }
-
-  /** Returns a name for the rule or aspect. */
-  public String getName() {
-    return name;
-  }
-
-  /** Returns the instance count of this rule or aspect class. */
-  public long getCount() {
-    return count;
-  }
-
-  /** Returns the total action count of all instance of this rule or aspect class. */
-  public long getActionCount() {
-    return actionCount;
-  }
+    companion object {
+        @kotlin.jvm.JvmField
+        val BY_COUNT_DESC: java.util.Comparator<SkyKeyStats?>? =
+            java.util.Comparator.comparing<SkyKeyStats?, Long?>(java.util.function.Function { obj: SkyKeyStats? -> obj!!.getCount() })
+                .reversed()
+    }
 }

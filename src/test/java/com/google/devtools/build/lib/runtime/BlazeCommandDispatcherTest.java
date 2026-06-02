@@ -625,7 +625,7 @@ public final class BlazeCommandDispatcherTest {
     String out = outErr.outAsLatin1();
     String err = outErr.errAsLatin1();
 
-    MoreAsserts.assertExitCode(ExitCode.SUCCESS.getNumericExitCode(),
+    MoreAsserts.assertExitCode(ExitCode.SUCCESS.numericExitCode,
         result.getExitCode().getNumericExitCode(), out, err);
     assertThat(out).contains(ansiEscapedString);
   }
@@ -643,7 +643,7 @@ public final class BlazeCommandDispatcherTest {
     String out = outErr.outAsLatin1();
     String err = outErr.errAsLatin1();
 
-    MoreAsserts.assertExitCode(ExitCode.SUCCESS.getNumericExitCode(),
+    MoreAsserts.assertExitCode(ExitCode.SUCCESS.numericExitCode,
         result.getExitCode().getNumericExitCode(), out, err);
     assertThat(out).doesNotContain(ansiEscapedString);
   }

@@ -11,156 +11,134 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.devtools.build.skyframe.AbstractSkyKey;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
 /**
  * Encapsulates the errors, if any, encountered when loading a specific package.
- *
- * <p>This is a change-pruning-friendly convenience {@link SkyValue} for use cases where {@link
- * Result} is sufficient.
+ * 
+ * 
+ * This is a change-pruning-friendly convenience [SkyValue] for use cases where [ ] is sufficient.
  */
-public abstract class PackageErrorMessageValue implements SkyValue {
-  /** Tri-state result of loading the package. */
-  public enum Result {
+abstract class PackageErrorMessageValue : SkyValue {
+    /** Tri-state result of loading the package.  */
+    enum class Result {
+        /**
+         * There was no error loading the package and [ ][com.google.devtools.build.lib.packages.Package.containsErrors] returned `false`.
+         */
+        NO_ERROR,
+
+        /**
+         * There was no error loading the package and [ ][com.google.devtools.build.lib.packages.Package.containsErrors] returned `true`.
+         */
+        ERROR,
+
+        /**
+         * There was a [com.google.devtools.build.lib.packages.NoSuchPackageException] loading the
+         * package.
+         */
+        NO_SUCH_PACKAGE_EXCEPTION,
+    }
+
+    /** Returns the [Result] from loading the package.  */
+    @kotlin.jvm.JvmField
+    abstract val result: Result?
+
     /**
-     * There was no error loading the package and {@link
-     * com.google.devtools.build.lib.packages.Package#containsErrors} returned {@code false}.
+     * If `getResult().equals(NO_SUCH_PACKAGE_EXCEPTION)`, returns the error message from the
+     * [com.google.devtools.build.lib.packages.NoSuchPackageException] encountered.
      */
-    NO_ERROR,
+    @kotlin.jvm.JvmField
+    abstract val noSuchPackageExceptionMessage: String?
 
-    /**
-     * There was no error loading the package and {@link
-     * com.google.devtools.build.lib.packages.Package#containsErrors} returned {@code true}.
-     */
-    ERROR,
-
-    /**
-     * There was a {@link com.google.devtools.build.lib.packages.NoSuchPackageException} loading the
-     * package.
-     */
-    NO_SUCH_PACKAGE_EXCEPTION,
-  }
-
-  /** Returns the {@link Result} from loading the package. */
-  public abstract Result getResult();
-
-  /**
-   * If {@code getResult().equals(NO_SUCH_PACKAGE_EXCEPTION)}, returns the error message from the
-   * {@link com.google.devtools.build.lib.packages.NoSuchPackageException} encountered.
-   */
-  public abstract String getNoSuchPackageExceptionMessage();
-
-  static PackageErrorMessageValue ofPackageWithNoErrors() {
-    return NO_ERROR_VALUE;
-  }
-
-  static PackageErrorMessageValue ofPackageWithErrors() {
-    return ERROR_VALUE;
-  }
-
-  static PackageErrorMessageValue ofNoSuchPackageException(String errorMessage) {
-    return new NoSuchPackageExceptionValue(errorMessage);
-  }
-
-  public static SkyKey key(PackageIdentifier pkgId) {
-    return Key.create(pkgId);
-  }
-
-  @VisibleForSerialization
-  @AutoCodec
-  static class Key extends AbstractSkyKey<PackageIdentifier> {
-    private static final SkyKeyInterner<Key> interner = SkyKey.newInterner();
-
-    private Key(PackageIdentifier arg) {
-      super(arg);
-    }
-
-    private static Key create(PackageIdentifier arg) {
-      return interner.intern(new Key(arg));
-    }
-
-    @VisibleForSerialization
-    @AutoCodec.Interner
-    static Key intern(Key key) {
-      return interner.intern(key);
-    }
-
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.PACKAGE_ERROR_MESSAGE;
-    }
-
-    @Override
-    public SkyKeyInterner<Key> getSkyKeyInterner() {
-      return interner;
-    }
-  }
-
-  @SerializationConstant
-  static final PackageErrorMessageValue NO_ERROR_VALUE =
-      new PackageErrorMessageValue() {
-        @Override
-        public Result getResult() {
-          return Result.NO_ERROR;
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    @AutoCodec
+    internal class Key private constructor(arg: PackageIdentifier?) : AbstractSkyKey<PackageIdentifier?>(arg) {
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.PACKAGE_ERROR_MESSAGE
         }
 
-        @Override
-        public String getNoSuchPackageExceptionMessage() {
-          throw new IllegalStateException();
+        val skyKeyInterner: SkyKeyInterner<Key?>
+            get() = com.google.devtools.build.lib.skyframe.PackageErrorMessageValue.Key.Companion.interner
+
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
+
+            private fun create(arg: PackageIdentifier?): Key {
+                return com.google.devtools.build.lib.skyframe.PackageErrorMessageValue.Key.Companion.interner.intern(
+                    com.google.devtools.build.lib.skyframe.PackageErrorMessageValue.Key(
+                        arg
+                    )
+                )
+            }
+
+            @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+            @AutoCodec.Interner
+            fun intern(key: Key?): Key {
+                return com.google.devtools.build.lib.skyframe.PackageErrorMessageValue.Key.Companion.interner.intern(key)
+            }
         }
-      };
+    }
 
-  @SerializationConstant
-  static final PackageErrorMessageValue ERROR_VALUE =
-      new PackageErrorMessageValue() {
-        @Override
-        public Result getResult() {
-          return Result.ERROR;
+    private class NoSuchPackageExceptionValue(private val errorMessage: String) : PackageErrorMessageValue() {
+        override fun getResult(): Result {
+            return com.google.devtools.build.lib.skyframe.PackageErrorMessageValue.Result.NO_SUCH_PACKAGE_EXCEPTION
         }
 
-        @Override
-        public String getNoSuchPackageExceptionMessage() {
-          throw new IllegalStateException();
+        override fun getNoSuchPackageExceptionMessage(): String {
+            return errorMessage
         }
-      };
 
-  private static class NoSuchPackageExceptionValue extends PackageErrorMessageValue {
-    private final String errorMessage;
+        override fun equals(obj: Any?): Boolean {
+            if (obj !is NoSuchPackageExceptionValue) {
+                return false
+            }
+            return errorMessage == obj.errorMessage
+        }
 
-    NoSuchPackageExceptionValue(String errorMessage) {
-      this.errorMessage = errorMessage;
+        override fun hashCode(): Int {
+            return errorMessage.hashCode()
+        }
     }
 
-    @Override
-    public Result getResult() {
-      return Result.NO_SUCH_PACKAGE_EXCEPTION;
-    }
+    companion object {
+        fun ofPackageWithNoErrors(): PackageErrorMessageValue {
+            return NO_ERROR_VALUE
+        }
 
-    @Override
-    public String getNoSuchPackageExceptionMessage() {
-      return errorMessage;
-    }
+        fun ofPackageWithErrors(): PackageErrorMessageValue {
+            return ERROR_VALUE
+        }
 
-    @Override
-    public boolean equals(Object obj) {
-      if (!(obj instanceof NoSuchPackageExceptionValue other)) {
-        return false;
-      }
-      return errorMessage.equals(other.errorMessage);
-    }
+        fun ofNoSuchPackageException(errorMessage: String): PackageErrorMessageValue {
+            return NoSuchPackageExceptionValue(errorMessage)
+        }
 
-    @Override
-    public int hashCode() {
-      return errorMessage.hashCode();
+        fun key(pkgId: PackageIdentifier?): SkyKey {
+            return com.google.devtools.build.lib.skyframe.PackageErrorMessageValue.Key.Companion.create(pkgId)
+        }
+
+        @SerializationConstant
+        val NO_ERROR_VALUE: PackageErrorMessageValue = object : PackageErrorMessageValue() {
+            override fun getResult(): Result {
+                return com.google.devtools.build.lib.skyframe.PackageErrorMessageValue.Result.NO_ERROR
+            }
+
+            override fun getNoSuchPackageExceptionMessage(): String? {
+                throw java.lang.IllegalStateException()
+            }
+        }
+
+        @SerializationConstant
+        val ERROR_VALUE: PackageErrorMessageValue = object : PackageErrorMessageValue() {
+            override fun getResult(): Result {
+                return com.google.devtools.build.lib.skyframe.PackageErrorMessageValue.Result.ERROR
+            }
+
+            override fun getNoSuchPackageExceptionMessage(): String? {
+                throw java.lang.IllegalStateException()
+            }
+        }
     }
-  }
 }

@@ -11,84 +11,74 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.starlarkbuildapi.java;
+package com.google.devtools.build.lib.starlarkbuildapi.java
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.starlarkbuildapi.FileApi;
-import com.google.devtools.build.lib.starlarkbuildapi.core.StructApi;
-import com.google.devtools.build.lib.starlarkbuildapi.java.JavaPluginInfoApi.JavaPluginDataApi;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
+import com.google.devtools.build.docgen.annot.DocCategory
+import com.google.devtools.build.lib.collect.nestedset.Depset
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
 
-/** Info object encapsulating information about Java plugins. */
+/** Info object encapsulating information about Java plugins.  */
 @StarlarkBuiltin(
     name = "JavaPluginInfo",
-    doc =
-        "A provider encapsulating information about Java plugins. "
-            + "<p>At the moment, the only supported kind of plugins are annotation processors.",
-    category = DocCategory.PROVIDER)
-public interface JavaPluginInfoApi<
-        FileT extends FileApi,
-        JavaPluginDataT extends JavaPluginDataApi,
-        JavaOutputT extends JavaOutputApi<FileT>>
-    extends StructApi {
-  @StarlarkMethod(
-      name = "plugins",
-      doc =
-          "Returns data about all plugins that a consuming target should apply."
-              + "<p>This is typically either a <code>java_plugin</code> itself or a "
-              + "<code>java_library</code> exporting one or more plugins. "
-              + "<p>A <code>java_library</code> runs annotation processing with all plugins from "
-              + "this field appearing in <code>deps</code> and <code>plugins</code> attributes.",
-      structField = true)
-  JavaPluginDataT plugins();
-
-  @StarlarkMethod(
-      name = "api_generating_plugins",
-      doc =
-          "Returns data about API generating plugins defined or exported by this target. "
-              + "<p>Those annotation processors are applied to a Java target before producing "
-              + "its header jars (which contain method signatures). When no API plugins are "
-              + "present, header jars are generated from the sources, reducing critical path. "
-              + "<p>The <code>api_generating_plugins</code> is a subset of <code>plugins</code>.",
-      structField = true)
-  JavaPluginDataT apiGeneratingPlugins();
-
-  /** Info object encapsulating information about a Java compatible plugin. */
-  interface JavaPluginDataApi extends StructApi {
+    doc = ("A provider encapsulating information about Java plugins. "
+            + "<p>At the moment, the only supported kind of plugins are annotation processors."),
+    category = DocCategory.PROVIDER
+)
+interface JavaPluginInfoApi<FileT : FileApi?, JavaPluginDataT : JavaPluginDataApi?, JavaOutputT : JavaOutputApi<FileT?>?>
+    : StructApi {
     @StarlarkMethod(
-        name = "processor_jars",
-        doc = "Returns the jars needed to apply the encapsulated annotation processors.",
-        structField = true)
-    Depset /*<FileApi>*/ getProcessorJarsForStarlark();
+        name = "plugins", doc = ("Returns data about all plugins that a consuming target should apply."
+                + "<p>This is typically either a <code>java_plugin</code> itself or a "
+                + "<code>java_library</code> exporting one or more plugins. "
+                + "<p>A <code>java_library</code> runs annotation processing with all plugins from "
+                + "this field appearing in <code>deps</code> and <code>plugins</code> attributes."), structField = true
+    )
+    fun plugins(): JavaPluginDataT?
 
     @StarlarkMethod(
-        name = "processor_classes",
-        doc =
-            "Returns the fully qualified class names needed to apply the encapsulated annotation"
-                + " processors.",
-        structField = true)
-    Depset /*<String>*/ getProcessorClassesForStarlark();
+        name = "api_generating_plugins",
+        doc = ("Returns data about API generating plugins defined or exported by this target. "
+                + "<p>Those annotation processors are applied to a Java target before producing "
+                + "its header jars (which contain method signatures). When no API plugins are "
+                + "present, header jars are generated from the sources, reducing critical path. "
+                + "<p>The <code>api_generating_plugins</code> is a subset of <code>plugins</code>."),
+        structField = true
+    )
+    fun apiGeneratingPlugins(): JavaPluginDataT?
 
-    @StarlarkMethod(
-        name = "processor_data",
-        doc =
-            "Returns the files needed during execution by the encapsulated annotation processors.",
-        structField = true)
-    Depset /*<FileApi>*/ getProcessorDataForStarlark();
+    /** Info object encapsulating information about a Java compatible plugin.  */
+    interface JavaPluginDataApi : StructApi {
+        @get:StarlarkMethod(
+            name = "processor_jars",
+            doc = "Returns the jars needed to apply the encapsulated annotation processors.",
+            structField = true
+        )
+        val processorJarsForStarlark: Depset?
 
-    @Override
-    default boolean isImmutable() {
-      return true;
+        @get:StarlarkMethod(
+            name = "processor_classes",
+            doc = ("Returns the fully qualified class names needed to apply the encapsulated annotation"
+                    + " processors."),
+            structField = true
+        )
+        val processorClassesForStarlark: Depset?
+
+        @get:StarlarkMethod(
+            name = "processor_data",
+            doc = "Returns the files needed during execution by the encapsulated annotation processors.",
+            structField = true
+        )
+        val processorDataForStarlark: Depset?
+
+        val isImmutable: Boolean
+            get() = true
     }
-  }
 
-  @StarlarkMethod(
-      name = "java_outputs",
-      doc = "Returns information about outputs of this Java/Java-like target.",
-      structField = true)
-  ImmutableList<JavaOutputT> getJavaOutputs();
-
+    @get:StarlarkMethod(
+        name = "java_outputs",
+        doc = "Returns information about outputs of this Java/Java-like target.",
+        structField = true
+    )
+    val javaOutputs: ImmutableList<JavaOutputT?>?
 }

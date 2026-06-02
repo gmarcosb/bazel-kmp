@@ -11,24 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options;
+package com.google.devtools.common.options
 
-import com.google.auto.value.AutoValue;
-import javax.annotation.Nullable;
+import com.google.auto.value.AutoValue
 
 /**
  * Object representing an option that was added to a Blaze invocation by the invocation policy. The
  * value will be in its raw (unparsed) form.
  */
 @AutoValue
-public abstract class OptionAndRawValue {
-  public static OptionAndRawValue create(String optionName, @Nullable String rawValue) {
-    return new AutoValue_OptionAndRawValue(optionName, rawValue);
-  }
+abstract class OptionAndRawValue {
+    abstract fun getOptionName(): String?
 
-  public abstract String getOptionName();
+    /** `rawValue` is nullable for Void options.  */
+    abstract fun getRawValue(): String?
 
-  /** {@code rawValue} is nullable for Void options. */
-  @Nullable
-  public abstract String getRawValue();
+    companion object {
+        fun create(optionName: String?, rawValue: String?): OptionAndRawValue {
+            return AutoValue_OptionAndRawValue(optionName, rawValue)
+        }
+    }
 }

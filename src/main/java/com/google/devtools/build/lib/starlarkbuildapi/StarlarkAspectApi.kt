@@ -11,21 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi
 
-package com.google.devtools.build.lib.starlarkbuildapi;
-
-import com.google.devtools.build.docgen.annot.DocCategory;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.eval.StarlarkValue;
-
-/** The interface for Starlark-defined aspects in the Build API. */
-@StarlarkBuiltin(
-    name = "Aspect",
-    category = DocCategory.BUILTIN,
-    doc =
-        """
+/** The interface for Starlark-defined aspects in the Build API.  */
+@net.starlark.java.annot.StarlarkBuiltin(
+    name = "Aspect", category = com.google.devtools.build.docgen.annot.DocCategory.BUILTIN, doc = """
         For more information about Aspects, please consult the
-        <a href="../globals/bzl.html#aspect">documentation of the aspect function</a> or the \
-        <a href="https://bazel.build/extending/aspects">introduction to Aspects</a>.
-        """)
-public interface StarlarkAspectApi extends StarlarkValue {}
+        <a href="../globals/bzl.html#aspect">documentation of the aspect function</a> or the <a href="https://bazel.build/extending/aspects">introduction to Aspects</a>.
+        
+        """.trimIndent()
+)
+interface StarlarkAspectApi : net.starlark.java.eval.StarlarkValue

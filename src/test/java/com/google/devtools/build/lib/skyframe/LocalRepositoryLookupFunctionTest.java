@@ -151,8 +151,8 @@ public class LocalRepositoryLookupFunctionTest extends FoundationTestCase {
         lookupDirectory(
             RootedPath.toRootedPath(Root.fromPath(rootDirectory), PathFragment.EMPTY_FRAGMENT));
     assertThat(repositoryLookupValue).isNotNull();
-    assertThat(repositoryLookupValue.getRepository()).isEqualTo(RepositoryName.MAIN);
-    assertThat(repositoryLookupValue.getPath()).isEqualTo(PathFragment.EMPTY_FRAGMENT);
+    assertThat(repositoryLookupValue.repository).isEqualTo(RepositoryName.MAIN);
+    assertThat(repositoryLookupValue.path).isEqualTo(PathFragment.EMPTY_FRAGMENT);
   }
 
   @Test
@@ -164,7 +164,7 @@ public class LocalRepositoryLookupFunctionTest extends FoundationTestCase {
             RootedPath.toRootedPath(
                 Root.fromPath(rootDirectory), PathFragment.create("some/path")));
     assertThat(repositoryLookupValue).isNotNull();
-    assertThat(repositoryLookupValue.getRepository()).isEqualTo(RepositoryName.MAIN);
-    assertThat(repositoryLookupValue.getPath()).isEqualTo(PathFragment.EMPTY_FRAGMENT);
+    assertThat(repositoryLookupValue.repository).isEqualTo(RepositoryName.MAIN);
+    assertThat(repositoryLookupValue.path).isEqualTo(PathFragment.EMPTY_FRAGMENT);
   }
 }

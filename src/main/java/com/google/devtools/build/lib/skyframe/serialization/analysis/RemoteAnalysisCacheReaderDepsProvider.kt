@@ -11,46 +11,47 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueService
+import com.google.devtools.build.lib.skyframe.serialization.FrontierNodeVersion
+import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecs
+import com.google.devtools.build.lib.skyframe.serialization.SkyValueRetriever.RetrievalResult
+import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCacheClient
+import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCachingOptions.RemoteAnalysisCacheMode
+import com.google.devtools.build.skyframe.SkyKey
 
-import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueService;
-import com.google.devtools.build.lib.skyframe.serialization.FrontierNodeVersion;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecs;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.devtools.build.lib.skyframe.serialization.SkyValueRetriever.RetrievalResult;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCachingOptions.RemoteAnalysisCacheMode;
-import com.google.devtools.build.skyframe.SkyKey;
+/** Functionality needed to retrieve values from the remote cache.  */
+interface RemoteAnalysisCacheReaderDepsProvider {
+    fun mode(): RemoteAnalysisCacheMode?
 
-/** Functionality needed to retrieve values from the remote cache. */
-public interface RemoteAnalysisCacheReaderDepsProvider {
-  RemoteAnalysisCacheMode mode();
+    @kotlin.jvm.JvmField
+    @get:Throws(java.lang.InterruptedException::class)
+    val skyValueVersion: FrontierNodeVersion?
 
-  /**
-   * Returns the string distinguisher to invalidate SkyValues, in addition to the corresponding
-   * SkyKey.
-   */
-  FrontierNodeVersion getSkyValueVersion() throws InterruptedException;
+    @kotlin.jvm.JvmField
+    @get:Throws(java.lang.InterruptedException::class)
+    val objectCodecs: ObjectCodecs?
 
-  /**
-   * Returns the {@link ObjectCodecs} supplier for remote analysis caching.
-   *
-   * <p>Calling this can be an expensive process as the codec registry will be initialized.
-   */
-  ObjectCodecs getObjectCodecs() throws InterruptedException;
+    @kotlin.jvm.JvmField
+    @get:Throws(java.lang.InterruptedException::class)
+    val fingerprintValueService: FingerprintValueService?
 
-  /** Returns the {@link FingerprintValueService} implementation. */
-  FingerprintValueService getFingerprintValueService() throws InterruptedException;
+    @kotlin.jvm.JvmField
+    @get:Throws(java.lang.InterruptedException::class)
+    val analysisCacheClient: RemoteAnalysisCacheClient?
 
-  RemoteAnalysisCacheClient getAnalysisCacheClient() throws InterruptedException;
+    fun recordRetrievalResult(retrievalResult: RetrievalResult?, key: SkyKey?)
 
-  void recordRetrievalResult(RetrievalResult retrievalResult, SkyKey key);
+    fun recordSerializationException(
+        e: com.google.devtools.build.lib.skyframe.serialization.SerializationException?,
+        key: SkyKey?
+    )
 
-  void recordSerializationException(SerializationException e, SkyKey key);
+    /** Returns true if bailing out on the first missing fingerprint is enabled.  */
+    fun shouldBailOutOnMissingFingerprint(): Boolean
 
-  /** Returns true if bailing out on the first missing fingerprint is enabled. */
-  boolean shouldBailOutOnMissingFingerprint();
-
-  /** Returns true if Skycache is only used for analysis phase. */
-  boolean getSkycacheAnalysisOnly();
+    /** Returns true if Skycache is only used for analysis phase.  */
+    @kotlin.jvm.JvmField
+    val skycacheAnalysisOnly: Boolean
 }

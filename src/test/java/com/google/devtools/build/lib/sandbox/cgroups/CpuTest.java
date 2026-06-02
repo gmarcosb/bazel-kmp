@@ -47,7 +47,7 @@ public class CpuTest {
     scratch.file("cgroup/cpu/cpu.cfs_quota_us", "4000");
     scratch.file("cgroup/cpu/cpu.cfs_period_us", "1000");
     Cpu cpu = new LegacyCpu(scratch.path("cgroup/cpu").getPathFile().toPath());
-    assertThat(cpu.getCpus()).isEqualTo(4);
+    assertThat(cpu.cpus).isEqualTo(4);
   }
 
   @Test
@@ -70,20 +70,20 @@ public class CpuTest {
   public void getCpuLimit_v2() throws IOException {
     scratch.file("cgroup/cpu/cpu.max", "6000 1000");
     Cpu cpu = new UnifiedCpu(scratch.path("cgroup/cpu").getPathFile().toPath());
-    assertThat(cpu.getCpus()).isEqualTo(6);
+    assertThat(cpu.cpus).isEqualTo(6);
   }
 
   @Test
   public void getCpuLimitNewLine_v2() throws IOException {
     scratch.file("cgroup/cpu/cpu.max", "6000 1000\n");
     Cpu cpu = new UnifiedCpu(scratch.path("cgroup/cpu").getPathFile().toPath());
-    assertThat(cpu.getCpus()).isEqualTo(6);
+    assertThat(cpu.cpus).isEqualTo(6);
   }
 
   @Test
   public void getCpuLimitMax_v2() throws IOException {
     scratch.file("cgroup/cpu/cpu.max", "max 1000\n");
     Cpu cpu = new UnifiedCpu(scratch.path("cgroup/cpu").getPathFile().toPath());
-    assertThat(cpu.getCpus()).isEqualTo(Runtime.getRuntime().availableProcessors());
+    assertThat(cpu.cpus).isEqualTo(Runtime.getRuntime().availableProcessors());
   }
 }

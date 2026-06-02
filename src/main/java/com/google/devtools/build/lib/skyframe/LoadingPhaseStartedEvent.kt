@@ -11,27 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
-
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
+package com.google.devtools.build.lib.skyframe
 
 /**
  * This event is fired at the beginning of the loading phase.
  */
-public final class LoadingPhaseStartedEvent implements ExtendedEventHandler.Postable {
+class LoadingPhaseStartedEvent(packageProgress: PackageProgressReceiver?) : Postable {
+    val packageProgress: PackageProgressReceiver?
 
-  final PackageProgressReceiver packageProgress;
+    /**
+     * Construct the event
+     * 
+     * @param loadingProgressReceiver a receiver that gets updated about the progress of loading
+     */
+    init {
+        this.packageProgress = packageProgress
+    }
 
-  /**
-   * Construct the event
-   *
-   * @param loadingProgressReceiver a receiver that gets updated about the progress of loading
-   */
-  public LoadingPhaseStartedEvent(PackageProgressReceiver packageProgress) {
-    this.packageProgress = packageProgress;
-  }
-
-  public PackageProgressReceiver getPackageProgressReceiver() {
-    return packageProgress;
-  }
+    val packageProgressReceiver: PackageProgressReceiver?
+        get() = packageProgress
 }

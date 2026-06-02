@@ -11,533 +11,499 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.io.ByteStreams;
-import com.google.common.primitives.Bytes;
-import com.google.devtools.build.lib.concurrent.ThreadSafety;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
-import java.util.concurrent.atomic.AtomicInteger;
+package com.google.devtools.build.lib.util.io
 
 /**
- * An implementation of {@link OutErr} that captures all out/err output into
+ * An implementation of [OutErr] that captures all out/err output into
  * a file for stdout and a file for stderr. The files are only created if any
  * output is made.
  * The OutErr assumes that the directory that will contain the output file
  * must exist.
- *
+ * 
  * You should not use this object from multiple different threads.
  */
 // Note that it should be safe to treat the Output and Error streams within a FileOutErr each as
 // individually ThreadCompatible.
-@ThreadSafety.ThreadCompatible
-public class FileOutErr extends OutErr {
+@ThreadCompatible
+open class FileOutErr : OutErr {
+    private val childCount: AtomicInteger = AtomicInteger()
 
-  private final AtomicInteger childCount = new AtomicInteger();
+    /**
+     * Create a new FileOutErr that will write its input,
+     * if any, to the files specified by stdout/stderr.
+     * 
+     * No other process may write to the files,
+     * 
+     * @param stdout The file for the stdout of this outErr
+     * @param stderr The file for the stderr of this outErr
+     */
+    constructor(stdout: com.google.devtools.build.lib.vfs.Path, stderr: com.google.devtools.build.lib.vfs.Path) : this(
+        FileRecordingOutputStream(stdout),
+        FileRecordingOutputStream(stderr)
+    )
 
-  /**
-   * Create a new FileOutErr that will write its input,
-   * if any, to the files specified by stdout/stderr.
-   *
-   * No other process may write to the files,
-   *
-   * @param stdout The file for the stdout of this outErr
-   * @param stderr The file for the stderr of this outErr
-   */
-  public FileOutErr(Path stdout, Path stderr) {
-    this(new FileRecordingOutputStream(stdout), new FileRecordingOutputStream(stderr));
-  }
+    /**
+     * Creates a new FileOutErr that writes its input to the file specified by output. Both
+     * stdout/stderr will be copied into the single file.
+     * 
+     * @param output The file for the both stdout and stderr of this outErr.
+     */
+    constructor(output: com.google.devtools.build.lib.vfs.Path) : this(FileRecordingOutputStream(output))
 
-  /**
-   * Creates a new FileOutErr that writes its input to the file specified by output. Both
-   * stdout/stderr will be copied into the single file.
-   *
-   * @param output The file for the both stdout and stderr of this outErr.
-   */
-  public FileOutErr(Path output) {
-    // We don't need to create a synchronized funnel here, like in the OutErr -- The
-    // respective functions in the FileRecordingOutputStream take care of locking.
-    this(new FileRecordingOutputStream(output));
-  }
+    protected constructor(
+        out: AbstractFileRecordingOutputStream?,
+        err: AbstractFileRecordingOutputStream?
+    ) : super(out, err)
 
-  protected FileOutErr(AbstractFileRecordingOutputStream out,
-                       AbstractFileRecordingOutputStream err) {
-    super(out, err);
-  }
+    /**
+     * Creates a new FileOutErr that discards its input. Useful
+     * for testing purposes.
+     */
+    @com.google.common.annotations.VisibleForTesting
+    constructor() : this(NullFileRecordingOutputStream())
 
-  /**
-   * Creates a new FileOutErr that discards its input. Useful
-   * for testing purposes.
-   */
-  @VisibleForTesting
-  public FileOutErr() {
-    this(new NullFileRecordingOutputStream());
-  }
+    private constructor(stream: java.io.OutputStream?) : super(stream, stream)
 
-  private FileOutErr(OutputStream stream) {
-    // We need this function to duplicate the single new object into both arguments
-    // of the super-constructor.
-    super(stream, stream);
-  }
-
-  /**
-   * Returns true if any output was recorded.
-   */
-  public boolean hasRecordedOutput() {
-    return getFileOutputStream().hasRecordedOutput() || getFileErrorStream().hasRecordedOutput();
-  }
-
-  /**
-   * Returns true if output was recorded on stdout.
-   */
-  public boolean hasRecordedStdout() {
-    return getFileOutputStream().hasRecordedOutput();
-  }
-
-  /**
-   * Returns true if output was recorded on stderr.
-   */
-  public boolean hasRecordedStderr() {
-    return getFileErrorStream().hasRecordedOutput();
-  }
-
-  /**
-   * Returns the path this OutErr uses to buffer stdout, marking the file as "accessed" because the
-   * caller has unrestricted access to the underlying file.
-   *
-   * <p>The user must ensure that no other process is writing to the files at time of creation.
-   *
-   * @return the path object with the contents of stdout
-   */
-  public Path getOutputPath() {
-    return getFileOutputStream().getFile();
-  }
-
-  /**
-   * Returns the path this OutErr uses to buffer stdout without marking the file as "accessed".
-   *
-   * <p>The user must ensure that no other process is writing to the files at time of creation.
-   *
-   * @return the path object with the contents of stdout
-   */
-  public PathFragment getOutputPathFragment() {
-    return getFileOutputStream().getFileUnsafe().asFragment();
-  }
-
-  /** Returns the length of the stdout contents. */
-  public long outSize() throws IOException {
-    return getFileOutputStream().getRecordedOutputSize();
-  }
-
-  /**
-   * Returns the path this OutErr uses to buffer stderr, marking the file as "accessed" because the
-   * caller has unrestricted access to the underlying file.
-   *
-   * @return the path object with the contents of stderr
-   */
-  public Path getErrorPath() {
-    return getFileErrorStream().getFile();
-  }
-
-  /**
-   * Returns the path this OutErr uses to buffer stderr without marking the file as "accessed".
-   *
-   * @return the path object with the contents of stderr
-   */
-  public PathFragment getErrorPathFragment() {
-    return getFileErrorStream().getFileUnsafe().asFragment();
-  }
-
-  public byte[] outAsBytes() {
-    return getFileOutputStream().getRecordedOutput();
-  }
-
-  @VisibleForTesting
-  public String outAsLatin1() {
-    return new String(outAsBytes(), StandardCharsets.ISO_8859_1);
-  }
-
-  public byte[] errAsBytes() {
-    return getFileErrorStream().getRecordedOutput();
-  }
-
-  @VisibleForTesting
-  public String errAsLatin1() {
-    return new String(errAsBytes(), StandardCharsets.ISO_8859_1);
-  }
-
-  /** Returns the length of the stderr contents. */
-  public long errSize() throws IOException {
-    return getFileErrorStream().getRecordedOutputSize();
-  }
-
-  /**
-   * Closes and deletes the error stream.
-   */
-  public void clearErr() throws IOException {
-    getFileErrorStream().clear();
-  }
-
-  /**
-   * Closes and deletes the out stream.
-   */
-  public void clearOut() throws IOException {
-    getFileOutputStream().clear();
-  }
-
-
-  /**
-   * Writes the captured out content to the given output stream,
-   * avoiding keeping the entire contents in memory.
-   */
-  public void dumpOutAsLatin1(OutputStream out) {
-    getFileOutputStream().dumpOut(out);
-  }
-
-  /**
-   * Writes the captured error content to the given error stream,
-   * avoiding keeping the entire contents in memory.
-   */
-  public void dumpErrAsLatin1(OutputStream out) {
-    getFileErrorStream().dumpOut(out);
-  }
-
-  /**
-   * Writes the captured content to the given {@link FileOutErr},
-   * avoiding keeping the entire contents in memory.
-   */
-  public static void dump(FileOutErr from, FileOutErr to) {
-    from.dumpOutAsLatin1(to.getOutputStream());
-    from.dumpErrAsLatin1(to.getErrorStream());
-  }
-
-  private AbstractFileRecordingOutputStream getFileOutputStream() {
-    return (AbstractFileRecordingOutputStream) getOutputStream();
-  }
-
-  private AbstractFileRecordingOutputStream getFileErrorStream() {
-    return (AbstractFileRecordingOutputStream) getErrorStream();
-  }
-
-  @ThreadSafe
-  public FileOutErr childOutErr() {
-    int index = childCount.getAndIncrement();
-    Path outPath = getFileOutputStream().getFileUnsafe();
-    Path errPath = getFileErrorStream().getFileUnsafe();
-    if (outPath == null || errPath == null) {
-      return new FileOutErr();
+    /**
+     * Returns true if any output was recorded.
+     */
+    fun hasRecordedOutput(): Boolean {
+        return this.fileOutputStream!!.hasRecordedOutput() || this.fileErrorStream!!.hasRecordedOutput()
     }
-    return new FileOutErr(
-        outPath.getParentDirectory().getRelative(outPath.getBaseName() + "-" + index),
-        errPath.getParentDirectory().getRelative(errPath.getBaseName() + "-" + index));
-  }
-  /**
-   * An abstract supertype for the two other inner classes in this type
-   * to implement streams that can write to a file.
-   */
-  private abstract static class AbstractFileRecordingOutputStream extends OutputStream {
 
     /**
-     * Returns true if this FileRecordingOutputStream has encountered an error.
-     *
-     * @return true there was an error, false otherwise.
+     * Returns true if output was recorded on stdout.
      */
-    abstract boolean hadError();
+    fun hasRecordedStdout(): Boolean {
+        return this.fileOutputStream!!.hasRecordedOutput()
+    }
 
     /**
-     * Returns the file this FileRecordingOutputStream is writing to.
+     * Returns true if output was recorded on stderr.
      */
-    abstract Path getFile();
+    fun hasRecordedStderr(): Boolean {
+        return this.fileErrorStream!!.hasRecordedOutput()
+    }
+
+    val outputPath: com.google.devtools.build.lib.vfs.Path?
+        /**
+         * Returns the path this OutErr uses to buffer stdout, marking the file as "accessed" because the
+         * caller has unrestricted access to the underlying file.
+         * 
+         * 
+         * The user must ensure that no other process is writing to the files at time of creation.
+         * 
+         * @return the path object with the contents of stdout
+         */
+        get() = this.fileOutputStream!!.file
+
+    val outputPathFragment: PathFragment?
+        /**
+         * Returns the path this OutErr uses to buffer stdout without marking the file as "accessed".
+         * 
+         * 
+         * The user must ensure that no other process is writing to the files at time of creation.
+         * 
+         * @return the path object with the contents of stdout
+         */
+        get() = this.fileOutputStream!!.fileUnsafe.asFragment()
+
+    /** Returns the length of the stdout contents.  */
+    @Throws(IOException::class)
+    fun outSize(): Long {
+        return this.fileOutputStream!!.recordedOutputSize
+    }
+
+    val errorPath: com.google.devtools.build.lib.vfs.Path?
+        /**
+         * Returns the path this OutErr uses to buffer stderr, marking the file as "accessed" because the
+         * caller has unrestricted access to the underlying file.
+         * 
+         * @return the path object with the contents of stderr
+         */
+        get() = this.fileErrorStream!!.file
+
+    val errorPathFragment: PathFragment?
+        /**
+         * Returns the path this OutErr uses to buffer stderr without marking the file as "accessed".
+         * 
+         * @return the path object with the contents of stderr
+         */
+        get() = this.fileErrorStream!!.fileUnsafe.asFragment()
+
+    fun outAsBytes(): ByteArray? {
+        return this.fileOutputStream!!.recordedOutput
+    }
+
+    @com.google.common.annotations.VisibleForTesting
+    fun outAsLatin1(): String {
+        return String(outAsBytes(), java.nio.charset.StandardCharsets.ISO_8859_1)
+    }
+
+    fun errAsBytes(): ByteArray? {
+        return this.fileErrorStream!!.recordedOutput
+    }
+
+    @com.google.common.annotations.VisibleForTesting
+    fun errAsLatin1(): String {
+        return String(errAsBytes(), java.nio.charset.StandardCharsets.ISO_8859_1)
+    }
+
+    /** Returns the length of the stderr contents.  */
+    @Throws(IOException::class)
+    fun errSize(): Long {
+        return this.fileErrorStream!!.recordedOutputSize
+    }
 
     /**
-     * Returns true if the FileOutErr has stored output.
+     * Closes and deletes the error stream.
      */
-    abstract boolean hasRecordedOutput();
-
-    /** Returns the output this AbstractFileOutErr has recorded. */
-    abstract byte[] getRecordedOutput();
-
-    /** Returns the size of the recorded output. */
-    abstract long getRecordedOutputSize() throws IOException;
+    @Throws(IOException::class)
+    fun clearErr() {
+        this.fileErrorStream!!.clear()
+    }
 
     /**
-     * Writes the output to the given output stream,
+     * Closes and deletes the out stream.
+     */
+    @Throws(IOException::class)
+    fun clearOut() {
+        this.fileOutputStream!!.clear()
+    }
+
+
+    /**
+     * Writes the captured out content to the given output stream,
      * avoiding keeping the entire contents in memory.
      */
-    abstract void dumpOut(OutputStream out);
-
-    abstract Path getFileUnsafe();
-
-    /** Closes and deletes the output. */
-    abstract void clear() throws IOException;
-  }
-
-  /**
-   * An output stream that pretends to capture all its output into a file,
-   * but instead discards it.
-   */
-  private static class NullFileRecordingOutputStream extends AbstractFileRecordingOutputStream {
-
-    NullFileRecordingOutputStream() {
-    }
-
-    @Override
-    boolean hadError() {
-      return false;
-    }
-
-    @Override
-    Path getFile() {
-      return null;
-    }
-
-    @Override
-    Path getFileUnsafe() {
-      return null;
-    }
-
-    @Override
-    boolean hasRecordedOutput() {
-      return false;
-    }
-
-    @Override
-    byte[] getRecordedOutput() {
-      return new byte[] {};
-    }
-
-    @Override
-    long getRecordedOutputSize() {
-      return 0;
-    }
-
-    @Override
-    void dumpOut(OutputStream out) {
-      return;
-    }
-
-    @Override
-    public void clear() {
-    }
-
-    @Override
-    public void write(byte[] b, int off, int len) {
-    }
-
-    @Override
-    public void write(int b) {
-    }
-
-    @Override
-    public void write(byte[] b) {
-    }
-  }
-
-  /**
-   * An output stream that captures all output into a file. The file is created only if output is
-   * received.
-   *
-   * The user must take care that nobody else is writing to the file that is backing the output
-   * stream.
-   *
-   * The write() methods of type are synchronized to ensure that writes from different threads are
-   * not mixed up. Note that this class is otherwise
-   * {@link com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadCompatible}. Only the
-   * write() methods are allowed to be concurrently, and only concurrently with each other. All
-   * other calls must be serialized.
-   *
-   * The outputStream is here only for the benefit of the pumping IO we're currently using for
-   * execution - Once that is gone we can remove this output stream and fold its code into the
-   * FileOutErr.
-   */
-  @ThreadSafety.ThreadCompatible
-  protected static class FileRecordingOutputStream extends AbstractFileRecordingOutputStream {
-
-    private final Path outputFile;
-    private OutputStream outputStream;
-    private String error;
-    private Long cachedSize;
-
-    protected FileRecordingOutputStream(Path outputFile) {
-      this.outputFile = outputFile;
-      this.cachedSize = 0L;
-    }
-
-    @Override
-    boolean hadError() {
-      return error != null;
-    }
-
-    @Override
-    Path getFile() {
-      // The caller is getting a reference to the filesystem path, so conservatively assume the
-      // file has been modified.
-      markDirty();
-      return outputFile;
-    }
-
-    @Override
-    Path getFileUnsafe() {
-      return outputFile;
-    }
-
-    private synchronized void markDirty() {
-      cachedSize = null;
-    }
-
-    private OutputStream getOutputStream() throws IOException {
-      // you should hold the lock before you invoke this method
-      if (outputStream == null) {
-        outputStream = outputFile.getOutputStream();
-      }
-      return outputStream;
-    }
-
-    private boolean hasOutputStream() {
-      return outputStream != null;
-    }
-
-    @Override
-    public synchronized void clear() throws IOException {
-      close();
-      outputStream = null;
-      outputFile.delete();
-      cachedSize = 0L;
+    fun dumpOutAsLatin1(out: java.io.OutputStream?) {
+        this.fileOutputStream!!.dumpOut(out)
     }
 
     /**
-     * Called whenever the FileRecordingOutputStream finds an error.
+     * Writes the captured error content to the given error stream,
+     * avoiding keeping the entire contents in memory.
      */
-    protected void recordError(IOException exception) {
-      String newErrorText = exception.getMessage();
-      error = (error == null) ? newErrorText : error + "\n" + newErrorText;
+    fun dumpErrAsLatin1(out: java.io.OutputStream?) {
+        this.fileErrorStream!!.dumpOut(out)
     }
 
-    @Override
-    boolean hasRecordedOutput() {
-      try {
-        return getRecordedOutputSize() > 0;
-      } catch (IOException ex) {
-        // Error already recorded by getRecordedOutputSize().
-        return true;
-      }
-    }
+    private val fileOutputStream: AbstractFileRecordingOutputStream?
+        get() = getOutputStream() as AbstractFileRecordingOutputStream?
 
-    @Override
-    byte[] getRecordedOutput() {
-      byte[] bytes = null;
-      synchronized (this) {
-        try {
-          bytes = FileSystemUtils.readContent(outputFile);
-          cachedSize = (long) bytes.length;
-        } catch (FileNotFoundException e) {
-          cachedSize = 0L;
-        } catch (IOException ex) {
-          recordError(ex);
+    private val fileErrorStream: AbstractFileRecordingOutputStream?
+        get() = getErrorStream() as AbstractFileRecordingOutputStream?
+
+    @ThreadSafe
+    fun childOutErr(): FileOutErr {
+        val index: Int = childCount.getAndIncrement()
+        val outPath: com.google.devtools.build.lib.vfs.Path? = this.fileOutputStream!!.fileUnsafe
+        val errPath: com.google.devtools.build.lib.vfs.Path? = this.fileErrorStream!!.fileUnsafe
+        if (outPath == null || errPath == null) {
+            return FileOutErr()
         }
-      }
+        return FileOutErr(
+            outPath.getParentDirectory().getRelative(outPath.getBaseName() + "-" + index),
+            errPath.getParentDirectory().getRelative(errPath.getBaseName() + "-" + index)
+        )
+    }
 
-      if (hadError()) {
-        byte[] errorBytes = error.getBytes(StandardCharsets.ISO_8859_1);
-        if (bytes == null) {
-          bytes = errorBytes;
-        } else {
-          bytes = Bytes.concat(bytes, errorBytes);
+    /**
+     * An abstract supertype for the two other inner classes in this type
+     * to implement streams that can write to a file.
+     */
+    private abstract class AbstractFileRecordingOutputStream : java.io.OutputStream() {
+        /**
+         * Returns true if this FileRecordingOutputStream has encountered an error.
+         * 
+         * @return true there was an error, false otherwise.
+         */
+        abstract fun hadError(): Boolean
+
+        /**
+         * Returns the file this FileRecordingOutputStream is writing to.
+         */
+        abstract val file: com.google.devtools.build.lib.vfs.Path?
+
+        /**
+         * Returns true if the FileOutErr has stored output.
+         */
+        abstract fun hasRecordedOutput(): Boolean
+
+        /** Returns the output this AbstractFileOutErr has recorded.  */
+        abstract val recordedOutput: ByteArray?
+
+        @get:Throws(IOException::class)
+        abstract val recordedOutputSize: Long
+
+        /**
+         * Writes the output to the given output stream,
+         * avoiding keeping the entire contents in memory.
+         */
+        abstract fun dumpOut(out: java.io.OutputStream?)
+
+        abstract val fileUnsafe: com.google.devtools.build.lib.vfs.Path?
+
+        /** Closes and deletes the output.  */
+        @Throws(IOException::class)
+        abstract fun clear()
+    }
+
+    /**
+     * An output stream that pretends to capture all its output into a file,
+     * but instead discards it.
+     */
+    private class NullFileRecordingOutputStream : AbstractFileRecordingOutputStream() {
+        override fun hadError(): Boolean {
+            return false
         }
-      }
-      return bytes == null ? new byte[] {} : bytes;
-    }
 
-    @Override
-    synchronized long getRecordedOutputSize() throws IOException {
-      if (hadError()) {
-        return error.length();
-      }
-      if (cachedSize == null) {
-        try {
-          cachedSize = outputFile.getFileSize();
-        } catch (FileNotFoundException e) {
-          cachedSize = 0L;
-        } catch (IOException e) {
-          recordError(e);
-          throw e;
+        override fun getFile(): com.google.devtools.build.lib.vfs.Path? {
+            return null
         }
-      }
-      return cachedSize;
-    }
 
-    @Override
-    void dumpOut(OutputStream out) {
-      synchronized (this) {
-        try (InputStream in = outputFile.getInputStream()) {
-          ByteStreams.copy(in, out);
-          out.flush();
-        } catch (FileNotFoundException e) {
-          cachedSize = 0L;
-        } catch (IOException ex) {
-          recordError(ex);
+        override fun getFileUnsafe(): com.google.devtools.build.lib.vfs.Path? {
+            return null
         }
-      }
 
-      if (hadError()) {
-        PrintStream ps = new PrintStream(out);
-        ps.print(error);
-        ps.flush();
-      }
-    }
-
-    @Override
-    public synchronized void write(byte[] b, int off, int len) {
-      if (len > 0) {
-        markDirty();
-        try {
-          getOutputStream().write(b, off, len);
-        } catch (IOException ex) {
-          recordError(ex);
+        override fun hasRecordedOutput(): Boolean {
+            return false
         }
-      }
+
+        override fun getRecordedOutput(): ByteArray {
+            return byteArrayOf()
+        }
+
+        override fun getRecordedOutputSize(): Long {
+            return 0
+        }
+
+        override fun dumpOut(out: java.io.OutputStream?) {
+            return
+        }
+
+        public override fun clear() {
+        }
+
+        override fun write(b: ByteArray?, off: Int, len: Int) {
+        }
+
+        override fun write(b: Int) {
+        }
+
+        override fun write(b: ByteArray?) {
+        }
     }
 
-    @Override
-    public synchronized void write(int b) {
-      markDirty();
-      try {
-        getOutputStream().write(b);
-      } catch (IOException ex) {
-        recordError(ex);
-      }
+    /**
+     * An output stream that captures all output into a file. The file is created only if output is
+     * received.
+     * 
+     * The user must take care that nobody else is writing to the file that is backing the output
+     * stream.
+     * 
+     * The write() methods of type are synchronized to ensure that writes from different threads are
+     * not mixed up. Note that this class is otherwise
+     * [com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadCompatible]. Only the
+     * write() methods are allowed to be concurrently, and only concurrently with each other. All
+     * other calls must be serialized.
+     * 
+     * The outputStream is here only for the benefit of the pumping IO we're currently using for
+     * execution - Once that is gone we can remove this output stream and fold its code into the
+     * FileOutErr.
+     */
+    @ThreadCompatible
+    open class FileRecordingOutputStream(outputFile: com.google.devtools.build.lib.vfs.Path) :
+        AbstractFileRecordingOutputStream() {
+        private val outputFile: com.google.devtools.build.lib.vfs.Path
+        private var outputStream: java.io.OutputStream? = null
+        private var error: String? = null
+        private var cachedSize: Long?
+
+        init {
+            this.outputFile = outputFile
+            this.cachedSize = 0L
+        }
+
+        override fun hadError(): Boolean {
+            return error != null
+        }
+
+        override fun getFile(): com.google.devtools.build.lib.vfs.Path {
+            // The caller is getting a reference to the filesystem path, so conservatively assume the
+            // file has been modified.
+            markDirty()
+            return outputFile
+        }
+
+        override fun getFileUnsafe(): com.google.devtools.build.lib.vfs.Path {
+            return outputFile
+        }
+
+        @kotlin.jvm.Synchronized
+        private fun markDirty() {
+            cachedSize = null
+        }
+
+        @Throws(IOException::class)
+        private fun getOutputStream(): java.io.OutputStream? {
+            // you should hold the lock before you invoke this method
+            if (outputStream == null) {
+                outputStream = outputFile.getOutputStream()
+            }
+            return outputStream
+        }
+
+        private fun hasOutputStream(): Boolean {
+            return outputStream != null
+        }
+
+        @kotlin.jvm.Synchronized
+        @Throws(IOException::class)
+        public override fun clear() {
+            close()
+            outputStream = null
+            outputFile.delete()
+            cachedSize = 0L
+        }
+
+        /**
+         * Called whenever the FileRecordingOutputStream finds an error.
+         */
+        protected fun recordError(exception: IOException) {
+            val newErrorText: String? = exception.message
+            error = if (error == null) newErrorText else error + "\n" + newErrorText
+        }
+
+        override fun hasRecordedOutput(): Boolean {
+            try {
+                return getRecordedOutputSize() > 0
+            } catch (ex: IOException) {
+                // Error already recorded by getRecordedOutputSize().
+                return true
+            }
+        }
+
+        override fun getRecordedOutput(): ByteArray? {
+            var bytes: ByteArray? = null
+            synchronized(this) {
+                try {
+                    bytes = com.google.devtools.build.lib.vfs.FileSystemUtils.readContent(outputFile)
+                    cachedSize = bytes!!.size.toLong()
+                } catch (e: FileNotFoundException) {
+                    cachedSize = 0L
+                } catch (ex: IOException) {
+                    recordError(ex)
+                }
+            }
+
+            if (hadError()) {
+                val errorBytes: ByteArray? = error.toByteArray(java.nio.charset.StandardCharsets.ISO_8859_1)
+                if (bytes == null) {
+                    bytes = errorBytes
+                } else {
+                    bytes = com.google.common.primitives.Bytes.concat(bytes, errorBytes)
+                }
+            }
+            return if (bytes == null) byteArrayOf() else bytes
+        }
+
+        @kotlin.jvm.Synchronized
+        @Throws(IOException::class)
+        override fun getRecordedOutputSize(): Long {
+            if (hadError()) {
+                return error!!.length.toLong()
+            }
+            if (cachedSize == null) {
+                try {
+                    cachedSize = outputFile.getFileSize()
+                } catch (e: FileNotFoundException) {
+                    cachedSize = 0L
+                } catch (e: IOException) {
+                    recordError(e)
+                    throw e
+                }
+            }
+            return cachedSize!!
+        }
+
+        override fun dumpOut(out: java.io.OutputStream) {
+            synchronized(this) {
+                try {
+                    outputFile.getInputStream().use { `in` ->
+                        com.google.common.io.ByteStreams.copy(`in`, out)
+                        out.flush()
+                    }
+                } catch (e: FileNotFoundException) {
+                    cachedSize = 0L
+                } catch (ex: IOException) {
+                    recordError(ex)
+                }
+            }
+
+            if (hadError()) {
+                val ps: PrintStream = PrintStream(out)
+                ps.print(error)
+                ps.flush()
+            }
+        }
+
+        @kotlin.jvm.Synchronized
+        override fun write(b: ByteArray?, off: Int, len: Int) {
+            if (len > 0) {
+                markDirty()
+                try {
+                    getOutputStream().write(b, off, len)
+                } catch (ex: IOException) {
+                    recordError(ex)
+                }
+            }
+        }
+
+        @kotlin.jvm.Synchronized
+        override fun write(b: Int) {
+            markDirty()
+            try {
+                getOutputStream().write(b)
+            } catch (ex: IOException) {
+                recordError(ex)
+            }
+        }
+
+        @kotlin.jvm.Synchronized
+        @Throws(IOException::class)
+        override fun write(b: ByteArray) {
+            if (b.size > 0) {
+                markDirty()
+                getOutputStream().write(b)
+            }
+        }
+
+        @kotlin.jvm.Synchronized
+        @Throws(IOException::class)
+        override fun flush() {
+            if (hasOutputStream()) {
+                getOutputStream().flush()
+            }
+        }
+
+        @kotlin.jvm.Synchronized
+        @Throws(IOException::class)
+        override fun close() {
+            if (hasOutputStream()) {
+                getOutputStream().close()
+            }
+        }
     }
 
-    @Override
-    public synchronized void write(byte[] b) throws IOException {
-      if (b.length > 0) {
-        markDirty();
-        getOutputStream().write(b);
-      }
+    companion object {
+        /**
+         * Writes the captured content to the given [FileOutErr],
+         * avoiding keeping the entire contents in memory.
+         */
+        fun dump(from: FileOutErr, to: FileOutErr) {
+            from.dumpOutAsLatin1(to.getOutputStream())
+            from.dumpErrAsLatin1(to.getErrorStream())
+        }
     }
-
-    @Override
-    public synchronized void flush() throws IOException {
-      if (hasOutputStream()) {
-        getOutputStream().flush();
-      }
-    }
-
-    @Override
-    public synchronized void close() throws IOException {
-      if (hasOutputStream()) {
-        getOutputStream().close();
-      }
-    }
-  }
 }

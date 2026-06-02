@@ -11,27 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
-
-import com.google.devtools.build.lib.util.TestType;
+import com.google.devtools.build.lib.util.TestType
 
 /**
  * Some static constants for deciding serialization behavior.
  */
-public class SerializationConstants {
+object SerializationConstants {
+    /** Number of threads in deserialization pools.  */
+    val DESERIALIZATION_POOL_SIZE: Int = 2 * java.lang.Runtime.getRuntime().availableProcessors()
 
-  /** Number of threads in deserialization pools. */
-  public static final int DESERIALIZATION_POOL_SIZE =
-      2 * Runtime.getRuntime().availableProcessors();
+    private val CHECK_SERIALIZATION = java.lang.System.getenv("DONT_SANITY_CHECK_SERIALIZATION") == null
 
-  private static final boolean CHECK_SERIALIZATION =
-      System.getenv("DONT_SANITY_CHECK_SERIALIZATION") == null;
-
-  /**
-   * Returns true if serialization should be validated on all Skyframe writes.
-   */
-  public static boolean shouldCheckSerializationBecauseInTest() {
-    return TestType.isInTest() && CHECK_SERIALIZATION;
-  }
+    /**
+     * Returns true if serialization should be validated on all Skyframe writes.
+     */
+    fun shouldCheckSerializationBecauseInTest(): Boolean {
+        return TestType.isInTest() && CHECK_SERIALIZATION
+    }
 }

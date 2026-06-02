@@ -368,7 +368,7 @@ public abstract class BuildIntegrationTestCase {
         try {
           FailureDetail failureDetail =
               FailureDetail.parseFrom(
-                  e.getSerializedFailureDetail(), ExtensionRegistryLite.getEmptyRegistry());
+                      e.serializedFailureDetail, ExtensionRegistryLite.getEmptyRegistry());
           throw new AbruptExitException(DetailedExitCode.of(failureDetail), e);
         } catch (InvalidProtocolBufferException ipbe) {
           throw new AbruptExitException(
@@ -484,8 +484,8 @@ public abstract class BuildIntegrationTestCase {
   private static void bestEffortDeleteTreesBelow(Path path, Predicate<String> canSkip)
       throws IOException {
     for (Dirent dirent : path.readdir(Symlinks.NOFOLLOW)) {
-      Path child = path.getRelative(dirent.getName());
-      if (dirent.getType() == Dirent.Type.DIRECTORY) {
+      Path child = path.getRelative(dirent.name);
+      if (dirent.type == Dirent.Type.DIRECTORY) {
         try {
           child.deleteTree();
         } catch (IOException e) {

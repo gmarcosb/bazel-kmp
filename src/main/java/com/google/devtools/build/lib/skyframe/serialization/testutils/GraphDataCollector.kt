@@ -11,82 +11,85 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.testutils;
+package com.google.devtools.build.lib.skyframe.serialization.testutils
 
-import com.google.devtools.build.lib.skyframe.serialization.testutils.FieldInfoCache.PrimitiveInfo;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.FieldInfoCache.PrimitiveInfo
 
 /**
- * Collects data from an object graph driven by {@link GraphTraverser}.
- *
- * <p>The {@code label} parameter, common to many of the methods here, is a label that the parent
+ * Collects data from an object graph driven by [GraphTraverser].
+ * 
+ * 
+ * The `label` parameter, common to many of the methods here, is a label that the parent
  * uses for a child object. For example, if the parent is an ordinary object and the child is one of
  * its members, the label is the field name. If the parent is a map, the label might be "key" or
  * "value".
  */
-interface GraphDataCollector<SinkT extends GraphDataCollector.Sink> {
-  /**
-   * Receiver for child data, scoped to a particular parent.
-   *
-   * <p>The accept methods are specific to the policy implementation.
-   */
-  interface Sink {
-    /** Called once all children have been traversed. */
-    void completeAggregate();
-  }
-
-  void outputNull(@Nullable String label, SinkT sink);
-
-  void outputSerializationConstant(@Nullable String label, Class<?> type, int tag, SinkT sink);
-
-  void outputWeakReference(@Nullable String label, SinkT sink);
-
-  void outputInlineObject(@Nullable String label, Class<?> type, Object obj, SinkT sink);
-
-  void outputPrimitive(PrimitiveInfo info, Object parent, SinkT sink);
-
-  /**
-   * Metadata about an object.
-   *
-   * @param description describes the type of the object
-   * @param traversalIndex the index at which this object was first encountered during traversal
-   */
-  record Descriptor(String description, int traversalIndex) {
-    @Override
-    public final String toString() {
-      return description + "(" + traversalIndex + ")";
+internal interface GraphDataCollector<SinkT : GraphDataCollector.Sink?> {
+    /**
+     * Receiver for child data, scoped to a particular parent.
+     * 
+     * 
+     * The accept methods are specific to the policy implementation.
+     */
+    interface Sink {
+        /** Called once all children have been traversed.  */
+        fun completeAggregate()
     }
-  }
 
-  /**
-   * Checks whether {@code obj} already exists in the cache.
-   *
-   * <p>If it exists in the cache, populates {@code sink} appropriately and returns null. Otherwise,
-   * returns a descriptor to be used (that does not include {@code label}).
-   */
-  @Nullable
-  Descriptor checkCache(@Nullable String label, Class<?> type, Object obj, SinkT sink);
+    fun outputNull(label: String?, sink: SinkT?)
 
-  void outputByteArray(@Nullable String label, Descriptor descriptor, byte[] bytes, SinkT sink);
+    fun outputSerializationConstant(label: String?, type: java.lang.Class<*>?, tag: Int, sink: SinkT?)
 
-  /**
-   * Outputs an array of elements of inlined type.
-   *
-   * <p>{@code arr} could be an array of primitives, which cannot be cast to {@code Object[]}.
-   */
-  void outputInlineArray(@Nullable String label, Descriptor descriptor, Object arr, SinkT sink);
+    fun outputWeakReference(label: String?, sink: SinkT?)
 
-  void outputEmptyAggregate(@Nullable String label, Descriptor descriptor, Object obj, SinkT sink);
+    fun outputInlineObject(label: String?, type: java.lang.Class<*>?, obj: Any?, sink: SinkT?)
 
-  /**
-   * Non-empty maps, collections, arrays and ordinary objects are handled using this method.
-   *
-   * <p>Initializes the output of the aggregate, {@code obj}. The returned {@link SinkT} should be
-   * used for output of {@code obj}'s children. {@link SinkT#completeAggregate} must be called after
-   * these children are complete.
-   *
-   * @param descriptor a description of {@code obj}, for example, a text description of its type
-   * @param sink where to write the aggregate
-   */
-  SinkT initAggregate(@Nullable String label, Descriptor descriptor, Object obj, SinkT sink);
+    fun outputPrimitive(info: PrimitiveInfo?, parent: Any?, sink: SinkT?)
+
+    /**
+     * Metadata about an object.
+     * 
+     * @param description describes the type of the object
+     * @param traversalIndex the index at which this object was first encountered during traversal
+     */
+    @kotlin.jvm.JvmRecord
+    data class Descriptor(val description: String?, val traversalIndex: Int) {
+        override fun toString(): String {
+            return description + "(" + traversalIndex + ")"
+        }
+    }
+
+    /**
+     * Checks whether `obj` already exists in the cache.
+     * 
+     * 
+     * If it exists in the cache, populates `sink` appropriately and returns null. Otherwise,
+     * returns a descriptor to be used (that does not include `label`).
+     */
+    fun checkCache(label: String?, type: java.lang.Class<*>?, obj: Any?, sink: SinkT?): Descriptor?
+
+    fun outputByteArray(label: String?, descriptor: Descriptor?, bytes: ByteArray?, sink: SinkT?)
+
+    /**
+     * Outputs an array of elements of inlined type.
+     * 
+     * 
+     * `arr` could be an array of primitives, which cannot be cast to `Object[]`.
+     */
+    fun outputInlineArray(label: String?, descriptor: Descriptor?, arr: Any?, sink: SinkT?)
+
+    fun outputEmptyAggregate(label: String?, descriptor: Descriptor?, obj: Any?, sink: SinkT?)
+
+    /**
+     * Non-empty maps, collections, arrays and ordinary objects are handled using this method.
+     * 
+     * 
+     * Initializes the output of the aggregate, `obj`. The returned [SinkT] should be
+     * used for output of `obj`'s children. [SinkT.completeAggregate] must be called after
+     * these children are complete.
+     * 
+     * @param descriptor a description of `obj`, for example, a text description of its type
+     * @param sink where to write the aggregate
+     */
+    fun initAggregate(label: String?, descriptor: Descriptor?, obj: Any?, sink: SinkT?): SinkT?
 }

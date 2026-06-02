@@ -11,55 +11,40 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
 
-import com.google.common.base.Preconditions;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.ConfiguredTargetValue;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.packages.Package;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
 
-/** Common base class for configured target values for rules and non-rules. */
-abstract class AbstractConfiguredTargetValue<T extends ConfiguredTarget>
-    implements ConfiguredTargetValue {
-  // This variable is non-final because it may be clear()ed to save memory. It is null only after
-  // clear(true) is called.
-  @Nullable private T configuredTarget;
+/** Common base class for configured target values for rules and non-rules.  */
+internal abstract class AbstractConfiguredTargetValue<T : ConfiguredTarget?>
+    (configuredTarget: T?, transitivePackages: NestedSet<Package.Metadata?>?) : ConfiguredTargetValue {
+    // This variable is non-final because it may be clear()ed to save memory. It is null only after
+    // clear(true) is called.
+    var configuredTarget: T?
+        private set
 
-  // May be null after clearing; because transitive packages are not tracked; or after
-  // deserialization.
-  @Nullable private transient NestedSet<Package.Metadata> transitivePackages;
+    // May be null after clearing; because transitive packages are not tracked; or after
+    // deserialization.
+    @Transient
+    private var transitivePackages: NestedSet<Package.Metadata?>?
 
-  AbstractConfiguredTargetValue(
-      T configuredTarget, @Nullable NestedSet<Package.Metadata> transitivePackages) {
-    this.configuredTarget = Preconditions.checkNotNull(configuredTarget);
-    this.transitivePackages = transitivePackages;
-  }
-
-  @Nullable // May be null after clearing.
-  @Override
-  public T getConfiguredTarget() {
-    return configuredTarget;
-  }
-
-  @Nullable
-  @Override
-  public NestedSet<Package.Metadata> getTransitivePackages() {
-    return transitivePackages;
-  }
-
-  @Override
-  public boolean isCleared() {
-    return this.configuredTarget == null;
-  }
-
-  @Override
-  public void clear(boolean clearEverything) {
-    if (clearEverything) {
-      this.configuredTarget = null;
+    init {
+        this.configuredTarget = com.google.common.base.Preconditions.checkNotNull<T?>(configuredTarget)
+        this.transitivePackages = transitivePackages
     }
-    this.transitivePackages = null;
-  }
+
+    public override fun getTransitivePackages(): NestedSet<Package.Metadata?>? {
+        return transitivePackages
+    }
+
+    val isCleared: Boolean
+        get() = this.configuredTarget == null
+
+    public override fun clear(clearEverything: Boolean) {
+        if (clearEverything) {
+            this.configuredTarget = null
+        }
+        this.transitivePackages = null
+    }
 }

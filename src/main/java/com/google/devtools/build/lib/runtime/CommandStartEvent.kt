@@ -11,10 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
-
-/** This event is fired when the Blaze command is started (clean, build, test, etc.). */
-public class CommandStartEvent {
-  public CommandStartEvent() {}
-}
+/** This event is fired when the Blaze command is started (clean, build, test, etc.).  */
+class CommandStartEvent 

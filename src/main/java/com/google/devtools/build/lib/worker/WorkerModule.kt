@@ -11,290 +11,291 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.worker;
+package com.google.devtools.build.lib.worker
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import com.google.devtools.build.lib.exec.ExecutionOptions
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.eventbus.Subscribe;
-import com.google.devtools.build.lib.buildtool.buildevent.BuildCompleteEvent;
-import com.google.devtools.build.lib.buildtool.buildevent.BuildStartingEvent;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.exec.ExecutionOptions;
-import com.google.devtools.build.lib.exec.RunfilesTreeUpdater;
-import com.google.devtools.build.lib.exec.SpawnStrategyRegistry;
-import com.google.devtools.build.lib.exec.local.LocalEnvProvider;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.BlazeWorkspace;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.commands.events.CleanStartingEvent;
-import com.google.devtools.build.lib.sandbox.AsynchronousTreeDeleter;
-import com.google.devtools.build.lib.sandbox.CgroupsInfo;
-import com.google.devtools.build.lib.sandbox.LinuxSandboxUtil;
-import com.google.devtools.build.lib.sandbox.SandboxOptions;
-import com.google.devtools.build.lib.sandbox.cgroups.VirtualCgroup;
-import com.google.devtools.build.lib.sandbox.cgroups.VirtualCgroupFactory;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.worker.SandboxedWorker.WorkerSandboxOptions;
-import com.google.devtools.common.options.OptionsBase;
-import java.io.IOException;
-import javax.annotation.Nullable;
+/** A module that adds the WorkerActionContextProvider to the available action context providers.  */
+class WorkerModule : BlazeModule() {
+    private var env: CommandEnvironment? = null
 
-/** A module that adds the WorkerActionContextProvider to the available action context providers. */
-public class WorkerModule extends BlazeModule {
+    @kotlin.jvm.JvmField
+    @com.google.common.annotations.VisibleForTesting
+    var workerFactory: WorkerFactory? = null
+    private var treeDeleter: AsynchronousTreeDeleter? = null
 
-  private static final String STALE_TRASH = "_stale_trash";
-  private CommandEnvironment env;
+    var config: WorkerPoolConfig? = null
 
-  @VisibleForTesting WorkerFactory workerFactory;
-  private AsynchronousTreeDeleter treeDeleter;
+    @kotlin.jvm.JvmField
+    @com.google.common.annotations.VisibleForTesting
+    var workerPool: WorkerPool? = null
+    private var workerLifecycleManager: WorkerLifecycleManager? = null
 
-  WorkerPoolConfig config;
-  @VisibleForTesting WorkerPool workerPool;
-  @Nullable private WorkerLifecycleManager workerLifecycleManager;
-
-  @Override
-  public Iterable<Class<? extends OptionsBase>> getCommandOptions(String commandName) {
-    return commandName.equals("build") ? ImmutableList.of(WorkerOptions.class) : ImmutableList.of();
-  }
-
-  @Override
-  public void beforeCommand(CommandEnvironment env) {
-    this.env = env;
-    env.getEventBus().register(this);
-    WorkerProcessMetricsCollector.instance().beforeCommand();
-    WorkerMultiplexerManager.beforeCommand(env.getReporter());
-  }
-
-  @Subscribe
-  public void cleanStarting(CleanStartingEvent event) {
-    if (workerPool != null) {
-      WorkerOptions options = event.getOptionsProvider().getOptions(WorkerOptions.class);
-      workerFactory.setReporter(options.getWorkerVerbose() ? env.getReporter() : null);
-      shutdownPool(
-          "Clean command is running, shutting down worker pool...",
-          /* alwaysLog= */ false,
-          options.getWorkerVerbose());
+    public override fun getCommandOptions(commandName: String): Iterable<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?> {
+        return if (commandName == "build") com.google.common.collect.ImmutableList.of<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?>(
+            WorkerOptions::class.java
+        ) else com.google.common.collect.ImmutableList.of<java.lang.Class<out com.google.devtools.common.options.OptionsBase?>?>()
     }
-  }
 
-  /**
-   * Handles updating worker factories and pools when a build starts. If either the workerDir or the
-   * sandboxing flag has changed, we need to recreate the factory, and we clear out logs at the same
-   * time. If options affecting the pools have changed, we just change the pools.
-   */
-  @Subscribe
-  public void buildStarting(BuildStartingEvent event) {
-    WorkerOptions options = checkNotNull(event.request().getOptions(WorkerOptions.class));
-    if (workerFactory != null) {
-      workerFactory.setReporter(options.getWorkerVerbose() ? env.getReporter() : null);
+    public override fun beforeCommand(env: CommandEnvironment) {
+        this.env = env
+        env.getEventBus().register(this)
+        WorkerProcessMetricsCollector.Companion.instance().beforeCommand()
+        WorkerMultiplexerManager.beforeCommand(env.getReporter())
     }
-    Path workerDir =
-        env.getOutputBase().getRelative(env.getRuntime().getProductName() + "-workers");
-    BlazeWorkspace workspace = env.getBlazeWorkspace();
-    WorkerSandboxOptions workerSandboxOptions;
-    SandboxOptions sandboxOptions = event.request().getOptions(SandboxOptions.class);
-    if (options.getSandboxHardening()) {
-      workerSandboxOptions =
-          new WorkerSandboxOptions(
-              LinuxSandboxUtil.getLinuxSandbox(workspace),
-              sandboxOptions.getSandboxFakeHostname(),
-              sandboxOptions.getSandboxFakeUsername(),
-              sandboxOptions.getSandboxDebug(),
-              ImmutableSet.copyOf(sandboxOptions.getSandboxTmpfsPath()),
-              ImmutableSet.copyOf(sandboxOptions.getSandboxWritablePath()),
-              sandboxOptions.getMemoryLimitMb(),
-              sandboxOptions.getInaccessiblePaths(env.getRuntime().getFileSystem()),
-              ImmutableMap.<String, String>builder()
-                  .putAll(sandboxOptions.getSandboxAdditionalMounts())
-                  .buildKeepingLast());
-    } else {
-      workerSandboxOptions = null;
-    }
-    Path trashBase = workerDir.getRelative(AsynchronousTreeDeleter.MOVED_TRASH_DIR);
-    if (treeDeleter == null) {
-      treeDeleter = new AsynchronousTreeDeleter(trashBase);
-      if (trashBase.exists()) {
-        removeStaleTrash(workerDir, trashBase);
-      }
-    }
-    VirtualCgroupFactory cgroupFactory =
-        OS.getCurrent() != OS.LINUX
-                || sandboxOptions == null
-                || !sandboxOptions.getUseNewCgroupImplementation()
-            ? null
-            : new VirtualCgroupFactory(
-                "worker_",
-                VirtualCgroup.getInstance(),
-                options.getSandboxHardening() ? sandboxOptions.getLimitsMap() : ImmutableMap.of(),
-                options.getUseCgroupsOnLinux());
 
-    WorkerFactory newWorkerFactory =
-        new WorkerFactory(workerDir, options, workerSandboxOptions, treeDeleter, cgroupFactory);
-    if (!newWorkerFactory.equals(workerFactory)) {
-      if (workerDir.exists()) {
-        try {
-          // Clean out old log files.
-          for (Path logFile : workerDir.getDirectoryEntries()) {
-            if (logFile.getBaseName().endsWith(".log")) {
-              try {
-                logFile.delete();
-              } catch (IOException e) {
-                env.getReporter()
-                    .handle(
-                        Event.warn(
-                            String.format(
-                                "Could not delete old worker log '%s': %s",
-                                logFile, e.getMessage())));
-              }
-            }
-          }
-        } catch (IOException e) {
-          env.getReporter()
-              .handle(
-                  Event.warn(
-                      String.format(
-                          "Could not delete old worker logs in '%s': %s",
-                          workerDir, e.getMessage())));
+    @com.google.common.eventbus.Subscribe
+    fun cleanStarting(event: CleanStartingEvent) {
+        if (workerPool != null) {
+            val options: WorkerOptions? = event.optionsProvider.getOptions<WorkerOptions?>(WorkerOptions::class.java)
+            workerFactory.setReporter(if (options.getWorkerVerbose()) env.getReporter() else null)
+            shutdownPool(
+                "Clean command is running, shutting down worker pool...",  /* alwaysLog= */
+                false,
+                options.getWorkerVerbose()
+            )
         }
-      }
-
-      shutdownPool(
-          "Worker factory configuration has changed, restarting worker pool...",
-          /* alwaysLog= */ true,
-          options.getWorkerVerbose());
-      workerFactory = newWorkerFactory;
-      workerFactory.setReporter(options.getWorkerVerbose() ? env.getReporter() : null);
     }
 
-    WorkerPoolConfig newConfig =
-        new WorkerPoolConfig(
-            options.getWorkerMaxInstances(), options.getWorkerMaxMultiplexInstances());
+    /**
+     * Handles updating worker factories and pools when a build starts. If either the workerDir or the
+     * sandboxing flag has changed, we need to recreate the factory, and we clear out logs at the same
+     * time. If options affecting the pools have changed, we just change the pools.
+     */
+    @com.google.common.eventbus.Subscribe
+    fun buildStarting(event: BuildStartingEvent) {
+        val options: WorkerOptions =
+            com.google.common.base.Preconditions.checkNotNull<T>(event.request().getOptions(WorkerOptions::class.java))
+        if (workerFactory != null) {
+            workerFactory.setReporter(if (options.getWorkerVerbose()) env.getReporter() else null)
+        }
+        val workerDir: com.google.devtools.build.lib.vfs.Path =
+            env.getOutputBase().getRelative(env.getRuntime().productName + "-workers")
+        val workspace: BlazeWorkspace? = env.getBlazeWorkspace()
+        val workerSandboxOptions: WorkerSandboxOptions?
+        val sandboxOptions: SandboxOptions? = event.request().getOptions(SandboxOptions::class.java)
+        if (options.getSandboxHardening()) {
+            workerSandboxOptions =
+                WorkerSandboxOptions(
+                    LinuxSandboxUtil.getLinuxSandbox(workspace),
+                    sandboxOptions.sandboxFakeHostname,
+                    sandboxOptions.sandboxFakeUsername,
+                    sandboxOptions.sandboxDebug,
+                    com.google.common.collect.ImmutableSet.copyOf(sandboxOptions.sandboxTmpfsPath),
+                    com.google.common.collect.ImmutableSet.copyOf(sandboxOptions.sandboxWritablePath),
+                    sandboxOptions.memoryLimitMb,
+                    sandboxOptions.getInaccessiblePaths(env.getRuntime().getFileSystem()),
+                    com.google.common.collect.ImmutableMap.builder<String?, String?>()
+                        .putAll(sandboxOptions.sandboxAdditionalMounts)
+                        .buildKeepingLast()
+                )
+        } else {
+            workerSandboxOptions = null
+        }
+        val trashBase: com.google.devtools.build.lib.vfs.Path =
+            workerDir.getRelative(AsynchronousTreeDeleter.MOVED_TRASH_DIR)
+        if (treeDeleter == null) {
+            treeDeleter = AsynchronousTreeDeleter(trashBase)
+            if (trashBase.exists()) {
+                removeStaleTrash(workerDir, trashBase)
+            }
+        }
+        val cgroupFactory: VirtualCgroupFactory? =
+            if (com.google.devtools.build.lib.util.OS.Companion.getCurrent() != com.google.devtools.build.lib.util.OS.LINUX || sandboxOptions == null || !sandboxOptions.useNewCgroupImplementation)
+                null
+            else
+                VirtualCgroupFactory(
+                    "worker_",
+                    VirtualCgroup.getInstance(),
+                    if (options.getSandboxHardening()) sandboxOptions.getLimitsMap() else com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                    options.getUseCgroupsOnLinux()
+                )
 
-    // If the config changed compared to the last run, we have to create a new pool.
-    if (!newConfig.equals(config)) {
-      shutdownPool(
-          "Worker pool configuration has changed, restarting worker pool...",
-          /* alwaysLog= */ true,
-          options.getWorkerVerbose());
+        val newWorkerFactory: WorkerFactory =
+            WorkerFactory(workerDir, options, workerSandboxOptions, treeDeleter, cgroupFactory)
+        if (newWorkerFactory != workerFactory) {
+            if (workerDir.exists()) {
+                try {
+                    // Clean out old log files.
+                    for (logFile in workerDir.getDirectoryEntries()) {
+                        if (logFile.getBaseName().endsWith(".log")) {
+                            try {
+                                logFile.delete()
+                            } catch (e: IOException) {
+                                env.getReporter()
+                                    .handle(
+                                        com.google.devtools.build.lib.events.Event.warn(
+                                            java.lang.String.format(
+                                                "Could not delete old worker log '%s': %s",
+                                                logFile, e.getMessage()
+                                            )
+                                        )
+                                    )
+                            }
+                        }
+                    }
+                } catch (e: IOException) {
+                    env.getReporter()
+                        .handle(
+                            com.google.devtools.build.lib.events.Event.warn(
+                                java.lang.String.format(
+                                    "Could not delete old worker logs in '%s': %s",
+                                    workerDir, e.getMessage()
+                                )
+                            )
+                        )
+                }
+            }
+
+            shutdownPool(
+                "Worker factory configuration has changed, restarting worker pool...",  /* alwaysLog= */
+                true,
+                options.getWorkerVerbose()
+            )
+            workerFactory = newWorkerFactory
+            workerFactory.setReporter(if (options.getWorkerVerbose()) env.getReporter() else null)
+        }
+
+        val newConfig: WorkerPoolConfig =
+            WorkerPoolConfig(
+                options.getWorkerMaxInstances(), options.getWorkerMaxMultiplexInstances()
+            )
+
+        // If the config changed compared to the last run, we have to create a new pool.
+        if (newConfig != config) {
+            shutdownPool(
+                "Worker pool configuration has changed, restarting worker pool...",  /* alwaysLog= */
+                true,
+                options.getWorkerVerbose()
+            )
+        }
+
+        if (workerPool == null) {
+            workerPool = WorkerPoolImpl(workerFactory, newConfig)
+            config = newConfig
+            // If workerPool is restarted then we should recreate metrics.
+            WorkerProcessMetricsCollector.Companion.instance().clear()
+        }
+
+        // Override the flag value if we can't actually use cgroups so that we at least fallback to ps.
+        val useCgroupsOnLinux =
+            com.google.devtools.build.lib.util.OS.Companion.getCurrent() == com.google.devtools.build.lib.util.OS.LINUX && options.getUseCgroupsOnLinux()
+                    && (if (sandboxOptions == null || !sandboxOptions.useNewCgroupImplementation)
+                CgroupsInfo.isSupported()
+            else
+                VirtualCgroup.getInstance().memory() != null)
+        WorkerProcessMetricsCollector.Companion.instance().setUseCgroupsOnLinux(useCgroupsOnLinux)
+
+        // Start collecting after a pool is defined
+        workerLifecycleManager = WorkerLifecycleManager(workerPool, options, env.getReporter())
+        workerLifecycleManager.setDaemon(true)
+        workerLifecycleManager.start()
+
+        // Reset the pool at the beginning of each build.
+        workerPool.reset()
     }
 
-    if (workerPool == null) {
-      workerPool = new WorkerPoolImpl(workerFactory, newConfig);
-      config = newConfig;
-      // If workerPool is restarted then we should recreate metrics.
-      WorkerProcessMetricsCollector.instance().clear();
+    private fun removeStaleTrash(
+        workerDir: com.google.devtools.build.lib.vfs.Path?,
+        trashBase: com.google.devtools.build.lib.vfs.Path
+    ) {
+        try {
+            // The AsynchronousTreeDeleter relies on a counter for naming directories that will be
+            // moved out of the way before being deleted asynchronously.
+            // If there is trash on disk from a previous bazel server instance, the dirs will have
+            // names not synced with the counter, therefore we may run the risk of moving a directory
+            // in this server instance to a path of an existing directory. To solve this we rename
+            // the trash directory that was on disk, create a new empty trash directory and delete
+            // the old trash via the AsynchronousTreeDeleter. Before deletion the stale trash will be
+            // moved to a directory named `0` under MOVED_TRASH_DIR.
+            val staleTrash: com.google.devtools.build.lib.vfs.Path? = trashBase.getParentDirectory().getChild(
+                STALE_TRASH
+            )
+            trashBase.renameTo(staleTrash)
+            trashBase.createDirectory()
+            treeDeleter.deleteTree(staleTrash)
+        } catch (e: IOException) {
+            env.getReporter()
+                .handle(
+                    com.google.devtools.build.lib.events.Event.error(
+                        java.lang.String.format("Could not trash dir in '%s': %s", workerDir, e.getMessage())
+                    )
+                )
+        }
     }
 
-    // Override the flag value if we can't actually use cgroups so that we at least fallback to ps.
-    boolean useCgroupsOnLinux =
-        OS.getCurrent() == OS.LINUX
-            && options.getUseCgroupsOnLinux()
-            && ((sandboxOptions == null || !sandboxOptions.getUseNewCgroupImplementation())
-                ? CgroupsInfo.isSupported()
-                : VirtualCgroup.getInstance().memory() != null);
-    WorkerProcessMetricsCollector.instance().setUseCgroupsOnLinux(useCgroupsOnLinux);
-
-    // Start collecting after a pool is defined
-    workerLifecycleManager = new WorkerLifecycleManager(workerPool, options, env.getReporter());
-    workerLifecycleManager.setDaemon(true);
-    workerLifecycleManager.start();
-
-    // Reset the pool at the beginning of each build.
-    workerPool.reset();
-  }
-
-  private void removeStaleTrash(Path workerDir, Path trashBase) {
-    try {
-      // The AsynchronousTreeDeleter relies on a counter for naming directories that will be
-      // moved out of the way before being deleted asynchronously.
-      // If there is trash on disk from a previous bazel server instance, the dirs will have
-      // names not synced with the counter, therefore we may run the risk of moving a directory
-      // in this server instance to a path of an existing directory. To solve this we rename
-      // the trash directory that was on disk, create a new empty trash directory and delete
-      // the old trash via the AsynchronousTreeDeleter. Before deletion the stale trash will be
-      // moved to a directory named `0` under MOVED_TRASH_DIR.
-      Path staleTrash = trashBase.getParentDirectory().getChild(STALE_TRASH);
-      trashBase.renameTo(staleTrash);
-      trashBase.createDirectory();
-      treeDeleter.deleteTree(staleTrash);
-    } catch (IOException e) {
-      env.getReporter()
-          .handle(
-              Event.error(
-                  String.format("Could not trash dir in '%s': %s", workerDir, e.getMessage())));
+    public override fun registerSpawnStrategies(
+        registryBuilder: SpawnStrategyRegistry.Builder, env: CommandEnvironment
+    ) {
+        com.google.common.base.Preconditions.checkNotNull<WorkerPool?>(workerPool)
+        val localEnvProvider: LocalEnvProvider? = LocalEnvProvider.forCurrentOs(env.getClientEnv())
+        val spawnRunner: WorkerSpawnRunner =
+            WorkerSpawnRunner(
+                env.getExecRoot(),
+                workerPool,
+                env.getReporter(),
+                localEnvProvider,
+                env.getBlazeWorkspace().getBinTools(),
+                env.getLocalResourceManager(),
+                RunfilesTreeUpdater.forCommandEnvironment(env),
+                env.getOptions().getOptions(WorkerOptions::class.java),
+                WorkerProcessMetricsCollector.Companion.instance(),
+                env.getClock()
+            )
+        val executionOptions: ExecutionOptions =
+            com.google.common.base.Preconditions.checkNotNull<T>(
+                env.getOptions().getOptions(ExecutionOptions::class.java)
+            )
+        registryBuilder.registerStrategy(
+            WorkerSpawnStrategy(spawnRunner, executionOptions), "worker"
+        )
     }
-  }
 
-  @Override
-  public void registerSpawnStrategies(
-      SpawnStrategyRegistry.Builder registryBuilder, CommandEnvironment env) {
-    checkNotNull(workerPool);
-    LocalEnvProvider localEnvProvider = LocalEnvProvider.forCurrentOs(env.getClientEnv());
-    WorkerSpawnRunner spawnRunner =
-        new WorkerSpawnRunner(
-            env.getExecRoot(),
-            workerPool,
-            env.getReporter(),
-            localEnvProvider,
-            env.getBlazeWorkspace().getBinTools(),
-            env.getLocalResourceManager(),
-            RunfilesTreeUpdater.forCommandEnvironment(env),
-            env.getOptions().getOptions(WorkerOptions.class),
-            WorkerProcessMetricsCollector.instance(),
-            env.getClock());
-    ExecutionOptions executionOptions =
-        checkNotNull(env.getOptions().getOptions(ExecutionOptions.class));
-    registryBuilder.registerStrategy(
-        new WorkerSpawnStrategy(spawnRunner, executionOptions), "worker");
-  }
-
-  @Subscribe
-  public void buildComplete(BuildCompleteEvent event) throws InterruptedException {
-    WorkerOptions options = env.getOptions().getOptions(WorkerOptions.class);
-    if (options != null && options.getWorkerQuitAfterBuild()) {
-      shutdownPool(
-          "Build completed, shutting down worker pool...",
-          /* alwaysLog= */ false,
-          options.getWorkerVerbose());
+    @com.google.common.eventbus.Subscribe
+    @Throws(java.lang.InterruptedException::class)
+    fun buildComplete(event: BuildCompleteEvent?) {
+        val options: WorkerOptions? = env.getOptions().getOptions(WorkerOptions::class.java)
+        if (options != null && options.getWorkerQuitAfterBuild()) {
+            shutdownPool(
+                "Build completed, shutting down worker pool...",  /* alwaysLog= */
+                false,
+                options.getWorkerVerbose()
+            )
+        }
+        if (workerLifecycleManager != null) {
+            workerLifecycleManager.stopProcessing()
+            workerLifecycleManager.interrupt()
+            workerLifecycleManager = null
+        }
+        WorkerProcessMetricsCollector.Companion.instance().clearKilledWorkerProcessMetrics()
     }
-    if (workerLifecycleManager != null) {
-      workerLifecycleManager.stopProcessing();
-      workerLifecycleManager.interrupt();
-      workerLifecycleManager = null;
+
+    /** Shuts down the worker pool and sets {#code workerPool} to null.  */
+    private fun shutdownPool(reason: String, alwaysLog: Boolean, workerVerbose: Boolean) {
+        com.google.common.base.Preconditions.checkArgument(!reason.isEmpty())
+
+        if (workerPool != null) {
+            if (workerVerbose || alwaysLog) {
+                env.getReporter().handle(com.google.devtools.build.lib.events.Event.info(reason))
+            }
+            workerPool.close()
+            workerPool = null
+        }
     }
-    WorkerProcessMetricsCollector.instance().clearKilledWorkerProcessMetrics();
-  }
 
-  /** Shuts down the worker pool and sets {#code workerPool} to null. */
-  private void shutdownPool(String reason, boolean alwaysLog, boolean workerVerbose) {
-    Preconditions.checkArgument(!reason.isEmpty());
+    public override fun afterCommand() {
+        this.env = null
 
-    if (workerPool != null) {
-      if (workerVerbose || alwaysLog) {
-        env.getReporter().handle(Event.info(reason));
-      }
-      workerPool.close();
-      workerPool = null;
+        if (this.workerFactory != null) {
+            this.workerFactory.setReporter(null)
+        }
+        WorkerMultiplexerManager.afterCommand()
     }
-  }
 
-  @Override
-  public void afterCommand() {
-    this.env = null;
+    val workerPoolConfig: WorkerPoolConfig?
+        get() = config
 
-    if (this.workerFactory != null) {
-      this.workerFactory.setReporter(null);
+    companion object {
+        private const val STALE_TRASH = "_stale_trash"
     }
-    WorkerMultiplexerManager.afterCommand();
-  }
-
-  public WorkerPoolConfig getWorkerPoolConfig() {
-    return config;
-  }
 }

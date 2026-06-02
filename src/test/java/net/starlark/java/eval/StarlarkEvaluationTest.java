@@ -1954,7 +1954,7 @@ public final class StarlarkEvaluationTest {
     List<String> prints = new ArrayList<>();
     try (Mutability mu = Mutability.create("test")) {
       StarlarkThread thread = StarlarkThread.createTransient(mu, StarlarkSemantics.DEFAULT);
-      thread.setPrintHandler((unused, msg) -> prints.add(msg));
+      thread.printHandler = (unused, msg) -> prints.add(msg);
       Starlark.execFile(input, FileOptions.DEFAULT, Module.create(), thread);
     }
     assertThat(prints).containsExactly("hello", "a b", "axb").inOrder();

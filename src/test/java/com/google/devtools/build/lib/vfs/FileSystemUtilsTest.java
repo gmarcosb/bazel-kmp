@@ -795,8 +795,8 @@ public class FileSystemUtilsTest {
     byte[] actual = FileSystemUtils.readContent(file);
     assertThat(actual).isEqualTo(content);
     FileStatus stat = file.stat();
-    assertThat(stat.getLastChangeTime()).isEqualTo(1000);
-    assertThat(stat.getLastModifiedTime()).isEqualTo(1000);
+    assertThat(stat.lastChangeTime).isEqualTo(1000);
+    assertThat(stat.lastModifiedTime).isEqualTo(1000);
 
     clock.advanceMillis(1000);
 
@@ -804,8 +804,8 @@ public class FileSystemUtilsTest {
     FileSystemUtils.maybeUpdateContent(file, content);
     assertThat(actual).isEqualTo(content);
     stat = file.stat();
-    assertThat(stat.getLastChangeTime()).isEqualTo(1000);
-    assertThat(stat.getLastModifiedTime()).isEqualTo(1000);
+    assertThat(stat.lastChangeTime).isEqualTo(1000);
+    assertThat(stat.lastModifiedTime).isEqualTo(1000);
 
     clock.advanceMillis(1000);
 
@@ -816,8 +816,8 @@ public class FileSystemUtilsTest {
     actual = FileSystemUtils.readContent(file);
     assertThat(actual).isEqualTo(content);
     stat = file.stat();
-    assertThat(stat.getLastChangeTime()).isEqualTo(3000);
-    assertThat(stat.getLastModifiedTime()).isEqualTo(3000);
+    assertThat(stat.lastChangeTime).isEqualTo(3000);
+    assertThat(stat.lastModifiedTime).isEqualTo(3000);
   }
 
   @Test
@@ -964,8 +964,8 @@ public class FileSystemUtilsTest {
     FileSystemUtils.createHardLink(linkPath, originalPath);
     assertThat(originalPath.exists()).isTrue();
     assertThat(linkPath.exists()).isTrue();
-    assertThat(fileSystem.stat(linkPath.asFragment(), false).getNodeId())
-        .isEqualTo(fileSystem.stat(originalPath.asFragment(), false).getNodeId());
+    assertThat(fileSystem.stat(linkPath.asFragment(), false).nodeId)
+        .isEqualTo(fileSystem.stat(originalPath.asFragment(), false).nodeId);
   }
 
   @Test
@@ -1005,12 +1005,12 @@ public class FileSystemUtilsTest {
     assertThat(linkPath1.exists()).isTrue();
     assertThat(linkPath2.exists()).isTrue();
     assertThat(linkPath3.exists()).isTrue();
-    assertThat(fileSystem.stat(linkPath1.asFragment(), false).getNodeId())
-        .isEqualTo(fileSystem.stat(originalPath1.asFragment(), false).getNodeId());
-    assertThat(fileSystem.stat(linkPath2.asFragment(), false).getNodeId())
-        .isEqualTo(fileSystem.stat(originalPath2.asFragment(), false).getNodeId());
-    assertThat(fileSystem.stat(linkPath3.asFragment(), false).getNodeId())
-        .isEqualTo(fileSystem.stat(originalPath3.asFragment(), false).getNodeId());
+    assertThat(fileSystem.stat(linkPath1.asFragment(), false).nodeId)
+        .isEqualTo(fileSystem.stat(originalPath1.asFragment(), false).nodeId);
+    assertThat(fileSystem.stat(linkPath2.asFragment(), false).nodeId)
+        .isEqualTo(fileSystem.stat(originalPath2.asFragment(), false).nodeId);
+    assertThat(fileSystem.stat(linkPath3.asFragment(), false).nodeId)
+        .isEqualTo(fileSystem.stat(originalPath3.asFragment(), false).nodeId);
   }
 
   @Test

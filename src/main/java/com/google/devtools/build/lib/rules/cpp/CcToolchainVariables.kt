@@ -11,1049 +11,1102 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.cpp
 
-package com.google.devtools.build.lib.rules.cpp;
-
-import static com.google.common.base.Preconditions.checkArgument;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Collections2;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Interner;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Sets;
-import com.google.common.collect.Sets.SetView;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.PathMapper;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.concurrent.BlazeInterners;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.starlarkbuildapi.cpp.CcToolchainVariablesApi;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.Stack;
-import java.util.concurrent.ConcurrentHashMap;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.NoneType;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.Structure;
+import com.google.devtools.build.lib.actions.Artifact
 
 /**
  * Configured build variables usable by the toolchain configuration.
- *
- * <p>TODO(b/32655571): Investigate cleanup once implicit iteration is not needed. Variables
+ * 
+ * 
+ * TODO(b/32655571): Investigate cleanup once implicit iteration is not needed. Variables
  * instance could serve as a top level View used to expand all flag_groups.
  */
-@Immutable
-public abstract class CcToolchainVariables implements CcToolchainVariablesApi {
-  /**
-   * A piece of a single string value.
-   *
-   * <p>A single value can contain a combination of text and variables (for example "-f
-   * %{var1}/%{var2}"). We split the string into chunks, where each chunk represents either a text
-   * snippet, or a variable that is to be replaced.
-   */
-  interface StringChunk {
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+abstract class CcToolchainVariables : CcToolchainVariablesApi {
     /**
-     * Expands this chunk.
-     *
-     * @param variables binding of variable names to their values for a single flag expansion.
+     * A piece of a single string value.
+     * 
+     * 
+     * A single value can contain a combination of text and variables (for example "-f
+     * %{var1}/%{var2}"). We split the string into chunks, where each chunk represents either a text
+     * snippet, or a variable that is to be replaced.
      */
-    String expand(CcToolchainVariables variables, PathMapper pathMapper) throws ExpansionException;
-  }
-
-  /** A plain text chunk of a string (containing no variables). */
-  @Immutable
-  @AutoCodec
-  @VisibleForSerialization
-  record StringLiteralChunk(String text) implements StringChunk {
-
-    @Override
-    public String expand(CcToolchainVariables variables, PathMapper pathMapper) {
-      return text;
-    }
-  }
-
-  /** A chunk of a string value into which a variable should be expanded. */
-  @Immutable
-  @AutoCodec
-  @VisibleForSerialization
-  record VariableChunk(String variableName) implements StringChunk {
-
-    @Override
-    public String expand(CcToolchainVariables variables, PathMapper pathMapper)
-        throws ExpansionException {
-      // We check all variables in FlagGroup.expandCommandLine.
-      // If we arrive here with the variable not being available, the variable was provided, but
-      // the nesting level of the NestedSequence was deeper than the nesting level of the flag
-      // groups.
-      return variables.getStringVariable(variableName, pathMapper);
-    }
-  }
-
-  /** A chunk of an exec path that can be mapped upon expansion. */
-  @Immutable
-  @AutoCodec
-  @VisibleForSerialization
-  record RelativePathChunk(PathFragment execPath) implements StringChunk {
-
-    RelativePathChunk {
-      checkArgument(!execPath.isAbsolute(), "execPath is not relative: %s", execPath);
+    internal interface StringChunk {
+        /**
+         * Expands this chunk.
+         * 
+         * @param variables binding of variable names to their values for a single flag expansion.
+         */
+        @Throws(com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException::class)
+        fun expand(variables: CcToolchainVariables?, pathMapper: PathMapper?): String?
     }
 
-    @Override
-    public String expand(CcToolchainVariables variables, PathMapper pathMapper) {
-      return pathMapper.map(execPath).getPathString();
-    }
-  }
-
-  /**
-   * Parser for toolchain string values.
-   *
-   * <p>A string value contains a snippet of text supporting variable expansion. For example, a
-   * string value "-f %{var1}/%{var2}" will expand the values of the variables "var1" and "var2" in
-   * the corresponding places in the string.
-   *
-   * <p>The {@code StringValueParser} takes a string and parses it into a list of {@link
-   * StringChunk} objects, where each chunk represents either a snippet of text or a variable to be
-   * expanded. In the above example, the resulting chunks would be ["-f ", var1, "/", var2].
-   *
-   * <p>To get a literal percent character, "%%" can be used in the string.
-   */
-  public static class StringValueParser {
-
-    private static final String PATH_PREFIX = "path:";
-
-    private final String value;
-
-    /** The current position in {@value} during parsing. */
-    private int current = 0;
-
-    private final ImmutableList.Builder<StringChunk> chunks = ImmutableList.builder();
-    private final ImmutableSet.Builder<String> usedVariables = ImmutableSet.builder();
-
-    public StringValueParser(String value) throws EvalException {
-      this.value = value;
-      parse();
-    }
-
-    /** Returns the parsed chunks for this string. */
-    public ImmutableList<StringChunk> getChunks() {
-      return chunks.build();
-    }
-
-    /**
-     * Parses the string.
-     *
-     * @throws EvalException if there is a parsing error.
-     */
-    private void parse() throws EvalException {
-      while (current < value.length()) {
-        if (atVariableStart()) {
-          parseVariableChunk();
-        } else {
-          parseStringChunk();
+    /** A plain text chunk of a string (containing no variables).  */
+    @com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+    @AutoCodec
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    @kotlin.jvm.JvmRecord
+    internal data class StringLiteralChunk(val text: String?) : StringChunk {
+        override fun expand(variables: CcToolchainVariables?, pathMapper: PathMapper?): String? {
+            return text
         }
-      }
     }
 
-    /**
-     * @return whether the current position is the start of a variable.
-     */
-    private boolean atVariableStart() {
-      // We parse a variable when value starts with '%', but not '%%'.
-      return value.charAt(current) == '%'
-          && (current + 1 >= value.length() || value.charAt(current + 1) != '%');
-    }
-
-    /**
-     * Parses a chunk of text until the next '%', which indicates either an escaped literal '%' or a
-     * variable.
-     */
-    private void parseStringChunk() {
-      int start = current;
-      // We only parse string chunks starting with '%' if they also start with '%%'.
-      // In that case, we want to have a single '%' in the string, so we start at the second
-      // character.
-      // Note that for strings like "abc%%def" this will lead to two string chunks, the first
-      // referencing the subtring "abc", and a second referencing the substring "%def".
-      if (value.charAt(current) == '%') {
-        current = current + 1;
-        start = current;
-      }
-      current = value.indexOf('%', current + 1);
-      if (current == -1) {
-        current = value.length();
-      }
-      String text = value.substring(start, current);
-      chunks.add(new StringLiteralChunk(text));
-    }
-
-    /**
-     * Parses a variable to be expanded.
-     *
-     * @throws EvalException if there is a parsing error.
-     */
-    private void parseVariableChunk() throws EvalException {
-      current = current + 1;
-      if (current >= value.length() || value.charAt(current) != '{') {
-        abort("expected '{'");
-      }
-      current = current + 1;
-      if (current >= value.length() || value.charAt(current) == '}') {
-        abort("expected variable name");
-      }
-      int end = value.indexOf('}', current);
-      final String name = value.substring(current, end);
-      if (name.startsWith(PATH_PREFIX)) {
-        String path = name.substring(PATH_PREFIX.length());
-        if (path.isEmpty()) {
-          abort("expected path after 'path:'");
+    /** A chunk of a string value into which a variable should be expanded.  */
+    @com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+    @AutoCodec
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    @kotlin.jvm.JvmRecord
+    internal data class VariableChunk(val variableName: String?) : StringChunk {
+        @Throws(com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException::class)
+        override fun expand(variables: CcToolchainVariables, pathMapper: PathMapper?): String? {
+            // We check all variables in FlagGroup.expandCommandLine.
+            // If we arrive here with the variable not being available, the variable was provided, but
+            // the nesting level of the NestedSequence was deeper than the nesting level of the flag
+            // groups.
+            return variables.getStringVariable(variableName!!, pathMapper)
         }
-        // The provided path is expected to be an exec path, which always uses '/' as a separator
-        // and is relative. Ensure that it is parsed consistently.
-        var pathFragment = PathFragment.createForOs(path, OS.LINUX);
-        if (pathFragment.isAbsolute()) {
-          abort("expected relative Unix-style path after 'path:'");
+    }
+
+    /** A chunk of an exec path that can be mapped upon expansion.  */
+    @com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+    @AutoCodec
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    internal class RelativePathChunk(execPath: PathFragment?) : StringChunk {
+        override fun expand(variables: CcToolchainVariables?, pathMapper: PathMapper): String {
+            return pathMapper.map(execPath).getPathString()
         }
-        chunks.add(new RelativePathChunk(pathFragment));
-      } else {
-        usedVariables.add(name);
-        chunks.add(new VariableChunk(name));
-      }
-      current = end + 1;
-    }
 
-    /**
-     * @throws EvalException with the given error text, adding information about the current
-     *     position in the string.
-     */
-    private void abort(String error) throws EvalException {
-      throw Starlark.errorf(
-          "Invalid toolchain configuration: %s at position %s while parsing a flag containing '%s'",
-          error, current, value);
-    }
-  }
+        val execPath: PathFragment?
 
-  /** A flag or flag group that can be expanded under a set of variables. */
-  public interface Expandable {
-    /**
-     * Expands the current expandable under the given {@code view}, adding new flags to {@code
-     * commandLine}.
-     *
-     * <p>The {@code variables} controls which variables are visible during the expansion and allows
-     * to recursively expand nested flag groups.
-     */
-    void expand(
-        CcToolchainVariables variables,
-        @Nullable InputMetadataProvider inputMetadataProvider,
-        PathMapper pathMapper,
-        List<String> commandLine)
-        throws ExpansionException;
-  }
-
-  /** Returns an empty variables instance. */
-  public static CcToolchainVariables empty() {
-    return EmptyVariablesHolder.EMPTY;
-  }
-
-  /**
-   * Avoids cyclic class initialization issues with {@link MapVariables}.
-   *
-   * <p>Without this holder, there would be a cycle here. {@link MapVariables} depends on its parent
-   * class {@link CcToolchainVariables} and {@link CcToolchainVariables} would depend on {@link
-   * MapVariables} via {@link #EMPTY}.
-   *
-   * <p>See <a
-   * href="https://en.wikipedia.org/wiki/Initialization-on-demand_holder_idiom">Initialization on
-   * demand idiom</a>.
-   */
-  private static class EmptyVariablesHolder {
-    private static final CcToolchainVariables EMPTY = builder().build();
-  }
-
-  private static final Object NULL_MARKER = new Object();
-
-  // Values in this cache are either VariableValue, String error message, or NULL_MARKER.
-  //
-  // It is initialized lazily.
-  private transient volatile Map<String, Object> structuredVariableCache;
-
-  /**
-   * Retrieves a string sequence variable named {@code variableName} from {@code variables} and
-   * converts it into a list of plain strings.
-   *
-   * <p>Throws {@link ExpansionException} when the variable is not a string sequence.
-   */
-  public static ImmutableList<String> toStringList(
-      CcToolchainVariables variables, String variableName, PathMapper pathMapper)
-      throws ExpansionException {
-    ImmutableList.Builder<String> result = ImmutableList.builder();
-    for (VariableValue value :
-        getSequenceValue(variableName, variables.getVariable(variableName, pathMapper))) {
-      result.add(value.getStringValue(variableName, pathMapper));
-    }
-    return result.build();
-  }
-
-  /**
-   * Gets a variable value named {@code name}. Supports accessing fields in structures (e.g.
-   * 'libraries_to_link.interface_libraries')
-   *
-   * @throws ExpansionException when no such variable or no such field are present, or when
-   *     accessing a field of non-structured variable
-   */
-  VariableValue getVariable(String name, PathMapper pathMapper) throws ExpansionException {
-    return lookupVariable(
-        name, /* throwOnMissingVariable= */ true, /* inputMetadataProvider= */ null, pathMapper);
-  }
-
-  VariableValue getVariable(
-      String name, @Nullable InputMetadataProvider inputMetadataProvider, PathMapper pathMapper)
-      throws ExpansionException {
-    return lookupVariable(
-        name, /* throwOnMissingVariable= */ true, inputMetadataProvider, pathMapper);
-  }
-
-  /**
-   * Looks up a variable named {@code name} or return a reason why the variable was not found.
-   * Supports accessing fields in structures.
-   */
-  @Nullable
-  private VariableValue lookupVariable(
-      String name,
-      boolean throwOnMissingVariable,
-      @Nullable InputMetadataProvider inputMetadataProvider,
-      PathMapper pathMapper)
-      throws ExpansionException {
-    VariableValue var = getNonStructuredVariable(name);
-    if (var != null) {
-      return var;
-    }
-
-    if (!name.contains(".")) {
-      if (throwOnMissingVariable) {
-        throw new ExpansionException(
-            String.format(
-                "Invalid toolchain configuration: Cannot find variable named '%s'.", name));
-      }
-      return null;
-    }
-
-    if (structuredVariableCache == null) {
-      synchronized (this) {
-        if (structuredVariableCache == null) {
-          structuredVariableCache = new ConcurrentHashMap<>();
+        init {
+            this.execPath = execPath
+            com.google.common.base.Preconditions.checkArgument(
+                !execPath.isAbsolute(),
+                "execPath is not relative: %s",
+                execPath
+            )
         }
-      }
     }
 
-    Object variableOrError = structuredVariableCache.get(name);
-    if (variableOrError == null) {
-      try {
-        VariableValue variable =
-            getStructureVariable(name, throwOnMissingVariable, inputMetadataProvider, pathMapper);
-        variableOrError = variable != null ? variable : NULL_MARKER;
-      } catch (ExpansionException e) {
-        if (throwOnMissingVariable) {
-          variableOrError = e.getMessage();
-        } else {
-          throw new IllegalStateException(
-              "Should not happen - call to getStructuredVariable threw when asked not to.", e);
+    /**
+     * Parser for toolchain string values.
+     * 
+     * 
+     * A string value contains a snippet of text supporting variable expansion. For example, a
+     * string value "-f %{var1}/%{var2}" will expand the values of the variables "var1" and "var2" in
+     * the corresponding places in the string.
+     * 
+     * 
+     * The `StringValueParser` takes a string and parses it into a list of [ ] objects, where each chunk represents either a snippet of text or a variable to be
+     * expanded. In the above example, the resulting chunks would be ["-f ", var1, "/", var2].
+     * 
+     * 
+     * To get a literal percent character, "%%" can be used in the string.
+     */
+    class StringValueParser(private val value: String) {
+        /** The current position in {@value} during parsing.  */
+        private var current = 0
+
+        private val chunks: com.google.common.collect.ImmutableList.Builder<StringChunk?> =
+            com.google.common.collect.ImmutableList.builder<StringChunk?>()
+        private val usedVariables: com.google.common.collect.ImmutableSet.Builder<String?> =
+            com.google.common.collect.ImmutableSet.builder<String?>()
+
+        init {
+            parse()
         }
-      }
-      structuredVariableCache.putIfAbsent(name, variableOrError);
-    }
 
-    if (variableOrError instanceof VariableValue variableValue) {
-      return variableValue;
-    }
-    if (throwOnMissingVariable) {
-      throw new ExpansionException(
-          variableOrError instanceof String string
-              ? string
-              : String.format(
-                  "Invalid toolchain configuration: Cannot find variable named '%s'.", name));
-    }
-    return null;
-  }
-
-  @Nullable
-  private VariableValue getStructureVariable(
-      String name,
-      boolean throwOnMissingVariable,
-      @Nullable InputMetadataProvider inputMetadataProvider,
-      PathMapper pathMapper)
-      throws ExpansionException {
-    if (!name.contains(".")) {
-      return null;
-    }
-
-    Stack<String> fieldsToAccess = new Stack<>();
-    String structPath = name;
-    VariableValue variable;
-
-    do {
-      fieldsToAccess.push(structPath.substring(structPath.lastIndexOf('.') + 1));
-      structPath = structPath.substring(0, structPath.lastIndexOf('.'));
-      variable = getNonStructuredVariable(structPath);
-    } while (variable == null && structPath.contains("."));
-
-    if (variable == null) {
-      return null;
-    }
-
-    while (!fieldsToAccess.empty()) {
-      String field = fieldsToAccess.pop();
-      variable =
-          variable.getFieldValue(
-              structPath, field, inputMetadataProvider, pathMapper, throwOnMissingVariable);
-      if (variable == null) {
-        if (throwOnMissingVariable) {
-          throw new ExpansionException(
-              String.format(
-                  "Invalid toolchain configuration: Cannot expand variable '%s.%s': structure %s "
-                      + "doesn't have a field named '%s'",
-                  structPath, field, structPath, field));
-        } else {
-          return null;
+        /** Returns the parsed chunks for this string.  */
+        fun getChunks(): com.google.common.collect.ImmutableList<StringChunk?> {
+            return chunks.build()
         }
-      }
-    }
-    return variable;
-  }
 
-  public String getStringVariable(String variableName, PathMapper pathMapper)
-      throws ExpansionException {
-    return getVariable(variableName, /* inputMetadataProvider= */ null, pathMapper)
-        .getStringValue(variableName, pathMapper);
-  }
-
-  /** Returns whether {@code variable} is set. */
-  public boolean isAvailable(String variable) {
-    return isAvailable(variable, /* inputMetadataProvider= */ null);
-  }
-
-  boolean isAvailable(String variable, @Nullable InputMetadataProvider inputMetadataProvider) {
-    try {
-      // Availability doesn't depend on the path mapper.
-      return lookupVariable(
-              variable, /* throwOnMissingVariable= */ false, inputMetadataProvider, PathMapper.NOOP)
-          != null;
-    } catch (ExpansionException e) {
-      throw new IllegalStateException(
-          "Should not happen - call to lookupVariable threw when asked not to.", e);
-    }
-  }
-
-  abstract Set<String> getVariableKeys();
-
-  abstract void addVariablesToMap(Map<String, Object> variablesMap);
-
-  @Nullable
-  abstract VariableValue getNonStructuredVariable(String name);
-
-  /**
-   * Value of a build variable exposed to the CROSSTOOL used for flag expansion.
-   *
-   * <p>{@link VariableValue} represent either primitive values or an arbitrarily deeply nested
-   * recursive structures or sequences. Since there are builds with millions of values, some
-   * implementations might exist only to optimize memory usage.
-   *
-   * <p>Implementations must be immutable and without any side-effects. They will be expanded and
-   * queried multiple times.
-   */
-  interface VariableValue {
-    /** Returns human-readable variable type name to be used in error messages. */
-    String getVariableTypeName();
-
-    /**
-     * Returns string value of the variable, if the variable type can be converted to string (e.g.
-     * StringValue), or throw exception if it cannot (e.g. Sequence).
-     *
-     * @param variableName name of the variable value at hand, for better exception message.
-     */
-    String getStringValue(String variableName, PathMapper pathMapper) throws ExpansionException;
-
-    /**
-     * Returns value of the field, if the variable is of struct type or throw exception if it is not
-     * or no such field exists.
-     *
-     * @param variableName name of the variable value at hand, for better exception message.
-     */
-    VariableValue getFieldValue(
-        String variableName,
-        String field,
-        @Nullable InputMetadataProvider inputMetadataProvider,
-        PathMapper pathMapper,
-        boolean throwOnMissingVariable)
-        throws ExpansionException;
-
-    @VisibleForTesting
-    default VariableValue getFieldValue(String variableName, String field)
-        throws ExpansionException {
-      return getFieldValue(
-          variableName,
-          field,
-          /* inputMetadataProvider= */ null,
-          PathMapper.NOOP,
-          /* throwOnMissingVariable= */ true);
-    }
-
-    /** Returns true if the variable is truthy */
-    boolean isTruthy();
-  }
-
-  /**
-   * Adapter for {@link VariableValue} predefining error handling methods. Override {@link
-   * #getVariableTypeName()}, {@link #isTruthy()}, and one of {@link #getFieldValue(String,
-   * String)}, or {@link VariableValue#getStringValue(String, PathMapper)}, and you'll get error
-   * handling for the other methods for free.
-   */
-  interface VariableValueAdapter extends VariableValue {
-
-    @Override
-    boolean isTruthy();
-
-    @Nullable
-    @Override
-    default VariableValue getFieldValue(
-        String variableName,
-        String field,
-        @Nullable InputMetadataProvider inputMetadataProvider,
-        PathMapper pathMapper,
-        boolean throwOnMissingVariable)
-        throws ExpansionException {
-      if (throwOnMissingVariable) {
-        throw new ExpansionException(
-            String.format(
-                "Invalid toolchain configuration: Cannot expand variable '%s.%s': variable '%s' is "
-                    + "%s, expected structure",
-                variableName, field, variableName, getVariableTypeName()));
-      } else {
-        return null;
-      }
-    }
-
-    @Override
-    default String getStringValue(String variableName, PathMapper pathMapper)
-        throws ExpansionException {
-      throw new ExpansionException(
-          String.format(
-              "Invalid toolchain configuration: Cannot expand variable '%s': expected string, "
-                  + "found %s",
-              variableName, getVariableTypeName()));
-    }
-  }
-
-  /**
-   * Returns Iterable value of the variable, if the variable type can be converted to a Iterable
-   * (e.g. Sequence), or throw exception if it cannot (e.g. StringValue).
-   *
-   * @param variableName name of the variable value at hand, for better exception message.
-   */
-  static Iterable<? extends VariableValue> getSequenceValue(
-      String variableName, VariableValue value) throws ExpansionException {
-    if (value instanceof Sequence seq) {
-      return seq.getSequenceValue();
-    }
-    throw new ExpansionException(
-        String.format(
-            "Invalid toolchain configuration: Cannot expand variable '%s': expected sequence, "
-                + "found %s",
-            variableName, value.getVariableTypeName()));
-  }
-
-  /** Sequence of arbitrary VariableValue objects. */
-  @Immutable
-  @AutoCodec
-  record Sequence(ImmutableList<?> values) implements VariableValueAdapter {
-    private static final String SEQUENCE_VARIABLE_TYPE_NAME = "sequence";
-
-    Iterable<? extends VariableValue> getSequenceValue() {
-      return Iterables.transform(values, CcToolchainVariables::asVariableValue);
-    }
-
-    @Override
-    public String getVariableTypeName() {
-      return SEQUENCE_VARIABLE_TYPE_NAME;
-    }
-
-    @Override
-    public boolean isTruthy() {
-      return !values.isEmpty();
-    }
-  }
-
-  /**
-   * Most leaves in the variable sequence node tree are simple string values. Note that this should
-   * never live outside of {@code expand}, as the object overhead is prohibitively expensive.
-   */
-  @Immutable
-  @AutoCodec
-  record StringValue(String value) implements VariableValueAdapter {
-    private static final String STRING_VARIABLE_TYPE_NAME = "string";
-
-    StringValue(String value) {
-      this.value = Preconditions.checkNotNull(value, "Cannot create StringValue from null");
-    }
-
-    @Override
-    public String getStringValue(String variableName, PathMapper pathMapper) {
-      return pathMapper.mapHeuristically(value);
-    }
-
-    @Override
-    public String getVariableTypeName() {
-      return STRING_VARIABLE_TYPE_NAME;
-    }
-
-    @Override
-    public boolean isTruthy() {
-      return !value.isEmpty();
-    }
-  }
-
-  @Immutable
-  @AutoCodec
-  @VisibleForSerialization
-  record BooleanValue(boolean value) implements VariableValueAdapter {
-    private static final BooleanValue TRUE = new BooleanValue(true);
-    private static final BooleanValue FALSE = new BooleanValue(false);
-
-    private static BooleanValue of(boolean value) {
-      return value ? TRUE : FALSE;
-    }
-
-    @Override
-    public String getStringValue(String variableName, PathMapper pathMapper) {
-      return value ? "1" : "0";
-    }
-
-    @Override
-    public String getVariableTypeName() {
-      return "boolean";
-    }
-
-    @Override
-    public boolean isTruthy() {
-      return value;
-    }
-  }
-
-  /**
-   * Represents leaves in the variable sequence node tree that are paths of artifacts. Note that
-   * this should never live outside of {@code expand}, as the object overhead is prohibitively
-   * expensive.
-   */
-  @Immutable
-  @AutoCodec
-  @VisibleForSerialization
-  record ArtifactValue(Artifact value) implements VariableValueAdapter {
-    private static final String ARTIFACT_VARIABLE_TYPE_NAME = "artifact";
-
-    @Override
-    public String getStringValue(String variableName, PathMapper pathMapper) {
-      return pathMapper.getMappedExecPathString(value);
-    }
-
-    @Override
-    public String getVariableTypeName() {
-      return ARTIFACT_VARIABLE_TYPE_NAME;
-    }
-
-    @Override
-    public boolean isTruthy() {
-      return true;
-    }
-  }
-
-  @Immutable
-  @AutoCodec
-  @VisibleForSerialization
-  record PathFragmentValue(PathFragment value) implements VariableValueAdapter {
-    private static final String PATH_FRAGMENT_VARIABLE_TYPE_NAME = "pathfragment";
-
-    @Override
-    public String getStringValue(String variableName, PathMapper pathMapper) {
-      return pathMapper.map(value).getSafePathString();
-    }
-
-    @Override
-    public String getVariableTypeName() {
-      return PATH_FRAGMENT_VARIABLE_TYPE_NAME;
-    }
-
-    @Override
-    public boolean isTruthy() {
-      return true;
-    }
-  }
-
-  public static Builder builder() {
-    return new Builder(null);
-  }
-
-  public static Builder builder(@Nullable CcToolchainVariables parent) {
-    return new Builder(parent);
-  }
-
-  /** Builder for {@code Variables}. */
-  // TODO(b/65472725): Forbid sequences with empty string in them.
-  public static class Builder {
-    private final Map<String, Object> variablesMap = new LinkedHashMap<>();
-    private final CcToolchainVariables parent;
-
-    private Builder(@Nullable CcToolchainVariables parent) {
-      // private to avoid class initialization deadlock between this class and its outer class
-      this.parent = parent;
-    }
-
-    @CanIgnoreReturnValue
-    public Builder overrideVariable(String name, Artifact value) {
-      Preconditions.checkNotNull(value, "Cannot set null as a value for variable '%s'", name);
-      variablesMap.put(name, value);
-      return this;
-    }
-
-    private static final Interner<ImmutableList<String>> stringSequenceInterner =
-        BlazeInterners.newWeakInterner();
-
-    /**
-     * Add a sequence variable that expands {@code name} to {@code values}.
-     *
-     * <p>Accepts values as ImmutableSet. As ImmutableList has smaller memory footprint, we copy the
-     * values into a new list.
-     */
-    @CanIgnoreReturnValue
-    public Builder addStringSequenceVariable(String name, ImmutableSet<String> values) {
-      checkVariableNotPresentAlready(name);
-      Preconditions.checkNotNull(values, "Cannot set null as a value for variable '%s'", name);
-      ImmutableList.Builder<String> builder = ImmutableList.builder();
-      builder.addAll(values);
-      variablesMap.put(name, stringSequenceInterner.intern(builder.build()));
-      return this;
-    }
-
-    /**
-     * Add a sequence variable that expands {@code name} to {@code values}.
-     *
-     * <p>Accepts values as Iterable. The iterable is stored directly, not cloned, not iterated. Be
-     * mindful of memory consumption of the particular Iterable. Prefer ImmutableList, or be sure
-     * that the iterable always returns the same elements in the same order, without any side
-     * effects.
-     */
-    @CanIgnoreReturnValue
-    public Builder addStringSequenceVariable(String name, Iterable<String> values) {
-      checkVariableNotPresentAlready(name);
-      Preconditions.checkNotNull(values, "Cannot set null as a value for variable '%s'", name);
-      variablesMap.put(name, stringSequenceInterner.intern(ImmutableList.copyOf(values)));
-      return this;
-    }
-
-    /** Adds a variable that expands {@code name} to the {@code value}. */
-    @CanIgnoreReturnValue
-    @VisibleForTesting
-    public Builder addVariable(String name, Object value) {
-      checkVariableNotPresentAlready(name);
-      Preconditions.checkNotNull(value, "Cannot use null value for variable '%s'", name);
-      variablesMap.put(name, value);
-      return this;
-    }
-
-    /** Add all string variables in a map. */
-    @CanIgnoreReturnValue
-    public Builder addAllStringVariables(Map<String, String> variables) {
-      for (String name : variables.keySet()) {
-        checkVariableNotPresentAlready(name);
-      }
-      variablesMap.putAll(variables);
-      return this;
-    }
-
-    private void checkVariableNotPresentAlready(String name) {
-      Preconditions.checkNotNull(name);
-      Preconditions.checkArgument(
-          !variablesMap.containsKey(name), "Cannot overwrite variable '%s'", name);
-    }
-
-    /**
-     * Adds all variables to this builder. Cannot override already added variables. Does not add
-     * variables defined in the {@code parent} variables.
-     */
-    @CanIgnoreReturnValue
-    public Builder addAllNonTransitive(CcToolchainVariables variables) {
-      SetView<String> intersection =
-          Sets.intersection(variables.getVariableKeys(), variablesMap.keySet());
-      Preconditions.checkArgument(
-          intersection.isEmpty(), "Cannot overwrite existing variables: %s", intersection);
-      variables.addVariablesToMap(variablesMap);
-      return this;
-    }
-
-    /**
-     * @return a new {@link CcToolchainVariables} object.
-     */
-    public CcToolchainVariables build() {
-      if (variablesMap.size() == 1) {
-        return new SingleVariables(
-            parent,
-            variablesMap.keySet().iterator().next(),
-            variablesMap.values().iterator().next());
-      }
-      return new MapVariables(parent, variablesMap);
-    }
-  }
-
-  /** Wraps a raw variablesMap value into an appropriate VariableValue if necessary. */
-  private static VariableValue asVariableValue(Object o) {
-    return switch (o) {
-      case NoneType ignored -> null; // null has the same behavior as omitted field
-      case Boolean b -> BooleanValue.of(b);
-      case String s -> new StringValue(s);
-      case Artifact artifact -> new ArtifactValue(artifact);
-      case PathFragment pathFragment -> new PathFragmentValue(pathFragment);
-      case Iterable<?> iterable -> new Sequence(ImmutableList.copyOf(iterable));
-      case NestedSet<?> nestedSet -> new Sequence(nestedSet.toList());
-      case Depset depset -> new Sequence(depset.toList());
-      case Structure val -> new StarlarkStructureAdapter(val);
-      default -> (VariableValue) o;
-    };
-  }
-
-  /**
-   * Adapts Starlark structures.
-   *
-   * <p>It's used to support NamedLibraryInfo, ObjectFileGroupInfo and VersionedLibraryInfo
-   * structures create in {@code create_libraries_to_link_values.bzl}
-   */
-  public static class StarlarkStructureAdapter implements VariableValueAdapter {
-    private final Structure val;
-
-    StarlarkStructureAdapter(Structure val) {
-      this.val = val;
-    }
-
-    @Nullable
-    @Override
-    public VariableValue getFieldValue(
-        String variableName,
-        String field,
-        @Nullable InputMetadataProvider inputMetadataProvider,
-        PathMapper pathMapper,
-        boolean throwOnMissingVariable)
-        throws ExpansionException {
-      try {
-        Object fieldValue = val.getValue(field);
-
-        // Special handling for tree artifacts. Needed for ObjectFileGroupInfo containing a tree
-        // artifact. When this code is migrated to Starlark, the expansion should happen on Starlark
-        // command lines.
-        if (fieldValue instanceof Iterable<?> iterable) {
-          ImmutableList.Builder<Object> expandedIterable = ImmutableList.builder();
-          for (Object element : iterable) {
-            if (element instanceof Artifact artifact
-                && artifact.isTreeArtifact()
-                && inputMetadataProvider != null) {
-              TreeArtifactValue treeArtifactValue = inputMetadataProvider.getTreeMetadata(artifact);
-              if (treeArtifactValue != null) {
-                expandedIterable.addAll(
-                    Collections2.transform(
-                        treeArtifactValue.getChildren(), pathMapper::getMappedExecPathString));
-              }
-            } else {
-              expandedIterable.add(element);
+        /**
+         * Parses the string.
+         * 
+         * @throws EvalException if there is a parsing error.
+         */
+        @Throws(net.starlark.java.eval.EvalException::class)
+        private fun parse() {
+            while (current < value.length()) {
+                if (atVariableStart()) {
+                    parseVariableChunk()
+                } else {
+                    parseStringChunk()
+                }
             }
-          }
-          return new Sequence(expandedIterable.build());
         }
-        return asVariableValue(fieldValue);
-      } catch (EvalException e) {
+
+        /**
+         * @return whether the current position is the start of a variable.
+         */
+        private fun atVariableStart(): Boolean {
+            // We parse a variable when value starts with '%', but not '%%'.
+            return value.charAt(current) == '%'
+                    && (current + 1 >= value.length() || value.charAt(current + 1) != '%')
+        }
+
+        /**
+         * Parses a chunk of text until the next '%', which indicates either an escaped literal '%' or a
+         * variable.
+         */
+        private fun parseStringChunk() {
+            var start = current
+            // We only parse string chunks starting with '%' if they also start with '%%'.
+            // In that case, we want to have a single '%' in the string, so we start at the second
+            // character.
+            // Note that for strings like "abc%%def" this will lead to two string chunks, the first
+            // referencing the subtring "abc", and a second referencing the substring "%def".
+            if (value.charAt(current) == '%') {
+                current = current + 1
+                start = current
+            }
+            current = value.indexOf('%'.code, current + 1)
+            if (current == -1) {
+                current = value.length()
+            }
+            val text: String = value.substring(start, current)
+            chunks.add(StringLiteralChunk(text))
+        }
+
+        /**
+         * Parses a variable to be expanded.
+         * 
+         * @throws EvalException if there is a parsing error.
+         */
+        @Throws(net.starlark.java.eval.EvalException::class)
+        private fun parseVariableChunk() {
+            current = current + 1
+            if (current >= value.length() || value.charAt(current) != '{') {
+                abort("expected '{'")
+            }
+            current = current + 1
+            if (current >= value.length() || value.charAt(current) == '}') {
+                abort("expected variable name")
+            }
+            val end: Int = value.indexOf('}'.code, current)
+            val name: String = value.substring(current, end)
+            if (name.startsWith(PATH_PREFIX)) {
+                val path: String = name.substring(PATH_PREFIX.length())
+                if (path.isEmpty()) {
+                    abort("expected path after 'path:'")
+                }
+                // The provided path is expected to be an exec path, which always uses '/' as a separator
+                // and is relative. Ensure that it is parsed consistently.
+                val pathFragment: PathFragment =
+                    PathFragment.createForOs(path, com.google.devtools.build.lib.util.OS.LINUX)
+                if (pathFragment.isAbsolute()) {
+                    abort("expected relative Unix-style path after 'path:'")
+                }
+                chunks.add(RelativePathChunk(pathFragment))
+            } else {
+                usedVariables.add(name)
+                chunks.add(VariableChunk(name))
+            }
+            current = end + 1
+        }
+
+        /**
+         * @throws EvalException with the given error text, adding information about the current
+         * position in the string.
+         */
+        @Throws(net.starlark.java.eval.EvalException::class)
+        private fun abort(error: String?) {
+            throw net.starlark.java.eval.Starlark.errorf(
+                "Invalid toolchain configuration: %s at position %s while parsing a flag containing '%s'",
+                error, current, value
+            )
+        }
+
+        companion object {
+            private const val PATH_PREFIX = "path:"
+        }
+    }
+
+    /** A flag or flag group that can be expanded under a set of variables.  */
+    interface Expandable {
+        /**
+         * Expands the current expandable under the given `view`, adding new flags to `commandLine`.
+         * 
+         * 
+         * The `variables` controls which variables are visible during the expansion and allows
+         * to recursively expand nested flag groups.
+         */
+        @Throws(com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException::class)
+        fun expand(
+            variables: CcToolchainVariables?,
+            inputMetadataProvider: InputMetadataProvider?,
+            pathMapper: PathMapper?,
+            commandLine: MutableList<String?>?
+        )
+    }
+
+    /**
+     * Avoids cyclic class initialization issues with [MapVariables].
+     * 
+     * 
+     * Without this holder, there would be a cycle here. [MapVariables] depends on its parent
+     * class [CcToolchainVariables] and [CcToolchainVariables] would depend on [ ] via [.EMPTY].
+     * 
+     * 
+     * See [Initialization on
+     * demand idiom](https://en.wikipedia.org/wiki/Initialization-on-demand_holder_idiom).
+     */
+    private object EmptyVariablesHolder {
+        private val EMPTY = builder().build()
+    }
+
+    // Values in this cache are either VariableValue, String error message, or NULL_MARKER.
+    //
+    // It is initialized lazily.
+    @kotlin.concurrent.Volatile
+    @Transient
+    private var structuredVariableCache: MutableMap<String?, Any?>? = null
+
+    /**
+     * Gets a variable value named `name`. Supports accessing fields in structures (e.g.
+     * 'libraries_to_link.interface_libraries')
+     * 
+     * @throws ExpansionException when no such variable or no such field are present, or when
+     * accessing a field of non-structured variable
+     */
+    @Throws(com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException::class)
+    fun getVariable(name: String, pathMapper: PathMapper?): VariableValue? {
+        return lookupVariable(
+            name,  /* throwOnMissingVariable= */true,  /* inputMetadataProvider= */null, pathMapper
+        )
+    }
+
+    @Throws(com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException::class)
+    fun getVariable(
+        name: String, inputMetadataProvider: InputMetadataProvider?, pathMapper: PathMapper?
+    ): VariableValue? {
+        return lookupVariable(
+            name,  /* throwOnMissingVariable= */true, inputMetadataProvider, pathMapper
+        )
+    }
+
+    /**
+     * Looks up a variable named `name` or return a reason why the variable was not found.
+     * Supports accessing fields in structures.
+     */
+    @Throws(com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException::class)
+    private fun lookupVariable(
+        name: String,
+        throwOnMissingVariable: Boolean,
+        inputMetadataProvider: InputMetadataProvider?,
+        pathMapper: PathMapper?
+    ): VariableValue? {
+        val `var` = getNonStructuredVariable(name)
+        if (`var` != null) {
+            return `var`
+        }
+
+        if (!name.contains(".")) {
+            if (throwOnMissingVariable) {
+                throw com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException(
+                    java.lang.String.format(
+                        "Invalid toolchain configuration: Cannot find variable named '%s'.", name
+                    )
+                )
+            }
+            return null
+        }
+
+        if (structuredVariableCache == null) {
+            synchronized(this) {
+                if (structuredVariableCache == null) {
+                    structuredVariableCache = ConcurrentHashMap<String?, Any?>()
+                }
+            }
+        }
+
+        var variableOrError = structuredVariableCache!!.get(name)
+        if (variableOrError == null) {
+            try {
+                val variable =
+                    getStructureVariable(name, throwOnMissingVariable, inputMetadataProvider, pathMapper)
+                variableOrError = if (variable != null) variable else NULL_MARKER
+            } catch (e: com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException) {
+                if (throwOnMissingVariable) {
+                    variableOrError = e.getMessage()
+                } else {
+                    throw java.lang.IllegalStateException(
+                        "Should not happen - call to getStructuredVariable threw when asked not to.", e
+                    )
+                }
+            }
+            structuredVariableCache.putIfAbsent(name, variableOrError)
+        }
+
+        if (variableOrError is VariableValue) {
+            return variableOrError
+        }
         if (throwOnMissingVariable) {
-          throw new ExpansionException(
-              String.format(
-                  "Invalid toolchain configuration: Cannot expand variable '%s.%s': variable '%s'"
-                      + " is %s, expected structure",
-                  variableName, field, variableName, getVariableTypeName()),
-              e);
-        } else {
-          return null;
+            throw com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException(
+                if (variableOrError is String)
+                    variableOrError
+                else
+                    java.lang.String.format(
+                        "Invalid toolchain configuration: Cannot find variable named '%s'.", name
+                    )
+            )
         }
-      }
+        return null
     }
 
-    @Override
-    public String getVariableTypeName() {
-      return Starlark.type(val);
+    @Throws(com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException::class)
+    private fun getStructureVariable(
+        name: String,
+        throwOnMissingVariable: Boolean,
+        inputMetadataProvider: InputMetadataProvider?,
+        pathMapper: PathMapper?
+    ): VariableValue? {
+        if (!name.contains(".")) {
+            return null
+        }
+
+        val fieldsToAccess: java.util.Stack<String?> = java.util.Stack<String?>()
+        var structPath = name
+        var variable: VariableValue?
+
+        do {
+            fieldsToAccess.push(structPath.substring(structPath.lastIndexOf('.'.code) + 1))
+            structPath = structPath.substring(0, structPath.lastIndexOf('.'.code))
+            variable = getNonStructuredVariable(structPath)
+        } while (variable == null && structPath.contains("."))
+
+        if (variable == null) {
+            return null
+        }
+
+        while (!fieldsToAccess.empty()) {
+            val field: String? = fieldsToAccess.pop()
+            variable =
+                variable!!.getFieldValue(
+                    structPath, field, inputMetadataProvider, pathMapper, throwOnMissingVariable
+                )
+            if (variable == null) {
+                if (throwOnMissingVariable) {
+                    throw com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException(
+                        java.lang.String.format(
+                            "Invalid toolchain configuration: Cannot expand variable '%s.%s': structure %s "
+                                    + "doesn't have a field named '%s'",
+                            structPath, field, structPath, field
+                        )
+                    )
+                } else {
+                    return null
+                }
+            }
+        }
+        return variable
     }
 
-    @Override
-    public boolean isTruthy() {
-      return val.truth();
+    @Throws(com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException::class)
+    fun getStringVariable(variableName: String, pathMapper: PathMapper?): String? {
+        return getVariable(variableName,  /* inputMetadataProvider= */null, pathMapper)!!
+            .getStringValue(variableName, pathMapper)
     }
-  }
 
-  static final class MapVariables extends CcToolchainVariables {
-    private static final Interner<ImmutableMap<String, Integer>> keyInterner =
-        BlazeInterners.newWeakInterner();
+    /** Returns whether `variable` is set.  */
+    fun isAvailable(variable: String): Boolean {
+        return isAvailable(variable,  /* inputMetadataProvider= */null)
+    }
 
-    @Nullable private final CcToolchainVariables parent;
+    fun isAvailable(variable: String, inputMetadataProvider: InputMetadataProvider?): Boolean {
+        try {
+            // Availability doesn't depend on the path mapper.
+            return (lookupVariable(
+                variable,  /* throwOnMissingVariable= */false, inputMetadataProvider, PathMapper.NOOP
+            )
+                    != null)
+        } catch (e: com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException) {
+            throw java.lang.IllegalStateException(
+                "Should not happen - call to lookupVariable threw when asked not to.", e
+            )
+        }
+    }
+
+    abstract val variableKeys: MutableSet<String?>?
+
+    abstract fun addVariablesToMap(variablesMap: MutableMap<String?, Any>?)
+
+    abstract fun getNonStructuredVariable(name: String?): VariableValue?
 
     /**
-     * This is a slightly interesting data structure that's necessary to optimize for memory
-     * consumption. The premise is that a lot of compilations use the exact same variable keys, just
-     * with different values. Thus, it is important to store the keys separately so that they can be
-     * interned while storing the values in a compact way. keyToIndex maps from a variable name to
-     * the index of the corresponding value in values.
+     * Value of a build variable exposed to the CROSSTOOL used for flag expansion.
+     * 
+     * 
+     * [VariableValue] represent either primitive values or an arbitrarily deeply nested
+     * recursive structures or sequences. Since there are builds with millions of values, some
+     * implementations might exist only to optimize memory usage.
+     * 
+     * 
+     * Implementations must be immutable and without any side-effects. They will be expanded and
+     * queried multiple times.
      */
-    private final ImmutableMap<String, Integer> keyToIndex;
+    internal interface VariableValue {
+        /** Returns human-readable variable type name to be used in error messages.  */
+        val variableTypeName: String?
 
-    /** The values belonging to the keys stored in keyToIndex. */
-    private final ImmutableList<Object> values;
+        /**
+         * Returns string value of the variable, if the variable type can be converted to string (e.g.
+         * StringValue), or throw exception if it cannot (e.g. Sequence).
+         * 
+         * @param variableName name of the variable value at hand, for better exception message.
+         */
+        @Throws(com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException::class)
+        fun getStringValue(variableName: String?, pathMapper: PathMapper?): String?
 
-    MapVariables(CcToolchainVariables parent, Map<String, Object> variablesMap) {
-      this.parent = parent;
-      ImmutableMap.Builder<String, Integer> keyBuilder = ImmutableMap.builder();
-      ImmutableList.Builder<Object> valuesBuilder = ImmutableList.builder();
-      int index = 0;
-      for (String key : ImmutableList.sortedCopyOf(variablesMap.keySet())) {
-        keyBuilder.put(key, index++);
-        Object value = variablesMap.get(key);
-        if (value instanceof Depset dv) { // Unwrap Depsets; needed to prevent memory regression
-          value = dv.getSet();
+        /**
+         * Returns value of the field, if the variable is of struct type or throw exception if it is not
+         * or no such field exists.
+         * 
+         * @param variableName name of the variable value at hand, for better exception message.
+         */
+        @Throws(com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException::class)
+        fun getFieldValue(
+            variableName: String?,
+            field: String?,
+            inputMetadataProvider: InputMetadataProvider?,
+            pathMapper: PathMapper?,
+            throwOnMissingVariable: Boolean
+        ): VariableValue?
+
+        @com.google.common.annotations.VisibleForTesting
+        @Throws(com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException::class)
+        fun getFieldValue(variableName: String?, field: String?): VariableValue? {
+            return getFieldValue(
+                variableName,
+                field,  /* inputMetadataProvider= */
+                null,
+                PathMapper.NOOP,  /* throwOnMissingVariable= */
+                true
+            )
         }
-        valuesBuilder.add(value);
-      }
-      this.keyToIndex = keyInterner.intern(keyBuilder.buildOrThrow());
-      this.values = valuesBuilder.build();
-    }
 
-    @Override
-    public boolean isImmutable() {
-      return true; // immutable and Starlark-hashable
-    }
-
-    @Override
-    ImmutableSet<String> getVariableKeys() {
-      return keyToIndex.keySet();
-    }
-
-    @Override
-    void addVariablesToMap(Map<String, Object> variablesMap) {
-      for (Map.Entry<String, Integer> entry : keyToIndex.entrySet()) {
-        variablesMap.put(entry.getKey(), values.get(entry.getValue()));
-      }
-    }
-
-    @Nullable
-    @Override
-    VariableValue getNonStructuredVariable(String name) {
-      if (keyToIndex.containsKey(name)) {
-        return CcToolchainVariables.asVariableValue(values.get(keyToIndex.get(name)));
-      }
-
-      if (parent != null) {
-        return parent.getNonStructuredVariable(name);
-      }
-
-      return null;
+        /** Returns true if the variable is truthy  */
+        @kotlin.jvm.JvmField
+        val isTruthy: Boolean
     }
 
     /**
-     * NB: this compares parents using reference equality instead of logical equality.
-     *
-     * <p>This is a performance optimization to avoid possibly expensive recursive equality
-     * expansions and suitable for comparisons needed by interning deserialized values. If full
-     * logical equality is desired, it's possible to either enable full interning (at a modest CPU
-     * cost) or change the parent comparison to use deep equality.
-     *
-     * <p>This same comment applies to {@link SingleVariables#equals}.
+     * Adapter for [VariableValue] predefining error handling methods. Override [ ][.getVariableTypeName], [.isTruthy], and one of [.getFieldValue], or [VariableValue.getStringValue], and you'll get error
+     * handling for the other methods for free.
      */
-    @Override
-    public boolean equals(Object other) {
-      if (!(other instanceof MapVariables that)) {
-        return false;
-      }
-      if (this == other) {
-        return true;
-      }
-      if (this.parent != that.parent) {
-        return false;
-      }
-      return Objects.equals(this.keyToIndex, that.keyToIndex)
-          && Objects.equals(this.values, that.values);
+    internal interface VariableValueAdapter : VariableValue {
+        override fun isTruthy(): Boolean
+
+        @Throws(com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException::class)
+        override fun getFieldValue(
+            variableName: String?,
+            field: String?,
+            inputMetadataProvider: InputMetadataProvider?,
+            pathMapper: PathMapper?,
+            throwOnMissingVariable: Boolean
+        ): VariableValue? {
+            if (throwOnMissingVariable) {
+                throw com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException(
+                    java.lang.String.format(
+                        "Invalid toolchain configuration: Cannot expand variable '%s.%s': variable '%s' is "
+                                + "%s, expected structure",
+                        variableName, field, variableName, this.variableTypeName
+                    )
+                )
+            } else {
+                return null
+            }
+        }
+
+        @Throws(com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException::class)
+        override fun getStringValue(variableName: String?, pathMapper: PathMapper?): String? {
+            throw com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException(
+                java.lang.String.format(
+                    "Invalid toolchain configuration: Cannot expand variable '%s': expected string, "
+                            + "found %s",
+                    variableName, this.variableTypeName
+                )
+            )
+        }
     }
 
-    @Override
-    public int hashCode() {
-      return 31 * Objects.hash(keyToIndex, values) + System.identityHashCode(parent);
-    }
-  }
+    /** Sequence of arbitrary VariableValue objects.  */
+    @com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+    @AutoCodec
+    internal class Sequence(values: com.google.common.collect.ImmutableList<*>?) : VariableValueAdapter {
+        val sequenceValue: Iterable<out VariableValue>
+            get() = com.google.common.collect.Iterables.transform(
+                values,
+                { o: Any -> asVariableValue(o) })
 
-  static final class SingleVariables extends CcToolchainVariables {
-    @Nullable private final CcToolchainVariables parent;
-    private final String name;
-    private final Object variableValue;
+        override fun getVariableTypeName(): String {
+            return com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.Sequence.Companion.SEQUENCE_VARIABLE_TYPE_NAME
+        }
 
-    SingleVariables(CcToolchainVariables parent, String name, Object variableValue) {
-      this.parent = parent;
-      this.name = name;
-      this.variableValue = variableValue;
-    }
+        override fun isTruthy(): Boolean {
+            return !values.isEmpty()
+        }
 
-    @Override
-    ImmutableSet<String> getVariableKeys() {
-      return ImmutableSet.of(name);
-    }
+        val values: com.google.common.collect.ImmutableList<*>?
 
-    @Override
-    void addVariablesToMap(Map<String, Object> variablesMap) {
-      variablesMap.put(name, variableValue);
-    }
+        init {
+            this.values = values
+        }
 
-    @Nullable
-    @Override
-    VariableValue getNonStructuredVariable(String name) {
-      if (this.name.equals(name)) {
-        return CcToolchainVariables.asVariableValue(variableValue);
-      }
-      return parent == null ? null : parent.getNonStructuredVariable(name);
+        companion object {
+            private const val SEQUENCE_VARIABLE_TYPE_NAME = "sequence"
+        }
     }
 
-    @Override
-    public boolean equals(Object other) {
-      if (!(other instanceof SingleVariables that)) {
-        return false;
-      }
-      if (this == other) {
-        return true;
-      }
-      if (this.parent != that.parent) {
-        return false;
-      }
-      return Objects.equals(this.name, that.name)
-          && Objects.equals(this.variableValue, that.variableValue);
+    /**
+     * Most leaves in the variable sequence node tree are simple string values. Note that this should
+     * never live outside of `expand`, as the object overhead is prohibitively expensive.
+     */
+    @com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+    @AutoCodec
+    internal class StringValue(value: String?) : VariableValueAdapter {
+        override fun getStringValue(variableName: String?, pathMapper: PathMapper): String {
+            return pathMapper.mapHeuristically(value)
+        }
+
+        override fun getVariableTypeName(): String {
+            return com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.StringValue.Companion.STRING_VARIABLE_TYPE_NAME
+        }
+
+        override fun isTruthy(): Boolean {
+            return !value.isEmpty()
+        }
+
+        val value: String?
+
+        init {
+            this.value =
+                com.google.common.base.Preconditions.checkNotNull<String?>(value, "Cannot create StringValue from null")
+        }
+
+        companion object {
+            private const val STRING_VARIABLE_TYPE_NAME = "string"
+        }
     }
 
-    @Override
-    public int hashCode() {
-      return Objects.hash(parent, name, variableValue);
+    @com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+    @AutoCodec
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    @kotlin.jvm.JvmRecord
+    internal data class BooleanValue(val value: Boolean) : VariableValueAdapter {
+        override fun getStringValue(variableName: String?, pathMapper: PathMapper?): String {
+            return if (value) "1" else "0"
+        }
+
+        override fun getVariableTypeName(): String {
+            return "boolean"
+        }
+
+        override fun isTruthy(): Boolean {
+            return value
+        }
+
+        companion object {
+            private val TRUE: BooleanValue =
+                com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.BooleanValue(true)
+            private val FALSE: BooleanValue =
+                com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.BooleanValue(false)
+
+            private fun of(value: Boolean): BooleanValue? {
+                return if (value) com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.BooleanValue.Companion.TRUE else com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.BooleanValue.Companion.FALSE
+            }
+        }
     }
-  }
+
+    /**
+     * Represents leaves in the variable sequence node tree that are paths of artifacts. Note that
+     * this should never live outside of `expand`, as the object overhead is prohibitively
+     * expensive.
+     */
+    @com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+    @AutoCodec
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    internal class ArtifactValue(value: Artifact?) : VariableValueAdapter {
+        override fun getStringValue(variableName: String?, pathMapper: PathMapper): String {
+            return pathMapper.getMappedExecPathString(value)
+        }
+
+        override fun getVariableTypeName(): String {
+            return ARTIFACT_VARIABLE_TYPE_NAME
+        }
+
+        override fun isTruthy(): Boolean {
+            return true
+        }
+
+        val value: Artifact?
+
+        init {
+            this.value = value
+        }
+
+        companion object {
+            private const val ARTIFACT_VARIABLE_TYPE_NAME = "artifact"
+        }
+    }
+
+    @com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+    @AutoCodec
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    internal class PathFragmentValue(value: PathFragment?) : VariableValueAdapter {
+        override fun getStringValue(variableName: String?, pathMapper: PathMapper): String {
+            return pathMapper.map(value).getSafePathString()
+        }
+
+        override fun getVariableTypeName(): String {
+            return PATH_FRAGMENT_VARIABLE_TYPE_NAME
+        }
+
+        override fun isTruthy(): Boolean {
+            return true
+        }
+
+        val value: PathFragment?
+
+        init {
+            this.value = value
+        }
+
+        companion object {
+            private const val PATH_FRAGMENT_VARIABLE_TYPE_NAME = "pathfragment"
+        }
+    }
+
+    /** Builder for `Variables`.  */ // TODO(b/65472725): Forbid sequences with empty string in them.
+    class Builder // private to avoid class initialization deadlock between this class and its outer class
+    private constructor(private val parent: CcToolchainVariables?) {
+        private val variablesMap: MutableMap<String?, Any> = LinkedHashMap<String?, Any>()
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun overrideVariable(name: String?, value: Artifact?): Builder {
+            com.google.common.base.Preconditions.checkNotNull<Any?>(
+                value,
+                "Cannot set null as a value for variable '%s'",
+                name
+            )
+            variablesMap.put(name, value)
+            return this
+        }
+
+        /**
+         * Add a sequence variable that expands `name` to `values`.
+         * 
+         * 
+         * Accepts values as ImmutableSet. As ImmutableList has smaller memory footprint, we copy the
+         * values into a new list.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addStringSequenceVariable(
+            name: String?,
+            values: com.google.common.collect.ImmutableSet<String?>?
+        ): Builder {
+            checkVariableNotPresentAlready(name)
+            com.google.common.base.Preconditions.checkNotNull<com.google.common.collect.ImmutableSet<String?>?>(
+                values,
+                "Cannot set null as a value for variable '%s'",
+                name
+            )
+            val builder: com.google.common.collect.ImmutableList.Builder<String?> =
+                com.google.common.collect.ImmutableList.builder<String?>()
+            builder.addAll(values)
+            variablesMap.put(
+                name,
+                com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.Builder.Companion.stringSequenceInterner.intern(
+                    builder.build()
+                )
+            )
+            return this
+        }
+
+        /**
+         * Add a sequence variable that expands `name` to `values`.
+         * 
+         * 
+         * Accepts values as Iterable. The iterable is stored directly, not cloned, not iterated. Be
+         * mindful of memory consumption of the particular Iterable. Prefer ImmutableList, or be sure
+         * that the iterable always returns the same elements in the same order, without any side
+         * effects.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addStringSequenceVariable(name: String?, values: Iterable<String?>?): Builder {
+            checkVariableNotPresentAlready(name)
+            com.google.common.base.Preconditions.checkNotNull<Iterable<String?>?>(
+                values,
+                "Cannot set null as a value for variable '%s'",
+                name
+            )
+            variablesMap.put(
+                name,
+                com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.Builder.Companion.stringSequenceInterner.intern(
+                    com.google.common.collect.ImmutableList.copyOf<String?>(values)
+                )
+            )
+            return this
+        }
+
+        /** Adds a variable that expands `name` to the `value`.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        @com.google.common.annotations.VisibleForTesting
+        fun addVariable(name: String?, value: Any?): Builder {
+            checkVariableNotPresentAlready(name)
+            com.google.common.base.Preconditions.checkNotNull<Any?>(
+                value,
+                "Cannot use null value for variable '%s'",
+                name
+            )
+            variablesMap.put(name, value!!)
+            return this
+        }
+
+        /** Add all string variables in a map.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addAllStringVariables(variables: MutableMap<String?, String?>): Builder {
+            for (name in variables.keySet()) {
+                checkVariableNotPresentAlready(name)
+            }
+            variablesMap.putAll(variables)
+            return this
+        }
+
+        private fun checkVariableNotPresentAlready(name: String?) {
+            com.google.common.base.Preconditions.checkNotNull<String?>(name)
+            com.google.common.base.Preconditions.checkArgument(
+                !variablesMap.containsKey(name), "Cannot overwrite variable '%s'", name
+            )
+        }
+
+        /**
+         * Adds all variables to this builder. Cannot override already added variables. Does not add
+         * variables defined in the `parent` variables.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addAllNonTransitive(variables: CcToolchainVariables): Builder {
+            val intersection: com.google.common.collect.Sets.SetView<String?> =
+                com.google.common.collect.Sets.intersection<String?>(variables.variableKeys, variablesMap.keySet())
+            com.google.common.base.Preconditions.checkArgument(
+                intersection.isEmpty(), "Cannot overwrite existing variables: %s", intersection
+            )
+            variables.addVariablesToMap(variablesMap)
+            return this
+        }
+
+        /**
+         * @return a new [CcToolchainVariables] object.
+         */
+        fun build(): CcToolchainVariables {
+            if (variablesMap.size() == 1) {
+                return SingleVariables(
+                    parent,
+                    variablesMap.keySet().iterator().next(),
+                    variablesMap.values().iterator().next()
+                )
+            }
+            return MapVariables(parent, variablesMap)
+        }
+
+        companion object {
+            private val stringSequenceInterner: com.google.common.collect.Interner<com.google.common.collect.ImmutableList<String?>?> =
+                BlazeInterners.newWeakInterner<com.google.common.collect.ImmutableList<String?>?>()
+        }
+    }
+
+    /**
+     * Adapts Starlark structures.
+     * 
+     * 
+     * It's used to support NamedLibraryInfo, ObjectFileGroupInfo and VersionedLibraryInfo
+     * structures create in `create_libraries_to_link_values.bzl`
+     */
+    class StarlarkStructureAdapter internal constructor(`val`: net.starlark.java.eval.Structure) :
+        VariableValueAdapter {
+        private val `val`: net.starlark.java.eval.Structure
+
+        init {
+            this.`val` = `val`
+        }
+
+        @Throws(com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException::class)
+        override fun getFieldValue(
+            variableName: String?,
+            field: String?,
+            inputMetadataProvider: InputMetadataProvider?,
+            pathMapper: PathMapper,
+            throwOnMissingVariable: Boolean
+        ): VariableValue? {
+            try {
+                val fieldValue: Any? = `val`.getValue(field)
+
+                // Special handling for tree artifacts. Needed for ObjectFileGroupInfo containing a tree
+                // artifact. When this code is migrated to Starlark, the expansion should happen on Starlark
+                // command lines.
+                if (fieldValue is Iterable<*>) {
+                    val expandedIterable: com.google.common.collect.ImmutableList.Builder<Any?> =
+                        com.google.common.collect.ImmutableList.builder<Any?>()
+                    for (element in fieldValue) {
+                        if (element is Artifact
+                            && element.isTreeArtifact()
+                            && inputMetadataProvider != null
+                        ) {
+                            val treeArtifactValue: TreeArtifactValue? = inputMetadataProvider.getTreeMetadata(element)
+                            if (treeArtifactValue != null) {
+                                expandedIterable.addAll(
+                                    com.google.common.collect.Collections2.transform<TreeFileArtifact?, Any?>(
+                                        treeArtifactValue.getChildren(), pathMapper::getMappedExecPathString
+                                    )
+                                )
+                            }
+                        } else {
+                            expandedIterable.add(element)
+                        }
+                    }
+                    return com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.Sequence(expandedIterable.build())
+                }
+                return Companion.asVariableValue(fieldValue!!)
+            } catch (e: net.starlark.java.eval.EvalException) {
+                if (throwOnMissingVariable) {
+                    throw com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException(
+                        java.lang.String.format(
+                            "Invalid toolchain configuration: Cannot expand variable '%s.%s': variable '%s'"
+                                    + " is %s, expected structure",
+                            variableName, field, variableName, getVariableTypeName()
+                        ),
+                        e
+                    )
+                } else {
+                    return null
+                }
+            }
+        }
+
+        override fun getVariableTypeName(): String? {
+            return net.starlark.java.eval.Starlark.type(`val`)
+        }
+
+        override fun isTruthy(): Boolean {
+            return `val`.truth()
+        }
+    }
+
+    internal class MapVariables(private val parent: CcToolchainVariables?, variablesMap: MutableMap<String?, Any>) :
+        CcToolchainVariables() {
+        /**
+         * This is a slightly interesting data structure that's necessary to optimize for memory
+         * consumption. The premise is that a lot of compilations use the exact same variable keys, just
+         * with different values. Thus, it is important to store the keys separately so that they can be
+         * interned while storing the values in a compact way. keyToIndex maps from a variable name to
+         * the index of the corresponding value in values.
+         */
+        private val keyToIndex: com.google.common.collect.ImmutableMap<String?, Int?>
+
+        /** The values belonging to the keys stored in keyToIndex.  */
+        private val values: com.google.common.collect.ImmutableList<Any?>
+
+        init {
+            val keyBuilder: com.google.common.collect.ImmutableMap.Builder<String?, Int?> =
+                com.google.common.collect.ImmutableMap.builder<String?, Int?>()
+            val valuesBuilder: com.google.common.collect.ImmutableList.Builder<Any?> =
+                com.google.common.collect.ImmutableList.builder<Any?>()
+            var index = 0
+            for (key in com.google.common.collect.ImmutableList.sortedCopyOf<String?>(variablesMap.keySet())) {
+                keyBuilder.put(key, index++)
+                var value: Any = variablesMap.get(key)!!
+                if (value is Depset) { // Unwrap Depsets; needed to prevent memory regression
+                    value = value.getSet()
+                }
+                valuesBuilder.add(value)
+            }
+            this.keyToIndex = keyInterner.intern(keyBuilder.buildOrThrow())
+            this.values = valuesBuilder.build()
+        }
+
+        val isImmutable: Boolean
+            get() = true // immutable and Starlark-hashable
+
+        override fun getVariableKeys(): com.google.common.collect.ImmutableSet<String?> {
+            return keyToIndex.keySet()
+        }
+
+        override fun addVariablesToMap(variablesMap: MutableMap<String?, Any?>) {
+            for (entry in keyToIndex.entrySet()) {
+                variablesMap.put(entry.getKey(), values.get(entry.getValue()))
+            }
+        }
+
+        override fun getNonStructuredVariable(name: String?): VariableValue? {
+            if (keyToIndex.containsKey(name)) {
+                return asVariableValue(values.get(keyToIndex.get(name)))
+            }
+
+            if (parent != null) {
+                return parent.getNonStructuredVariable(name)
+            }
+
+            return null
+        }
+
+        /**
+         * NB: this compares parents using reference equality instead of logical equality.
+         * 
+         * 
+         * This is a performance optimization to avoid possibly expensive recursive equality
+         * expansions and suitable for comparisons needed by interning deserialized values. If full
+         * logical equality is desired, it's possible to either enable full interning (at a modest CPU
+         * cost) or change the parent comparison to use deep equality.
+         * 
+         * 
+         * This same comment applies to [SingleVariables.equals].
+         */
+        override fun equals(other: Any?): Boolean {
+            if (other !is MapVariables) {
+                return false
+            }
+            if (this === other) {
+                return true
+            }
+            if (this.parent !== other.parent) {
+                return false
+            }
+            return this.keyToIndex == other.keyToIndex
+                    && this.values == other.values
+        }
+
+        override fun hashCode(): Int {
+            return 31 * java.util.Objects.hash(keyToIndex, values) + java.lang.System.identityHashCode(parent)
+        }
+
+        companion object {
+            private val keyInterner: com.google.common.collect.Interner<com.google.common.collect.ImmutableMap<String?, Int?>> =
+                BlazeInterners.newWeakInterner<com.google.common.collect.ImmutableMap<String?, Int?>?>()
+        }
+    }
+
+    internal class SingleVariables(
+        private val parent: CcToolchainVariables?,
+        private val name: String,
+        private val variableValue: Any
+    ) : CcToolchainVariables() {
+        override fun getVariableKeys(): com.google.common.collect.ImmutableSet<String?> {
+            return com.google.common.collect.ImmutableSet.of<String?>(name)
+        }
+
+        override fun addVariablesToMap(variablesMap: MutableMap<String?, Any?>) {
+            variablesMap.put(name, variableValue)
+        }
+
+        override fun getNonStructuredVariable(name: String?): VariableValue? {
+            if (this.name == name) {
+                return asVariableValue(variableValue)
+            }
+            return if (parent == null) null else parent.getNonStructuredVariable(name)
+        }
+
+        override fun equals(other: Any?): Boolean {
+            if (other !is SingleVariables) {
+                return false
+            }
+            if (this === other) {
+                return true
+            }
+            if (this.parent !== other.parent) {
+                return false
+            }
+            return this.name == other.name
+                    && this.variableValue == other.variableValue
+        }
+
+        override fun hashCode(): Int {
+            return java.util.Objects.hash(parent, name, variableValue)
+        }
+    }
+
+    companion object {
+        /** Returns an empty variables instance.  */
+        @kotlin.jvm.JvmStatic
+        fun empty(): CcToolchainVariables {
+            return EmptyVariablesHolder.EMPTY
+        }
+
+        private val NULL_MARKER = Any()
+
+        /**
+         * Retrieves a string sequence variable named `variableName` from `variables` and
+         * converts it into a list of plain strings.
+         * 
+         * 
+         * Throws [ExpansionException] when the variable is not a string sequence.
+         */
+        @Throws(com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException::class)
+        fun toStringList(
+            variables: CcToolchainVariables, variableName: String, pathMapper: PathMapper?
+        ): com.google.common.collect.ImmutableList<String?> {
+            val result: com.google.common.collect.ImmutableList.Builder<String?> =
+                com.google.common.collect.ImmutableList.builder<String?>()
+            for (value in Companion.getSequenceValue(variableName, variables.getVariable(variableName, pathMapper)!!)) {
+                result.add(value.getStringValue(variableName, pathMapper))
+            }
+            return result.build()
+        }
+
+        /**
+         * Returns Iterable value of the variable, if the variable type can be converted to a Iterable
+         * (e.g. Sequence), or throw exception if it cannot (e.g. StringValue).
+         * 
+         * @param variableName name of the variable value at hand, for better exception message.
+         */
+        @kotlin.jvm.JvmStatic
+        @Throws(com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException::class)
+        fun getSequenceValue(
+            variableName: String?, value: VariableValue
+        ): Iterable<out VariableValue> {
+            if (value is Sequence) {
+                return value.sequenceValue
+            }
+            throw com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException(
+                java.lang.String.format(
+                    "Invalid toolchain configuration: Cannot expand variable '%s': expected sequence, "
+                            + "found %s",
+                    variableName, value.variableTypeName
+                )
+            )
+        }
+
+        @kotlin.jvm.JvmStatic
+        fun builder(): Builder {
+            return com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.Builder(null)
+        }
+
+        fun builder(parent: CcToolchainVariables?): Builder {
+            return com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.Builder(parent)
+        }
+
+        /** Wraps a raw variablesMap value into an appropriate VariableValue if necessary.  */
+        private fun asVariableValue(o: Any): VariableValue? {
+            return when (o) {
+                -> null
+                -> com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.BooleanValue.Companion.of(b)
+                -> com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.StringValue(s)
+                -> ArtifactValue(artifact)
+                -> PathFragmentValue(pathFragment)
+                -> com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.Sequence(
+                    com.google.common.collect.ImmutableList.copyOf(
+                        iterable
+                    )
+                )
+
+                -> com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.Sequence(nestedSet.toList())
+                -> com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.Sequence(depset.toList())
+                -> StarlarkStructureAdapter(val
+                    )
+                else -> o as VariableValue
+            }
+        }
+    }
 }

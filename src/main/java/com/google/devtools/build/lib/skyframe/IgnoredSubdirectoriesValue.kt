@@ -11,112 +11,101 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.skyframe.AbstractSkyKey;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
+import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories
 
-/** An immutable set of package name prefixes that should be ignored. */
-public class IgnoredSubdirectoriesValue implements SkyValue {
-  private final IgnoredSubdirectories ignoredSubdirectories;
+/** An immutable set of package name prefixes that should be ignored.  */
+class IgnoredSubdirectoriesValue private constructor(ignoredSubdirectories: IgnoredSubdirectories) : SkyValue {
+    private val ignoredSubdirectories: IgnoredSubdirectories
 
-  @SerializationConstant @VisibleForSerialization
-  public static final IgnoredSubdirectoriesValue EMPTY =
-      new IgnoredSubdirectoriesValue(IgnoredSubdirectories.EMPTY);
-
-  private IgnoredSubdirectoriesValue(IgnoredSubdirectories ignoredSubdirectories) {
-    this.ignoredSubdirectories = ignoredSubdirectories;
-  }
-
-  public static IgnoredSubdirectoriesValue of(
-      ImmutableSet<PathFragment> prefixes, ImmutableList<String> patterns) {
-    return prefixes.isEmpty() && patterns.isEmpty()
-        ? EMPTY
-        : new IgnoredSubdirectoriesValue(IgnoredSubdirectories.of(prefixes, patterns));
-  }
-
-  public static IgnoredSubdirectoriesValue of(IgnoredSubdirectories ignoredSubdirectories) {
-    return ignoredSubdirectories.isEmpty()
-        ? EMPTY
-        : new IgnoredSubdirectoriesValue(ignoredSubdirectories);
-  }
-
-  /** Creates a key from the main repository. */
-  public static SkyKey key() {
-    return Key.create(RepositoryName.MAIN);
-  }
-
-  /** Creates a key from the given repository name. */
-  public static SkyKey key(RepositoryName repository) {
-    return Key.create(repository);
-  }
-
-  public IgnoredSubdirectories asIgnoredSubdirectories() {
-    return ignoredSubdirectories;
-  }
-
-  @Override
-  public int hashCode() {
-    return ignoredSubdirectories.hashCode();
-  }
-
-  @Override
-  public boolean equals(Object obj) {
-    if (obj instanceof IgnoredSubdirectoriesValue other) {
-      return this.ignoredSubdirectories.equals(other.ignoredSubdirectories);
-    }
-    return false;
-  }
-
-  @Override
-  public String toString() {
-    return ignoredSubdirectories.toString();
-  }
-
-  @VisibleForSerialization
-  @AutoCodec
-  static class Key extends AbstractSkyKey<RepositoryName> {
-    private static final SkyKeyInterner<Key> interner = SkyKey.newInterner();
-
-    private Key(RepositoryName arg) {
-      super(arg);
+    init {
+        this.ignoredSubdirectories = ignoredSubdirectories
     }
 
-    static Key create(RepositoryName arg) {
-      return interner.intern(new Key(arg));
+    fun asIgnoredSubdirectories(): IgnoredSubdirectories {
+        return ignoredSubdirectories
     }
 
-    @VisibleForSerialization
-    @AutoCodec.Interner
-    static Key intern(Key key) {
-      return interner.intern(key);
+    override fun hashCode(): Int {
+        return ignoredSubdirectories.hashCode()
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctions.IGNORED_SUBDIRECTORIES;
+    override fun equals(obj: Any?): Boolean {
+        if (obj is IgnoredSubdirectoriesValue) {
+            return this.ignoredSubdirectories.equals(obj.ignoredSubdirectories)
+        }
+        return false
     }
 
-    @Override
-    public SkyKeyInterner<Key> getSkyKeyInterner() {
-      return interner;
+    override fun toString(): String {
+        return ignoredSubdirectories.toString()
     }
-  }
 
-  /** Exception thrown when an ignore path is wrong for some reason. */
-  public static final class InvalidIgnorePathException extends Exception {
-    public InvalidIgnorePathException(String path, String message) {
-      super("Invalid path in " + path + ": " + message);
+    @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+    @AutoCodec
+    internal class Key private constructor(arg: RepositoryName?) : AbstractSkyKey<RepositoryName?>(arg) {
+        override fun functionName(): SkyFunctionName {
+            return SkyFunctions.IGNORED_SUBDIRECTORIES
+        }
+
+        val skyKeyInterner: SkyKeyInterner<Key?>
+            get() = com.google.devtools.build.lib.skyframe.IgnoredSubdirectoriesValue.Key.Companion.interner
+
+        companion object {
+            private val interner: SkyKeyInterner<Key?> = SkyKey.newInterner<Key?>()
+
+            fun create(arg: RepositoryName?): Key {
+                return com.google.devtools.build.lib.skyframe.IgnoredSubdirectoriesValue.Key.Companion.interner.intern(
+                    com.google.devtools.build.lib.skyframe.IgnoredSubdirectoriesValue.Key(arg)
+                )
+            }
+
+            @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+            @AutoCodec.Interner
+            fun intern(key: Key?): Key {
+                return com.google.devtools.build.lib.skyframe.IgnoredSubdirectoriesValue.Key.Companion.interner.intern(
+                    key
+                )
+            }
+        }
     }
-  }
+
+    /** Exception thrown when an ignore path is wrong for some reason.  */
+    class InvalidIgnorePathException(path: String?, message: String?) :
+        java.lang.Exception("Invalid path in " + path + ": " + message)
+
+    companion object {
+        @SerializationConstant
+        @com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization
+        val EMPTY: IgnoredSubdirectoriesValue = IgnoredSubdirectoriesValue(IgnoredSubdirectories.EMPTY)
+
+        fun of(
+            prefixes: com.google.common.collect.ImmutableSet<PathFragment?>,
+            patterns: com.google.common.collect.ImmutableList<String?>
+        ): IgnoredSubdirectoriesValue? {
+            return if (prefixes.isEmpty() && patterns.isEmpty())
+                EMPTY
+            else
+                IgnoredSubdirectoriesValue(IgnoredSubdirectories.of(prefixes, patterns))
+        }
+
+        fun of(ignoredSubdirectories: IgnoredSubdirectories): IgnoredSubdirectoriesValue? {
+            return if (ignoredSubdirectories.isEmpty())
+                EMPTY
+            else
+                IgnoredSubdirectoriesValue(ignoredSubdirectories)
+        }
+
+        /** Creates a key from the main repository.  */
+        fun key(): SkyKey {
+            return com.google.devtools.build.lib.skyframe.IgnoredSubdirectoriesValue.Key.Companion.create(RepositoryName.MAIN)
+        }
+
+        /** Creates a key from the given repository name.  */
+        @kotlin.jvm.JvmStatic
+        fun key(repository: RepositoryName?): SkyKey {
+            return com.google.devtools.build.lib.skyframe.IgnoredSubdirectoriesValue.Key.Companion.create(repository)
+        }
+    }
 }

@@ -11,202 +11,468 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.shell
 
-package com.google.devtools.build.lib.shell;
+import com.google.devtools.build.lib.buildtool.buildevent.BuildCompleteEvent.getResult
+import com.google.devtools.build.lib.clock.Clock.currentTimeMillis
+import com.google.devtools.build.lib.clock.Clock.nanoTime
+import com.google.devtools.build.lib.buildtool.buildevent.TestFilteringCompleteEvent.getTestTargets
+import com.google.devtools.build.lib.bugreport.BugReport.sendBugReport
+import com.google.devtools.build.lib.clock.BlazeClock.instance
+import com.google.devtools.build.lib.clock.Clock.now
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.ConcurrentHashMap
+import com.google.devtools.build.lib.runtime.UiStateTracker.StrategyIds
+import com.google.devtools.build.lib.runtime.UiStateTracker.ActionPhase
+import java.util.LinkedHashMap
+import com.google.devtools.build.lib.runtime.UiStateTracker.ActionState.ProgressState
+import com.google.devtools.build.lib.runtime.UiStateTracker
+import com.google.devtools.build.lib.runtime.UiStateTracker.ActionState
+import com.google.devtools.build.lib.runtime.UiStateTracker.DownloadData
+import com.google.devtools.build.lib.events.ExtendedEventHandler.FetchProgress
+import com.google.devtools.build.lib.skyframe.PackageProgressReceiver
+import com.google.devtools.build.lib.skyframe.AnalysisProgressReceiver
+import java.util.HashSet
+import java.time.Instant
+import com.google.devtools.build.lib.skyframe.LoadingPhaseStartedEvent
+import com.google.devtools.build.lib.skyframe.ConfigurationPhaseStartedEvent
+import com.google.devtools.build.lib.buildtool.buildevent.ExecutionProgressReceiverAvailableEvent
+import com.google.devtools.build.lib.buildtool.buildevent.BuildCompleteEvent
+import java.util.function.ToIntFunction
+import java.io.IOException
+import com.google.devtools.build.lib.util.io.AnsiTerminalWriter
+import com.google.devtools.build.lib.buildtool.buildevent.TestFilteringCompleteEvent
+import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.TestAnalyzedEvent
+import com.google.devtools.build.lib.util.io.PositionAwareAnsiTerminalWriter
+import com.google.common.flogger.GoogleLogger
+import com.google.devtools.build.lib.sandbox.SandboxOptions
+import com.google.devtools.build.lib.sandbox.SandboxedSpawn
+import com.google.devtools.build.lib.sandbox.SandboxHelpers
+import com.google.devtools.build.lib.util.CommandFailureUtils
+import com.google.devtools.build.lib.sandbox.AbstractSandboxSpawnRunner
+import com.google.devtools.build.lib.util.io.FileOutErr
+import com.google.devtools.build.lib.shell.SubprocessBuilder
+import com.google.devtools.build.lib.shell.TerminationStatus
+import com.google.devtools.build.lib.shell.Subprocess
+import java.util.stream.Collectors
+import java.nio.file.Paths
+import com.google.devtools.build.lib.sandbox.cgroups.Mount
+import com.google.auto.value.AutoValue
+import com.google.devtools.build.lib.sandbox.Cgroup
+import com.google.devtools.build.lib.sandbox.cgroups.controller.Controller.Cpu
+import com.google.devtools.build.lib.sandbox.cgroups.VirtualCgroup
+import java.util.concurrent.ConcurrentLinkedQueue
+import com.google.devtools.build.lib.sandbox.cgroups.controller.v2.UnifiedMemory
+import com.google.devtools.build.lib.sandbox.cgroups.controller.v2.UnifiedCpu
+import com.google.devtools.build.lib.sandbox.cgroups.controller.v1.LegacyMemory
+import com.google.devtools.build.lib.sandbox.cgroups.controller.v1.LegacyCpu
+import com.google.devtools.build.lib.sandbox.cgroups.VirtualCgroupFactory
+import com.google.devtools.build.lib.sandbox.cgroups.controller.v1.LegacyController
+import com.google.devtools.build.lib.sandbox.cgroups.controller.v2.UnifiedController
+import com.google.devtools.build.lib.sandbox.CgroupsInfo
+import com.google.devtools.build.lib.sandbox.CgroupsInfo.InvalidCgroupsInfo
+import com.google.devtools.build.lib.sandbox.CgroupsInfoV1
+import com.google.devtools.build.lib.sandbox.CgroupsInfoV2
+import com.google.devtools.build.lib.sandbox.DarwinSandboxedSpawnRunner
+import com.google.devtools.build.lib.util.StringEncoding
+import com.google.devtools.build.lib.sandbox.SandboxHelpers.SandboxInputs
+import com.google.devtools.build.lib.vfs.PathFragment
+import com.google.devtools.build.lib.sandbox.SandboxHelpers.SandboxOutputs
+import ProcessWrapper.CommandLineBuilder
+import com.google.devtools.build.lib.sandbox.SymlinkedSandboxedSpawn
+import java.io.PrintWriter
+import java.io.BufferedWriter
+import java.io.OutputStreamWriter
+import java.util.UUID
+import com.google.devtools.build.lib.sandbox.DockerCommandLineBuilder
+import com.google.devtools.build.lib.unix.ProcessUtilsService
+import java.util.Collections
+import com.google.devtools.build.lib.sandbox.CopyingSandboxedSpawn
+import java.util.concurrent.atomic.AtomicReference
+import com.google.devtools.build.lib.sandbox.DockerSandboxedSpawnRunner
+import java.io.ByteArrayInputStream
+import com.google.devtools.build.lib.remote.options.RemoteOptions
+import com.google.devtools.build.lib.sandbox.LinuxSandboxUtil
+import com.google.devtools.build.lib.vfs.Root
+import com.google.devtools.build.lib.sandbox.LinuxSandboxCommandLineBuilder
+import com.google.devtools.build.lib.sandbox.LinuxSandboxCommandLineBuilder.NetworkNamespace
+import com.google.devtools.build.lib.sandbox.HardlinkedSandboxedSpawn
+import java.util.TreeSet
+import java.util.SortedMap
+import java.util.TreeMap
+import com.google.devtools.build.lib.vfs.Symlinks
+import com.google.devtools.build.lib.vfs.FileStatus
+import java.util.HashMap
+import com.google.devtools.build.lib.sandbox.LinuxSandboxedSpawnRunner
+import com.google.devtools.build.lib.util.OsUtils
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import com.google.devtools.build.lib.sandbox.SandboxHelpers.DirectoryCopier
+import com.google.devtools.build.lib.vfs.FileAccessException
+import com.google.devtools.build.lib.sandbox.SandboxHelpers.SandboxContents
+import java.io.UncheckedIOException
+import com.google.devtools.build.lib.util.AbruptExitException
+import com.google.devtools.build.lib.util.DetailedExitCode
+import com.google.devtools.build.lib.sandbox.SandboxModule
+import com.google.devtools.build.lib.sandbox.AsynchronousTreeDeleter
+import com.google.devtools.build.lib.sandbox.SynchronousTreeDeleter
+import com.google.devtools.build.lib.sandbox.SandboxStash
+import com.google.devtools.build.lib.sandbox.ProcessWrapperSandboxedSpawnRunner
+import com.google.devtools.build.lib.sandbox.ProcessWrapperSandboxedStrategy
+import com.google.devtools.build.lib.sandbox.DockerSandboxedStrategy
+import com.google.devtools.build.lib.sandbox.LinuxSandboxedStrategy
+import com.google.devtools.build.lib.sandbox.DarwinSandboxedStrategy
+import com.google.devtools.build.lib.sandbox.WindowsSandboxedSpawnRunner
+import com.google.devtools.build.lib.sandbox.WindowsSandboxedStrategy
+import com.google.devtools.build.lib.runtime.commands.events.CleanStartingEvent
+import com.google.devtools.build.lib.util.Fingerprint
+import com.google.devtools.build.lib.sandbox.WindowsSandboxUtil
+import com.google.devtools.build.lib.util.OptionsUtils.AbsolutePathFragmentConverter
+import com.google.devtools.build.lib.sandbox.SandboxOptions.MountPairConverter
+import com.google.devtools.build.lib.sandbox.SandboxOptions.AsyncTreeDeletesConverter
+import com.google.devtools.build.lib.util.RamResourceConverter
+import com.google.devtools.build.lib.util.ResourceConverter
+import java.util.LinkedHashSet
+import com.google.devtools.build.lib.sandbox.AbstractContainerizingSandboxedSpawn
+import com.google.devtools.build.lib.util.CommandDescriptionForm
+import com.google.devtools.build.lib.util.DescribableExecutionUnit
+import java.io.FileNotFoundException
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.ThreadFactory
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.LinkedBlockingQueue
+import com.google.devtools.build.lib.sandbox.WindowsSandboxUtil.CommandLineBuilder
+import com.google.devtools.build.lib.sandbox.WindowsSandboxedSpawn
+import com.google.devtools.build.lib.shell.SubprocessBuilder.StreamAction
+import com.google.devtools.build.lib.server.CommandManager.RunningCommand
+import com.google.devtools.build.lib.server.IdleTaskManager
+import java.util.concurrent.atomic.AtomicLong
+import com.google.devtools.build.lib.server.CommandManager
+import com.google.devtools.build.lib.server.GrpcCommandServer
+import com.google.devtools.build.lib.server.PidFileWatcher
+import com.google.devtools.build.lib.server.GrpcCommandServer.Responder
+import com.google.devtools.build.lib.util.io.CommandExtensionReporter
+import com.google.protobuf.ByteString
+import com.google.devtools.build.lib.server.CommandServer.StreamType
+import com.google.devtools.build.lib.server.CommandServer.RpcOutputStream
+import com.google.devtools.build.lib.bugreport.BugReport
+import com.google.devtools.build.lib.server.CommandServer
+import com.google.devtools.build.lib.server.ServerWatcherRunnable
+import java.net.InetSocketAddress
+import java.net.Inet4Address
+import java.net.Inet6Address
+import com.google.protobuf.InvalidProtocolBufferException
+import com.google.devtools.build.lib.util.ExitCode
+import com.google.devtools.build.lib.util.io.OutErr
+import com.google.devtools.common.options.InvocationPolicyParser
+import com.google.devtools.build.lib.server.CommandServer.RpcCommandExtensionReporter
+import com.google.devtools.build.lib.util.InterruptedFailureDetails
+import java.security.MessageDigest
+import com.google.devtools.build.lib.profiler.GoogleAutoProfilerUtils
+import com.google.devtools.build.lib.concurrent.PooledInterner
+import com.google.devtools.build.lib.server.GcAndInternerShrinkingIdleTask
+import io.grpc.stub.ServerCallStreamObserver
+import io.grpc.stub.StreamObserver
+import io.grpc.StatusRuntimeException
+import io.grpc.netty.NettyServerBuilder
+import io.netty.channel.epoll.Epoll
+import com.google.devtools.build.lib.server.GrpcCommandServerImpl.BlockingStreamObserver
+import com.google.devtools.build.lib.runtime.BlazeService
+import com.google.devtools.build.lib.server.GrpcCommandServerService
+import com.google.devtools.build.lib.server.GrpcCommandServerImpl
+import java.util.concurrent.ScheduledThreadPoolExecutor
+import com.google.devtools.build.lib.server.IdleTaskManager.IdleTaskWrapper
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.CancellationException
+import com.google.devtools.build.lib.server.InstallBaseGarbageCollector
+import com.google.devtools.build.lib.util.FileSystemLock
+import com.google.devtools.build.lib.util.FileSystemLock.LockMode
+import com.google.devtools.build.lib.util.FileSystemLock.LockAlreadyHeldException
+import java.util.function.IntPredicate
+import com.google.devtools.build.lib.server.InstallBaseGarbageCollectorIdleTask
+import java.util.concurrent.ScheduledExecutorService
+import com.google.devtools.build.lib.server.ServerWatcherRunnable.LowMemoryChecker
+import com.google.devtools.build.lib.server.ServerWatcherRunnable.ProcMeminfoLowMemoryChecker
+import com.google.devtools.build.lib.server.ServerWatcherRunnable.ProcMeminfoLowMemoryChecker.ProcMeminfoParserSupplier
+import com.google.devtools.build.lib.server.ServerWatcherRunnable.MemoryPressureLowMemoryChecker
+import com.google.devtools.build.lib.unix.ProcMeminfoParser
+import com.google.devtools.build.lib.server.signal.InterruptSignalHandler
+import com.google.devtools.build.lib.shell.CommandResult
+import com.google.devtools.build.lib.shell.AbnormalTerminationException
+import com.google.common.flogger.LazyArgs
+import com.google.common.flogger.LazyArg
+import com.google.devtools.build.lib.shell.LogUtil
+import com.google.auto.value.AutoBuilder
+import com.google.devtools.build.lib.shell.Consumers.AccumulatorThreadFactory
+import com.google.devtools.build.lib.shell.Consumers.OutErrConsumers
+import com.google.devtools.build.lib.shell.Consumers.AccumulatingConsumer
+import com.google.devtools.build.lib.shell.Consumers.StreamingConsumer
+import com.google.devtools.build.lib.shell.Consumers.OutputConsumer
+import com.google.devtools.build.lib.shell.Consumers.FutureConsumption
+import com.google.devtools.build.lib.shell.Consumers.ClosingSink
+import com.google.devtools.build.lib.shell.InputStreamSink
+import com.google.devtools.build.lib.shell.ExecutionStatistics
+import java.io.BufferedInputStream
+import Protos.ExecutionStatistics
+import com.google.devtools.build.lib.shell.FutureCommandResult
+import com.google.devtools.build.lib.shell.BadExitStatusException
+import com.google.devtools.build.lib.shell.InputStreamSink.NullSink
+import com.google.devtools.build.lib.shell.InputStreamSink.CopySink
+import com.google.devtools.build.lib.shell.SubprocessFactory
+import java.util.concurrent.locks.ReentrantLock
+import com.google.devtools.build.lib.shell.JavaSubprocessFactory.JavaSubprocess
+import com.google.devtools.build.lib.shell.JavaSubprocessFactory
+import com.google.devtools.build.lib.shell.ExecFailedException
+import com.google.devtools.build.lib.shell.ShellUtils
+import com.google.devtools.build.lib.shell.ShellUtils.TokenizationException
+import com.google.devtools.build.lib.windows.WindowsProcesses
+import com.google.devtools.build.lib.shell.WindowsSubprocess.ProcessOutputStream
+import com.google.devtools.build.lib.shell.WindowsSubprocess.ProcessInputStream
+import com.google.devtools.build.lib.shell.WindowsSubprocess.NativeState
+import com.google.devtools.build.lib.shell.WindowsSubprocess.WaitResult
+import com.google.devtools.build.lib.util.BazelCleaner
+import com.google.devtools.build.lib.shell.WindowsSubprocess
+import com.google.devtools.build.lib.shell.WindowsSubprocessFactory
+import com.google.devtools.build.skyframe.CyclesReporter.SingleCycleReporter
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.CycleInfo
+import com.google.devtools.build.lib.skyframe.AbstractLabelCycleReporter
+import com.google.devtools.build.lib.skyframe.ActionArtifactCycleReporter
+import com.google.devtools.build.lib.skyframe.SkyFunctions
+import com.google.devtools.build.lib.skyframe.TopLevelActionLookupKeyWrapper
+import com.google.devtools.build.lib.skyframe.TestCompletionValue.TestCompletionKey
+import com.google.devtools.build.skyframe.SkyFunctionName
+import com.google.devtools.build.lib.skyframe.AspectCompletionValue.AspectCompletionKey
+import com.google.devtools.build.skyframe.SkyFunction
+import com.google.devtools.build.skyframe.SkyValue
+import com.google.devtools.build.lib.skyframe.PrecomputedValue
+import com.google.devtools.build.lib.skyframe.EnvironmentVariableValue
+import com.google.devtools.build.lib.skyframe.ClientEnvironmentFunction
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec
+import com.google.devtools.build.skyframe.AbstractSkyKey
+import com.google.devtools.build.skyframe.SkyKey.SkyKeyInterner
+import com.google.devtools.build.lib.skyframe.ActionEnvironmentFunction
+import com.google.devtools.build.skyframe.SkyframeLookupResult
+import com.google.devtools.build.lib.skyframe.ActionExecutionInactivityWatchdog.InactivityMonitor
+import com.google.devtools.build.lib.skyframe.ActionExecutionInactivityWatchdog.InactivityReporter
+import com.google.devtools.build.lib.skyframe.ActionExecutionInactivityWatchdog.Sleep
+import com.google.devtools.build.lib.skyframe.ActionExecutionInactivityWatchdog.WaitTime
+import com.google.devtools.build.lib.skyframe.ActionExecutionState.ActionStepOrResult
+import com.google.devtools.build.lib.skyframe.ActionExecutionState.SharedActionCallback
+import com.google.devtools.build.lib.skyframe.ActionExecutionValue
+import com.google.devtools.build.lib.skyframe.ActionExecutionState
+import com.google.devtools.build.lib.skyframe.ActionExecutionValue.ActionTransformException
+import java.util.concurrent.ConcurrentMap
+import com.google.devtools.build.lib.skyframe.ActionExecutionState.Exceptional
+import com.google.devtools.build.lib.skyframe.TreeArtifactValue
+import com.google.devtools.build.lib.skyframe.TreeArtifactValue.ArchivedRepresentation
+import com.google.devtools.build.lib.util.HashCodes
+import com.google.devtools.build.lib.skyframe.serialization.DeserializedSkyValue
+import com.google.devtools.build.lib.skyframe.ActionExecutionValue.SingleOutputFile
+import com.google.devtools.build.lib.skyframe.ActionExecutionValue.MultiOutputFile
+import com.google.devtools.build.lib.skyframe.ActionExecutionValue.WithRichData
+import com.google.devtools.build.lib.skyframe.ActionExecutionValue.ModuleDiscovering
+import com.google.devtools.build.lib.skyframe.ActionExecutionValue.SingleTree
+import com.google.devtools.build.lib.skyframe.ActionExecutionValue.MultiTree
+import com.google.devtools.build.lib.skyframe.ActionOutputMetadataStore
+import ExtendedEventHandler.Postable
+import com.google.devtools.build.lib.skyframe.ActionInputCollectedEvent
+import com.google.devtools.build.lib.skyframe.MetadataConsumerForMetrics
+import com.google.devtools.build.lib.skyframe.ActionInputMapHelper
+import com.google.devtools.build.lib.skyframe.ActionInputMetadataProvider
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant
+import com.google.devtools.build.lib.skyframe.ActionLookupConflictFindingValue
+import com.google.devtools.build.lib.vfs.OutputPermissions
+import com.google.devtools.build.lib.vfs.XattrProvider
+import com.google.devtools.build.lib.util.io.TimestampGranularityMonitor
+import com.google.devtools.build.lib.skyframe.TreeArtifactValue.TreeArtifactVisitor
+import com.google.devtools.build.lib.vfs.FileStatusWithDigestAdapter
+import com.google.devtools.build.lib.vfs.FileStatusWithDigest
+import com.google.devtools.build.lib.skyframe.ActionOutputMetadataStore.FileArtifactStatAndValue
+import com.google.devtools.build.lib.vfs.RootedPath
+import com.google.devtools.build.lib.skyframe.ActionTemplateExpansionFunction.ActionTemplateExpansionFunctionException
+import com.google.devtools.build.lib.skyframe.ActionTemplateExpansionValue.ActionTemplateExpansionKey
+import com.google.devtools.build.lib.skyframe.ActionTemplateExpansionFunction
+import com.google.devtools.build.lib.skyframe.ActionTemplateExpansionValue
+import com.google.devtools.build.skyframe.SkyFunctionException
+import com.google.devtools.build.skyframe.SkyFunctionException.Transience
+import com.google.devtools.build.lib.skyframe.ActionTemplateExpansionFunction.MapBasedImmutableActionGraph
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
-import com.google.devtools.build.lib.shell.SubprocessBuilder.StreamAction;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.util.StringEncoding;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.lang.ProcessBuilder.Redirect;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.ReentrantLock;
+/** A subprocess factory that uses [java.lang.ProcessBuilder].  */
+class JavaSubprocessFactory private constructor() : SubprocessFactory {
+    /** A subprocess backed by a [java.lang.Process].  */
+    private class JavaSubprocess(process: java.lang.Process, deadlineMillis: Long) : Subprocess {
+        private val process: java.lang.Process
+        private val deadlineMillis: Long
+        private val deadlineExceeded: AtomicBoolean = AtomicBoolean()
 
-/** A subprocess factory that uses {@link java.lang.ProcessBuilder}. */
-public class JavaSubprocessFactory implements SubprocessFactory {
+        init {
+            this.process = process
+            this.deadlineMillis = deadlineMillis
+        }
 
-  /** A subprocess backed by a {@link java.lang.Process}. */
-  private static class JavaSubprocess implements Subprocess {
-    private final Process process;
-    private final long deadlineMillis;
-    private final AtomicBoolean deadlineExceeded = new AtomicBoolean();
+        override fun destroy(): Boolean {
+            process.destroy()
+            return true
+        }
 
-    private JavaSubprocess(Process process, long deadlineMillis) {
-      this.process = process;
-      this.deadlineMillis = deadlineMillis;
+        override fun exitValue(): Int {
+            return process.exitValue()
+        }
+
+        override fun finished(): Boolean {
+            if (deadlineMillis > 0 && java.lang.System.currentTimeMillis() > deadlineMillis && deadlineExceeded.compareAndSet(
+                    false,
+                    true
+                )
+            ) {
+                // We use compareAndSet here to avoid calling destroy multiple times. Note that destroy
+                // returns immediately, and we don't want to wait in this method.
+                process.destroy()
+            }
+            // this seems to be the only non-blocking call for checking liveness
+            return !process.isAlive()
+        }
+
+        val isAlive: Boolean
+            get() = process.isAlive()
+
+        override fun timedout(): Boolean {
+            return deadlineExceeded.get()
+        }
+
+        @Throws(java.lang.InterruptedException::class)
+        override fun waitFor() {
+            val waitTimeMillis =
+                if (deadlineMillis > 0) deadlineMillis - java.lang.System.currentTimeMillis() else Long.Companion.MAX_VALUE
+            val exitedInTime: Boolean = process.waitFor(waitTimeMillis, TimeUnit.MILLISECONDS)
+            if (!exitedInTime && deadlineExceeded.compareAndSet(false, true)) {
+                process.destroy()
+                // The destroy call returns immediately, so we still need to wait for the actual exit. The
+                // sole caller assumes that waitFor only exits when the process is gone (or throws).
+                process.waitFor()
+            }
+        }
+
+        val outputStream: java.io.OutputStream?
+            get() = process.getOutputStream()
+
+        val errorStream: java.io.InputStream?
+            get() = process.getErrorStream()
+
+        val inputStream: java.io.InputStream?
+            get() = process.getInputStream()
+
+        override fun close() {
+            process.destroyForcibly()
+        }
+
+        val processId: Long
+            get() = process.pid()
     }
 
-    @Override
-    public boolean destroy() {
-      process.destroy();
-      return true;
+    private val lock: ReentrantLock = ReentrantLock()
+
+    // since we are a singleton, we represent an ideal global lock for
+    // process invocations, which is required due to the following race condition:
+    // Linux does not provide a safe API for a multi-threaded program to fork a subprocess.
+    // Consider the case where two threads both write an executable file and then try to execute
+    // it. It can happen that the first thread writes its executable file, with the file
+    // descriptor still being open when the second thread forks, with the fork inheriting a copy
+    // of the file descriptor. Then the first thread closes the original file descriptor, and
+    // proceeds to execute the file. At that point Linux sees an open file descriptor to the file
+    // and returns ETXTBSY (Text file busy) as an error. This race is inherent in the fork / exec
+    // duality, with fork always inheriting a copy of the file descriptor table; if there was a
+    // way to fork without copying the entire file descriptor table (e.g., only copy specific
+    // entries), we could avoid this race.
+    //
+    // I was able to reproduce this problem reliably by running significantly more threads than
+    // there are CPU cores on my workstation - the more threads the more likely it happens.
+    //
+    // As a workaround, we use a lock around the fork.
+    @Throws(IOException::class)
+    private fun start(builder: java.lang.ProcessBuilder): java.lang.Process {
+        lock.lock()
+        try {
+            return builder.start()
+        } catch (e: IOException) {
+            if (e.message.contains("Failed to exec spawn helper")) {
+                // Detect permanent failures due to an upgrade of the underlying JDK version,
+                // see https://bugs.openjdk.org/browse/JDK-8325621.
+                throw java.lang.IllegalStateException(
+                    "Subprocess creation has failed, the current JDK version is newer than the version"
+                            + " used at startup. Re-rerunning the blaze invocation should succeed.",
+                    e
+                )
+            }
+            throw e
+        } finally {
+            lock.unlock()
+        }
     }
 
-    @Override
-    public int exitValue() {
-      return process.exitValue();
-    }
-
-    @Override
-    public boolean finished() {
-      if (deadlineMillis > 0
-          && System.currentTimeMillis() > deadlineMillis
-          && deadlineExceeded.compareAndSet(false, true)) {
-        // We use compareAndSet here to avoid calling destroy multiple times. Note that destroy
-        // returns immediately, and we don't want to wait in this method.
-        process.destroy();
-      }
-      // this seems to be the only non-blocking call for checking liveness
-      return !process.isAlive();
-    }
-
-    @Override
-    public boolean isAlive() {
-      return process.isAlive();
-    }
-
-    @Override
-    public boolean timedout() {
-      return deadlineExceeded.get();
-    }
-
-    @Override
-    public void waitFor() throws InterruptedException {
-      var waitTimeMillis =
-          (deadlineMillis > 0) ? deadlineMillis - System.currentTimeMillis() : Long.MAX_VALUE;
-      var exitedInTime = process.waitFor(waitTimeMillis, TimeUnit.MILLISECONDS);
-      if (!exitedInTime && deadlineExceeded.compareAndSet(false, true)) {
-        process.destroy();
-        // The destroy call returns immediately, so we still need to wait for the actual exit. The
-        // sole caller assumes that waitFor only exits when the process is gone (or throws).
-        process.waitFor();
-      }
-    }
-
-    @Override
-    public OutputStream getOutputStream() {
-      return process.getOutputStream();
-    }
-
-    @Override
-    public InputStream getErrorStream() {
-      return process.getErrorStream();
-    }
-
-    @Override
-    public InputStream getInputStream() {
-      return process.getInputStream();
-    }
-
-    @Override
-    public void close() {
-      process.destroyForcibly();
-    }
-
-    @Override
-    public long getProcessId() {
-      return process.pid();
-    }
-  }
-
-  public static final JavaSubprocessFactory INSTANCE = new JavaSubprocessFactory();
-  private final ReentrantLock lock = new ReentrantLock();
-
-  private JavaSubprocessFactory() {
-    // We are a singleton
-  }
-
-  // since we are a singleton, we represent an ideal global lock for
-  // process invocations, which is required due to the following race condition:
-
-  // Linux does not provide a safe API for a multi-threaded program to fork a subprocess.
-  // Consider the case where two threads both write an executable file and then try to execute
-  // it. It can happen that the first thread writes its executable file, with the file
-  // descriptor still being open when the second thread forks, with the fork inheriting a copy
-  // of the file descriptor. Then the first thread closes the original file descriptor, and
-  // proceeds to execute the file. At that point Linux sees an open file descriptor to the file
-  // and returns ETXTBSY (Text file busy) as an error. This race is inherent in the fork / exec
-  // duality, with fork always inheriting a copy of the file descriptor table; if there was a
-  // way to fork without copying the entire file descriptor table (e.g., only copy specific
-  // entries), we could avoid this race.
-  //
-  // I was able to reproduce this problem reliably by running significantly more threads than
-  // there are CPU cores on my workstation - the more threads the more likely it happens.
-  //
-  // As a workaround, we use a lock around the fork.
-  private Process start(ProcessBuilder builder) throws IOException {
-    lock.lock();
-    try {
-      return builder.start();
-    } catch (IOException e) {
-      if (e.getMessage().contains("Failed to exec spawn helper")) {
-        // Detect permanent failures due to an upgrade of the underlying JDK version,
-        // see https://bugs.openjdk.org/browse/JDK-8325621.
-        throw new IllegalStateException(
-            "Subprocess creation has failed, the current JDK version is newer than the version"
-                + " used at startup. Re-rerunning the blaze invocation should succeed.",
-            e);
-      }
-      throw e;
-    } finally {
-      lock.unlock();
-    }
-  }
-
-  @Override
-  public Subprocess create(SubprocessBuilder params) throws IOException {
-    Preconditions.checkState(
-        OS.getCurrent() != OS.WINDOWS,
-        "attempting to use non-Windows subprocess factory on Windows - did you forget to call"
-            + " WindowsSubprocessFactory.maybeInstallWindowsSubprocessFactory?");
-    ProcessBuilder builder = new ProcessBuilder();
-    builder.command(Lists.transform(params.getArgv(), StringEncoding::internalToPlatform));
-    builder.environment().clear();
-    (params.getEnv() != null ? params.getEnv() : params.getClientEnv())
-        .forEach(
-            (key, value) ->
+    @Throws(IOException::class)
+    override fun create(params: SubprocessBuilder): Subprocess {
+        com.google.common.base.Preconditions.checkState(
+            com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.WINDOWS,
+            "attempting to use non-Windows subprocess factory on Windows - did you forget to call"
+                    + " WindowsSubprocessFactory.maybeInstallWindowsSubprocessFactory?"
+        )
+        val builder: java.lang.ProcessBuilder = java.lang.ProcessBuilder()
+        builder.command(
+            com.google.common.collect.Lists.transform<String?, String?>(
+                params.getArgv(),
+                com.google.common.base.Function { s: String? -> StringEncoding.internalToPlatform(s) })
+        )
+        builder.environment().clear()
+        (if (params.getEnv() != null) params.getEnv() else params.getClientEnv())
+            .forEach { (key: String?, value: String?) ->
                 builder
                     .environment()
                     .put(
                         StringEncoding.internalToPlatform(key),
-                        StringEncoding.internalToPlatform(value)));
+                        StringEncoding.internalToPlatform(value)
+                    )
+            }
 
-    builder.redirectOutput(getRedirect(params.getStdout(), params.getStdoutFile()));
-    builder.redirectError(getRedirect(params.getStderr(), params.getStderrFile()));
-    builder.redirectErrorStream(params.redirectErrorStream());
-    builder.directory(params.getWorkingDirectory());
+        builder.redirectOutput(getRedirect(params.getStdout(), params.getStdoutFile()))
+        builder.redirectError(getRedirect(params.getStderr(), params.getStderrFile()))
+        builder.redirectErrorStream(params.redirectErrorStream())
+        builder.directory(params.getWorkingDirectory())
 
-    // Deadline is now + given timeout.
-    long deadlineMillis =
-        params.getTimeoutMillis() > 0
-            ? Math.addExact(System.currentTimeMillis(), params.getTimeoutMillis())
-            : 0;
-    return new JavaSubprocess(start(builder), deadlineMillis);
-  }
+        // Deadline is now + given timeout.
+        val deadlineMillis: Long =
+            if (params.getTimeoutMillis() > 0)
+                java.lang.Math.addExact(java.lang.System.currentTimeMillis(), params.getTimeoutMillis())
+            else
+                0
+        return JavaSubprocess(start(builder), deadlineMillis)
+    }
 
-  /**
-   * Returns a {@link java.lang.ProcessBuilder.Redirect} appropriate for the parameters. If a file
-   * redirected to exists, deletes the file before redirecting to it.
-   */
-  private Redirect getRedirect(StreamAction action, File file) {
-    return switch (action) {
-      case DISCARD -> Redirect.to(new File("/dev/null"));
-      case REDIRECT -> {
-        // We need to use Redirect.appendTo() here, because on older Linux kernels writes are
-        // otherwise not atomic and might result in lost log messages:
-        // https://lkml.org/lkml/2014/3/3/308
-        if (file.exists()) {
-          file.delete();
+    /**
+     * Returns a [java.lang.ProcessBuilder.Redirect] appropriate for the parameters. If a file
+     * redirected to exists, deletes the file before redirecting to it.
+     */
+    private fun getRedirect(action: StreamAction, file: java.io.File): java.lang.ProcessBuilder.Redirect? {
+        return when (action) {
+            StreamAction.DISCARD -> java.lang.ProcessBuilder.Redirect.to(java.io.File("/dev/null"))
+            StreamAction.REDIRECT -> {
+                // We need to use Redirect.appendTo() here, because on older Linux kernels writes are
+                // otherwise not atomic and might result in lost log messages:
+                // https://lkml.org/lkml/2014/3/3/308
+                if (file.exists()) {
+                    file.delete()
+                }
+                java.lang.ProcessBuilder.Redirect.appendTo(file)
+            }
+
+            StreamAction.STREAM -> java.lang.ProcessBuilder.Redirect.PIPE
         }
-        yield Redirect.appendTo(file);
-      }
-      case STREAM -> Redirect.PIPE;
-    };
-  }
+    }
+
+    companion object {
+        @kotlin.jvm.JvmField
+        val INSTANCE: JavaSubprocessFactory = JavaSubprocessFactory()
+    }
 }

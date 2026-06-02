@@ -11,88 +11,78 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static sun.misc.Unsafe.ARRAY_OBJECT_BASE_OFFSET;
-import static sun.misc.Unsafe.ARRAY_OBJECT_INDEX_SCALE;
+import com.google.devtools.build.lib.skyframe.serialization.AsyncDeserializationContext
+import com.google.devtools.build.lib.skyframe.serialization.DeferredObjectCodec
+import com.google.devtools.build.lib.skyframe.serialization.DeferredObjectCodec.DeferredValue
+import com.google.devtools.build.lib.skyframe.serialization.SerializationContext
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import java.io.IOException
 
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableTable;
-import com.google.common.collect.Table.Cell;
-
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-
-/** Codec for {@link ImmutableTable}. */
-@SuppressWarnings({"rawtypes", "unchecked"})
-public class ImmutableTableCodec extends DeferredObjectCodec<ImmutableTable> {
-
-  @Override
-  public Class<ImmutableTable> getEncodedClass() {
-    return ImmutableTable.class;
-  }
-
-  @Override
-  public void serialize(
-      SerializationContext context, ImmutableTable object, CodedOutputStream codedOut)
-      throws SerializationException, IOException {
-    ImmutableSet<Cell> cellSet = object.cellSet();
-    codedOut.writeInt32NoTag(cellSet.size());
-    for (Cell cell : cellSet) {
-      context.serialize(cell.getRowKey(), codedOut);
-      context.serialize(cell.getColumnKey(), codedOut);
-      context.serialize(cell.getValue(), codedOut);
-    }
-  }
-
-  // TODO: b/386384684 - remove Unsafe usage
-  @Override
-  public DeferredValue<ImmutableTable> deserializeDeferred(
-      AsyncDeserializationContext context, CodedInputStream codedIn)
-      throws SerializationException, IOException {
-    int size = codedIn.readInt32();
-    if (size < 0) {
-      throw new SerializationException("Expected non-negative size: " + size);
-    }
-    if (size == 0) {
-      return ImmutableTable::of;
+/** Codec for [ImmutableTable].  */
+class ImmutableTableCodec : DeferredObjectCodec<com.google.common.collect.ImmutableTable<*, *, *>?>() {
+    override fun getEncodedClass(): java.lang.Class<com.google.common.collect.ImmutableTable<*, *, *>?> {
+        return com.google.common.collect.ImmutableTable::class.java
     }
 
-    EntryBuffer buffer = new EntryBuffer(size);
-    long offset = ARRAY_OBJECT_BASE_OFFSET;
-    for (int i = 0; i < size; i++) {
-      context.deserialize(codedIn, buffer.rowKeys, offset);
-      context.deserialize(codedIn, buffer.columnKeys, offset);
-      context.deserialize(codedIn, buffer.values, offset);
-      offset += ARRAY_OBJECT_INDEX_SCALE;
-    }
-    return buffer;
-  }
-
-  private static final class EntryBuffer implements DeferredValue<ImmutableTable> {
-    private final Object[] rowKeys;
-    private final Object[] columnKeys;
-    private final Object[] values;
-
-    private EntryBuffer(int size) {
-      this.rowKeys = new Object[size];
-      this.columnKeys = new Object[size];
-      this.values = new Object[size];
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun serialize(
+        context: SerializationContext,
+        `object`: com.google.common.collect.ImmutableTable<*, *, *>,
+        codedOut: CodedOutputStream
+    ) {
+        val cellSet: com.google.common.collect.ImmutableSet<com.google.common.collect.Table.Cell<*, *, *>> =
+            `object`.cellSet()
+        codedOut.writeInt32NoTag(cellSet.size())
+        for (cell in cellSet) {
+            context.serialize(cell.getRowKey(), codedOut)
+            context.serialize(cell.getColumnKey(), codedOut)
+            context.serialize(cell.getValue(), codedOut)
+        }
     }
 
-    @Override
-    public ImmutableTable call() {
-      ImmutableTable.Builder builder = ImmutableTable.builder();
-      for (int i = 0; i < size(); i++) {
-        builder.put(
-            /* rowKey= */ rowKeys[i], /* columnKey= */ columnKeys[i], /* value= */ values[i]);
-      }
-      return builder.buildOrThrow();
+    // TODO: b/386384684 - remove Unsafe usage
+    @Throws(com.google.devtools.build.lib.skyframe.serialization.SerializationException::class, IOException::class)
+    override fun deserializeDeferred(
+        context: AsyncDeserializationContext, codedIn: CodedInputStream
+    ): DeferredValue<com.google.common.collect.ImmutableTable<*, *, *>?> {
+        val size: Int = codedIn.readInt32()
+        if (size < 0) {
+            throw com.google.devtools.build.lib.skyframe.serialization.SerializationException("Expected non-negative size: " + size)
+        }
+        if (size == 0) {
+            return DeferredValue { com.google.common.collect.ImmutableTable.of() }
+        }
+
+        val buffer: EntryBuffer =
+            com.google.devtools.build.lib.skyframe.serialization.ImmutableTableCodec.EntryBuffer(size)
+        var offset: Long = sun.misc.Unsafe.ARRAY_OBJECT_BASE_OFFSET.toLong()
+        /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
+        return buffer
     }
 
-    private int size() {
-      return rowKeys.length;
+    private class EntryBuffer(size: Int) : DeferredValue<com.google.common.collect.ImmutableTable<*, *, *>?> {
+        private val rowKeys: Array<Any?>
+        private val columnKeys: Array<Any?>
+        private val values: Array<Any?>
+
+        init {
+            this.rowKeys = arrayOfNulls<Any>(size)
+            this.columnKeys = arrayOfNulls<Any>(size)
+            this.values = arrayOfNulls<Any>(size)
+        }
+
+        override fun call(): com.google.common.collect.ImmutableTable<*, *, *> {
+            val builder: com.google.common.collect.ImmutableTable.Builder<*, *, *> =
+                com.google.common.collect.ImmutableTable.builder<Any?, Any?, Any?>()
+            /* !!! Hit visitElement for element type: class org.jetbrains.kotlin.nj2k.tree.JKJavaForLoopStatement !!! */
+            return builder.buildOrThrow()
+        }
+
+        fun size(): Int {
+            return rowKeys.size
+        }
     }
-  }
 }

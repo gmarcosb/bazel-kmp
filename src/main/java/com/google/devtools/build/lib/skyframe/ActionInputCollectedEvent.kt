@@ -11,32 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static java.util.Objects.requireNonNull;
-
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.ActionContext.ActionContextRegistry;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
+import com.google.devtools.build.lib.actions.Action
 
 /**
  * An event that is fired when all inputs of an action are collected but before the these inputs are
  * requested to skyframe.
  */
-public record ActionInputCollectedEvent(
-    Action action, NestedSet<Artifact> inputs, ActionContextRegistry actionContextRegistry)
-    implements ExtendedEventHandler.Postable {
-  public ActionInputCollectedEvent {
-    requireNonNull(action, "action");
-    requireNonNull(inputs, "inputs");
-    requireNonNull(actionContextRegistry, "actionContextRegistry");
-  }
+class ActionInputCollectedEvent(
+    action: Action?,
+    inputs: NestedSet<Artifact?>?,
+    actionContextRegistry: ActionContextRegistry?
+) : Postable {
+    val action: Action?
+    val inputs: NestedSet<Artifact?>?
+    val actionContextRegistry: ActionContextRegistry?
 
-  public static ActionInputCollectedEvent create(
-      Action action, NestedSet<Artifact> inputs, ActionContextRegistry actionContextRegistry) {
-    return new ActionInputCollectedEvent(action, inputs, actionContextRegistry);
-  }
+    init {
+        this.actionContextRegistry = actionContextRegistry
+        this.inputs = inputs
+        this.action = action
+        java.util.Objects.requireNonNull<Any?>(action, "action")
+        java.util.Objects.requireNonNull<Any?>(inputs, "inputs")
+        java.util.Objects.requireNonNull<Any?>(actionContextRegistry, "actionContextRegistry")
+    }
 
+    companion object {
+        fun create(
+            action: Action?, inputs: NestedSet<Artifact?>?, actionContextRegistry: ActionContextRegistry?
+        ): ActionInputCollectedEvent {
+            return ActionInputCollectedEvent(action, inputs, actionContextRegistry)
+        }
+    }
 }

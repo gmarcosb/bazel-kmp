@@ -11,62 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.android
 
-package com.google.devtools.build.lib.rules.android;
+import com.google.devtools.build.docgen.annot.DocCategory
+import com.google.devtools.build.lib.analysis.config.BuildOptions
+import com.google.devtools.build.lib.concurrent.ThreadSafety
+import com.google.devtools.common.options.Option
+import com.google.devtools.common.options.OptionDocumentationCategory
+import com.google.devtools.common.options.OptionEffectTag
+import com.google.devtools.common.options.OptionsClass
+import com.google.errorprone.annotations.CheckReturnValue
+import net.starlark.java.annot.StarlarkBuiltin
+import net.starlark.java.annot.StarlarkMethod
 
-import com.google.devtools.build.docgen.annot.DocCategory;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.Fragment;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.analysis.config.RequiresOptions;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.errorprone.annotations.CheckReturnValue;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-
-/** Configuration fragment for Android rules that is specific to Bazel. */
-@Immutable
+/** Configuration fragment for Android rules that is specific to Bazel.  */
+@ThreadSafety.Immutable
 @StarlarkBuiltin(name = "bazel_android", category = DocCategory.CONFIGURATION_FRAGMENT)
-@RequiresOptions(options = {BazelAndroidConfiguration.Options.class})
+@RequiresOptions(options = [BazelAndroidConfiguration.Options::class])
 @CheckReturnValue
-public class BazelAndroidConfiguration extends Fragment {
+class BazelAndroidConfiguration(buildOptions: BuildOptions) : Fragment() {
+    val isImmutable: Boolean
+        get() = true // immutable and Starlark-hashable
 
-  @Override
-  public boolean isImmutable() {
-    return true; // immutable and Starlark-hashable
-  }
+    /** Android configuration options that are specific to Bazel.  */
+    @OptionsClass
+    abstract class Options : FragmentOptions() {
+        @Option(
+            name = "merge_android_manifest_permissions",
+            defaultValue = "false",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.AFFECTS_OUTPUTS],
+            help = ("If enabled, the manifest merger will merge uses-permission and "
+                    + "uses-permission-sdk-23 attributes.")
+        )
+        abstract fun getMergeAndroidManifestPermissions(): Boolean
+    }
 
-  /** Android configuration options that are specific to Bazel. */
-  @OptionsClass
-  public abstract static class Options extends FragmentOptions {
-
-    @Option(
+    @get:StarlarkMethod(
         name = "merge_android_manifest_permissions",
-        defaultValue = "false",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-        help =
-            "If enabled, the manifest merger will merge uses-permission and "
-                + "uses-permission-sdk-23 attributes.")
-    public abstract boolean getMergeAndroidManifestPermissions();
-  }
+        structField = true,
+        doc = "The value of --merge_android_manifest_permissions flag."
+    )
+    val mergeAndroidManifestPermissions: Boolean
 
-  private final boolean mergeAndroidManifestPermissions;
-
-  public BazelAndroidConfiguration(BuildOptions buildOptions) {
-    Options options = buildOptions.get(BazelAndroidConfiguration.Options.class);
-    this.mergeAndroidManifestPermissions = options.getMergeAndroidManifestPermissions();
-  }
-
-  @StarlarkMethod(
-      name = "merge_android_manifest_permissions",
-      structField = true,
-      doc = "The value of --merge_android_manifest_permissions flag.")
-  public boolean getMergeAndroidManifestPermissions() {
-    return this.mergeAndroidManifestPermissions;
-  }
+    init {
+        val options: Options = buildOptions.get(Options::class.java)
+        this.mergeAndroidManifestPermissions = options.getMergeAndroidManifestPermissions()
+    }
 }

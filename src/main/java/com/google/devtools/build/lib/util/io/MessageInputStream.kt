@@ -11,19 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
+package com.google.devtools.build.lib.util.io
 
-import com.google.protobuf.Message;
-import java.io.IOException;
-import javax.annotation.Nullable;
+import com.google.protobuf.Message
 
-/** A variation of InputStream for protobuf messages. */
-public interface MessageInputStream<T extends Message> extends AutoCloseable {
-  /** Reads a protobuf message from the underlying stream, or null if there are no more messages. */
-  @Nullable
-  T read() throws IOException;
+/** A variation of InputStream for protobuf messages.  */
+interface MessageInputStream<T : Message?> : java.lang.AutoCloseable {
+    /** Reads a protobuf message from the underlying stream, or null if there are no more messages.  */
+    @Throws(IOException::class)
+    fun read(): T?
 
-  /** Closes the underlying stream. Any following reads will fail. */
-  @Override
-  void close() throws IOException;
+    /** Closes the underlying stream. Any following reads will fail.  */
+    @Throws(IOException::class)
+    override fun close()
 }

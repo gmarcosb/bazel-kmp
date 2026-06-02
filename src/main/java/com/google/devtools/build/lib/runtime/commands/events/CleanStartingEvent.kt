@@ -11,20 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime.commands.events
 
-package com.google.devtools.build.lib.runtime.commands.events;
+import com.google.devtools.common.options.OptionsParsingResult
 
-import com.google.devtools.common.options.OptionsParsingResult;
-
-/** Posted on the public event stream to announce that a clean is happening. */
-public class CleanStartingEvent {
-  private final OptionsParsingResult optionsParsingResult;
-
-  public CleanStartingEvent(OptionsParsingResult optionsParsingResult) {
-    this.optionsParsingResult = optionsParsingResult;
-  }
-
-  public OptionsParsingResult getOptionsProvider() {
-    return optionsParsingResult;
-  }
-}
+/** Posted on the public event stream to announce that a clean is happening.  */
+class CleanStartingEvent(val optionsProvider: OptionsParsingResult?)

@@ -11,16 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi
 
-package com.google.devtools.build.lib.starlarkbuildapi;
-
-import com.google.devtools.build.docgen.annot.DocCategory;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.eval.StarlarkValue;
-
-/** A configuration fragment representing protocol buffers. */
-@StarlarkBuiltin(
+/** A configuration fragment representing protocol buffers.  */
+@net.starlark.java.annot.StarlarkBuiltin(
     name = "proto",
-    category = DocCategory.CONFIGURATION_FRAGMENT,
-    doc = "A configuration fragment representing protocol buffers.")
-public interface ProtoConfigurationApi extends StarlarkValue {}
+    category = com.google.devtools.build.docgen.annot.DocCategory.CONFIGURATION_FRAGMENT,
+    doc = "A configuration fragment representing protocol buffers."
+)
+interface ProtoConfigurationApi : net.starlark.java.eval.StarlarkValue

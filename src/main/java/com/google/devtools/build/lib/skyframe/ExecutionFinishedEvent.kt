@@ -11,85 +11,115 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static java.util.Objects.requireNonNull;
-
-import com.google.auto.value.AutoBuilder;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.ArtifactMetrics;
-import java.time.Duration;
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.ArtifactMetrics
 
 /**
  * Event signaling the end of the execution phase. Contains statistics about the action cache, the
  * metadata cache and about last file save times.
  */
-public record ExecutionFinishedEvent(
-    int outputDirtyFiles,
-    ImmutableList<String> outputDirtyFileExecPathSample,
-    int outputModifiedFilesDuringPreviousBuild,
-    Duration sourceDiffCheckingDuration,
-    int numSourceFilesCheckedBecauseOfMissingDiffs,
-    Duration outputTreeDiffCheckingDuration,
-    ArtifactMetrics.FilesMetric sourceArtifactsRead,
-    ArtifactMetrics.FilesMetric outputArtifactsSeen,
-    ArtifactMetrics.FilesMetric outputArtifactsFromActionCache,
-    ArtifactMetrics.FilesMetric topLevelArtifacts) {
-  public ExecutionFinishedEvent {
-    requireNonNull(outputDirtyFileExecPathSample, "outputDirtyFileExecPathSample");
-    requireNonNull(sourceDiffCheckingDuration, "sourceDiffCheckingDuration");
-    requireNonNull(outputTreeDiffCheckingDuration, "outputTreeDiffCheckingDuration");
-    requireNonNull(sourceArtifactsRead, "sourceArtifactsRead");
-    requireNonNull(outputArtifactsSeen, "outputArtifactsSeen");
-    requireNonNull(outputArtifactsFromActionCache, "outputArtifactsFromActionCache");
-    requireNonNull(topLevelArtifacts, "topLevelArtifacts");
-  }
+class ExecutionFinishedEvent(
+    outputDirtyFiles: Int,
+    outputDirtyFileExecPathSample: com.google.common.collect.ImmutableList<String?>?,
+    outputModifiedFilesDuringPreviousBuild: Int,
+    sourceDiffCheckingDuration: java.time.Duration?,
+    numSourceFilesCheckedBecauseOfMissingDiffs: Int,
+    outputTreeDiffCheckingDuration: java.time.Duration?,
+    sourceArtifactsRead: ArtifactMetrics.FilesMetric?,
+    outputArtifactsSeen: ArtifactMetrics.FilesMetric?,
+    outputArtifactsFromActionCache: ArtifactMetrics.FilesMetric?,
+    topLevelArtifacts: ArtifactMetrics.FilesMetric?
+) {
+    @AutoBuilder
+    internal abstract class Builder {
+        abstract fun setOutputDirtyFiles(outputDirtyFiles: Int): Builder?
 
-  // AutoValue Builders require that all fields are populated, so we provide a default.
-  public static ExecutionFinishedEvent.Builder builderWithDefaults() {
-    ArtifactMetrics.FilesMetric emptyFilesMetric = ArtifactMetrics.FilesMetric.getDefaultInstance();
-    return builder()
-        .setOutputDirtyFiles(0)
-        .setOutputDirtyFileExecPathSample(ImmutableList.of())
-        .setOutputModifiedFilesDuringPreviousBuild(0)
-        .setSourceDiffCheckingDuration(Duration.ZERO)
-        .setNumSourceFilesCheckedBecauseOfMissingDiffs(0)
-        .setOutputTreeDiffCheckingDuration(Duration.ZERO)
-        .setSourceArtifactsRead(emptyFilesMetric)
-        .setOutputArtifactsSeen(emptyFilesMetric)
-        .setOutputArtifactsFromActionCache(emptyFilesMetric)
-        .setTopLevelArtifacts(emptyFilesMetric);
-  }
+        abstract fun setOutputDirtyFileExecPathSample(
+            outputDirtyFileExecPathSample: com.google.common.collect.ImmutableList<String?>?
+        ): Builder?
 
-  static Builder builder() {
-    return new AutoBuilder_ExecutionFinishedEvent_Builder();
-  }
+        abstract fun setOutputModifiedFilesDuringPreviousBuild(
+            outputModifiedFilesDuringPreviousBuild: Int
+        ): Builder?
 
-  @AutoBuilder
-  abstract static class Builder {
-    abstract Builder setOutputDirtyFiles(int outputDirtyFiles);
+        abstract fun setSourceDiffCheckingDuration(sourceDiffCheckingDuration: java.time.Duration?): Builder?
 
-    abstract Builder setOutputDirtyFileExecPathSample(
-        ImmutableList<String> outputDirtyFileExecPathSample);
+        abstract fun setNumSourceFilesCheckedBecauseOfMissingDiffs(
+            numSourceFilesCheckedBecauseOfMissingDiffs: Int
+        ): Builder?
 
-    abstract Builder setOutputModifiedFilesDuringPreviousBuild(
-        int outputModifiedFilesDuringPreviousBuild);
+        abstract fun setOutputTreeDiffCheckingDuration(outputTreeDiffCheckingDuration: java.time.Duration?): Builder?
 
-    abstract Builder setSourceDiffCheckingDuration(Duration sourceDiffCheckingDuration);
+        abstract fun setSourceArtifactsRead(value: ArtifactMetrics.FilesMetric?): Builder?
 
-    abstract Builder setNumSourceFilesCheckedBecauseOfMissingDiffs(
-        int numSourceFilesCheckedBecauseOfMissingDiffs);
+        abstract fun setOutputArtifactsSeen(value: ArtifactMetrics.FilesMetric?): Builder?
 
-    abstract Builder setOutputTreeDiffCheckingDuration(Duration outputTreeDiffCheckingDuration);
+        abstract fun setOutputArtifactsFromActionCache(value: ArtifactMetrics.FilesMetric?): Builder?
 
-    public abstract Builder setSourceArtifactsRead(ArtifactMetrics.FilesMetric value);
+        abstract fun setTopLevelArtifacts(value: ArtifactMetrics.FilesMetric?): Builder?
 
-    public abstract Builder setOutputArtifactsSeen(ArtifactMetrics.FilesMetric value);
+        abstract fun build(): ExecutionFinishedEvent?
+    }
 
-    public abstract Builder setOutputArtifactsFromActionCache(ArtifactMetrics.FilesMetric value);
+    val outputDirtyFiles: Int
+    val outputDirtyFileExecPathSample: com.google.common.collect.ImmutableList<String?>?
+    val outputModifiedFilesDuringPreviousBuild: Int
+    val sourceDiffCheckingDuration: java.time.Duration?
+    val numSourceFilesCheckedBecauseOfMissingDiffs: Int
+    val outputTreeDiffCheckingDuration: java.time.Duration?
+    val sourceArtifactsRead: ArtifactMetrics.FilesMetric?
+    val outputArtifactsSeen: ArtifactMetrics.FilesMetric?
+    val outputArtifactsFromActionCache: ArtifactMetrics.FilesMetric?
+    val topLevelArtifacts: ArtifactMetrics.FilesMetric?
 
-    public abstract Builder setTopLevelArtifacts(ArtifactMetrics.FilesMetric value);
+    init {
+        this.topLevelArtifacts = topLevelArtifacts
+        this.outputArtifactsFromActionCache = outputArtifactsFromActionCache
+        this.outputArtifactsSeen = outputArtifactsSeen
+        this.sourceArtifactsRead = sourceArtifactsRead
+        this.outputTreeDiffCheckingDuration = outputTreeDiffCheckingDuration
+        this.numSourceFilesCheckedBecauseOfMissingDiffs = numSourceFilesCheckedBecauseOfMissingDiffs
+        this.sourceDiffCheckingDuration = sourceDiffCheckingDuration
+        this.outputModifiedFilesDuringPreviousBuild = outputModifiedFilesDuringPreviousBuild
+        this.outputDirtyFileExecPathSample = outputDirtyFileExecPathSample
+        this.outputDirtyFiles = outputDirtyFiles
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableList<String?>?>(
+            outputDirtyFileExecPathSample,
+            "outputDirtyFileExecPathSample"
+        )
+        java.util.Objects.requireNonNull<java.time.Duration?>(sourceDiffCheckingDuration, "sourceDiffCheckingDuration")
+        java.util.Objects.requireNonNull<java.time.Duration?>(
+            outputTreeDiffCheckingDuration,
+            "outputTreeDiffCheckingDuration"
+        )
+        java.util.Objects.requireNonNull<Any?>(sourceArtifactsRead, "sourceArtifactsRead")
+        java.util.Objects.requireNonNull<Any?>(outputArtifactsSeen, "outputArtifactsSeen")
+        java.util.Objects.requireNonNull<Any?>(outputArtifactsFromActionCache, "outputArtifactsFromActionCache")
+        java.util.Objects.requireNonNull<Any?>(topLevelArtifacts, "topLevelArtifacts")
+    }
 
-    abstract ExecutionFinishedEvent build();
-  }
+    companion object {
+        // AutoValue Builders require that all fields are populated, so we provide a default.
+        @kotlin.jvm.JvmStatic
+        fun builderWithDefaults(): Builder? {
+            val emptyFilesMetric: ArtifactMetrics.FilesMetric? = ArtifactMetrics.FilesMetric.getDefaultInstance()
+            return builder()
+                .setOutputDirtyFiles(0)!!
+                .setOutputDirtyFileExecPathSample(com.google.common.collect.ImmutableList.of<kotlin.String?>())!!
+                .setOutputModifiedFilesDuringPreviousBuild(0)!!
+                .setSourceDiffCheckingDuration(java.time.Duration.ZERO)!!
+                .setNumSourceFilesCheckedBecauseOfMissingDiffs(0)!!
+                .setOutputTreeDiffCheckingDuration(java.time.Duration.ZERO)!!
+                .setSourceArtifactsRead(emptyFilesMetric)!!
+                .setOutputArtifactsSeen(emptyFilesMetric)!!
+                .setOutputArtifactsFromActionCache(emptyFilesMetric)!!
+                .setTopLevelArtifacts(emptyFilesMetric)
+        }
+
+        @kotlin.jvm.JvmStatic
+        fun builder(): Builder {
+            return AutoBuilder_ExecutionFinishedEvent_Builder()
+        }
+    }
 }

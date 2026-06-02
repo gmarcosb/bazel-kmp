@@ -46,10 +46,10 @@ public class BzlLoadValueCodecTest {
         .setVerificationFunction(
             (SerializationTester.VerificationFunction<BzlLoadValue>)
                 (x, y) -> {
-                  if (!java.util.Arrays.equals(x.getTransitiveDigest(), y.getTransitiveDigest())) {
+                  if (!java.util.Arrays.equals(x.transitiveDigest, y.transitiveDigest)) {
                     throw new AssertionError("unequal digests after serialization");
                   }
-                  assertThat(x.getRecordedRepoMappings()).isEqualTo(y.getRecordedRepoMappings());
+                  assertThat(x.recordedRepoMappings).isEqualTo(y.recordedRepoMappings);
                 })
         .runTestsWithoutStableSerializationCheck();
   }

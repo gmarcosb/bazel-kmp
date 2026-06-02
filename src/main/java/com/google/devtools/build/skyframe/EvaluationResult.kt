@@ -11,221 +11,233 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.supplier.InterruptibleSupplier.get
+import com.google.devtools.build.skyframe.EvaluationResult
+import com.google.devtools.build.skyframe.SkyKey
+import com.google.devtools.build.skyframe.SkyValue
+import com.google.devtools.build.skyframe.WalkableGraph
+import java.util.Collections
+import java.util.HashMap
 
 /**
- * The result of a Skyframe {@link ParallelEvaluator#eval} call. Will contain all the successfully
- * evaluated values, retrievable through {@link #get}. As well, the {@link ErrorInfo} for the first
+ * The result of a Skyframe [ParallelEvaluator.eval] call. Will contain all the successfully
+ * evaluated values, retrievable through [.get]. As well, the [ErrorInfo] for the first
  * value that failed to evaluate (in the non-keep-going case), or any remaining values that failed
  * to evaluate (in the keep-going case) will be retrievable.
- *
- * <p>A node can never be successfully evaluated and fail to evaluate. Thus, if {@link #get} returns
+ * 
+ * 
+ * A node can never be successfully evaluated and fail to evaluate. Thus, if [.get] returns
  * non-null for some key, there is no stored error for that key, and vice versa.
- *
+ * 
  * @param <T> The type of the values that the caller has requested.
- */
-public class EvaluationResult<T extends SkyValue> {
+</T> */
+class EvaluationResult<T : SkyValue?> private constructor(
+    result: MutableMap<SkyKey?, T?>?,
+    errorMap: MutableMap<SkyKey?, com.google.devtools.build.skyframe.ErrorInfo>?,
+    catastrophe: java.lang.Exception?,
+    walkableGraph: WalkableGraph?
+) {
+    private val catastrophe: java.lang.Exception?
 
-  @Nullable private final Exception catastrophe;
+    private val resultMap: MutableMap<SkyKey?, T?>
+    private val errorMap: MutableMap<SkyKey?, com.google.devtools.build.skyframe.ErrorInfo?>
+    private val walkableGraph: WalkableGraph?
 
-  private final Map<SkyKey, T> resultMap;
-  private final Map<SkyKey, ErrorInfo> errorMap;
-  private final WalkableGraph walkableGraph;
-
-  /**
-   * Constructor for the "completed" case. Used only by {@link Builder}.
-   */
-  private EvaluationResult(
-      Map<SkyKey, T> result,
-      Map<SkyKey, ErrorInfo> errorMap,
-      @Nullable Exception catastrophe,
-      @Nullable WalkableGraph walkableGraph) {
-    this.resultMap = Preconditions.checkNotNull(result);
-    this.errorMap = Preconditions.checkNotNull(errorMap);
-    this.catastrophe = catastrophe;
-    this.walkableGraph = walkableGraph;
-  }
-
-  /**
-   * Get a successfully evaluated value.
-   */
-  public T get(SkyKey key) {
-    Preconditions.checkNotNull(resultMap, key);
-    return resultMap.get(key);
-  }
-
-  /**
-   * @return Whether or not the eval successfully evaluated all requested values. True iff
-   * {@link #getCatastrophe} or {@link #getError} returns non-null.
-   */
-  public boolean hasError() {
-    return catastrophe != null || !errorMap.isEmpty();
-  }
-
-  /**
-   * Catastrophic error encountered during evaluation, if any. If the evaluation failed with a
-   * catastrophe, this will be non-null.
-   */
-  @Nullable
-  public Exception getCatastrophe() {
-    return catastrophe;
-  }
-
-  /**
-   * @return All successfully evaluated {@link SkyValue}s.
-   */
-  public Collection<T> values() {
-    return Collections.unmodifiableCollection(resultMap.values());
-  }
-
-  /**
-   * Returns {@link Map} of {@link SkyKey}s to {@link ErrorInfo}. Note that currently some of the
-   * returned SkyKeys may not be the ones requested by the user. Moreover, the SkyKey is not
-   * necessarily the cause of the error -- it is just the value that was being evaluated when the
-   * error was discovered.
-   */
-  public Map<SkyKey, ErrorInfo> errorMap() {
-    return ImmutableMap.copyOf(errorMap);
-  }
-
-  /** Returns {@link ErrorInfo} for given {@code key} which must be present in errors. */
-  public ErrorInfo getError(SkyKey key) {
-    return Preconditions.checkNotNull(errorMap, key).get(key);
-  }
-
-  /**
-   * Returns some error info. Convenience method equivalent to Iterables.getFirst({@link
-   * #errorMap()}, null).getValue().
-   */
-  public ErrorInfo getError() {
-    return Iterables.getFirst(errorMap.entrySet(), null).getValue();
-  }
-
-  /**
-   * @return Names of all values that were successfully evaluated. This collection is disjoint from
-   *     the keys in {@link #errorMap}.
-   */
-  public <S> Collection<? extends S> keyNames() {
-    return EvaluationResult.<S>getNames(resultMap.keySet());
-  }
-
-  @SuppressWarnings("unchecked")
-  private static <S> Collection<? extends S> getNames(Collection<SkyKey> keys) {
-    Collection<S> names = Lists.newArrayListWithCapacity(keys.size());
-    for (SkyKey key : keys) {
-      names.add((S) key.argument());
-    }
-    return names;
-  }
-
-  @Nullable
-  public WalkableGraph getWalkableGraph() {
-    return walkableGraph;
-  }
-
-  @Override
-  public String toString() {
-    return MoreObjects.toStringHelper(this)
-        .add("catastrophe", catastrophe)
-        .add("errorMap", errorMap)
-        .add("resultMap", resultMap)
-        .toString();
-  }
-
-  public static <T extends SkyValue> Builder<T> builder() {
-    return new Builder<>();
-  }
-
-  /**
-   * Builder for {@link EvaluationResult}.
-   *
-   * <p>This is intended only for use in alternative {@code MemoizingEvaluator} implementations.
-   */
-  public static class Builder<T extends SkyValue> {
-    private final Map<SkyKey, T> result = new HashMap<>();
-    private final Map<SkyKey, ErrorInfo> errors = new HashMap<>();
-    @Nullable private Exception catastrophe = null;
-    private WalkableGraph walkableGraph = null;
-
-    /** Adds a value to the result. An error for this key must not already be present. */
-    @CanIgnoreReturnValue
-    @SuppressWarnings({"unchecked", "LenientFormatStringValidation"})
-    public Builder<T> addResult(SkyKey key, SkyValue value) {
-      result.put(key, Preconditions.checkNotNull((T) value, key));
-      // Expected 3 args, but got 2.
-      Preconditions.checkState(
-          !errors.containsKey(key), "%s in both result and errors: %s %s", value, errors);
-      return this;
+    /**
+     * Constructor for the "completed" case. Used only by [Builder].
+     */
+    init {
+        this.resultMap = com.google.common.base.Preconditions.checkNotNull<MutableMap<SkyKey?, T?>>(result)
+        this.errorMap =
+            com.google.common.base.Preconditions.checkNotNull<MutableMap<SkyKey?, com.google.devtools.build.skyframe.ErrorInfo?>>(
+                errorMap
+            )
+        this.catastrophe = catastrophe
+        this.walkableGraph = walkableGraph
     }
 
     /**
-     * Adds an error to the result. A successful value for this key must not already be present.
-     * Publicly visible only for testing: should be package-private.
+     * Get a successfully evaluated value.
      */
-    @SuppressWarnings("LenientFormatStringValidation")
-    @CanIgnoreReturnValue
-    public Builder<T> addError(SkyKey key, ErrorInfo error) {
-      errors.put(key, Preconditions.checkNotNull(error, key));
-      // Expected 3 args, but got 2.
-      Preconditions.checkState(
-          !result.containsKey(key), "%s in both result and errors: %s %s", error, result);
-      if (error.isCatastrophic()) {
-        setCatastrophe(error.getException());
-      }
-      return this;
+    fun get(key: SkyKey?): T? {
+        com.google.common.base.Preconditions.checkNotNull<MutableMap<SkyKey?, T?>?>(resultMap, key)
+        return resultMap.get(key)
     }
 
-    @CanIgnoreReturnValue
-    public Builder<T> setWalkableGraph(WalkableGraph walkableGraph) {
-      this.walkableGraph = walkableGraph;
-      return this;
+    /**
+     * @return Whether or not the eval successfully evaluated all requested values. True iff
+     * [.getCatastrophe] or [.getError] returns non-null.
+     */
+    fun hasError(): Boolean {
+        return catastrophe != null || !errorMap.isEmpty()
     }
 
-    @CanIgnoreReturnValue
-    public Builder<T> mergeFrom(EvaluationResult<T> otherResult) {
-      result.putAll(otherResult.resultMap);
-      errors.putAll(otherResult.errorMap);
-      catastrophe = otherResult.catastrophe;
-      return this;
+    /**
+     * Catastrophic error encountered during evaluation, if any. If the evaluation failed with a
+     * catastrophe, this will be non-null.
+     */
+    fun getCatastrophe(): java.lang.Exception? {
+        return catastrophe
     }
 
-    public EvaluationResult<T> build() {
-      return new EvaluationResult<>(result, errors, catastrophe, walkableGraph);
+    /**
+     * @return All successfully evaluated [SkyValue]s.
+     */
+    fun values(): MutableCollection<T?> {
+        return Collections.unmodifiableCollection<T?>(resultMap.values())
     }
 
-    @CanIgnoreReturnValue
-    public Builder<T> setCatastrophe(Exception catastrophe) {
-      this.catastrophe = catastrophe;
-      return this;
+    /**
+     * Returns [Map] of [SkyKey]s to [ErrorInfo]. Note that currently some of the
+     * returned SkyKeys may not be the ones requested by the user. Moreover, the SkyKey is not
+     * necessarily the cause of the error -- it is just the value that was being evaluated when the
+     * error was discovered.
+     */
+    fun errorMap(): MutableMap<SkyKey?, com.google.devtools.build.skyframe.ErrorInfo?> {
+        return com.google.common.collect.ImmutableMap.copyOf<SkyKey?, com.google.devtools.build.skyframe.ErrorInfo?>(
+            errorMap
+        )
     }
 
-    void maybeEnsureCatastrophe(boolean hasCatastrophe) {
-      if (!hasCatastrophe || catastrophe != null) {
-        return;
-      }
-      for (ErrorInfo errorInfo : errors.values()) {
-        if (errorInfo.getException() != null) {
-          catastrophe = errorInfo.getException();
-          return;
+    /** Returns [ErrorInfo] for given `key` which must be present in errors.  */
+    fun getError(key: SkyKey?): com.google.devtools.build.skyframe.ErrorInfo? {
+        return com.google.common.base.Preconditions.checkNotNull<MutableMap<SkyKey?, com.google.devtools.build.skyframe.ErrorInfo?>?>(
+            errorMap,
+            key
+        ).get(key)
+    }
+
+    val error: com.google.devtools.build.skyframe.ErrorInfo?
+        /**
+         * Returns some error info. Convenience method equivalent to Iterables.getFirst([ ][.errorMap], null).getValue().
+         */
+        get() = com.google.common.collect.Iterables.getFirst<MutableMap.MutableEntry<SkyKey?, com.google.devtools.build.skyframe.ErrorInfo?>?>(
+            errorMap.entrySet(),
+            null
+        ).getValue()
+
+    /**
+     * @return Names of all values that were successfully evaluated. This collection is disjoint from
+     * the keys in [.errorMap].
+     */
+    fun <S> keyNames(): MutableCollection<out S?> {
+        return getNames<S?>(resultMap.keySet())
+    }
+
+    fun getWalkableGraph(): WalkableGraph? {
+        return walkableGraph
+    }
+
+    override fun toString(): String {
+        return com.google.common.base.MoreObjects.toStringHelper(this)
+            .add("catastrophe", catastrophe)
+            .add("errorMap", errorMap)
+            .add("resultMap", resultMap)
+            .toString()
+    }
+
+    /**
+     * Builder for [EvaluationResult].
+     * 
+     * 
+     * This is intended only for use in alternative `MemoizingEvaluator` implementations.
+     */
+    class Builder<T : SkyValue?> {
+        private val result: MutableMap<SkyKey?, T?> = HashMap<SkyKey?, T?>()
+        private val errors: MutableMap<SkyKey?, com.google.devtools.build.skyframe.ErrorInfo> =
+            HashMap<SkyKey?, com.google.devtools.build.skyframe.ErrorInfo>()
+        private var catastrophe: java.lang.Exception? = null
+        private var walkableGraph: WalkableGraph? = null
+
+        /** Adds a value to the result. An error for this key must not already be present.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addResult(key: SkyKey?, value: SkyValue?): Builder<T?> {
+            result.put(key, com.google.common.base.Preconditions.checkNotNull<T?>(value as T?, key))
+            // Expected 3 args, but got 2.
+            com.google.common.base.Preconditions.checkState(
+                !errors.containsKey(key), "%s in both result and errors: %s %s", value, errors
+            )
+            return this
         }
-      }
-      throw new IllegalStateException("Should have found exception in catastrophe: " + errors);
+
+        /**
+         * Adds an error to the result. A successful value for this key must not already be present.
+         * Publicly visible only for testing: should be package-private.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addError(key: SkyKey?, error: com.google.devtools.build.skyframe.ErrorInfo?): Builder<T?> {
+            errors.put(
+                key,
+                com.google.common.base.Preconditions.checkNotNull<com.google.devtools.build.skyframe.ErrorInfo?>(
+                    error,
+                    key
+                )
+            )
+            // Expected 3 args, but got 2.
+            com.google.common.base.Preconditions.checkState(
+                !result.containsKey(key), "%s in both result and errors: %s %s", error, result
+            )
+            if (error.isCatastrophic()) {
+                setCatastrophe(error.getException())
+            }
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setWalkableGraph(walkableGraph: WalkableGraph?): Builder<T?> {
+            this.walkableGraph = walkableGraph
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun mergeFrom(otherResult: EvaluationResult<T?>): Builder<T?> {
+            result.putAll(otherResult.resultMap)
+            errors.putAll(otherResult.errorMap)
+            catastrophe = otherResult.catastrophe
+            return this
+        }
+
+        fun build(): EvaluationResult<T?> {
+            return EvaluationResult<T?>(result, errors, catastrophe, walkableGraph)
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setCatastrophe(catastrophe: java.lang.Exception?): Builder<T?> {
+            this.catastrophe = catastrophe
+            return this
+        }
+
+        fun maybeEnsureCatastrophe(hasCatastrophe: Boolean) {
+            if (!hasCatastrophe || catastrophe != null) {
+                return
+            }
+            for (errorInfo in errors.values()) {
+                if (errorInfo.getException() != null) {
+                    catastrophe = errorInfo.getException()
+                    return
+                }
+            }
+            throw java.lang.IllegalStateException("Should have found exception in catastrophe: " + errors)
+        }
+
+        val isEmpty: Boolean
+            get() = this.result.isEmpty() && this.errors.isEmpty()
     }
 
-    boolean isEmpty() {
-      return this.result.isEmpty() && this.errors.isEmpty();
+    companion object {
+        private fun <S> getNames(keys: MutableCollection<SkyKey>): MutableCollection<out S?> {
+            val names: MutableCollection<S?> = com.google.common.collect.Lists.newArrayListWithCapacity<S?>(keys.size())
+            for (key in keys) {
+                names.add(key.argument() as S?)
+            }
+            return names
+        }
+
+        @kotlin.jvm.JvmStatic
+        fun <T : SkyValue?> builder(): Builder<T?> {
+            return com.google.devtools.build.skyframe.EvaluationResult.Builder<T?>()
+        }
     }
-  }
 }
